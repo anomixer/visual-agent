@@ -1,0 +1,31 @@
+{
+  "name": "aipc-agent",
+  "version": "1.0.0",
+  "description": "AI PC Agent — 本地優先、無命令列、具備感知能力的系統管家",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "tauri": "tauri"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "setup",
+    "automation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.0"
+  },
+  "pkg": {
+    "scripts": "src/**/*.js",
+    "assets": "skills/**/*"
+  }
+}

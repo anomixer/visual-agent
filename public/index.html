@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI PC Agent — 系統管家</title>
+  <meta name="description" content="本地優先、無命令列、具備感知能力的系統管家">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-icon">
+          <svg viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="url(#grad)" stroke-width="2.5" />
+            <path d="M10 16.5l4.5 4L22 12" stroke="url(#grad)" stroke-width="2.5" stroke-linecap="round"
+              stroke-linejoin="round" />
+            <defs>
+              <linearGradient id="grad" x1="0" y1="0" x2="32" y2="32">
+                <stop stop-color="#6366f1" />
+                <stop offset="1" stop-color="#a78bfa" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="header-text">
+          <h1>AI PC Agent</h1>
+          <span class="header-subtitle">系統管家 · 本地優先</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <!-- Theme Toggle -->
+        <button class="btn-icon" id="btnTheme" title="切換主題 (Dark/Light/System)">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+          </svg>
+        </button>
+        <!-- Language Selector -->
+        <button class="btn-icon" id="btnLang" title="切換語言 (目前: 繁體中文)"
+          style="font-size: 12px; font-weight: bold; font-family: sans-serif;">
+          中
+        </button>
+        <!-- Import (arrow down into tray) -->
+        <button class="btn-icon" id="btnImport" title="匯入任務清單">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+            <path fill-rule="evenodd"
+              d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
+        <!-- Export (arrow up from tray) -->
+        <button class="btn-icon" id="btnExport" title="匯出任務清單">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+            <path fill-rule="evenodd"
+              d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM11.707 5.293a1 1 0 00-1.414 0l-4 4a1 1 0 001.414 1.414L9 8.414V14a1 1 0 102 0V8.414l1.293 1.293a1 1 0 001.414-1.414l-4-4z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
+        <input type="file" id="importFileInput" accept=".json" style="display:none">
+      </div>
+    </header>
+
+    <!-- Main content: two-column layout -->
+    <main class="main-content">
+      <!-- Left: To-Do List -->
+      <section class="panel todo-panel">
+        <div class="panel-header">
+          <h2>📋 工作清單</h2>
+          <span class="badge" id="todoCount">0</span>
+        </div>
+        <div class="panel-body" id="todoListContainer">
+          <div class="empty-state" id="todoEmpty">
+            <div class="empty-icon">✨</div>
+            <p>還沒有任務</p>
+            <p class="empty-hint">從下方輸入需求，或從推薦清單加入</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Recommend List -->
+      <section class="panel recommend-panel">
+        <div class="panel-header">
+          <h2>💡 推薦清單</h2>
+          <span class="badge" id="recCount">0</span>
+        </div>
+        <div class="panel-body" id="recommendListContainer">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Log viewer (expandable) -->
+    <section class="log-panel" id="logPanel">
+      <div class="log-header" id="logToggle">
+        <h3>📝 執行日誌</h3>
+        <button class="btn-text" id="btnToggleLog">展開 ▼</button>
+      </div>
+      <div class="log-body" id="logBody">
+        <div class="log-entries" id="logEntries">
+          <div class="log-empty">等待任務執行...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chat Bar -->
+    <div class="chat-bar">
+      <div class="chat-response" id="chatResponse"></div>
+      <div class="chat-bar-inner">
+        <div class="chat-avatar">🤖</div>
+        <input type="text" id="chatInput" placeholder="告訴我你需要什麼... 例如「幫我加裝日文語系」" autocomplete="off">
+        <button class="btn-mic" id="btnMic" title="語音輸入">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
+            <path fill-rule="evenodd"
+              d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
+        <button class="btn-send" id="btnSend" title="送出">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
+            <path
+              d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task Detail Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="taskModal">
+      <div class="modal-header">
+        <h3 id="modalTitle">任務詳情</h3>
+        <button class="btn-close" id="btnCloseModal">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
