@@ -63,10 +63,10 @@ UAC 友善： 涉及系統修改時，必須主動說明原因並觸發標準 Wi
 **Vision:** 取代 Copilot 成為真正能動手、懂排錯、且隱私友善的系統管家。
 
 ### UI 架構
-- [ ] **To-Do List:** 頂部顯示當前任務佇列。
-- [ ] **Recommend List:** 中間顯示主動預警與建議。
-- [ ] **Chat Bar:** 底部自然語言輸入。
-- [ ] **Pure UI:** 禁止出現 Terminal 視窗，所有進度以視覺化進度條呈現。
+- [x] **To-Do List:** 頂部顯示當前任務佇列。
+- [x] **Recommend List:** 中間顯示主動預警與建議。
+- [x] **Chat Bar:** 底部自然語言輸入。 (包含 Chat Window 對話紀錄)
+- [x] **Pure UI:** 禁止出現 Terminal 視窗，所有進度以視覺化進度條呈現。
 
 ### 核心功能
 1. **意圖轉譯:** 解析對話並掛載到 To-Do List。

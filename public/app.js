@@ -10,6 +10,7 @@ const API = '';
 let todoList = [];
 let recommendList = [];
 let logExpanded = false;
+let chatExpanded = true;
 let pollingInterval = null;
 
 // ── DOM Elements ──────────────────────────────────────────────────
@@ -179,6 +180,7 @@ async function sendChat() {
     if (!message) return;
 
     chatInput.value = '';
+    appendUserMessage(message);
     showChatResponse('🤔 思考中...');
 
     const data = await api('/api/chat', {
@@ -194,15 +196,42 @@ async function sendChat() {
     }
 }
 
-function showChatResponse(text) {
-    chatResponse.innerHTML = `<div class="chat-response-text">${escHtml(text)}</div>`;
-    chatResponse.classList.add('visible');
+function appendUserMessage(text) {
+    const chatMessages = $('#chatMessages');
+    const div = document.createElement('div');
+    div.className = 'message user-message';
+    div.innerHTML = `
+      <div class="message-bubble">${escHtml(text)}</div>
+      <div class="message-avatar" style="background: var(--bg-card-hover);">👤</div>
+    `;
+    chatMessages.appendChild(div);
 
-    // Auto-hide after 8 seconds
-    clearTimeout(chatResponse._timer);
-    chatResponse._timer = setTimeout(() => {
-        chatResponse.classList.remove('visible');
-    }, 8000);
+    const chatWindow = $('#chatWindow');
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+function showChatResponse(text) {
+    const chatMessages = $('#chatMessages');
+
+    // Remove "thinking" message if exists
+    const thinkingMsg = chatMessages.querySelector('.thinking-msg');
+    if (thinkingMsg) thinkingMsg.remove();
+
+    const div = document.createElement('div');
+    div.className = 'message ai-message';
+    div.innerHTML = `
+      <div class="message-avatar">🤖</div>
+      <div class="message-bubble">${escHtml(text)}</div>
+    `;
+
+    if (text === '🤔 思考中...') {
+        div.classList.add('thinking-msg');
+    }
+
+    chatMessages.appendChild(div);
+
+    const chatWindow = $('#chatWindow');
+    chatWindow.scrollTop = chatWindow.scrollHeight;
 }
 
 async function executeTask(taskId) {
@@ -287,15 +316,22 @@ function closeModal() {
 // ── Export / Import ───────────────────────────────────────────────
 
 async function exportTasks() {
-    const data = await api('/api/todo/export');
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `aipc-agent-tasks-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showChatResponse('📥 任務清單已匯出！');
+    try {
+        const res = await api('/api/todo/export-file', { method: 'POST' });
+        if (res.success) {
+            showChatResponse(`📥 匯出成功！檔案已儲存至：\n${res.filePath}`);
+            addUILog(`📤 已匯出任務清單至：${res.filePath}`, 'success');
+        } else if (res.cancelled) {
+            showChatResponse(`取消匯出。`);
+            // 不寫入 log
+        } else {
+            showChatResponse(`❌ 匯出失敗: ${res.error}`);
+            addUILog(`❌ 匯出失敗: ${res.error}`, 'error');
+        }
+    } catch (e) {
+        showChatResponse(`❌ 匯出發生錯誤: ${e.message}`);
+        addUILog(`❌ 匯出發生錯誤: ${e.message}`, 'error');
+    }
 }
 
 async function importTasks(file) {
@@ -467,6 +503,18 @@ function setupEventListeners() {
         logPanel.classList.toggle('expanded', logExpanded);
         btnToggleLog.textContent = logExpanded ? '收起 ▲' : '展開 ▼';
     });
+
+    const chatToggle = $('#chatToggle');
+    const chatWindowElement = $('#chatWindow');
+    const btnToggleChat = $('#btnToggleChat');
+
+    if (chatToggle) {
+        chatToggle.addEventListener('click', () => {
+            chatExpanded = !chatExpanded;
+            chatWindowElement.classList.toggle('expanded', chatExpanded);
+            btnToggleChat.textContent = chatExpanded ? '收起 ▲' : '展開 ▼';
+        });
+    }
 
     btnExport.addEventListener('click', exportTasks);
 

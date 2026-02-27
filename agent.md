@@ -17,10 +17,19 @@
 
 ### 4. 介面 (UI/UX) 與操作體驗改良
 - **新增語音輸入支援**：介面 Chat Bar 加入麥克風按鈕。透過 `Web Speech API`，讓工具能夠聆聽中文辨識轉為請求。在錄音時，按鈕實作了會發散紅色光暈的呼吸燈漸變特效。
-- **改進系統回覆設計**：修正對話回應框的排版位移問題，現在 AI 回覆能優雅地浮現於輸入框正上方，不會推擠下方輸入區域。
+- **改進系統回覆設計**：修正對話回應框的排版位移問題，將獨立出可收合展開的「💬 智慧對話 (Chat Window)」面板，讓所有訊息一則一則依序排列。
 - **深淺色 (Dark/Light) 主題切換重構**：原先內聯的 CSS 修改方案存在缺陷；重構了整套 `theme-light` CSS 類別標籤的詞彙定義（背景變白、面板透明等），並串接 `window.matchMedia` 來真正的適應 Windows 系統設定自動改變外觀設定。
 - **日誌優化**：主題切換與語言選項切換將統一拋轉並以獨有辨識色歸檔至系統「📝 執行日誌 (Log Panel)」，而不再誤導並阻擋正常 AI 對話視窗。
-- **標誌圖示修正**：「匯出」改為向上推送信號，而「匯入」修改為向下接收方向。
+- **標誌與署名**：「匯出/匯入」按鈕修正推進與接收方向，並於上方標題旁邊補上作者屬名 (by anomixer)。
+
+### 5. 伺服器與任務匯出修復
+- **修正靜態檔案伺服路由**：解決了 Tauri 打包架構下 Node Server 讀取不到前端編譯檔案的 `Cannot GET /` 錯誤。
+- **原生另存新檔支援**：由於 Tauri 封鎖了瀏覽器 `a[download]` 的寫檔行為，為 `/api/todo/export-file` 擴增了藉由呼叫 PowerShell `System.Windows.Forms.SaveFileDialog` 產生原生另存新檔對話框直接寫入檔案的功能。
+
+### 6. 新增更多 Markdown 技能庫 (Skills)
+- 🗑️ `remove-copilot.md`：透過修改登錄檔 (HKCU) 關閉與移除系統 Copilot 協助。
+- 🌐 `install-chrome.md`：靜默下載並以 Admin 權限自動安裝最新的 Google Chrome。
+- 💾 `backup-system.md`：呼叫 PowerShell 的系統還原點 (Restore Point) 功能。
 
 ## 🚀 未來展望
 - 串接本機或遠端的輕量級 LLM (如 Ollama / Gemini)，將死板的關鍵字觸發改成真實語意理解，完成強大的本地智能管家願景。

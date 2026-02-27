@@ -15,6 +15,7 @@ const app = express();
 const PORT = 3210;
 
 app.use(express.json());
+app.use(express.static(path.join(__dirname, '../public')));
 
 const os = require('os');
 const isPkg = typeof process.pkg !== 'undefined';
@@ -181,13 +182,60 @@ app.post('/api/todo/import', (req, res) => {
     }
 });
 
-// GET /api/todo/export — 匯出任務清單
+// GET /api/todo/export — 匯出任務清單 (Raw JSON)
 app.get('/api/todo/export', (req, res) => {
     res.json({
         exportedAt: new Date().toISOString(),
         agentVersion: '1.0.0',
         tasks: todoList,
     });
+});
+
+const { execSync } = require('child_process');
+
+// POST /api/todo/export-file — 匯出任務清單 (跳出另存新檔對話框)
+app.post('/api/todo/export-file', (req, res) => {
+    try {
+        const defaultName = `aipc-tasks-${new Date().toISOString().slice(0, 10)}.json`;
+
+        // 透過 PowerShell 呼叫原生的 Windows SaveFileDialog
+        const psScript = `
+        Add-Type -AssemblyName System.Windows.Forms
+        $dlg = New-Object System.Windows.Forms.SaveFileDialog
+        $dlg.Filter = 'JSON 檔案 (*.json)|*.json|所有檔案 (*.*)|*.*'
+        $dlg.FileName = '${defaultName}'
+        $dlg.Title = '匯出 AI PC Agent 任務清單'
+        $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
+        $res = $dlg.ShowDialog()
+        if ($res -eq [System.Windows.Forms.DialogResult]::OK) { 
+            Write-Output $dlg.FileName 
+        }
+        `;
+
+        // 為了讓對話框能正確顯示，必須加上 -Sta 參數 (Single-Threaded Apartment)
+        const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -Command "${psScript.replace(/\n/g, ';')}"`, {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            windowsHide: true,
+        }).trim();
+
+        if (!output) {
+            return res.json({ success: false, error: 'User cancelled', cancelled: true });
+        }
+
+        const filePath = output;
+
+        const data = {
+            exportedAt: new Date().toISOString(),
+            agentVersion: '1.0.0',
+            tasks: todoList,
+        };
+
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+        res.json({ success: true, filePath, fileName: path.basename(filePath) });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
 });
 
 // GET /api/recommend — 取得推薦清單
