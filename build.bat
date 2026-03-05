@@ -44,7 +44,7 @@ if errorlevel 1 (
     msiexec /i "%TEMP%\node-installer.msi" /quiet /norestart ADDLOCAL=ALL
     del "%TEMP%\node-installer.msi" >nul 2>&1
     :: Reload PATH
-    for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "PATH=%%B;%PATH%"
+    for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "PATH=%%B;!PATH!"
     where node >nul 2>&1
     if errorlevel 1 (
         echo  [ERROR] Node.js install seems complete but 'node' not on PATH yet.
