@@ -1,89 +1,163 @@
-AI PC Agent 實作需求規格書
+# AI PC Agent — 實作需求規格書 (v0.4)
 
-1. 專案願景 (Vision)
-打造一個「本地優先、無命令列、具備感知能力」的系統管家。目標是取代傳統複雜的裝機流程與無能的對話機器人，實現「一嘴（對話）或一鍵」完成所有系統優化、軟體安裝、硬體監控與資料保護。
-
-2. 使用者介面架構 (UI/UX)
-完全去 Terminal 化： 嚴禁直接顯示黑底白字的 CMD/PowerShell 視窗。
-
-三段式版面：
-
-To-Do List (工作清單)： 顯示當前執行的任務、進度條與狀態（如：待處理、執行中、排錯中、已完成）。
-
-Recommend List (推薦清單)： 根據硬體偵測結果或預設範本，主動推薦安裝或優化的項目。
-
-Chat Bar (對話中樞)： 位於下方，接收自然語言指令並將其轉化為任務加入清單。
-
-視覺化日誌 (Log)： 以人類可讀的語言紀錄安裝與排錯過程（如：「正在嘗試修復網路連線...」）。
-
-3. 核心功能模組 (Core Modules)
-A. 意圖轉譯與任務執行 (Intent & Execution)
-自然語言解析： 識別用戶需求（如：「加裝日文語系」、「刪除 Edge」）。
-
-Skill 系統： 支援讀取 skill.md 或 skill.json 格式，定義安裝步驟、驗證邏輯與自動排錯 SOP。
-
-清單管理： 任務清單需支援 匯出與匯入 (JSON 格式)，實現標準化裝機範本分享。
-
-B. 硬體感知與主動防禦 (Hardware Health)
-健康監控： 背景監測 HDD/SSD S.M.A.R.T 資訊、溫度、風扇轉速。
-
-主動警報： 偵測到硬體壽命異常（如：硬碟壞軌增加）時，主動在 UI 跳出警報並建議備份。
-
-第三方整合： 自動調用/下載輕量級工具（如 CPU-Z, GPU-Z 核心）獲取詳細資訊。
-
-C. 貼心備份機制 (Smart Backup)
-智慧觸發： 根據文件變動量主動詢問是否備份。
-
-零門檻設定： 優先使用 OAuth 驗證網路硬碟，或自動偵測外接磁碟/USB，避免繁瑣的 API 設定。
-
-D. 安全與權限 (Security)
-UAC 友善： 涉及系統修改時，必須主動說明原因並觸發標準 Windows UAC 視窗。
-
-自我進化： 程式需具備自我更新機制，並能動態下載/更新 Skill 庫。
-
-4. 具體任務範例 (Implementation Tasks)
-系統淨化： 移除 Windows 廣告、停用 Copilot、更換預設瀏覽器。
-
-環境部署： 檢查並安裝特定語系包、驅動程式、或 OpenClaw 生態系軟體。
-
-排錯邏輯： 若 skill.md 執行失敗，AI 需讀取報錯訊息並連網搜尋解決方案，自動嘗試修復。
-
-5. 給 antigravity 的實作建議
-技術棧推薦： Tauri (Frontend: HTML/TS, Backend: Rust) 確保輕量化與系統權限。
-
-指令調用： 封裝 PowerShell API 執行後台任務，UI 層需處理非同步進度回傳。
-
-排錯迴圈： 實現 Sense-Think-Act 迴圈：偵測報錯 -> AI 分析 -> 執行修正 -> 驗證。
-
--------------------------------------------------------------------------------
-
-# AI PC Agent - Project Blueprint
-
-## 1. 核心規格書
-**Vision:** 取代 Copilot 成為真正能動手、懂排錯、且隱私友善的系統管家。
-
-### UI 架構
-- [x] **To-Do List:** 頂部顯示當前任務佇列。
-- [x] **Recommend List:** 中間顯示主動預警與建議。
-- [x] **Chat Bar:** 底部自然語言輸入。 (包含 Chat Window 對話紀錄)
-- [x] **Pure UI:** 禁止出現 Terminal 視窗，所有進度以視覺化進度條呈現。
-
-### 核心功能
-1. **意圖轉譯:** 解析對話並掛載到 To-Do List。
-2. **硬體監控:** 背景輪詢 S.M.A.R.T, 溫度與轉速。
-3. **自動排錯:** 讀取錯誤代碼並執行修復 Skill。
-4. **清單系統:** 支援 JSON 格式之任務清單匯入/匯出。
+> 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
 ---
 
-## 2. 技能書範例 (skills/install-language-ja.md)
+## 1. 專案願景
 
-### Metadata
-- ID: `sys_lang_ja_jp`
-- Name: Install Japanese Language Pack
+打造一個「**本地優先、無命令列、具備感知能力**」的系統管家。目標是取代傳統複雜的裝機流程，實現「一句話（對話）或一鍵」完成所有系統優化、軟體安裝、硬體監控與資料保護。
 
-### Execution Steps
-1. **Check:** `powershell "(Get-InstalledLanguage).LanguageId -contains 'ja-JP'"`
-2. **Install:** ```powershell
-   Install-Language -Language ja-JP
-   Set-WinUserLanguageList -LanguageList (New-WinUserLanguageList -Language ja-JP) -Force
+---
+
+## 2. 目前實作狀態 ✅
+
+### 2.1 UI 架構（VS Code 三欄式）
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ TitleBar  [File][View][Help] ─── [●LLM] ─── [🌙 ↓ ↑] │
+├──────────┬────────────────────────────┬─────────────────┤
+│          │                            │                 │
+│  推薦清單  │      📋 工作清單            │   💬 AI 對話    │
+│ (sidebar) │                           │                 │
+│  ←→ drag ─│────────────────────────── │  ←→ drag       │
+│           │   📝 工作日誌  ↕ drag      │  [輸入框]       │
+├──────────┴────────────────────────────┴─────────────────┤
+│ StatusBar  [●AI狀態] │ [N個任務]          [v1.0] [繁]   │
+└─────────────────────────────────────────────────────────┘
+```
+
+- **完全去 Terminal 化**：嚴禁顯示黑底白字 CMD/PowerShell 視窗
+- **所有面板邊界可拖拉**調整大小，佈局持久化到 `localStorage`
+- 深色主題為主，支援切換淺色模式
+
+### 2.2 核心功能模組
+
+| 模組 | 狀態 | 說明 |
+|------|------|------|
+| **Skill 執行引擎** | ✅ | 解析 `.md` 技能腳本，執行 Check/Install/Verify 三階段 |
+| **推薦清單** | ✅ | 動態偵測已有 Skill → 顯示 ⚡ 可自動執行，支援一鍵執行 |
+| **工作清單** | ✅ | 任務 CRUD，進度條，狀態標籤，JSON 匯出匯入 |
+| **AI 對話** | ✅ | 本地 Ollama LLM 優先，fallback 關鍵字模式 |
+| **LLM 整合** | ✅ | qwen3.5:0.8b，`/api/chat` 格式，think:false |
+| **執行日誌** | ✅ | Mono 字體，依等級顯示色（info/warn/error/success） |
+| **語音輸入** | ✅ | Web Speech API，中文語音轉文字 |
+| **主題切換** | ✅ | Dark / Light，localStorage 記憶 |
+
+### 2.3 Skills 庫
+
+| Skill ID | 功能 | 狀態 |
+|----------|------|------|
+| `rec_install_ollama` | 安裝 Ollama 本地 AI 引擎 | ✅ |
+| `rec_pull_llm_model` | 下載 qwen3.5:0.8b 模型 | ✅ |
+| `rec_install_chrome` | 靜默安裝 Google Chrome | ✅ |
+| `rec_remove_copilot` | 移除 Windows Copilot | ✅ |
+| `rec_backup` | 建立系統還原點 | ✅ |
+| `sys_lang_ja_jp` | 安裝日文語系 | ✅ |
+
+### 2.4 技術架構
+
+```
+browser ──── public/index.html
+             public/style.css   (VS Code 設計系統)
+             public/app.js      (前端邏輯 + resize)
+                 │
+                 │ HTTP (localhost:3210)
+                 ▼
+             src/server.js      (Express API)
+             src/llm.js         (Ollama 整合)
+             src/skill-parser.js
+             src/skill-executor.js
+                 │
+                 │ PowerShell
+                 ▼
+             skills/*.md        (技能腳本庫)
+             %APPDATA%\aipc-agent\  (tasks.json, skills/)
+```
+
+---
+
+## 3. API 端點
+
+| Method | Path | 功能 |
+|--------|------|------|
+| GET | `/api/todo` | 取得工作清單 |
+| POST | `/api/todo` | 新增任務 |
+| DELETE | `/api/todo/:id` | 刪除任務 |
+| POST | `/api/execute/:id` | 執行任務 |
+| GET | `/api/recommend` | 取得推薦清單（含 skillId）|
+| GET | `/api/llm/status` | Ollama 狀態 + 模型就緒狀態 |
+| POST | `/api/chat` | AI 對話（LLM 優先）|
+| GET | `/api/logs` | 全域執行日誌 |
+| POST | `/api/import` | 匯入任務清單 |
+
+---
+
+## 4. Skill 技能腳本格式
+
+```markdown
+1. 基本資訊 (Metadata)
+ID: skill_id
+名稱: 顯示名稱
+分類: 分類名稱
+風險等級: 低|中|高
+
+2. 需求環境 (Prerequisites)
+OS: Windows 10 / 11
+權限: 一般使用者 | 需要 Administrator
+網路: 否 | 必須
+
+3. 執行流程 (Execution Steps)
+
+第一階段：環境檢測 (Check)
+指令 (PowerShell):
+```powershell
+# 回傳 $true 表示已完成，跳過安裝
+$false
+```
+
+第二階段：安裝 (Install)
+指令 (PowerShell):
+```powershell
+UI 顯示內容: 「人類可讀的進度說明」
+# 實際 PowerShell 指令
+```
+
+第三階段：驗證 (Verify)
+指令 (PowerShell):
+```powershell
+# 回傳 $true 表示成功
+$true
+```
+
+4. 自動排錯邏輯 (Error Handling)
+錯誤代碼 / 訊息,可能原因,AI 自動修復行動
+0x80070005,沒有管理員權限,1. 請求以系統管理員身分執行
+```
+
+Skills 存放位置：
+- 開發時：`skills/*.md`
+- 執行時：`%APPDATA%\aipc-agent\skills\*.md`
+
+---
+
+## 5. 未來規劃
+
+### 短期
+- [ ] 多輪對話歷史 context（讓 LLM 記住上文）
+- [ ] 硬體健康監控（S.M.A.R.T、CPU 溫度）
+- [ ] 更多 Skills：驅動更新、軟體移除、防毒掃描
+
+### 中期
+- [ ] Skill 線上商城，動態下載更新
+- [ ] 任務排程（定時執行）
+- [ ] Tauri 打包為獨立桌面應用程式
+
+### 長期
+- [ ] 多輪語意理解（RAG over skill library）
+- [ ] 硬碟壽命預警、主動通知
+
+---
+
+> 📝 這是一支不需要黑綠色文字終端，便能聰明幫你管理系統操作的助手。

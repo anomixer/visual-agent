@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const { loadAllSkills } = require('./skill-parser');
 const { SkillExecutor } = require('./skill-executor');
+const { checkOllamaStatus, chatWithLLM, invalidateCache } = require('./llm');
 
 const app = express();
 const PORT = 3210;
@@ -59,7 +60,22 @@ let logs = [];
 let runningSkill = null;
 
 // Default recommend list
-const recommendList = [
+// 推薦清單基本資料（按優先順序排列，AI 引擎放最前面）
+const RECOMMEND_BASE = [
+    {
+        id: 'rec_install_ollama',
+        title: '🧠 安裝 Ollama 本地 AI 引擎',
+        description: '下載並安裝 Ollama，讓 AI Agent 具備本地語意理解能力',
+        category: 'AI 引擎',
+        priority: 'critical',
+    },
+    {
+        id: 'rec_pull_llm_model',
+        title: '📥 下載語言模型 (Qwen3.5 0.8B)',
+        description: '下載輕量語言模型，約 1GB，完成後對話將由 AI 真正理解你的需求',
+        category: 'AI 引擎',
+        priority: 'critical',
+    },
     {
         id: 'rec_driver_check',
         title: '🔍 檢查並安裝驅動程式',
@@ -84,7 +100,7 @@ const recommendList = [
     {
         id: 'rec_backup',
         title: '💾 備份你的電腦',
-        description: '建立系統還原點或備份重要資料到外接磁碟',
+        description: '建立系統還原點，保護重要資料',
         category: '資料保護',
         priority: 'medium',
     },
@@ -103,6 +119,24 @@ const recommendList = [
         priority: 'low',
     },
 ];
+
+// 建立推薦清單，標記哪些有對應 skill
+function buildRecommendList() {
+    try {
+        const skills = loadAllSkills(SKILLS_DIR);
+        const skillIds = new Set(skills.map(s => s.id));
+        return RECOMMEND_BASE.map(item => ({
+            ...item,
+            skillId: skillIds.has(item.id) ? item.id : null,
+        }));
+    } catch {
+        return RECOMMEND_BASE.map(item => ({ ...item, skillId: null }));
+    }
+}
+
+function getRecommendList() {
+    return buildRecommendList();
+}
 
 // Load saved tasks on startup
 function loadTasks() {
@@ -238,9 +272,19 @@ app.post('/api/todo/export-file', (req, res) => {
     }
 });
 
-// GET /api/recommend — 取得推薦清單
+// GET /api/recommend — 取得推薦清單（動態附帶 skillId）
 app.get('/api/recommend', (req, res) => {
-    res.json({ success: true, recommendList });
+    res.json({ success: true, recommendList: getRecommendList() });
+});
+
+// GET /api/llm/status — 查詢 Ollama 狀態
+app.get('/api/llm/status', async (req, res) => {
+    try {
+        const status = await checkOllamaStatus();
+        res.json({ success: true, ...status });
+    } catch (err) {
+        res.json({ success: false, available: false, modelReady: false, error: err.message });
+    }
 });
 
 // POST /api/execute/:taskId — 執行指定任務
@@ -312,50 +356,37 @@ app.get('/api/task/:taskId/status', (req, res) => {
     res.json({ success: true, task });
 });
 
-// POST /api/chat — 處理對話輸入（簡易意圖解析）
-app.post('/api/chat', (req, res) => {
+// POST /api/chat — 處理對話輸入（LLM 優先，fallback 到關鍵字比對）
+app.post('/api/chat', async (req, res) => {
     const { message } = req.body;
     if (!message) {
         return res.json({ success: false, error: '請輸入訊息' });
     }
 
     const skills = loadAllSkills(SKILLS_DIR);
-    const lowerMsg = message.toLowerCase();
 
-    // Simple intent matching — future: connect to LLM
+    // ── 關鍵字意圖比對（用來決定是否掛載 skill 任務）──────────────────
     let matchedSkill = null;
-    let reply = '';
+    let taskAdded = null;
 
-    // Language-related intents
     if (/日文|日語|japanese|ja-jp/i.test(message)) {
         matchedSkill = skills.find((s) => s.id === 'sys_lang_ja_jp');
-        if (matchedSkill) {
-            reply = `我了解了！你想安裝日文語系。我已經幫你加到任務清單了，點擊「執行」按鈕就會自動幫你搞定 🎌`;
-        }
     }
-
-    // Language check intent
-    if (/檢查.*語言|裝了.*語言|哪些語言|language.*check/i.test(message)) {
-        reply = reply || `好的！我先幫你檢查系統已安裝的語言包。`;
-        // Add a check task
-        const checkTask = {
-            id: `task_${Date.now()}`,
-            title: '🔍 檢查已安裝語言',
-            description: '列出系統中已安裝的所有語言包',
-            skillId: null, // No skill, just a quick check
-            category: '系統查詢',
-            status: 'pending',
-            progress: 0,
-            logs: [],
-            createdAt: new Date().toISOString(),
-            completedAt: null,
-        };
-        todoList.push(checkTask);
-        saveTasks();
+    if (/chrome|谷歌|瀏覽器/i.test(message)) {
+        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_install_chrome');
+    }
+    if (/copilot|科皮/i.test(message)) {
+        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_remove_copilot');
+    }
+    if (/備份|還原點|backup/i.test(message)) {
+        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_backup');
+    }
+    if (/ollama|llm|語言模型|ai引擎/i.test(message)) {
+        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_install_ollama');
     }
 
     if (matchedSkill) {
-        const task = {
+        taskAdded = {
             id: `task_${Date.now()}`,
             title: `📦 ${matchedSkill.name}`,
             description: `由對話建立：「${message}」`,
@@ -367,17 +398,34 @@ app.post('/api/chat', (req, res) => {
             createdAt: new Date().toISOString(),
             completedAt: null,
         };
-        todoList.push(task);
+        todoList.push(taskAdded);
         saveTasks();
-        return res.json({ success: true, reply, task });
     }
 
-    // Generic fallback
-    if (!reply) {
-        reply = `收到！「${message}」— 目前我的 Skill 庫還在擴充中，暫時無法自動處理這個需求。你可以手動新增到任務清單，或等待更多 Skill 上線！ 🚧`;
+    // ── LLM 優先回覆 ─────────────────────────────────────────────────
+    try {
+        const llmStatus = await checkOllamaStatus();
+        if (llmStatus.available && llmStatus.modelReady) {
+            // 如果有任務被挂載，把這件事告訴模型，讓它不要自己發明方法
+            const contextNote = taskAdded
+                ? `\n\n[[系統讓你知道：使用者的請求已被自動識別，任務「${taskAdded.title}」已加入工作清單。你直接用口語確認一下，不要又出一串幹法或条列。]]`
+                : '';
+            const llmReply = await chatWithLLM(message + contextNote);
+            return res.json({ success: true, reply: llmReply, task: taskAdded || undefined, llmUsed: true });
+        }
+    } catch (llmErr) {
+        console.warn('[LLM] 呼叫失敗，切換為關鍵字模式:', llmErr.message);
     }
 
-    res.json({ success: true, reply });
+    // ── Fallback：關鍵字回覆 ─────────────────────────────────────────
+    let reply = '';
+    if (taskAdded) {
+        reply = `我了解了！已幫你將「${taskAdded.title}」加入工作清單，點 ▶ 執行按鈕就會自動完成 ✅`;
+    } else {
+        reply = `收到！「${message}」— 目前 AI 語意引擎尚未就緒，使用關鍵字模式。請先從推薦清單安裝 Ollama + 語言模型，即可升級為完整 AI 對話體驗！ 🚧`;
+    }
+
+    res.json({ success: true, reply, task: taskAdded || undefined, llmUsed: false });
 });
 
 // GET /api/logs — 取得全域 log
@@ -386,8 +434,22 @@ app.get('/api/logs', (req, res) => {
 });
 
 // ── Start Server ────────────────────────────────────────────────────
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`\n  🖥️  AI PC Agent 已啟動！`);
     console.log(`  📍 http://localhost:${PORT}`);
-    console.log(`  📂 Skills 目錄: ${SKILLS_DIR}\n`);
+    console.log(`  📂 Skills 目錄: ${SKILLS_DIR}`);
+
+    // 啟動時非同步檢查 LLM 狀態
+    try {
+        const llm = await checkOllamaStatus();
+        if (llm.available && llm.modelReady) {
+            console.log(`  🧠 LLM 引擎就緒：Ollama v${llm.version}，模型 qwen3.5:0.8b 已載入\n`);
+        } else if (llm.available) {
+            console.log(`  🟡 Ollama 已安裝但模型尚未下載，請從推薦清單執行「下載語言模型」\n`);
+        } else {
+            console.log(`  🔴 未偵測到 Ollama，建議從推薦清單安裝以啟用 AI 對話功能\n`);
+        }
+    } catch {
+        console.log(`  🔴 LLM 狀態檢查失敗\n`);
+    }
 });
