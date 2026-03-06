@@ -41,9 +41,11 @@
 | **工作清單** | ✅ | 任務 CRUD，進度條，狀態標籤，JSON 匯出匯入 |
 | **AI 對話** | ✅ | 本地 Ollama LLM 優先，fallback 關鍵字模式 |
 | **LLM 整合** | ✅ | qwen3.5:0.8b，`/api/chat` 格式，think:false |
+| **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載模型 |
 | **執行日誌** | ✅ | Mono 字體，依等級顯示色（info/warn/error/success） |
 | **語音輸入** | ✅ | Web Speech API，中文語音轉文字 |
 | **主題切換** | ✅ | Dark / Light，localStorage 記憶 |
+| **EXE 一鍵打包** | ✅ | `.bat` 腳本全自動下載 Node/Rust/TauriCLI 依賴，將 Node Server 封裝成 Tauri Sidecar |
 
 ### 2.3 Skills 庫
 
@@ -152,7 +154,7 @@ Skills 存放位置：
 ### 中期
 - [ ] Skill 線上商城，動態下載更新
 - [ ] 任務排程（定時執行）
-- [ ] Tauri 打包為獨立桌面應用程式
+- [x] Tauri 打包為獨立桌面應用程式 (`build.bat`)
 
 ### 長期
 - [ ] 多輪語意理解（RAG over skill library）

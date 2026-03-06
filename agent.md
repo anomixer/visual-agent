@@ -52,6 +52,11 @@
 - 🧠 `install-ollama.md` — 靜默下載安裝 Ollama
 - 📥 `pull-llm-model.md` — `ollama pull qwen3.5:0.8b`
 
+### 全自動 AI 無縫體驗 (Auto-Bootstrap)
+- 新電腦初次開啟程式時，若未偵測到 Ollama，UI 提示並**自動背景觸發**下載與靜默安裝。
+- Ollama 就緒後，若無模型，再次**自動加入並執行**模型下載任務。
+- 使用者只需打開程式放置，即可全自動點亮「🟢 AI 就緒」進入智能管家狀態。
+
 ### LLM 狀態指示燈
 - Title bar 加入發光小圓點（🔴 未安裝 / 🟡 模型未就緒 / 🟢 AI 就緒）
 - Status bar 同步顯示狀態
@@ -82,6 +87,19 @@
 - `JetBrains Mono` 日誌字體
 - Task card 左邊框顏色代表狀態（藍=待執行、黃=執行中、綠=完成、紅=失敗）
 - Message bubble 對話氣泡（AI 左/使用者右）
+
+---
+
+## 📌 v0.5 — 一鍵打包 EXE (2026-03-05)
+
+### `build.bat` 全自動編譯腳本
+- 實現從無到有的完整 Tauri 開發環境自動安裝與打包
+- 過程包含：偵測/安裝 Node.js → 安裝 `pkg` → 偵測/安裝 Rust C++ Toolchain → 安裝 `tauri-cli` → 編譯 `app.exe` (NSIS/MSI)
+- 自動將 Node 後端與 Skills 壓縮成 Sidecar Binary (`pkg` 虛擬檔案系統修復)
+
+### APPDATA 檔案存取修復
+- 修正 `pkg` 打包後 `fs.copyFileSync` 無法掛載虛擬檔案的錯誤
+- 確保所有預設 `.md` 技能腳本能在系統第一次啟動時，正確釋放到 `%APPDATA%\aipc-agent\skills` 中
 
 ---
 
