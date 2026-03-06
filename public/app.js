@@ -104,6 +104,12 @@ async function loadRecommend() {
 function startPolling() {
     if (pollingInterval) clearInterval(pollingInterval);
     pollingInterval = setInterval(async () => {
+        // 等待 Node Sidecar 開機，若推薦清單尚未載入，則持續重試載入
+        if (!recommendList || recommendList.length === 0) {
+            await loadRecommend();
+            if (!recommendList || recommendList.length === 0) return; // Server 還沒準備好，先 skip 其他 polling
+        }
+
         const data = await api('/api/todo');
         if (data.success && JSON.stringify(data.todoList) !== JSON.stringify(todoList)) {
             todoList = data.todoList;
