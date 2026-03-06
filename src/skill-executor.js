@@ -51,6 +51,19 @@ class SkillExecutor extends EventEmitter {
             let stdout = '';
             let stderr = '';
             let timedOut = false;
+            let lastLogTime = 0;
+
+            const processChunk = (data) => {
+                const str = data.toString();
+                const now = Date.now();
+                if (now - lastLogTime > 500) {
+                    const lines = str.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+                    if (lines.length > 0) {
+                        this.emit('log', { level: 'info', phase: 'running', message: `... ${lines[lines.length - 1]}` });
+                        lastLogTime = now;
+                    }
+                }
+            };
 
             const timer = setTimeout(() => {
                 timedOut = true;
@@ -59,10 +72,12 @@ class SkillExecutor extends EventEmitter {
 
             child.stdout.on('data', (data) => {
                 stdout += data.toString();
+                processChunk(data);
             });
 
             child.stderr.on('data', (data) => {
                 stderr += data.toString();
+                processChunk(data);
             });
 
             child.on('close', (code) => {
