@@ -26,7 +26,7 @@ try { $v = & ollama --version 2>&1; if ($LASTEXITCODE -eq 0) { $true } else { $f
 ```powershell
 UI 顯示內容: 「正在從 Ollama 官網下載安裝檔 (約 120MB)，請稍候...」
 $installerPath = "$env:TEMP\OllamaSetup.exe"
-curl.exe -L -# "https://ollama.com/download/OllamaSetup.exe" -o $installerPath
+curl.exe -L --progress-bar "https://ollama.com/download/OllamaSetup.exe" -o "$installerPath"
 Start-Process -FilePath $installerPath -Args "/SILENT /NORESTART" -Wait
 Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
 ```
