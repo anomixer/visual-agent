@@ -103,6 +103,29 @@
 
 ---
 
+## 📌 v0.6 — 穩定性與 UI 體感優化 (2026-03-06)
+
+### 啟動啟始畫面 (Splash Screen)
+- 導入 `splash-overlay`：解決冷啟動時後台 Server 尚未就緒導致的畫面空白。
+- 智能訊息：首次執行顯示「環境設定中」，再次執行顯示「伺服器啟動中」。
+- 自動偵測：當前端成功抓取到 3210 Port 的資料後，遮罩自動優雅淡出。
+
+### 日誌渲染革命：原地更新進度條
+- 修正大量 `curl` 下載訊息導致的日誌洗版問題。
+- 實作 `addLogEntry` 智能覆蓋：偵測到 `%` 或 `###` 時，自動更新最後一行日誌而不新增行。
+- 同步修正 `skill-executor.js`：將代碼區塊改為「整塊執行」，解決 PowerShell 變數無法跨行傳遞的 Bug。
+
+### Ollama 安裝守護 (Installation Guard)
+- 升級 `install-ollama.md`：自動清理安裝後強制彈出的 Ollama App 視窗。
+- 加入 UAC 預警提示與超時強制解鎖機制，確保安裝進程不再因為背景 App 視窗而卡死。
+
+### 生命週期管理與除錯
+- Rust 端監聽 `WindowEvent::Destroyed`，確保 App 關閉時徹底殺死 Node Sidecar 進程。
+- 後端 Server 加入 `%APPDATA%\debug.log`，方便在無 Console 的打包環境中進行診斷。
+- 提高 LLM 逾時至 60s，確保冷啟動下的模型偵測不會誤報。
+
+---
+
 ## 🚀 未來展望
 
 - [ ] 硬體健康監控（S.M.A.R.T、CPU 溫度、風扇轉速）

@@ -27,7 +27,34 @@ try { $v = & ollama --version 2>&1; if ($LASTEXITCODE -eq 0) { $true } else { $f
 UI 顯示內容: 「正在從 Ollama 官網下載安裝檔 (約 120MB)，請稍候...」
 $installerPath = "$env:TEMP\OllamaSetup.exe"
 curl.exe -L --progress-bar "https://ollama.com/download/OllamaSetup.exe" -o "$installerPath"
-Start-Process -FilePath $installerPath -Args "/SILENT /NORESTART" -Wait
+
+UI 顯示內容: 「正在起始安裝程序... 請在彈出的 UAC 視窗點選「是」以啟用安裝。」
+$process = Start-Process -FilePath $installerPath -Args "/SILENT /NORESTART" -PassThru
+
+# Ollama 安装器有時會因為啟動了背景 App 而卡在最後一步不結束
+$timeout = 180 # 3 分鐘上限
+$ollamaCli = "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe"
+
+while ($timeout -gt 0 -and !$process.HasExited) {
+    Start-Sleep -Seconds 5
+    $timeout -= 5
+    
+    if (Test-Path $ollamaCli) {
+        # 嘗試幫使用者關閉自動跳出的 Ollama App 視窗，這通常是導致安裝程序卡住的原因
+        Stop-Process -Name "ollama app" -ErrorAction SilentlyContinue
+        
+        # 給安裝程序一點時間做最後的收尾
+        Start-Sleep -Seconds 3
+        if ($process.HasExited) { break }
+        
+        # 如果檔案已在但進程超過 30 秒還沒退，我們就強制結束它，宣告安裝完成
+        if ($timeout -lt 150) { 
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            break
+        }
+    }
+}
+
 Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
 ```
 

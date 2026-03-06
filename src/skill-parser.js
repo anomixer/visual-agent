@@ -62,7 +62,10 @@ function parseSkillFile(filePath) {
                     const commands = codeBlockContent.filter(
                         (cmd) => cmd.trim() && !/^UI\s*顯示/i.test(cmd.trim())
                     );
-                    skill.steps[currentPhase].commands.push(...commands);
+                    if (commands.length > 0) {
+                        // 將整塊程式碼合成一個指令執行，解決變數跨行失效問題
+                        skill.steps[currentPhase].commands.push(commands.join('\n'));
+                    }
 
                     // Extract UI message if present
                     const uiLine = codeBlockContent.find((cmd) =>

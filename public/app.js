@@ -77,6 +77,7 @@ async function api(endpoint, options = {}) {
 //  INIT
 // ════════════════════════════════════════════════════════
 async function init() {
+    checkFirstRun();
     applyTheme(localStorage.getItem('theme') || 'dark');
     restoreLayout();
     setupResizers();
@@ -88,6 +89,27 @@ async function init() {
     checkLLMStatus();
 }
 
+function checkFirstRun() {
+    const splashText = document.getElementById('splashText');
+    if (!splashText) return;
+
+    const isFirstRun = !localStorage.getItem('aipc_has_run');
+    if (isFirstRun) {
+        splashText.innerText = '首次執行本程式，正設定環境中，請稍候...';
+        localStorage.setItem('aipc_has_run', 'true');
+    } else {
+        splashText.innerText = '啟動後端伺服器中，請稍候...';
+    }
+}
+
+function hideSplash() {
+    const splash = document.getElementById('splashOverlay');
+    if (splash && !splash.classList.contains('hidden')) {
+        splash.classList.add('hidden');
+        setTimeout(() => splash.style.display = 'none', 600);
+    }
+}
+
 // ════════════════════════════════════════════════════════
 //  DATA LOADING
 // ════════════════════════════════════════════════════════
@@ -97,17 +119,24 @@ async function loadTodo() {
 }
 
 async function loadRecommend() {
-    const data = await api('/api/recommend');
-    if (data.success) { recommendList = data.recommendList; renderRecommendList(); }
+    try {
+        const data = await api('/api/recommend');
+        if (data.success && data.recommendList?.length > 0) {
+            recommendList = data.recommendList;
+            renderRecommendList();
+            hideSplash(); // 抓到資料後隱藏
+        }
+    } catch (e) {
+        console.error("Load recommend failed", e);
+    }
 }
 
 function startPolling() {
     if (pollingInterval) clearInterval(pollingInterval);
     pollingInterval = setInterval(async () => {
-        // 等待 Node Sidecar 開機，若推薦清單尚未載入，則持續重試載入
+        // 嘗試載入資料，但不應該阻塞後續的 Log 與 AI 狀態檢查
         if (!recommendList || recommendList.length === 0) {
-            await loadRecommend();
-            if (!recommendList || recommendList.length === 0) return; // Server 還沒準備好，先 skip 其他 polling
+            loadRecommend();
         }
 
         const data = await api('/api/todo');
@@ -429,17 +458,37 @@ function removeThinking(id) { document.getElementById(id)?.remove(); }
 //  LOG PANEL
 // ════════════════════════════════════════════════════════
 function addLogEntry(logItem) {
-    const existing = logEntries.querySelector(`[data-msg="${CSS.escape(logItem.message)}"]`);
-    if (existing) return;
-
     const emptyEl = logEntries.querySelector('.log-empty');
     if (emptyEl) emptyEl.remove();
+
+    // 檢查是否為進度條或是相似內容的重複更新 (Progress Update)
+    // 判斷邏輯：包含百分比、或是包含一連串的 # 字符、或是有明確的 progress 標記
+    const isProgress = /%|#{3,}/.test(logItem.message);
+    const lastEntry = logEntries.lastElementChild;
+
+    if (isProgress && lastEntry) {
+        // 如果內容相似度高（例如都是下載進度）或最後一筆也是進度條，則原地更新
+        const lastMsg = lastEntry.querySelector('span:last-child')?.textContent || '';
+        const isLastProgress = /%|#{3,}/.test(lastMsg);
+
+        if (isLastProgress) {
+            const time = logItem.timestamp ? new Date(logItem.timestamp).toLocaleTimeString('zh-TW', { hour12: false }) : '';
+            lastEntry.className = `log-entry ${logItem.level || 'info'}`;
+            lastEntry.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(logItem.message)}</span>`;
+            logEntries.scrollTop = logEntries.scrollHeight;
+            return;
+        }
+    }
+
+    // 避免非進度條的完全相同訊息重複出現（舊邏輯保留並優化）
+    if (!isProgress && lastEntry && lastEntry.querySelector('span:last-child')?.textContent === logItem.message) {
+        return;
+    }
 
     const level = logItem.level || 'info';
     const time = logItem.timestamp ? new Date(logItem.timestamp).toLocaleTimeString('zh-TW', { hour12: false }) : '';
     const el = document.createElement('div');
     el.className = `log-entry ${level}`;
-    el.dataset.msg = logItem.message;
     el.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(logItem.message)}</span>`;
     logEntries.appendChild(el);
     logEntries.scrollTop = logEntries.scrollHeight;

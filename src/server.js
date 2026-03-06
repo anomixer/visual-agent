@@ -46,24 +46,48 @@ if (!fs.existsSync(SKILLS_DIR)) {
 }
 
 // Copy default bundled skills to APPDATA if they exist internally (for pkg and pure node)
-try {
-    const bundledSkillsPath = isPkg ? path.join(__dirname, '..', 'skills') : path.resolve(__dirname, '..', 'skills');
-    if (fs.existsSync(bundledSkillsPath)) {
-        const files = fs.readdirSync(bundledSkillsPath);
-        for (const file of files) {
-            if (file.endsWith('.md')) {
-                const srcPath = path.join(bundledSkillsPath, file);
-                const destPath = path.join(SKILLS_DIR, file);
-                if (!fs.existsSync(destPath)) {
-                    const content = fs.readFileSync(srcPath);
-                    fs.writeFileSync(destPath, content);
-                }
+function syncBundledSkills() {
+    try {
+        const possiblePaths = [
+            isPkg ? path.join(__dirname, '..', 'skills') : path.resolve(__dirname, '..', 'skills'),
+            path.join(process.cwd(), 'skills'),
+            path.join(path.dirname(process.execPath), 'skills'), // for sidecar context
+        ];
+
+        let bundledSkillsPath = null;
+        for (const p of possiblePaths) {
+            if (fs.existsSync(p)) {
+                bundledSkillsPath = p;
+                break;
             }
         }
+
+        if (bundledSkillsPath) {
+            console.log(`  📂 偵測到內建 Skills 路徑: ${bundledSkillsPath}`);
+            const files = fs.readdirSync(bundledSkillsPath);
+            let copiedCount = 0;
+            for (const file of files) {
+                if (file.endsWith('.md')) {
+                    const srcPath = path.join(bundledSkillsPath, file);
+                    const destPath = path.join(SKILLS_DIR, file);
+                    // 即使資料夾在，如果檔案不在也要補齊
+                    if (!fs.existsSync(destPath)) {
+                        const content = fs.readFileSync(srcPath);
+                        fs.writeFileSync(destPath, content);
+                        copiedCount++;
+                    }
+                }
+            }
+            if (copiedCount > 0) console.log(`  ✅ 已補齊 ${copiedCount} 個內建技能腳本`);
+        } else {
+            console.warn(`  ⚠️ 找不到內含的 skills 目錄，請檢查專案結構`);
+        }
+    } catch (e) {
+        console.error("Failed to sync bundled skills", e);
     }
-} catch (e) {
-    console.error("Failed to copy bundled skills", e);
 }
+
+syncBundledSkills();
 
 // ── In-memory state ─────────────────────────────────────────────────
 let todoList = [];
@@ -460,23 +484,42 @@ app.get('/api/logs', (req, res) => {
     res.json({ success: true, logs });
 });
 
+/**
+ * 寫入 Debug Log 到 APPDATA，修復打包後看不到 Console 的問題
+ */
+function fileLog(msg) {
+    const logPath = path.join(aipcDir, 'debug.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logPath, `[${timestamp}] ${msg}\n`);
+}
+
 // ── Start Server ────────────────────────────────────────────────────
 app.listen(PORT, async () => {
-    console.log(`\n  🖥️  AI PC Agent 已啟動！`);
+    const startMsg = `AI PC Agent 已啟動！ (PID: ${process.pid}, Path: ${process.execPath})`;
+    console.log(`\n  🖥️  ${startMsg}`);
+    fileLog(startMsg);
     console.log(`  📍 http://localhost:${PORT}`);
     console.log(`  📂 Skills 目錄: ${SKILLS_DIR}`);
+    fileLog(`Skills Directory: ${SKILLS_DIR}`);
 
     // 啟動時非同步檢查 LLM 狀態
     try {
         const llm = await checkOllamaStatus();
         if (llm.available && llm.modelReady) {
-            console.log(`  🧠 LLM 引擎就緒：Ollama v${llm.version}，模型 qwen3.5:0.8b 已載入\n`);
+            const msg = `🧠 LLM 引擎就緒：Ollama v${llm.version}，模型 qwen3.5:0.8b 已載入`;
+            console.log(`  ${msg}\n`);
+            fileLog(msg);
         } else if (llm.available) {
-            console.log(`  🟡 Ollama 已安裝但模型尚未下載，請從推薦清單執行「下載語言模型」\n`);
+            const msg = `🟡 Ollama 已安裝但模型尚未下載`;
+            console.log(`  ${msg}\n`);
+            fileLog(msg);
         } else {
-            console.log(`  🔴 未偵測到 Ollama，建議從推薦清單安裝以啟用 AI 對話功能\n`);
+            const msg = `🔴 未偵測到 Ollama`;
+            console.log(`  ${msg}\n`);
+            fileLog(msg);
         }
-    } catch {
+    } catch (e) {
+        fileLog(`LLM Check Failed: ${e.message}`);
         console.log(`  🔴 LLM 狀態檢查失敗\n`);
     }
 });

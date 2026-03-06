@@ -12,9 +12,61 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <style>
+    .splash-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #1e1e1e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+
+    .splash-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .splash-logo {
+      font-size: 48px;
+      margin-bottom: 20px;
+      animation: splash-pulse 2s infinite ease-in-out;
+    }
+
+    .splash-text {
+      font-size: 14px;
+      color: #9d9d9d;
+      font-family: 'Inter', sans-serif;
+    }
+
+    @keyframes splash-pulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+        opacity: 0.8;
+      }
+
+      50% {
+        transform: scale(1.1);
+        opacity: 1;
+      }
+    }
+  </style>
 </head>
 
 <body>
+  <div class="splash-overlay" id="splashOverlay">
+    <div class="splash-logo">🤖</div>
+    <div class="splash-text" id="splashText">正啟動應用程式中...</div>
+  </div>
+
   <div class="app-shell">
 
     <!-- ── Title Bar ───────────────────────────────────── -->
