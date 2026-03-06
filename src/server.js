@@ -45,7 +45,8 @@ try {
                 const srcPath = path.join(bundledSkillsPath, file);
                 const destPath = path.join(SKILLS_DIR, file);
                 if (!fs.existsSync(destPath)) {
-                    fs.copyFileSync(srcPath, destPath);
+                    const content = fs.readFileSync(srcPath);
+                    fs.writeFileSync(destPath, content);
                 }
             }
         }

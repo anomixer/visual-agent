@@ -64,6 +64,25 @@ async function checkOllamaStatus() {
                 status.modelReady = tagsData.models?.some(
                     (m) => m.name === DEFAULT_MODEL || m.name.startsWith(modelPrefix + ':')
                 ) ?? false;
+
+                // 若發現 Ollama 有安裝但模型沒裝好，自動幫使用者背景 pull 下來
+                if (!status.modelReady && !global._ollamaPulling) {
+                    global._ollamaPulling = true;
+                    console.log(`[LLM] 尚未安裝模型 ${DEFAULT_MODEL}，自動開始背景下載...`);
+                    // 不 await，讓它在背景慢慢抓
+                    fetch(`${OLLAMA_BASE}/api/pull`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: DEFAULT_MODEL })
+                    }).then(() => {
+                        console.log(`[LLM] 模型 ${DEFAULT_MODEL} 自動下載完成！`);
+                        _cachedStatus = null; // 觸發下次強制重整狀態
+                        _lastCheck = 0;
+                    }).catch(e => {
+                        console.error(`[LLM] 模型自動下載失敗:`, e.message);
+                        global._ollamaPulling = false; // 出錯放掉鎖，以便下次檢查可重試
+                    });
+                }
             } catch {
                 status.modelReady = false;
             }
