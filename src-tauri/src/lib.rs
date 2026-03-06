@@ -1,5 +1,9 @@
+use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::CommandChild;
+use std::sync::Mutex;
 
+struct SidecarState(Mutex<Option<CommandChild>>);
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -14,11 +18,25 @@ pub fn run() {
       }
       
       let sidecar_command = app.shell().sidecar("server").unwrap();
-      let (_receiver, mut _child) = sidecar_command
+      let (_receiver, child) = sidecar_command
         .spawn()
         .expect("Failed to spawn sidecar");
 
+      app.manage(SidecarState(Mutex::new(Some(child))));
+
       Ok(())
+    })
+    .on_window_event(|window, event| match event {
+      tauri::WindowEvent::Destroyed => {
+        if let Some(state) = window.try_state::<SidecarState>() {
+          if let Ok(mut child_lock) = state.0.lock() {
+            if let Some(child) = child_lock.take() {
+              let _ = child.kill();
+            }
+          }
+        }
+      }
+      _ => {}
     })
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
