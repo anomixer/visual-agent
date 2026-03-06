@@ -35,6 +35,11 @@ Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
 指令 (PowerShell):
 ```powershell
 Start-Sleep -Seconds 3
+$ollamaPath = "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
+if (!(Get-Process ollama -ErrorAction SilentlyContinue) -and (Test-Path $ollamaPath)) {
+    Start-Process -FilePath $ollamaPath -WindowStyle Hidden
+}
+Start-Sleep -Seconds 2
 try { $v = & ollama --version 2>&1; if ($LASTEXITCODE -eq 0) { $true } else { $false } } catch { $false }
 ```
 

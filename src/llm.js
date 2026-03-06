@@ -109,7 +109,7 @@ async function chatWithLLM(userMessage) {
                 repeat_penalty: 1.1,
             },
         }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(60000), // 初次載入可能較久，放寬至 60 秒
     });
 
     if (!res.ok) {

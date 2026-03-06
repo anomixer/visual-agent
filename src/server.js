@@ -15,6 +15,16 @@ const { checkOllamaStatus, chatWithLLM, invalidateCache } = require('./llm');
 const app = express();
 const PORT = 3210;
 
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
@@ -319,7 +329,10 @@ app.post('/api/execute/:taskId', async (req, res) => {
     const executor = new SkillExecutor({ dryRun });
 
     executor.on('log', (event) => {
-        task.logs.push({ ...event, timestamp: new Date().toISOString() });
+        const logEntry = { ...event, timestamp: new Date().toISOString() };
+        task.logs.push(logEntry);
+        logs.push(logEntry);
+        if (logs.length > 500) logs.shift();
     });
 
     executor.on('phase:start', (e) => {
@@ -328,7 +341,10 @@ app.post('/api/execute/:taskId', async (req, res) => {
     });
 
     executor.on('ui:message', (e) => {
-        task.logs.push({ level: 'ui', message: e.message, timestamp: new Date().toISOString() });
+        const logEntry = { level: 'ui', message: e.message, timestamp: new Date().toISOString() };
+        task.logs.push(logEntry);
+        logs.push(logEntry);
+        if (logs.length > 500) logs.shift();
     });
 
     // Run async
@@ -339,9 +355,19 @@ app.post('/api/execute/:taskId', async (req, res) => {
         task.status = result.status;
         task.progress = 100;
         task.completedAt = new Date().toISOString();
+        const finishLog = { level: 'success', message: `任務「${task.title}」執行完畢`, timestamp: new Date().toISOString() };
+        logs.push(finishLog);
+        if (logs.length > 500) logs.shift();
+
+        if (skill.id === 'rec_install_ollama' || skill.id === 'rec_pull_llm_model') {
+            invalidateCache();
+        }
     } catch (err) {
         task.status = 'failed';
-        task.logs.push({ level: 'error', message: err.message, timestamp: new Date().toISOString() });
+        const errLog = { level: 'error', message: err.message, timestamp: new Date().toISOString() };
+        task.logs.push(errLog);
+        logs.push(errLog);
+        if (logs.length > 500) logs.shift();
     } finally {
         runningSkill = null;
         saveTasks();

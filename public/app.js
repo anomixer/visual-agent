@@ -136,18 +136,45 @@ async function checkLLMStatus() {
         if (!data.available) {
             if (!window._ollamaInstalling && !todoList.some(t => t.skillId === 'rec_install_ollama')) {
                 window._ollamaInstalling = true;
-                appendChatBubble('ai', '🔴 未偵測到本地 AI 引擎（Ollama）。正在自動為您下載與安裝...');
-                addUILog('🔴 Ollama 尚未安裝，自動觸發安裝流程');
-                const rec = recommendList.find(r => r.id === 'rec_install_ollama');
-                if (rec) addAndExecuteRecommend(rec);
+                appendChatBubble('ai', '🔴 未偵測到本地 AI 引擎（Ollama）。系統將自動加入並執行安裝任務。');
+                addUILog('🔴 Ollama 尚未安裝，自動觸發安裝與模型下載流程');
+
+                const recOllama = recommendList.find(r => r.id === 'rec_install_ollama');
+                const recModel = recommendList.find(r => r.id === 'rec_pull_llm_model');
+
+                // 把這兩個動作都先預加進 TodoList 中，讓使用者在畫面上能預先看到
+                if (recOllama) await api('/api/todo', { method: 'POST', body: { title: recOllama.title, description: recOllama.description, category: recOllama.category, skillId: recOllama.id } });
+                if (recModel) await api('/api/todo', { method: 'POST', body: { title: recModel.title, description: recModel.description, category: recModel.category, skillId: recModel.id } });
+
+                const todoRes = await api('/api/todo');
+                if (todoRes.success) {
+                    todoList = todoRes.todoList;
+                    renderTodoList();
+                    const installTask = todoList.find(t => t.skillId === 'rec_install_ollama' && t.status === 'pending');
+                    if (installTask) {
+                        addUILog(`▶ 開始執行：${recOllama.title}`, 'info');
+                        executeTask(installTask.id);
+                    }
+                }
             }
         } else if (!data.modelReady) {
-            if (!window._modelPulling && !todoList.some(t => t.skillId === 'rec_pull_llm_model')) {
-                window._modelPulling = true;
-                appendChatBubble('ai', '🟡 Ollama 已就緒！正在自動為您下載輕量語言模型，請稍候...');
-                addUILog('🟡 模型尚未準備好，自動觸發下載流程');
-                const rec = recommendList.find(r => r.id === 'rec_pull_llm_model');
-                if (rec) addAndExecuteRecommend(rec);
+            if (!window._modelPulling) {
+                const pendingModelTask = todoList.find(t => t.skillId === 'rec_pull_llm_model' && t.status === 'pending');
+                const isRunning = todoList.some(t => t.status === 'running');
+
+                if (pendingModelTask && !isRunning) {
+                    window._modelPulling = true;
+                    appendChatBubble('ai', '🟡 Ollama 已就緒！正接續執行模型下載任務，請稍候...');
+                    addUILog('🟡 接續執行：模型下載流程');
+                    addUILog(`▶ 開始執行：${pendingModelTask.title}`, 'info');
+                    executeTask(pendingModelTask.id);
+                } else if (!pendingModelTask && !todoList.some(t => t.skillId === 'rec_pull_llm_model')) {
+                    window._modelPulling = true;
+                    appendChatBubble('ai', '🟡 Ollama 已就緒！正在自動為您下載語言模型，請稍候...');
+                    addUILog('🟡 模型尚未準備好，自動觸發下載流程');
+                    const recModel = recommendList.find(r => r.id === 'rec_pull_llm_model');
+                    if (recModel) addAndExecuteRecommend(recModel);
+                }
             }
         } else {
             // Already ready, only show if it was just installed/ready this session
