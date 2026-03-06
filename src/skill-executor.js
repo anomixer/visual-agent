@@ -19,13 +19,13 @@ class SkillExecutor extends EventEmitter {
      * @param {object} options
      * @param {boolean} [options.dryRun=false] - true 時僅列出將執行的指令，不實際執行
      * @param {number} [options.maxRetries=2] - 排錯後重試次數上限
-     * @param {number} [options.timeoutMs=300000] - 單一指令逾時 (ms), 預設 5 分鐘
+     * @param {number} [options.timeoutMs=1800000] - 單一指令逾時 (ms), 預設 30 分鐘
      */
     constructor(options = {}) {
         super();
         this.dryRun = options.dryRun ?? false;
         this.maxRetries = options.maxRetries ?? 2;
-        this.timeoutMs = options.timeoutMs ?? 300_000;
+        this.timeoutMs = options.timeoutMs ?? 1800_000; // 預設 30 分鐘，給大型下載足夠時間
     }
 
     /**
