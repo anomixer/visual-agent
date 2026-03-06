@@ -34,13 +34,14 @@ Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
 第三階段：驗證 (Verify)
 指令 (PowerShell):
 ```powershell
-Start-Sleep -Seconds 3
-$ollamaPath = "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
-if (!(Get-Process ollama -ErrorAction SilentlyContinue) -and (Test-Path $ollamaPath)) {
-    Start-Process -FilePath $ollamaPath -WindowStyle Hidden
+try {
+    $null = Invoke-RestMethod -Uri "http://localhost:11434/api/version" -ErrorAction Stop
+} catch {
+    UI 顯示內容: 「正在啟動本地 AI 引擎 (ollama serve)...」
+    Start-Process "ollama" -ArgumentList "serve" -WindowStyle Hidden
+    Start-Sleep -Seconds 4
 }
-Start-Sleep -Seconds 2
-try { $v = & ollama --version 2>&1; if ($LASTEXITCODE -eq 0) { $true } else { $false } } catch { $false }
+try { $r = Invoke-RestMethod -Uri "http://localhost:11434/api/version" -ErrorAction Stop; if ($r.version) { $true } else { $false } } catch { $false }
 ```
 
 4. 自動排錯邏輯 (Error Handling)
