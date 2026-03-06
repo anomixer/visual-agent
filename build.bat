@@ -204,7 +204,7 @@ echo  =====================================================
 echo  [7/7] Building Tauri app...
 echo.
 echo  First build downloads Rust crates - ~500MB, and
-echo  compiles everything — expect 10-20 minutes.
+echo  compiles everything - expect 10-20 minutes.
 echo  Subsequent builds are much faster.
 echo  =====================================================
 echo.

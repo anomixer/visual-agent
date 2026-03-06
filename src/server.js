@@ -191,7 +191,7 @@ app.post('/api/todo', (req, res) => {
     };
     todoList.push(task);
     saveTasks();
-    res.json({ success: true, task });
+    res.json({ success: true, task, todoList });
 });
 
 // DELETE /api/todo/:id — 移除任務
