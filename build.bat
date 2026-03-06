@@ -103,11 +103,11 @@ if "!RUST_TARGET!"=="" (
 if not exist "src-tauri\binaries" mkdir "src-tauri\binaries"
 
 echo.
-echo  [INFO] Bundling src\server.js -^> sidecar binary...
+echo  [INFO] Bundling via pkg . -^> sidecar binary...
 echo  [INFO] Output: src-tauri\binaries\server-!RUST_TARGET!.exe
 echo  [INFO] - This includes: src/**, public/**, skills/**
 echo.
-call npm exec -- pkg src/server.js --targets node18-win-x64 --output "src-tauri/binaries/server-!RUST_TARGET!.exe" --compress GZip
+call npm exec -- pkg . --targets node18-win-x64 --output "src-tauri/binaries/server-!RUST_TARGET!.exe" --compress GZip
 if errorlevel 1 (
     echo.
     echo  [ERROR] pkg bundling failed.
