@@ -93,10 +93,12 @@ function checkFirstRun() {
     const splashText = document.getElementById('splashText');
     if (!splashText) return;
 
-    const isFirstRun = !localStorage.getItem('aipc_has_run');
-    if (isFirstRun) {
+    // 檢查 localStorage 標記
+    const hasRun = localStorage.getItem('aipc_has_run');
+    console.log('[Init] hasRun flag:', hasRun);
+
+    if (!hasRun) {
         splashText.innerText = '首次執行本程式，正設定環境中，請稍候...';
-        localStorage.setItem('aipc_has_run', 'true');
     } else {
         splashText.innerText = '啟動後端伺服器中，請稍候...';
     }
@@ -106,6 +108,8 @@ function hideSplash() {
     const splash = document.getElementById('splashOverlay');
     if (splash && !splash.classList.contains('hidden')) {
         splash.classList.add('hidden');
+        // 真正隱藏後才標記「已執行過」，確保下次進來才顯示「啟動中」
+        localStorage.setItem('aipc_has_run', 'true');
         setTimeout(() => splash.style.display = 'none', 600);
     }
 }
@@ -163,69 +167,115 @@ async function pollLogs() {
 // ════════════════════════════════════════════════════════
 //  LLM STATUS
 // ════════════════════════════════════════════════════════
+// --- Auto-Bootstrap Helpers ---
+async function bootstrapOllama() {
+    if (window._ollamaBootstrapping) return;
+    window._ollamaBootstrapping = true;
+
+    const recOllama = recommendList.find(r => r.id === 'rec_install_ollama');
+    if (!recOllama) return;
+
+    // 檢查是否已經在清單中
+    let task = todoList.find(t => t.skillId === 'rec_install_ollama');
+    if (!task && !todoList.some(t => t.skillId === 'rec_install_ollama')) {
+        addUILog('🔴 未偵測到 Ollama，自動加入安裝任務', 'warn');
+        const res = await api('/api/todo', {
+            method: 'POST',
+            body: { title: recOllama.title, description: recOllama.description, category: recOllama.category, skillId: recOllama.id }
+        });
+        if (res.success) {
+            todoList = res.todoList;
+            renderTodoList();
+            task = res.task || todoList.find(t => t.skillId === 'rec_install_ollama');
+        }
+    }
+
+    if (task && task.status === 'pending') {
+        const isRunning = todoList.some(t => t.status === 'running');
+        if (!isRunning) {
+            appendChatBubble('ai', '🔴 未偵測到本地 AI 引擎（Ollama）。系統正自動為您安裝，請在出現提示時允許權限。');
+            addUILog(`▶ 自動執行：${task.title}`, 'info');
+            executeTask(task.id);
+        }
+    }
+    window._ollamaBootstrapping = false;
+}
+
+async function bootstrapModel() {
+    if (window._modelBootstrapping) return;
+    window._modelBootstrapping = true;
+
+    const recModel = recommendList.find(r => r.id === 'rec_pull_llm_model');
+    if (!recModel) return;
+
+    let task = todoList.find(t => t.skillId === 'rec_pull_llm_model');
+    if (!task && !todoList.some(t => t.skillId === 'rec_pull_llm_model')) {
+        addUILog('🟡 Ollama 已就緒，自動加入模型下載任務', 'info');
+        const res = await api('/api/todo', {
+            method: 'POST',
+            body: { title: recModel.title, description: recModel.description, category: recModel.category, skillId: recModel.id }
+        });
+        if (res.success) {
+            todoList = res.todoList;
+            renderTodoList();
+            task = res.task || todoList.find(t => t.skillId === 'rec_pull_llm_model');
+        }
+    }
+
+    if (task && task.status === 'pending') {
+        const isRunning = todoList.some(t => t.status === 'running');
+        if (!isRunning) {
+            appendChatBubble('ai', '🟡 Ollama 已就緒！正自動為您下載 qwen3.5 語言模型，模型約 1GB 請稍候...');
+            addUILog(`▶ 自動執行：${task.title}`, 'info');
+            executeTask(task.id);
+        }
+    }
+    window._modelBootstrapping = false;
+}
+
 async function checkLLMStatus() {
     try {
         const data = await api('/api/llm/status');
         updateLLMIndicator(data);
 
+        // 如果推薦清單還沒載入，就先不進行自動腳本，避免抓不到 Skill 資訊
+        if (!recommendList || recommendList.length === 0) return;
+
         if (!data.available) {
-            if (!window._ollamaInstalling && !todoList.some(t => t.skillId === 'rec_install_ollama')) {
-                window._ollamaInstalling = true;
-                appendChatBubble('ai', '🔴 未偵測到本地 AI 引擎（Ollama）。系統將自動加入並執行安裝任務。');
-                addUILog('🔴 Ollama 尚未安裝，自動觸發安裝與模型下載流程');
-
-                const recOllama = recommendList.find(r => r.id === 'rec_install_ollama');
-                const recModel = recommendList.find(r => r.id === 'rec_pull_llm_model');
-
-                // 把這兩個動作都先預加進 TodoList 中，讓使用者在畫面上能預先看到
-                if (recOllama) await api('/api/todo', { method: 'POST', body: { title: recOllama.title, description: recOllama.description, category: recOllama.category, skillId: recOllama.id } });
-                if (recModel) await api('/api/todo', { method: 'POST', body: { title: recModel.title, description: recModel.description, category: recModel.category, skillId: recModel.id } });
-
-                const todoRes = await api('/api/todo');
-                if (todoRes.success) {
-                    todoList = todoRes.todoList;
-                    renderTodoList();
-                    const installTask = todoList.find(t => t.skillId === 'rec_install_ollama' && t.status === 'pending');
-                    if (installTask) {
-                        addUILog(`▶ 開始執行：${recOllama.title}`, 'info');
-                        executeTask(installTask.id);
-                    }
-                }
-            }
+            // Case 1: Ollama 未安裝或未啟動
+            await bootstrapOllama();
         } else if (!data.modelReady) {
-            if (!window._modelPulling) {
-                const pendingModelTask = todoList.find(t => t.skillId === 'rec_pull_llm_model' && t.status === 'pending');
-                const isRunning = todoList.some(t => t.status === 'running');
-
-                if (pendingModelTask && !isRunning) {
-                    window._modelPulling = true;
-                    appendChatBubble('ai', '🟡 Ollama 已就緒！正接續執行模型下載任務，請稍候...');
-                    addUILog('🟡 接續執行：模型下載流程');
-                    addUILog(`▶ 開始執行：${pendingModelTask.title}`, 'info');
-                    executeTask(pendingModelTask.id);
-                } else if (!pendingModelTask && !todoList.some(t => t.skillId === 'rec_pull_llm_model')) {
-                    window._modelPulling = true;
-                    appendChatBubble('ai', '🟡 Ollama 已就緒！正在自動為您下載語言模型，請稍候...');
-                    addUILog('🟡 模型尚未準備好，自動觸發下載流程');
-                    const recModel = recommendList.find(r => r.id === 'rec_pull_llm_model');
-                    if (recModel) addAndExecuteRecommend(recModel);
-                }
-            }
+            // Case 2: Ollama 好了，但模型沒好
+            await bootstrapModel();
         } else {
-            // Already ready, only show if it was just installed/ready this session
+            // Case 3: 全都好了
             if (!window._llmWelcomed) {
                 appendChatBubble('ai', '🧠 AI 引擎就緒！模型 qwen3.5:0.8b 已載入，可以直接用中文告訴我你需要什麼 🚀');
                 addUILog('🧠 Ollama qwen3.5:0.8b 就緒', 'success');
                 window._llmWelcomed = true;
             }
         }
-    } catch {
+    } catch (e) {
+        console.error('[LLM Check Fail]', e);
         updateLLMIndicator({ available: false, modelReady: false });
     }
 }
 
 function updateLLMIndicator(status) {
     if (!llmDot || !llmLabel) return;
+
+    window._installedStatus = window._installedStatus || {};
+    let shouldRender = false;
+
+    if (window._installedStatus['rec_install_ollama'] !== status.available) {
+        window._installedStatus['rec_install_ollama'] = status.available;
+        shouldRender = true;
+    }
+    if (window._installedStatus['rec_pull_llm_model'] !== status.modelReady) {
+        window._installedStatus['rec_pull_llm_model'] = status.modelReady;
+        shouldRender = true;
+    }
+
     if (status.available && status.modelReady) {
         llmDot.style.cssText = 'background:#4ec9b0;box-shadow:0 0 6px rgba(78,201,176,0.7)';
         llmLabel.textContent = 'AI 就緒';
@@ -239,6 +289,10 @@ function updateLLMIndicator(status) {
         llmLabel.textContent = '未安裝 AI';
         if (statusLLM) statusLLM.textContent = '🔴 AI 未就緒';
     }
+
+    if (shouldRender) {
+        renderRecommendList();
+    }
 }
 
 // ════════════════════════════════════════════════════════
@@ -251,6 +305,8 @@ function renderRecommendList() {
         return;
     }
     recCount.textContent = recommendList.length;
+
+    window._installedStatus = window._installedStatus || {};
 
     // Group by category
     const groups = {};
@@ -268,35 +324,53 @@ function renderRecommendList() {
         header.textContent = cat;
         sidebarBody.appendChild(header);
 
+        // Sort items: installed at the bottom
+        items.sort((a, b) => {
+            const aInst = window._installedStatus[a.id] ? 1 : 0;
+            const bInst = window._installedStatus[b.id] ? 1 : 0;
+            return aInst - bInst;
+        });
+
         items.forEach(item => {
+            const isInstalled = window._installedStatus[item.id];
             const card = document.createElement('div');
-            card.className = 'recommend-card';
+            card.className = `recommend-card ${isInstalled ? 'installed' : ''}`;
+            if (isInstalled) card.style.opacity = '0.5';
+
             card.innerHTML = `
                 <div class="recommend-card-top">
-                  <div class="recommend-title">${item.title}</div>
-                  ${item.skillId ? `<div class="recommend-btn-group">
-                    <button class="btn-add-todo" title="加入清單">＋</button>
-                    <button class="btn-run-now" title="立即執行">▶</button>
-                  </div>` : `<div class="recommend-btn-group">
-                    <button class="btn-add-todo" title="加入清單">＋</button>
-                  </div>`}
+                  <div class="recommend-title">
+                      ${item.title}
+                      ${isInstalled ? '<span style="font-size:10px; color:#4ec9b0; margin-left:6px; font-weight:normal;">✅ 已安裝</span>' : ''}
+                  </div>
+                  ${!isInstalled ? `
+                      ${item.skillId ? `<div class="recommend-btn-group">
+                        <button class="btn-add-todo" title="加入清單">＋</button>
+                        <button class="btn-run-now" title="立即執行">▶</button>
+                      </div>` : `<div class="recommend-btn-group">
+                        <button class="btn-add-todo" title="加入清單">＋</button>
+                      </div>`}
+                  ` : ''}
                 </div>
                 <div class="recommend-desc">${item.description || ''}</div>
                 <div class="recommend-meta">
                   <span class="recommend-category">${item.category}</span>
-                  ${item.skillId ? '<span class="recommend-skill-badge">⚡ 可自動執行</span>' : ''}
+                  ${item.skillId && !isInstalled ? '<span class="recommend-skill-badge">⚡ 可自動執行</span>' : ''}
                 </div>
             `;
-            // 加入
-            card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                addRecommendToTodo(item);
-            });
-            // 立即執行
-            card.querySelector('.btn-run-now')?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                addAndExecuteRecommend(item);
-            });
+
+            if (!isInstalled) {
+                // 加入
+                card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    addRecommendToTodo(item);
+                });
+                // 立即執行
+                card.querySelector('.btn-run-now')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    addAndExecuteRecommend(item);
+                });
+            }
             sidebarBody.appendChild(card);
         });
     });
@@ -458,30 +532,32 @@ function removeThinking(id) { document.getElementById(id)?.remove(); }
 //  LOG PANEL
 // ════════════════════════════════════════════════════════
 function addLogEntry(logItem) {
+    const cleanMsg = stripAnsi(logItem.message);
     const emptyEl = logEntries.querySelector('.log-empty');
     if (emptyEl) emptyEl.remove();
 
     // 檢查是否為進度條或是相似內容的重複更新 (Progress Update)
     // 判斷邏輯：包含百分比、或是包含一連串的 # 字符、或是有明確的 progress 標記
-    const isProgress = /%|#{3,}/.test(logItem.message);
+    // 加入 common 關鍵字如 pulling, downloading, extracting 等
+    const isProgress = /%|#{3,}|pulling|downloading|extracting|verifying/i.test(cleanMsg);
     const lastEntry = logEntries.lastElementChild;
 
     if (isProgress && lastEntry) {
         // 如果內容相似度高（例如都是下載進度）或最後一筆也是進度條，則原地更新
-        const lastMsg = lastEntry.querySelector('span:last-child')?.textContent || '';
-        const isLastProgress = /%|#{3,}/.test(lastMsg);
+        const lastMsg = stripAnsi(lastEntry.querySelector('span:last-child')?.textContent || '');
+        const isLastProgress = /%|#{3,}|pulling|downloading|extracting|verifying/i.test(lastMsg);
 
         if (isLastProgress) {
             const time = logItem.timestamp ? new Date(logItem.timestamp).toLocaleTimeString('zh-TW', { hour12: false }) : '';
             lastEntry.className = `log-entry ${logItem.level || 'info'}`;
-            lastEntry.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(logItem.message)}</span>`;
+            lastEntry.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(cleanMsg)}</span>`;
             logEntries.scrollTop = logEntries.scrollHeight;
             return;
         }
     }
 
     // 避免非進度條的完全相同訊息重複出現（舊邏輯保留並優化）
-    if (!isProgress && lastEntry && lastEntry.querySelector('span:last-child')?.textContent === logItem.message) {
+    if (!isProgress && lastEntry && stripAnsi(lastEntry.querySelector('span:last-child')?.textContent) === cleanMsg) {
         return;
     }
 
@@ -489,7 +565,7 @@ function addLogEntry(logItem) {
     const time = logItem.timestamp ? new Date(logItem.timestamp).toLocaleTimeString('zh-TW', { hour12: false }) : '';
     const el = document.createElement('div');
     el.className = `log-entry ${level}`;
-    el.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(logItem.message)}</span>`;
+    el.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(cleanMsg)}</span>`;
     logEntries.appendChild(el);
     logEntries.scrollTop = logEntries.scrollHeight;
 }
@@ -777,6 +853,11 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/\n/g, '<br>');
+}
+
+function stripAnsi(str) {
+    if (!str) return '';
+    return str.replace(/[\u001b\u009b][[()#;?]*(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~]*)*|[a-zA-Z\d])/g, '');
 }
 
 // ── Start ──────────────────────────────────────────────

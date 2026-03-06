@@ -7,7 +7,11 @@
  *   - 將對話送給模型並取得回應
  */
 
-const OLLAMA_BASE = 'http://localhost:11434';
+const { spawn, exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const OLLAMA_BASE = 'http://127.0.0.1:11434';
 const DEFAULT_MODEL = 'qwen3.5:0.8b';
 
 // 系統 Prompt — 口語自然版，避免模型照稿念
@@ -35,41 +39,73 @@ const CACHE_TTL_MS = 5000; // 5 秒 cache，避免頻繁 ping
 
 /**
  * 檢查 Ollama 服務狀態與模型是否就緒
+ * @param {boolean} [force=false] - 是否強制重新檢查（忽略快取）
  * @returns {Promise<{ available: boolean, modelReady: boolean, version: string|null }>}
  */
-async function checkOllamaStatus() {
+async function checkOllamaStatus(force = false) {
     const now = Date.now();
-    if (_cachedStatus && (now - _lastCheck) < CACHE_TTL_MS) {
+    if (!force && _cachedStatus && (now - _lastCheck) < CACHE_TTL_MS) {
         return _cachedStatus;
     }
 
-    const status = { available: false, modelReady: false, version: null };
+    const status = { available: false, modelReady: false, version: null, modelName: null };
 
     try {
+        // 1. 檢查 Ollama Server 是否在線
         const res = await fetch(`${OLLAMA_BASE}/api/version`, {
-            signal: AbortSignal.timeout(2000),
+            signal: AbortSignal.timeout(3000), // 放寬至 3 秒
         });
         if (res.ok) {
             const data = await res.json();
             status.available = true;
             status.version = data.version ?? 'unknown';
 
-            // 檢查模型是否已下載
+            // 2. 檢查模型清單
             try {
                 const tagsRes = await fetch(`${OLLAMA_BASE}/api/tags`, {
-                    signal: AbortSignal.timeout(3000),
+                    signal: AbortSignal.timeout(5000), // 模型清單可能較慢，給 5 秒
                 });
                 const tagsData = await tagsRes.json();
-                const modelPrefix = DEFAULT_MODEL.split(':')[0]; // 'qwen3.5'
-                status.modelReady = tagsData.models?.some(
-                    (m) => m.name === DEFAULT_MODEL || m.name.startsWith(modelPrefix + ':')
-                ) ?? false;
-            } catch {
+
+                if (tagsData.models && Array.isArray(tagsData.models)) {
+                    // 優先尋找精確匹配 (qwen3.5:0.8b)
+                    let foundModel = tagsData.models.find(m => m.name === DEFAULT_MODEL);
+
+                    // 次要尋找任何帶有 qwen3.5 的模型
+                    if (!foundModel) {
+                        const modelPrefix = DEFAULT_MODEL.split(':')[0]; // 'qwen3.5'
+                        foundModel = tagsData.models.find(m => m.name.startsWith(modelPrefix + ':') || m.name === modelPrefix);
+                    }
+
+                    // 最後保底：只要包含 qwen 即可（應對未來版本或標籤變動）
+                    if (!foundModel) {
+                        foundModel = tagsData.models.find(m => m.name.toLowerCase().includes('qwen'));
+                    }
+
+                    if (foundModel) {
+                        status.modelReady = true;
+                        status.modelName = foundModel.name;
+                    }
+                }
+            } catch (tagsErr) {
+                console.warn('[LLM] 讀取模型清單失敗:', tagsErr.message);
                 status.modelReady = false;
             }
         }
-    } catch {
-        // Ollama 未啟動或未安裝
+    } catch (err) {
+        // Ollama 未啟動，嘗試啟動它
+        console.warn('[LLM] Ollama 服務未響應，嘗試啟動服務...');
+        await ensureOllamaRunning();
+
+        // 啟動後再次快速檢查一次
+        try {
+            const retry = await fetch(`${OLLAMA_BASE}/api/version`, { signal: AbortSignal.timeout(2000) });
+            if (retry.ok) {
+                status.available = true;
+                const data = await retry.json();
+                status.version = data.version;
+            }
+        } catch { /* 依舊失敗則放棄 */ }
     }
 
     _cachedStatus = status;
@@ -81,8 +117,51 @@ async function checkOllamaStatus() {
  * 清除 LLM 狀態快取（執行任務後呼叫）
  */
 function invalidateCache() {
+    console.log('[LLM] 正在清除狀態快取...');
     _cachedStatus = null;
     _lastCheck = 0;
+}
+
+/**
+ * 嘗試啟動 Ollama 服務 (ollama serve)
+ */
+function ensureOllamaRunning() {
+    return new Promise((resolve) => {
+        // 1. 先用最簡單的命令檢查
+        exec('ollama --version', (err) => {
+            const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+            const defaultPath = path.join(localAppData, 'Programs', 'Ollama', 'ollama.exe');
+
+            let cmd = 'ollama';
+            if (err) {
+                // 如果直接執行失敗，檢查預設安裝路徑
+                if (fs.existsSync(defaultPath)) {
+                    cmd = `"${defaultPath}"`;
+                    console.log(`[LLM] 找到 Ollama 絕對路徑: ${defaultPath}`);
+                } else {
+                    console.warn('[LLM] 系統中未偵測到 Ollama，且預設路徑不存在');
+                    return resolve(false);
+                }
+            }
+
+            console.log(`[LLM] 正在背景嘗試啟動 Ollama 服務 (${cmd} serve)...`);
+            try {
+                // 使用 spawn 啟動，不要等待它結束
+                const p = spawn(cmd, ['serve'], {
+                    detached: true,
+                    stdio: 'ignore',
+                    windowsHide: true,
+                    shell: true // 使用 shell 以支援引號路徑
+                });
+                p.unref();
+                // 給它 3 秒鐘啟動
+                setTimeout(() => resolve(true), 3000);
+            } catch (spawnErr) {
+                console.error('[LLM] 啟動 Ollama 服務失敗:', spawnErr);
+                resolve(false);
+            }
+        });
+    });
 }
 
 /**
@@ -131,6 +210,7 @@ module.exports = {
     checkOllamaStatus,
     chatWithLLM,
     invalidateCache,
+    ensureOllamaRunning,
     DEFAULT_MODEL,
     OLLAMA_BASE,
 };

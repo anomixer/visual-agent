@@ -15,7 +15,10 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell):
 ```powershell
-try { $v = & ollama --version 2>&1; if ($LASTEXITCODE -eq 0) { $true } else { $false } } catch { $false }
+try { 
+    $cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+    if (Test-Path $cmd) { $v = & $cmd --version 2>&1; if ($LASTEXITCODE -eq 0) { $true } else { $false } } else { $false }
+} catch { $false }
 ```
 
 預期結果: 若 Ollama 已安裝則回傳 True，跳過執行。
@@ -62,13 +65,14 @@ Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
 指令 (PowerShell):
 ```powershell
 try {
-    $null = Invoke-RestMethod -Uri "http://localhost:11434/api/version" -ErrorAction Stop
+    $null = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/version" -ErrorAction Stop
 } catch {
     UI 顯示內容: 「正在啟動本地 AI 引擎 (ollama serve)...」
-    Start-Process "ollama" -ArgumentList "serve" -WindowStyle Hidden
+    $cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+    Start-Process $cmd -ArgumentList "serve" -WindowStyle Hidden
     Start-Sleep -Seconds 4
 }
-try { $r = Invoke-RestMethod -Uri "http://localhost:11434/api/version" -ErrorAction Stop; if ($r.version) { $true } else { $false } } catch { $false }
+try { $r = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/version" -ErrorAction Stop; if ($r.version) { $true } else { $false } } catch { $false }
 ```
 
 4. 自動排錯邏輯 (Error Handling)

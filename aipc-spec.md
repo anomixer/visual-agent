@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (v0.6)
+# AI PC Agent — 實作需求規格書 (v0.7)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -57,6 +57,9 @@
 | `rec_remove_copilot` | 移除 Windows Copilot | ✅ |
 | `rec_backup` | 建立系統還原點 | ✅ |
 | `sys_lang_ja_jp` | 安裝日文語系 | ✅ |
+| `rec_office` | 安裝 LibreOffice 辦公套件 | ✅ |
+| `rec_steam` | 安裝 Steam 遊戲平台 | ✅ |
+| `rec_driver_check` | 檢查與下載 Windows Update 與驅動 | ✅ |
 
 ### 2.4 技術架構
 
@@ -149,7 +152,7 @@ Skills 存放位置：
 ### 短期
 - [ ] 多輪對話歷史 context（讓 LLM 記住上文）
 - [ ] 硬體健康監控（S.M.A.R.T、CPU 溫度）
-- [ ] 更多 Skills：驅動更新、軟體移除、防毒掃描
+- [ ] 更多 Skills：防毒掃描、軟體移除
 
 ### 中期
 - [ ] Skill 線上商城，動態下載更新

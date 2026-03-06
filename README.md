@@ -36,6 +36,7 @@ AI PC Agent 是一個跑在你電腦本地端、**不需要打開終端機**的 
 | 🛡️ **穩定安裝守護** | 自動處理 Ollama 安裝彈窗與 UAC，確保流程不卡死 |
 | ✨ **啟動啟始畫面** | 智能偵測後端狀態，消除冷啟動時的畫面空白 |
 | 📊 **日誌進度優化** | `curl` 進度條原地更新，不再產生冗餘日誌行 |
+| ✅ **安裝動態感知** | 自動偵測已就緒的環境或已安裝的工具，UI 動態墊底並打勾 |
 
 ---
 
@@ -167,6 +168,9 @@ AI 理解你的意圖後，自動建立任務 → 加入清單 → 等你按執�
 | 🗑️ `remove-copilot` | 移除 Windows Copilot（HKCU+HKLM+AppxPackage）| ✅ |
 | 💾 `backup-system` | 建立 Windows 系統還原點 | ✅ |
 | 🇯🇵 `install-language-ja` | 安裝日文語系包 | ✅ |
+| 📄 `install-office` | 透過 Winget 安裝 LibreOffice | ✅ |
+| 🎮 `install-steam` | 靜默安裝 Steam 遊戲平台 | ✅ |
+| 🔍 `check-drivers` | 呼叫 UsoClient 進行系統更新與驅動掃描 | ✅ |
 
 ---
 
@@ -271,7 +275,7 @@ Ollama 未安裝或未啟動。從推薦清單點「🧠 安裝 Ollama → ▶ �
 - [ ] 多輪對話歷史（讓 AI 記住上下文）
 - [ ] 硬體健康監控（S.M.A.R.T、CPU 溫度）
 - [ ] Skill 線上商城，動態下載更新
-- [ ] 更多 Skills：驅動更新、防毒掃描、軟體移除
+- [ ] 更多 Skills：防毒掃描、軟體移除
 - [x] Tauri 打包成獨立 `.exe`（不再依賴本機 Node.js）
 
 ---

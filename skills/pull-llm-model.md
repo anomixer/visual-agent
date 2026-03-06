@@ -15,7 +15,10 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell):
 ```powershell
-try { $list = & ollama list 2>&1; if ($list -match "qwen3.5") { $true } else { $false } } catch { $false }
+try {
+    $cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+    if (Test-Path $cmd) { $list = & $cmd list 2>&1; if ($list -match "qwen3.5") { $true } else { $false } } else { $false }
+} catch { $false }
 ```
 
 預期結果: 若模型已存在則回傳 True，跳過下載。
@@ -25,13 +28,17 @@ try { $list = & ollama list 2>&1; if ($list -match "qwen3.5") { $true } else { $
 
 ```powershell
 UI 顯示內容: 「正在下載 Qwen3.5 語言模型 (約 1GB)，首次下載請耐心等候...」
-& ollama pull qwen3.5:0.8b
+$cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+& $cmd pull qwen3.5:0.8b
 ```
 
 第三階段：驗證 (Verify)
 指令 (PowerShell):
 ```powershell
-try { $list = & ollama list 2>&1; if ($list -match "qwen3.5") { $true } else { $false } } catch { $false }
+try {
+    $cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+    if (Test-Path $cmd) { $list = & $cmd list 2>&1; if ($list -match "qwen3.5") { $true } else { $false } } else { $false }
+} catch { $false }
 ```
 
 4. 自動排錯邏輯 (Error Handling)

@@ -53,11 +53,18 @@ class SkillExecutor extends EventEmitter {
             let timedOut = false;
             let lastLogTime = 0;
 
+            const stripAnsi = (str) => {
+                if (!str) return '';
+                // Matches ANSI escape codes
+                return str.replace(/[\u001b\u009b][[()#;?]*(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~]*)*|[a-zA-Z\d])/g, '');
+            };
+
             const processChunk = (data) => {
                 const str = data.toString();
                 const now = Date.now();
                 if (now - lastLogTime > 500) {
-                    const lines = str.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+                    const cleanStr = stripAnsi(str);
+                    const lines = cleanStr.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
                     if (lines.length > 0) {
                         this.emit('log', { level: 'info', phase: 'running', message: `... ${lines[lines.length - 1]}` });
                         lastLogTime = now;

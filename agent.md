@@ -126,12 +126,30 @@
 
 ---
 
+## 📌 v0.7 — 技能套件擴充與穩健化 (2026-03-07)
+
+### 新增卡片與對應 Skills
+- 📄 `install-office.md` — 透過 `winget` 靜默安裝 LibreOffice
+- 🎮 `install-steam.md` — 下載並靜默安裝 Steam 遊戲平台
+- 🔍 `check-drivers.md` — 觸發系統 `UsoClient` 進行背景驅動與 Windows Update
+
+### Ollama 網絡與路徑強固 (Robustness)
+- **IPv6 防護**：將所有 HTTP fetch (`llm.js` 與 `install-ollama.md`) 請求的 `localhost` 替換為 `127.0.0.1`，徹底解決 Node 18 在乾淨環境下錯誤 binding IPv6 而找不到本地服務的問題。
+- **PATH 環境變數防呆**：為了解決剛安裝完 Ollama，系統 PATH 尚未刷新的問題，腳本自動 Fallback 至 `$env:LOCALAPPDATA\Programs\Ollama\ollama.exe` 進行絕對路徑啟動。
+
+### UI 推薦卡片感知進化
+- **已安裝狀態視覺化**：現在只要服務安裝完畢（如 Ollama 或 LLM），左側推薦卡片會自動打上 `✅ 已安裝` 綠色標籤。
+- **防呆降級**：卡片變半透明並隱藏 `+` 和 `▶` 操作按鈕。
+- **動態沉底排序**：所有的「已安裝」項目會自動下潛至該分類叢集的最下方，把還沒做的重要任務浮起來。
+
+---
+
 ## 🚀 未來展望
 
 - [ ] 硬體健康監控（S.M.A.R.T、CPU 溫度、風扇轉速）
 - [ ] 多輪對話歷史（contextual chat）
 - [ ] Skill 線上商城，動態下載更新
-- [ ] 更多 Skills：驅動更新、防毒掃描、軟體移除
+- [ ] 更多 Skills：防毒掃描、軟體移除
 
 ---
 > 📝 這是一支不需要黑綠色文字終端，便能聰明幫你管理系統操作的助手。

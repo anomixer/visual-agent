@@ -141,8 +141,8 @@ const RECOMMEND_BASE = [
     },
     {
         id: 'rec_office',
-        title: '📄 安裝 Microsoft Office',
-        description: '安裝 Office 365 或替代方案（LibreOffice）',
+        title: '📄 安裝 LibreOffice',
+        description: '強大且免費開源的辦公軟體套件，與 Microsoft Office 格式相容',
         category: '工作必備',
         priority: 'medium',
     },
@@ -379,19 +379,22 @@ app.post('/api/execute/:taskId', async (req, res) => {
         task.status = result.status;
         task.progress = 100;
         task.completedAt = new Date().toISOString();
-        const finishLog = { level: 'success', message: `任務「${task.title}」執行完畢`, timestamp: new Date().toISOString() };
-        logs.push(finishLog);
-        if (logs.length > 500) logs.shift();
 
-        if (skill.id === 'rec_install_ollama' || skill.id === 'rec_pull_llm_model') {
+        const finishLog = { level: 'success', message: `任務「${task.title}」執行完畢 (狀態: ${result.status})`, timestamp: new Date().toISOString() };
+        task.logs.push(finishLog);
+        logs.push(finishLog);
+
+        // 針對 AI 引擎相關任務，強制清除快取並重新偵測
+        if (skill.id === 'rec_install_ollama' || skill.id === 'rec_pull_llm_model' || task.skillId === 'rec_pull_llm_model') {
+            console.log(`[Server] 偵測到 AI 相關任務完成: ${skill.id}，執行快取更新...`);
+            fileLog(`AI Task Completed: ${skill.id}, invalidating cache.`);
             invalidateCache();
         }
     } catch (err) {
         task.status = 'failed';
-        const errLog = { level: 'error', message: err.message, timestamp: new Date().toISOString() };
+        const errLog = { level: 'error', message: `任務執行崩潰: ${err.message}`, timestamp: new Date().toISOString() };
         task.logs.push(errLog);
         logs.push(errLog);
-        if (logs.length > 500) logs.shift();
     } finally {
         runningSkill = null;
         saveTasks();
@@ -434,6 +437,15 @@ app.post('/api/chat', async (req, res) => {
     }
     if (/ollama|llm|語言模型|ai引擎/i.test(message)) {
         matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_install_ollama');
+    }
+    if (/steam|steam|遊戲/i.test(message)) {
+        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_steam');
+    }
+    if (/office|辦公|word|excel|powerpoint/i.test(message)) {
+        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_office');
+    }
+    if (/driver|驅動|更新|顯示卡/i.test(message)) {
+        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_driver_check');
     }
 
     if (matchedSkill) {
