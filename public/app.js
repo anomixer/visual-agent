@@ -13,7 +13,7 @@
 
 'use strict';
 
-const API = '';
+const API = 'http://localhost:3210';
 
 // ── State ─────────────────────────────────────────────────────────
 let todoList = [];
@@ -22,6 +22,7 @@ let pollingInterval = null;
 let isLogCollapsed = false;
 let isRecording = false;
 let recognition = null;
+let currentLogIndex = 0;
 
 // ── DOM ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -116,11 +117,10 @@ function startPolling() {
 async function pollLogs() {
     const data = await api('/api/logs');
     if (data.success && data.logs?.length) {
-        const lastLog = data.logs[data.logs.length - 1];
-        const lastEl = logEntries.lastElementChild;
-        const lastElText = lastEl?.dataset.msg;
-        if (lastLog.message !== lastElText) {
-            data.logs.slice(-50).forEach(addLogEntry);
+        if (data.logs.length > currentLogIndex) {
+            const newLogs = data.logs.slice(currentLogIndex);
+            newLogs.forEach(addLogEntry);
+            currentLogIndex = data.logs.length;
         }
     }
 }
@@ -134,16 +134,16 @@ async function checkLLMStatus() {
         updateLLMIndicator(data);
 
         if (!data.available) {
-            const hasTask = todoList.some(t => t.skillId === 'rec_install_ollama' && (t.status === 'pending' || t.status === 'running'));
-            if (!hasTask) {
+            if (!window._ollamaInstalling && !todoList.some(t => t.skillId === 'rec_install_ollama')) {
+                window._ollamaInstalling = true;
                 appendChatBubble('ai', '🔴 未偵測到本地 AI 引擎（Ollama）。正在自動為您下載與安裝...');
                 addUILog('🔴 Ollama 尚未安裝，自動觸發安裝流程');
                 const rec = recommendList.find(r => r.id === 'rec_install_ollama');
                 if (rec) addAndExecuteRecommend(rec);
             }
         } else if (!data.modelReady) {
-            const hasTask = todoList.some(t => t.skillId === 'rec_pull_llm_model' && (t.status === 'pending' || t.status === 'running'));
-            if (!hasTask) {
+            if (!window._modelPulling && !todoList.some(t => t.skillId === 'rec_pull_llm_model')) {
+                window._modelPulling = true;
                 appendChatBubble('ai', '🟡 Ollama 已就緒！正在自動為您下載輕量語言模型，請稍候...');
                 addUILog('🟡 模型尚未準備好，自動觸發下載流程');
                 const rec = recommendList.find(r => r.id === 'rec_pull_llm_model');
