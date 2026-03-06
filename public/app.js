@@ -109,7 +109,8 @@ function startPolling() {
             renderTodoList();
         }
         pollLogs();
-    }, 1500);
+        checkLLMStatus();
+    }, 2000);
 }
 
 async function pollLogs() {
@@ -133,14 +134,28 @@ async function checkLLMStatus() {
         updateLLMIndicator(data);
 
         if (!data.available) {
-            appendChatBubble('ai', '🔴 未偵測到本地 AI 引擎（Ollama）。\n請從左側推薦清單點「🧠 安裝 Ollama」→「▶ 執行」開始下載。');
-            addUILog('🔴 Ollama 尚未安裝，對話使用關鍵字模式');
+            const hasTask = todoList.some(t => t.skillId === 'rec_install_ollama' && (t.status === 'pending' || t.status === 'running'));
+            if (!hasTask) {
+                appendChatBubble('ai', '🔴 未偵測到本地 AI 引擎（Ollama）。正在自動為您下載與安裝...');
+                addUILog('🔴 Ollama 尚未安裝，自動觸發安裝流程');
+                const rec = recommendList.find(r => r.id === 'rec_install_ollama');
+                if (rec) addAndExecuteRecommend(rec);
+            }
         } else if (!data.modelReady) {
-            appendChatBubble('ai', '🟡 Ollama 已安裝！請從推薦清單點「📥 下載語言模型」→「▶ 執行」，完成後即可啟用 AI 對話。');
-            addUILog('🟡 Ollama 已安裝，等待語言模型下載');
+            const hasTask = todoList.some(t => t.skillId === 'rec_pull_llm_model' && (t.status === 'pending' || t.status === 'running'));
+            if (!hasTask) {
+                appendChatBubble('ai', '🟡 Ollama 已就緒！正在自動為您下載輕量語言模型，請稍候...');
+                addUILog('🟡 模型尚未準備好，自動觸發下載流程');
+                const rec = recommendList.find(r => r.id === 'rec_pull_llm_model');
+                if (rec) addAndExecuteRecommend(rec);
+            }
         } else {
-            appendChatBubble('ai', '🧠 AI 引擎就緒！模型 qwen3.5:0.8b 已載入，可以直接用中文告訴我你需要什麼 🚀');
-            addUILog('🧠 Ollama qwen3.5:0.8b 就緒', 'success');
+            // Already ready, only show if it was just installed/ready this session
+            if (!window._llmWelcomed) {
+                appendChatBubble('ai', '🧠 AI 引擎就緒！模型 qwen3.5:0.8b 已載入，可以直接用中文告訴我你需要什麼 🚀');
+                addUILog('🧠 Ollama qwen3.5:0.8b 就緒', 'success');
+                window._llmWelcomed = true;
+            }
         }
     } catch {
         updateLLMIndicator({ available: false, modelReady: false });
