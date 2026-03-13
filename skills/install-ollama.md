@@ -17,8 +17,20 @@ OS: Windows 10 / 11
 ```powershell
 try { 
     $cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
-    if (Test-Path $cmd) { $v = & $cmd --version 2>&1; if ($LASTEXITCODE -eq 0) { $true } else { $false } } else { $false }
-} catch { $false }
+    if (Test-Path $cmd) { 
+        $v = & $cmd --version 2>&1
+        if ($LASTEXITCODE -eq 0) { 
+            Write-Host "已安裝"
+            $true 
+        } else { 
+            $false 
+        } 
+    } else { 
+        $false 
+    }
+} catch { 
+    $false 
+}
 ```
 
 預期結果: 若 Ollama 已安裝則回傳 True，跳過執行。
@@ -27,52 +39,93 @@ try {
 指令 (PowerShell):
 
 ```powershell
-UI 顯示內容: 「正在從 Ollama 官網下載安裝檔 (約 120MB)，請稍候...」
+Write-Host "正在安裝 Ollama 本地 AI 引擎 (約 120MB)，請稍候..."
 $installerPath = "$env:TEMP\OllamaSetup.exe"
-curl.exe -L --progress-bar "https://ollama.com/download/OllamaSetup.exe" -o "$installerPath"
+$downloadUrl = "https://ollama.com/download/OllamaSetup.exe"
 
-UI 顯示內容: 「正在起始安裝程序... 請在彈出的 UAC 視窗點選「是」以啟用安裝。」
-$process = Start-Process -FilePath $installerPath -Args "/SILENT /NORESTART" -PassThru
+Write-Host "下載中..."
+curl.exe -fsSL $downloadUrl -o $installerPath
 
-# Ollama 安装器有時會因為啟動了背景 App 而卡在最後一步不結束
-$timeout = 180 # 3 分鐘上限
-$ollamaCli = "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe"
+if (-not (Test-Path $installerPath)) {
+    throw "下載失敗"
+}
 
-while ($timeout -gt 0 -and !$process.HasExited) {
-    Start-Sleep -Seconds 5
-    $timeout -= 5
-    
-    if (Test-Path $ollamaCli) {
-        # 嘗試幫使用者關閉自動跳出的 Ollama App 視窗，這通常是導致安裝程序卡住的原因
-        Stop-Process -Name "ollama app" -ErrorAction SilentlyContinue
-        
-        # 給安裝程序一點時間做最後的收尾
-        Start-Sleep -Seconds 3
-        if ($process.HasExited) { break }
-        
-        # 如果檔案已在但進程超過 30 秒還沒退，我們就強制結束它，宣告安裝完成
-        if ($timeout -lt 150) { 
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            break
-        }
+Write-Host "下載完成，開始安裝..."
+$process = Start-Process -FilePath $installerPath -ArgumentList "/SILENT /NORESTART" -PassThru -WindowStyle Hidden
+
+$timeout = 180
+$elapsed = 0
+while ($elapsed -lt $timeout -and -not $process.HasExited) {
+    Start-Sleep -Seconds 1
+    $elapsed += 1
+    if ($elapsed % 10 -eq 0) {
+        Write-Host "安裝進度: $elapsed/$timeout 秒"
     }
 }
 
+if (-not $process.HasExited) {
+    Write-Host "安裝超時，強制結束..."
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+}
+
 Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
+Write-Host "安裝程序完成，等待初始化..."
+Start-Sleep -Seconds 2
 ```
 
 第三階段：驗證 (Verify)
 指令 (PowerShell):
 ```powershell
-try {
-    $null = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/version" -ErrorAction Stop
-} catch {
-    UI 顯示內容: 「正在啟動本地 AI 引擎 (ollama serve)...」
-    $cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
-    Start-Process $cmd -ArgumentList "serve" -WindowStyle Hidden
-    Start-Sleep -Seconds 4
+Write-Host "驗證 Ollama 安裝..."
+$cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+
+if (-not (Test-Path $cmd)) {
+    Write-Host "錯誤: Ollama 執行檔不存在"
+    $false
+    exit
 }
-try { $r = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/version" -ErrorAction Stop; if ($r.version) { $true } else { $false } } catch { $false }
+
+Write-Host "Ollama 執行檔已找到，啟動服務..."
+
+$maxRetries = 5
+$retryCount = 0
+
+while ($retryCount -lt $maxRetries) {
+    try {
+        $response = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/version" -ErrorAction Stop -TimeoutSec 2
+        if ($response.version) {
+            Write-Host "Ollama 服務已在執行，版本: $($response.version)"
+            $true
+            exit
+        }
+    } catch {
+        if ($retryCount -eq 0) {
+            Write-Host "啟動 Ollama 服務..."
+            Start-Process $cmd -ArgumentList "serve" -WindowStyle Hidden
+            Start-Sleep -Seconds 2
+        }
+    }
+    
+    $retryCount += 1
+    if ($retryCount -lt $maxRetries) {
+        Write-Host "等待服務啟動... ($retryCount/$maxRetries)"
+        Start-Sleep -Seconds 1
+    }
+}
+
+try {
+    $response = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/version" -ErrorAction Stop -TimeoutSec 2
+    if ($response.version) { 
+        Write-Host "Ollama 服務驗證成功"
+        $true 
+    } else { 
+        Write-Host "Ollama 服務驗證失敗"
+        $false 
+    }
+} catch { 
+    Write-Host "無法連接 Ollama 服務: $_"
+    $false 
+}
 ```
 
 4. 自動排錯邏輯 (Error Handling)

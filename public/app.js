@@ -84,9 +84,16 @@ async function init() {
     setupEventListeners();
     setupSpeechRecognition();
 
+    // 並行載入資料，不要等待啟動畫面
     await Promise.all([loadTodo(), loadRecommend()]);
+    
+    // 隱藏啟動畫面（立即隱藏，不要延遲）
+    hideSplash();
+    
     startPolling();
-    checkLLMStatus();
+    
+    // 首次檢查 LLM 狀態（會觸發 bootstrap 或顯示歡迎訊息）
+    await checkLLMStatus();
 }
 
 function checkFirstRun() {
@@ -241,6 +248,10 @@ async function checkLLMStatus() {
         // 如果推薦清單還沒載入，就先不進行自動腳本，避免抓不到 Skill 資訊
         if (!recommendList || recommendList.length === 0) return;
 
+        // 防止重複觸發：檢查是否有任務正在執行
+        const isRunning = todoList.some(t => t.status === 'running');
+        if (isRunning) return;
+
         if (!data.available) {
             // Case 1: Ollama 未安裝或未啟動
             await bootstrapOllama();
@@ -248,8 +259,10 @@ async function checkLLMStatus() {
             // Case 2: Ollama 好了，但模型沒好
             await bootstrapModel();
         } else {
-            // Case 3: 全都好了
+            // Case 3: 全都好了 — 顯示初始訊息和徽章
             if (!window._llmWelcomed) {
+                // 顯示初始訊息
+                appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以用口語直接告訴我你需要安裝什麼軟體或是調整系統設定喔！');
                 appendChatBubble('ai', '🧠 AI 引擎就緒！模型 qwen3.5:0.8b 已載入，可以直接用中文告訴我你需要什麼 🚀');
                 addUILog('🧠 Ollama qwen3.5:0.8b 就緒', 'success');
                 window._llmWelcomed = true;
@@ -276,6 +289,12 @@ function updateLLMIndicator(status) {
         shouldRender = true;
     }
 
+    // 只在模型就緒時才顯示模型徽章
+    const chatModelBadge = document.getElementById('chatModelBadge');
+    if (chatModelBadge) {
+        chatModelBadge.style.display = status.modelReady ? 'inline-block' : 'none';
+    }
+
     if (status.available && status.modelReady) {
         llmDot.style.cssText = 'background:#4ec9b0;box-shadow:0 0 6px rgba(78,201,176,0.7)';
         llmLabel.textContent = 'AI 就緒';
@@ -283,11 +302,11 @@ function updateLLMIndicator(status) {
     } else if (status.available) {
         llmDot.style.cssText = 'background:#dcdcaa;box-shadow:0 0 6px rgba(220,220,170,0.6)';
         llmLabel.textContent = '模型未就緒';
-        if (statusLLM) statusLLM.textContent = '🟡 模型未下載';
+        if (statusLLM) statusLLM.textContent = '🟡 模型未就緒';
     } else {
         llmDot.style.cssText = 'background:#f44747;box-shadow:0 0 6px rgba(244,71,71,0.5)';
-        llmLabel.textContent = '未安裝 AI';
-        if (statusLLM) statusLLM.textContent = '🔴 AI 未就緒';
+        llmLabel.textContent = 'AI 引擎未就緒';
+        if (statusLLM) statusLLM.textContent = '🔴 AI 引擎未就緒';
     }
 
     if (shouldRender) {

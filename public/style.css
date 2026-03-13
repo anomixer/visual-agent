@@ -646,10 +646,10 @@ ol {
 }
 
 .task-progress {
-  margin-top: 5px;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
+  margin-top: 8px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
   overflow: hidden;
 }
 
@@ -657,7 +657,7 @@ ol {
   height: 100%;
   background: var(--accent-indigo);
   transition: width 0.5s ease;
-  border-radius: 10px;
+  border-radius: 3px;
 }
 
 .task-progress-bar.success {

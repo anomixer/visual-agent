@@ -41,8 +41,10 @@
 | **工作清單** | ✅ | 任務 CRUD，進度條，狀態標籤，JSON 匯出匯入 |
 | **AI 對話** | ✅ | 本地 Ollama LLM 優先，fallback 關鍵字模式 |
 | **LLM 整合** | ✅ | qwen3.5:0.8b，`/api/chat` 格式，think:false |
-| **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載模型 |
-| **執行日誌** | ✅ | Mono 字體，依等級顯示色（info/warn/error/success） |
+| **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載地端模型（qwen3.5:0.8b） |
+| **啟動啟始畫面** | ✅ | 首次執行顯示「環境設定中」，再次執行顯示「伺服器啟動中」，自動淡出 |
+| **UTF-8 編碼修復** | ✅ | PowerShell 輸出正確顯示中文，使用 `chcp 65001` 和 UTF-8 編碼 |
+| **執行日誌** | ✅ | Mono 字體，依等級顯示色（info/warn/error/success），支援進度條原地更新 |
 | **語音輸入** | ✅ | Web Speech API，中文語音轉文字 |
 | **主題切換** | ✅ | Dark / Light，localStorage 記憶 |
 | **EXE 一鍵打包** | ✅ | `.bat` 腳本全自動下載 Node/Rust/TauriCLI 依賴，將 Node Server 封裝成 Tauri Sidecar |

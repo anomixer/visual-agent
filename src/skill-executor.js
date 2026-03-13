@@ -41,11 +41,14 @@ class SkillExecutor extends EventEmitter {
                 return;
             }
 
+            // 使用 chcp 65001 設定 UTF-8 代碼頁
+            const wrappedCommand = `chcp 65001 >nul; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${command}`;
+
             const child = spawn('powershell.exe', [
                 '-NoProfile',
                 '-NonInteractive',
                 '-ExecutionPolicy', 'Bypass',
-                '-Command', command,
+                '-Command', wrappedCommand,
             ]);
 
             let stdout = '';
@@ -60,7 +63,7 @@ class SkillExecutor extends EventEmitter {
             };
 
             const processChunk = (data) => {
-                const str = data.toString();
+                const str = data.toString('utf8');
                 const now = Date.now();
                 if (now - lastLogTime > 500) {
                     const cleanStr = stripAnsi(str);
@@ -77,13 +80,16 @@ class SkillExecutor extends EventEmitter {
                 child.kill('SIGTERM');
             }, this.timeoutMs);
 
+            child.stdout.setEncoding('utf8');
+            child.stderr.setEncoding('utf8');
+
             child.stdout.on('data', (data) => {
-                stdout += data.toString();
+                stdout += data;
                 processChunk(data);
             });
 
             child.stderr.on('data', (data) => {
-                stderr += data.toString();
+                stderr += data;
                 processChunk(data);
             });
 
@@ -92,6 +98,7 @@ class SkillExecutor extends EventEmitter {
                 if (timedOut) {
                     reject(new Error(`Command timed out after ${this.timeoutMs}ms: ${command}`));
                 } else {
+                    // 即使 exitCode 非 0，也要回傳結果讓上層判斷
                     resolve({ exitCode: code, stdout: stdout.trim(), stderr: stderr.trim() });
                 }
             });
@@ -142,13 +149,14 @@ class SkillExecutor extends EventEmitter {
                 outputs.push({ command: cmd, ...result });
 
                 if (result.exitCode !== 0) {
+                    const errorMsg = result.stderr || result.stdout || `Exit code: ${result.exitCode}`;
                     this.emit('log', {
-                        level: 'warn',
+                        level: 'error',
                         phase: phaseName,
                         message: `指令返回非零結束碼 (${result.exitCode})`,
-                        detail: result.stderr || result.stdout,
+                        detail: errorMsg,
                     });
-                    return { success: false, outputs, error: result.stderr || result.stdout };
+                    return { success: false, outputs, error: errorMsg };
                 }
 
                 this.emit('log', {
@@ -159,6 +167,11 @@ class SkillExecutor extends EventEmitter {
                 });
             } catch (err) {
                 outputs.push({ command: cmd, error: err.message });
+                this.emit('log', {
+                    level: 'error',
+                    phase: phaseName,
+                    message: `指令執行異常: ${err.message}`,
+                });
                 return { success: false, outputs, error: err.message };
             }
         }

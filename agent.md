@@ -53,13 +53,15 @@
 - 📥 `pull-llm-model.md` — `ollama pull qwen3.5:0.8b`
 
 ### 全自動 AI 無縫體驗 (Auto-Bootstrap)
-- 新電腦初次開啟程式時，若未偵測到 Ollama，UI 提示並**自動背景觸發**下載與靜默安裝。
-- Ollama 就緒後，若無模型，再次**自動加入並執行**模型下載任務。
-- 使用者只需打開程式放置，即可全自動點亮「🟢 AI 就緒」進入智能管家狀態。
+- 新電腦初次開啟程式時，若未偵測到 Ollama，UI 提示並**自動背景觸發**下載與靜默安裝
+- Ollama 就緒後，若無模型，再次**自動加入並執行**模型下載任務
+- **模型選擇策略**：優先使用地端 `qwen3.5:0.8b`（輕量、快速、本地優先理念），無需詢問用戶
+- 使用者只需打開程式放置，即可全自動點亮「🟢 AI 就緒」進入智能管家狀態
 
 ### LLM 狀態指示燈
-- Title bar 加入發光小圓點（🔴 未安裝 / 🟡 模型未就緒 / 🟢 AI 就緒）
+- Title bar 加入發光小圓點（🔴 AI 引擎未就緒 / 🟡 模型未就緒 / 🟢 AI 就緒）
 - Status bar 同步顯示狀態
+
 
 ---
 
@@ -106,23 +108,24 @@
 ## 📌 v0.6 — 穩定性與 UI 體感優化 (2026-03-06)
 
 ### 啟動啟始畫面 (Splash Screen)
-- 導入 `splash-overlay`：解決冷啟動時後台 Server 尚未就緒導致的畫面空白。
-- 智能訊息：首次執行顯示「環境設定中」，再次執行顯示「伺服器啟動中」。
-- 自動偵測：當前端成功抓取到 3210 Port 的資料後，遮罩自動優雅淡出。
+- 導入 `splash-overlay`：解決冷啟動時後台 Server 尚未就緒導致的畫面空白
+- 智能訊息：首次執行顯示「首次執行本程式，正設定環境中，請稍候...」，再次執行顯示「啟動後端伺服器中，請稍候...」
+- 自動偵測：當前端成功抓取到 3210 Port 的資料後，遮罩自動優雅淡出
+- 實作位置：`public/app.js` 的 `checkFirstRun()` 與 `hideSplash()` 函數，使用 `localStorage` 標記首次執行
 
 ### 日誌渲染革命：原地更新進度條
-- 修正大量 `curl` 下載訊息導致的日誌洗版問題。
-- 實作 `addLogEntry` 智能覆蓋：偵測到 `%` 或 `###` 時，自動更新最後一行日誌而不新增行。
-- 同步修正 `skill-executor.js`：將代碼區塊改為「整塊執行」，解決 PowerShell 變數無法跨行傳遞的 Bug。
+- 修正大量 `curl` 下載訊息導致的日誌洗版問題
+- 實作 `addLogEntry` 智能覆蓋：偵測到 `%` 或 `###` 時，自動更新最後一行日誌而不新增行
+- 同步修正 `skill-executor.js`：將代碼區塊改為「整塊執行」，解決 PowerShell 變數無法跨行傳遞的 Bug
 
 ### Ollama 安裝守護 (Installation Guard)
-- 升級 `install-ollama.md`：自動清理安裝後強制彈出的 Ollama App 視窗。
-- 加入 UAC 預警提示與超時強制解鎖機制，確保安裝進程不再因為背景 App 視窗而卡死。
+- 升級 `install-ollama.md`：自動清理安裝後強制彈出的 Ollama App 視窗
+- 加入 UAC 預警提示與超時強制解鎖機制，確保安裝進程不再因為背景 App 視窗而卡死
 
 ### 生命週期管理與除錯
-- Rust 端監聽 `WindowEvent::Destroyed`，確保 App 關閉時徹底殺死 Node Sidecar 進程。
-- 後端 Server 加入 `%APPDATA%\debug.log`，方便在無 Console 的打包環境中進行診斷。
-- 提高 LLM 逾時至 60s，確保冷啟動下的模型偵測不會誤報。
+- Rust 端監聽 `WindowEvent::Destroyed`，確保 App 關閉時徹底殺死 Node Sidecar 進程
+- 後端 Server 加入 `%APPDATA%\debug.log`，方便在無 Console 的打包環境中進行診斷
+- 提高 LLM 逾時至 60s，確保冷啟動下的模型偵測不會誤報
 
 ---
 
@@ -134,13 +137,58 @@
 - 🔍 `check-drivers.md` — 觸發系統 `UsoClient` 進行背景驅動與 Windows Update
 
 ### Ollama 網絡與路徑強固 (Robustness)
-- **IPv6 防護**：將所有 HTTP fetch (`llm.js` 與 `install-ollama.md`) 請求的 `localhost` 替換為 `127.0.0.1`，徹底解決 Node 18 在乾淨環境下錯誤 binding IPv6 而找不到本地服務的問題。
-- **PATH 環境變數防呆**：為了解決剛安裝完 Ollama，系統 PATH 尚未刷新的問題，腳本自動 Fallback 至 `$env:LOCALAPPDATA\Programs\Ollama\ollama.exe` 進行絕對路徑啟動。
+- **IPv6 防護**：將所有 HTTP fetch (`llm.js` 與 `install-ollama.md`) 請求的 `localhost` 替換為 `127.0.0.1`，徹底解決 Node 18 在乾淨環境下錯誤 binding IPv6 而找不到本地服務的問題
+- **PATH 環境變數防呆**：為了解決剛安裝完 Ollama，系統 PATH 尚未刷新的問題，腳本自動 Fallback 至 `$env:LOCALAPPDATA\Programs\Ollama\ollama.exe` 進行絕對路徑啟動
 
 ### UI 推薦卡片感知進化
-- **已安裝狀態視覺化**：現在只要服務安裝完畢（如 Ollama 或 LLM），左側推薦卡片會自動打上 `✅ 已安裝` 綠色標籤。
-- **防呆降級**：卡片變半透明並隱藏 `+` 和 `▶` 操作按鈕。
-- **動態沉底排序**：所有的「已安裝」項目會自動下潛至該分類叢集的最下方，把還沒做的重要任務浮起來。
+- **已安裝狀態視覺化**：現在只要服務安裝完畢（如 Ollama 或 LLM），左側推薦卡片會自動打上 `✅ 已安裝` 綠色標籤
+- **防呆降級**：卡片變半透明並隱藏 `+` 和 `▶` 操作按鈕
+- **動態沉底排序**：所有的「已安裝」項目會自動下潛至該分類叢集的最下方，把還沒做的重要任務浮起來
+
+---
+
+## 📌 v0.8 — EXE 啟動畫面、Ollama 安裝與 UI 修復 (2026-03-13)
+
+### 啟動畫面修復
+- 移除人為延遲，資料載入完成後立即隱藏啟動畫面
+- 啟動畫面已在 HTML 中，Tauri 啟動時就會顯示（解決黑畫面問題）
+
+### Ollama 安裝流程優化
+- **簡化 PowerShell 指令**：改用 `Write-Host` 取代 `UI 顯示內容` 標籤
+- **改進下載邏輯**：檢查下載是否成功，失敗則拋出異常
+- **改進驗證邏輯**：使用重試機制（最多 5 次），確保服務啟動成功
+- **增強錯誤日誌**：詳細記錄每個步驟的錯誤訊息
+- **安裝進度顯示**：每 10 秒輸出一次進度「安裝進度: X/180 秒」
+
+### UTF-8 編碼修復
+- 修復 PowerShell 輸出亂碼問題
+- 使用 `chcp 65001` 設定 UTF-8 代碼頁（相容 PowerShell 5.1）
+- 加入 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+- 明確設定 stdout/stderr 編碼為 utf8
+
+### 重複訊息修復
+- 修復 `checkLLMStatus` 重複觸發 bootstrap 的問題
+- 加入「任務執行中」檢查，避免重複加入任務
+- 防止對話框重複顯示相同訊息
+
+### AI 對話初始化修復
+- 移除 HTML 中的初始訊息，改由 JS 控制
+- 模型徽章「qwen3.5:0.8b」只在模型就緒時才顯示
+- 初始訊息只在首次且模型就緒時顯示
+
+### UI 改進
+- 進度條高度從 2px 增加到 6px，更明顯
+- 進度條背景色改為 `rgba(255, 255, 255, 0.1)`，更清楚
+- 進度條圓角從 10px 改為 3px，更現代
+- 狀態指示燈文字改為：
+  - 🔴 AI 引擎未就緒（無 Ollama）
+  - 🟡 模型未就緒（有 Ollama 無模型）
+  - 🟢 AI 就緒（都有）
+
+### 錯誤處理改進
+- `skill-executor.js` 改進：非零 exit code 時記錄詳細錯誤訊息
+- 改進 `runPhaseCommands` 的錯誤日誌級別（warn → error）
+- 確保所有異常都被正確捕捉並回傳給前端
 
 ---
 
