@@ -1,7 +1,7 @@
 /**
- * Skill Executor - AI PC Agent
+ * SOP Executor - AI PC Agent
  *
- * 接收由 skill-parser 解析出的 skill 物件，按照以下流程執行：
+ * 接收由 sop-parser 解析出的 sop 物件，按照以下流程執行：
  *   1. Check  → 檢查是否已完成（若已完成則跳過）
  *   2. Install → 執行安裝指令
  *   3. Verify  → 驗證安裝結果
@@ -14,7 +14,7 @@
 const { spawn } = require('child_process');
 const EventEmitter = require('events');
 
-class SkillExecutor extends EventEmitter {
+class SOPExecutor extends EventEmitter {
     /**
      * @param {object} options
      * @param {boolean} [options.dryRun=false] - true 時僅列出將執行的指令，不實際執行
@@ -111,9 +111,9 @@ class SkillExecutor extends EventEmitter {
     }
 
     /**
-     * 嘗試將錯誤訊息比對 skill 的錯誤處理表，找出對應的修復動作
+     * 嘗試將錯誤訊息比對 sop 的錯誤處理表，找出對應的修復動作
      * @param {string} errorText - stderr 或 stdout 中的錯誤訊息
-     * @param {object[]} errorHandlers - skill.errorHandling 陣列
+     * @param {object[]} errorHandlers - sop.errorHandling 陣列
      * @returns {object|null} 匹配到的 errorHandler 或 null
      */
     matchError(errorText, errorHandlers) {
@@ -255,27 +255,27 @@ class SkillExecutor extends EventEmitter {
     }
 
     /**
-     * 完整執行一個 Skill（Check → Install → Verify + Error Handling）
-     * @param {object} skill — 由 skill-parser 產生的結構化 skill 物件
+     * 完整執行一個 SOP（Check → Install → Verify + Error Handling）
+     * @param {object} sop — 由 sop-parser 產生的結構化 sop 物件
      * @returns {Promise<object>} 執行結果
      */
-    async execute(skill) {
+    async execute(sop) {
         const result = {
-            skillId: skill.id,
-            skillName: skill.name,
+            sopId: sop.id,
+            sopName: sop.name,
             status: 'pending', // pending | skipped | success | failed
             phases: {},
             startTime: new Date().toISOString(),
             endTime: null,
         };
 
-        this.emit('skill:start', { id: skill.id, name: skill.name });
+        this.emit('sop:start', { id: sop.id, name: sop.name });
 
         // ── Phase 1: Check ──────────────────────────────────────────────
-        if (skill.steps.check.commands.length > 0) {
-            this.emit('phase:start', { phase: 'check', skill: skill.id });
+        if (sop.steps.check.commands.length > 0) {
+            this.emit('phase:start', { phase: 'check', sop: sop.id });
 
-            const checkResult = await this.runPhaseCommands(skill.steps.check.commands, 'check');
+            const checkResult = await this.runPhaseCommands(sop.steps.check.commands, 'check');
             result.phases.check = checkResult;
 
             if (checkResult.success) {
@@ -289,7 +289,7 @@ class SkillExecutor extends EventEmitter {
                     });
                     result.status = 'skipped';
                     result.endTime = new Date().toISOString();
-                    this.emit('skill:end', result);
+                    this.emit('sop:end', result);
                     return result;
                 }
             }
@@ -302,18 +302,18 @@ class SkillExecutor extends EventEmitter {
         let retries = 0;
 
         while (retries <= this.maxRetries) {
-            if (skill.steps.install.commands.length === 0) {
+            if (sop.steps.install.commands.length === 0) {
                 installSuccess = true;
                 break;
             }
 
-            if (skill.steps.install.uiMessage) {
-                this.emit('ui:message', { message: skill.steps.install.uiMessage });
+            if (sop.steps.install.uiMessage) {
+                this.emit('ui:message', { message: sop.steps.install.uiMessage });
             }
 
-            this.emit('phase:start', { phase: 'install', skill: skill.id, attempt: retries + 1 });
+            this.emit('phase:start', { phase: 'install', sop: sop.id, attempt: retries + 1 });
 
-            const installResult = await this.runPhaseCommands(skill.steps.install.commands, 'install');
+            const installResult = await this.runPhaseCommands(sop.steps.install.commands, 'install');
             result.phases.install = installResult;
 
             if (installResult.success) {
@@ -323,7 +323,7 @@ class SkillExecutor extends EventEmitter {
             }
 
             // ── Error Handling ────────────────────────────────────────────
-            const handler = this.matchError(installResult.error, skill.errorHandling);
+            const handler = this.matchError(installResult.error, sop.errorHandling);
 
             if (handler && retries < this.maxRetries) {
                 const fixed = await this.executeErrorHandler(handler);
@@ -346,15 +346,15 @@ class SkillExecutor extends EventEmitter {
             });
             result.status = 'failed';
             result.endTime = new Date().toISOString();
-            this.emit('skill:end', result);
+            this.emit('sop:end', result);
             return result;
         }
 
         // ── Phase 3: Verify ─────────────────────────────────────────────
-        if (installSuccess && skill.steps.verify.commands.length > 0) {
-            this.emit('phase:start', { phase: 'verify', skill: skill.id });
+        if (installSuccess && sop.steps.verify.commands.length > 0) {
+            this.emit('phase:start', { phase: 'verify', sop: sop.id });
 
-            const verifyResult = await this.runPhaseCommands(skill.steps.verify.commands, 'verify');
+            const verifyResult = await this.runPhaseCommands(sop.steps.verify.commands, 'verify');
             result.phases.verify = verifyResult;
 
             if (verifyResult.success) {
@@ -379,9 +379,9 @@ class SkillExecutor extends EventEmitter {
         }
 
         result.endTime = new Date().toISOString();
-        this.emit('skill:end', result);
+        this.emit('sop:end', result);
         return result;
     }
 }
 
-module.exports = { SkillExecutor };
+module.exports = { SOPExecutor };

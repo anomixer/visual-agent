@@ -28,7 +28,7 @@
   "pkg": {
     "scripts": "src/**/*.js",
     "assets": [
-      "skills/**/*",
+      "sops/**/*",
       "public/**/*"
     ],
     "targets": [

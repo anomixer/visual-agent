@@ -23,6 +23,7 @@ let isLogCollapsed = false;
 let isRecording = false;
 let recognition = null;
 let currentLogIndex = 0;
+let recSearchQuery = '';
 
 // ── DOM ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -43,6 +44,8 @@ const chatMessages = $('#chatMessages');
 const chatInput = $('#chatInput');
 const btnSend = $('#btnSend');
 const btnMic = $('#btnMic');
+const btnClearChat = $('#btnClearChat');
+const recSearchInput = $('#recSearchInput');
 const btnTheme = $('#btnTheme');
 const btnExport = $('#btnExport');
 const btnImport = $('#btnImport');
@@ -86,12 +89,12 @@ async function init() {
 
     // 並行載入資料，不要等待啟動畫面
     await Promise.all([loadTodo(), loadRecommend()]);
-    
+
     // 隱藏啟動畫面（立即隱藏，不要延遲）
     hideSplash();
-    
+
     startPolling();
-    
+
     // 首次檢查 LLM 狀態（會觸發 bootstrap 或顯示歡迎訊息）
     await checkLLMStatus();
 }
@@ -253,7 +256,7 @@ async function checkLLMStatus() {
         if (isRunning) return;
 
         if (!data.available) {
-            // Case 1: Ollama 未安裝或未啟動
+            // Case 1: Ollama 未安裝或未啟動 -> 只有在真的沒有時才 bootstrap
             await bootstrapOllama();
         } else if (!data.modelReady) {
             // Case 2: Ollama 好了，但模型沒好
@@ -263,9 +266,15 @@ async function checkLLMStatus() {
             if (!window._llmWelcomed) {
                 // 顯示初始訊息
                 appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以用口語直接告訴我你需要安裝什麼軟體或是調整系統設定喔！');
-                appendChatBubble('ai', '🧠 AI 引擎就緒！模型 qwen3.5:0.8b 已載入，可以直接用中文告訴我你需要什麼 🚀');
-                addUILog('🧠 Ollama qwen3.5:0.8b 就緒', 'success');
+                appendChatBubble('ai', `🧠 AI 引擎就緒！模型 ${data.modelName || 'qwen3.5:0.8b'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
+                addUILog(`🧠 Ollama ${data.modelName || 'qwen3.5:0.8b'} 就緒`, 'success');
                 window._llmWelcomed = true;
+            }
+
+            // [優化] 若已經就緒，主動移除 list 中還在 pending 的 bootstrap 任務
+            const bootstrapTasks = todoList.filter(t => t.status === 'pending' && (t.skillId === 'rec_install_ollama' || t.skillId === 'rec_pull_llm_model'));
+            for (const t of bootstrapTasks) {
+                 deleteTask(t.id);
             }
         }
     } catch (e) {
@@ -289,10 +298,14 @@ function updateLLMIndicator(status) {
         shouldRender = true;
     }
 
-    // 只在模型就緒時才顯示模型徽章
+    // 更新模型徽章
     const chatModelBadge = document.getElementById('chatModelBadge');
     if (chatModelBadge) {
         chatModelBadge.style.display = status.modelReady ? 'inline-block' : 'none';
+        if (status.modelReady && status.modelName) {
+            chatModelBadge.textContent = status.modelName;
+            chatModelBadge.title = `當前模型: ${status.modelName} (點擊切換)`;
+        }
     }
 
     if (status.available && status.modelReady) {
@@ -314,6 +327,56 @@ function updateLLMIndicator(status) {
     }
 }
 
+// ── Model Selection Logic ──────────────────────────────
+async function toggleModelMenu() {
+    let menu = document.querySelector('.model-menu');
+    if (menu) {
+        menu.remove();
+        return;
+    }
+
+    const data = await api('/api/llm/models');
+    if (!data.success) return;
+
+    menu = document.createElement('div');
+    menu.className = 'model-menu';
+    
+    // Header label
+    const head = document.createElement('div');
+    head.style.cssText = 'padding:8px 12px; font-size:10px; color:var(--text-muted); border-bottom:1px solid var(--border-subtle); background:var(--bg-sidebar);';
+    head.textContent = '選擇語言模型 (ollama list)';
+    menu.appendChild(head);
+
+    data.models.forEach(m => {
+        const item = document.createElement('div');
+        item.className = `model-menu-item ${m.name === data.currentModel ? 'active' : ''}`;
+        item.innerHTML = `<span>${m.name}</span> <span style="font-size:9px;opacity:0.6">${(m.size / 1024 / 1024 / 1024).toFixed(1)}GB</span>`;
+        item.onclick = async () => {
+            const res = await api('/api/llm/model', { method: 'POST', body: { modelName: m.name } });
+            if (res.success) {
+                addUILog(`🧠 模型已切換至: ${m.name}`, 'success');
+                appendChatBubble('ai', `🧠 我現在切換到 **${m.name}** 囉！隨時可以開始對話。`);
+                checkLLMStatus();
+            }
+            menu.remove();
+        };
+        menu.appendChild(item);
+    });
+
+    document.querySelector('.chat-history').appendChild(menu);
+
+    // Click outside to close
+    setTimeout(() => {
+        const closer = (e) => {
+            if (!menu.contains(e.target) && e.target.id !== 'chatModelBadge') {
+                menu.remove();
+                document.removeEventListener('click', closer);
+            }
+        };
+        document.addEventListener('click', closer);
+    }, 0);
+}
+
 // ════════════════════════════════════════════════════════
 //  RENDER — RECOMMEND LIST (sidebar)
 // ════════════════════════════════════════════════════════
@@ -323,76 +386,99 @@ function renderRecommendList() {
         sidebarBody.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:11px;">推薦清單載入中...</div>';
         return;
     }
-    recCount.textContent = recommendList.length;
 
-    window._installedStatus = window._installedStatus || {};
-
-    // Group by category
-    const groups = {};
-    recommendList.forEach(item => {
-        const cat = item.category || '其他';
-        if (!groups[cat]) groups[cat] = [];
-        groups[cat].push(item);
+    const filtered = recommendList.filter(item => {
+        if (!recSearchQuery) return true;
+        const searchStr = `${item.title} ${item.description} ${item.category}`.toLowerCase();
+        return searchStr.includes(recSearchQuery);
     });
 
-    Object.entries(groups).forEach(([cat, items]) => {
-        // Category header
+    recCount.textContent = filtered.length;
+    window._installedStatus = window._installedStatus || {};
+
+    if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:16px;color:var(--text-muted);font-size:11px;text-align:center;';
+        empty.textContent = '找不到相符的項目 🔍';
+        sidebarBody.appendChild(empty);
+        return;
+    }
+
+    const pending = filtered.filter(item => !window._installedStatus[item.id]);
+    const installed = filtered.filter(item => window._installedStatus[item.id]);
+
+    // 1. Render Pending items by category
+    const pendingGroups = {};
+    pending.forEach(item => {
+        const cat = item.category || '其他';
+        if (!pendingGroups[cat]) pendingGroups[cat] = [];
+        pendingGroups[cat].push(item);
+    });
+
+    Object.entries(pendingGroups).forEach(([cat, items]) => {
         const header = document.createElement('div');
         header.className = 'sidebar-section-header';
-        header.style.cssText = 'padding:8px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);';
+        header.style.cssText = 'padding:12px 10px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);';
         header.textContent = cat;
         sidebarBody.appendChild(header);
 
-        // Sort items: installed at the bottom
-        items.sort((a, b) => {
-            const aInst = window._installedStatus[a.id] ? 1 : 0;
-            const bInst = window._installedStatus[b.id] ? 1 : 0;
-            return aInst - bInst;
-        });
-
         items.forEach(item => {
-            const isInstalled = window._installedStatus[item.id];
-            const card = document.createElement('div');
-            card.className = `recommend-card ${isInstalled ? 'installed' : ''}`;
-            if (isInstalled) card.style.opacity = '0.5';
-
-            card.innerHTML = `
-                <div class="recommend-card-top">
-                  <div class="recommend-title">
-                      ${item.title}
-                      ${isInstalled ? '<span style="font-size:10px; color:#4ec9b0; margin-left:6px; font-weight:normal;">✅ 已安裝</span>' : ''}
-                  </div>
-                  ${!isInstalled ? `
-                      ${item.skillId ? `<div class="recommend-btn-group">
-                        <button class="btn-add-todo" title="加入清單">＋</button>
-                        <button class="btn-run-now" title="立即執行">▶</button>
-                      </div>` : `<div class="recommend-btn-group">
-                        <button class="btn-add-todo" title="加入清單">＋</button>
-                      </div>`}
-                  ` : ''}
-                </div>
-                <div class="recommend-desc">${item.description || ''}</div>
-                <div class="recommend-meta">
-                  <span class="recommend-category">${item.category}</span>
-                  ${item.skillId && !isInstalled ? '<span class="recommend-skill-badge">⚡ 可自動執行</span>' : ''}
-                </div>
-            `;
-
-            if (!isInstalled) {
-                // 加入
-                card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    addRecommendToTodo(item);
-                });
-                // 立即執行
-                card.querySelector('.btn-run-now')?.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    addAndExecuteRecommend(item);
-                });
-            }
-            sidebarBody.appendChild(card);
+            sidebarBody.appendChild(createRecommendCard(item, false));
         });
     });
+
+    // 2. Render Installed items at the absolute bottom
+    if (installed.length > 0) {
+        const header = document.createElement('div');
+        header.className = 'sidebar-section-header';
+        header.style.cssText = 'padding:20px 10px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent-green);opacity:0.8;';
+        header.textContent = '── 已就緒 / 已安裝 ──';
+        sidebarBody.appendChild(header);
+
+        installed.forEach(item => {
+            sidebarBody.appendChild(createRecommendCard(item, true));
+        });
+    }
+}
+
+function createRecommendCard(item, isInstalled) {
+    const card = document.createElement('div');
+    card.className = `recommend-card ${isInstalled ? 'installed' : ''}`;
+    if (isInstalled) card.style.opacity = '0.5';
+
+    card.innerHTML = `
+        <div class="recommend-card-top">
+          <div class="recommend-title">
+              ${item.title}
+              ${isInstalled ? '<span style="font-size:10px; color:#4ec9b0; margin-left:6px; font-weight:normal;">✅ 已安裝</span>' : ''}
+          </div>
+          ${!isInstalled ? `
+              ${item.skillId ? `<div class="recommend-btn-group">
+                <button class="btn-add-todo" title="加入清單">＋</button>
+                <button class="btn-run-now" title="立即執行">▶</button>
+              </div>` : `<div class="recommend-btn-group">
+                <button class="btn-add-todo" title="加入清單">＋</button>
+              </div>`}
+          ` : ''}
+        </div>
+        <div class="recommend-desc">${item.description || ''}</div>
+        <div class="recommend-meta">
+          <span class="recommend-category">${item.category}</span>
+          ${item.skillId && !isInstalled ? '<span class="recommend-skill-badge">⚡ 可自動執行 (SOP)</span>' : ''}
+        </div>
+    `;
+
+    if (!isInstalled) {
+        card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            addRecommendToTodo(item);
+        });
+        card.querySelector('.btn-run-now')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            addAndExecuteRecommend(item);
+        });
+    }
+    return card;
 }
 
 // ════════════════════════════════════════════════════════
@@ -516,7 +602,15 @@ async function sendChat() {
     removeThinking(thinkId);
     if (data.success) {
         appendChatBubble('ai', data.reply);
-        if (data.task) { await loadTodo(); expandLog(); }
+        if (data.task) {
+            await loadTodo();
+            // 如果清單被清空了，不需要展開 log
+            if (todoList.length > 0) expandLog();
+        }
+        if (data.executeTaskId && !data.executeTaskId.includes('CLEAR') && !data.executeTaskId.includes('DELETE')) {
+            // 自動執行指定的任務
+            executeTask(data.executeTaskId);
+        }
     } else {
         appendChatBubble('ai', '抱歉，出現了點問題，請再試一次。');
     }
@@ -546,6 +640,13 @@ function appendThinking() {
     return id;
 }
 function removeThinking(id) { document.getElementById(id)?.remove(); }
+
+function clearChatMessages() {
+    if (confirm('確定要清除所有對話紀錄嗎？')) {
+        chatMessages.innerHTML = '';
+        addUILog('💬 對話紀錄已清除', 'info');
+    }
+}
 
 // ════════════════════════════════════════════════════════
 //  LOG PANEL
@@ -616,7 +717,7 @@ function showTaskModal(task) {
           <span class="task-detail-value">${task.category || '—'}</span>
         </div>
         <div class="task-detail-row">
-          <span class="task-detail-label">Skill ID</span>
+          <span class="task-detail-label">SOP ID</span>
           <span class="task-detail-value" style="font-family:var(--font-mono);font-size:11px">${task.skillId || '（無）'}</span>
         </div>
         <div class="task-detail-row">
@@ -837,8 +938,20 @@ function setupEventListeners() {
     // Mic
     btnMic?.addEventListener('click', () => isRecording ? stopRecording() : startRecording());
 
+    // Clear Chat
+    btnClearChat?.addEventListener('click', clearChatMessages);
+
+    // Sidebar Search
+    recSearchInput?.addEventListener('input', (e) => {
+        recSearchQuery = e.target.value.trim().toLowerCase();
+        renderRecommendList();
+    });
+
     // Theme
     btnTheme?.addEventListener('click', cycleTheme);
+
+    // Model selection
+    document.getElementById('chatModelBadge')?.addEventListener('click', toggleModelMenu);
 
     // Export / Import
     btnExport?.addEventListener('click', exportTasks);

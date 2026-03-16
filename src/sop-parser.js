@@ -1,7 +1,7 @@
 /**
- * Skill Parser - AI PC Agent
+ * SOP Parser - AI PC Agent
  * 
- * 解析 skills/ 目錄下的 .md 技能書，提取：
+ * 解析 sops/ 目錄下的 .md 標準作業程序書，提取：
  *   - Metadata（ID, 名稱, 分類, 風險等級）
  *   - Prerequisites（OS, 權限, 網路需求）
  *   - Execution Steps（Check / Install / Verify 各階段的 PowerShell 指令）
@@ -12,15 +12,15 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * 解析單一 skill.md 檔案
- * @param {string} filePath - skill 檔案的絕對路徑
- * @returns {object} 結構化的 skill 物件
+ * 解析單一 sop.md 檔案
+ * @param {string} filePath - sop 檔案的絕對路徑
+ * @returns {object} 結構化的 sop 物件
  */
-function parseSkillFile(filePath) {
+function parseSOPFile(filePath) {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split(/\r?\n/);
 
-    const skill = {
+    const sop = {
         id: null,
         name: null,
         category: null,
@@ -64,7 +64,7 @@ function parseSkillFile(filePath) {
                     );
                     if (commands.length > 0) {
                         // 將整塊程式碼合成一個指令執行，解決變數跨行失效問題
-                        skill.steps[currentPhase].commands.push(commands.join('\n'));
+                        sop.steps[currentPhase].commands.push(commands.join('\n'));
                     }
 
                     // Extract UI message if present
@@ -74,12 +74,12 @@ function parseSkillFile(filePath) {
                     if (uiLine) {
                         const match = uiLine.match(/[「「](.+?)[」」]/);
                         if (match) {
-                            skill.steps[currentPhase].uiMessage = match[1];
+                            sop.steps[currentPhase].uiMessage = match[1];
                         } else {
                             // Try extracting after colon
                             const colonMatch = uiLine.match(/[:：]\s*(.+)/);
                             if (colonMatch) {
-                                skill.steps[currentPhase].uiMessage = colonMatch[1].trim().replace(/^[「「]|[」」]$/g, '');
+                                sop.steps[currentPhase].uiMessage = colonMatch[1].trim().replace(/^[「「]|[」」]$/g, '');
                             }
                         }
                     }
@@ -135,44 +135,44 @@ function parseSkillFile(filePath) {
         // ── Metadata parsing ────────────────────────────────────────────
         if (currentSection === 'metadata') {
             const idMatch = trimmed.match(/^ID:\s*(.+)/i);
-            if (idMatch) skill.id = idMatch[1].trim();
+            if (idMatch) sop.id = idMatch[1].trim();
 
             const nameMatch = trimmed.match(/^名稱:\s*(.+)/i);
-            if (nameMatch) skill.name = nameMatch[1].trim();
+            if (nameMatch) sop.name = nameMatch[1].trim();
 
             const nameMatch2 = trimmed.match(/^Name:\s*(.+)/i);
-            if (nameMatch2) skill.name = skill.name || nameMatch2[1].trim();
+            if (nameMatch2) sop.name = sop.name || nameMatch2[1].trim();
 
             const catMatch = trimmed.match(/^分類:\s*(.+)/i);
-            if (catMatch) skill.category = catMatch[1].trim();
+            if (catMatch) sop.category = catMatch[1].trim();
 
             const riskMatch = trimmed.match(/^風險等級:\s*(.+)/i);
-            if (riskMatch) skill.riskLevel = riskMatch[1].trim();
+            if (riskMatch) sop.riskLevel = riskMatch[1].trim();
         }
 
         // ── Prerequisites parsing ───────────────────────────────────────
         if (currentSection === 'prerequisites') {
             const osMatch = trimmed.match(/^OS:\s*(.+)/i);
-            if (osMatch) skill.prerequisites.os = osMatch[1].trim();
+            if (osMatch) sop.prerequisites.os = osMatch[1].trim();
 
             const permMatch = trimmed.match(/^權限:\s*(.+)/i);
-            if (permMatch) skill.prerequisites.permissions = permMatch[1].trim();
+            if (permMatch) sop.prerequisites.permissions = permMatch[1].trim();
 
             const netMatch = trimmed.match(/^網路:\s*(.+)/i);
-            if (netMatch) skill.prerequisites.network = netMatch[1].trim();
+            if (netMatch) sop.prerequisites.network = netMatch[1].trim();
         }
 
         // ── Expected result parsing ─────────────────────────────────────
         if (currentSection === 'steps' && currentPhase) {
             const resultMatch = trimmed.match(/^預期結果:\s*(.+)/i);
             if (resultMatch) {
-                skill.steps[currentPhase].expectedResult = resultMatch[1].trim();
+                sop.steps[currentPhase].expectedResult = resultMatch[1].trim();
             }
 
             // UI display message outside code block
             const uiMatch = trimmed.match(/UI\s*顯示內容:\s*[「「](.+?)[」」]/i);
             if (uiMatch) {
-                skill.steps[currentPhase].uiMessage = uiMatch[1];
+                sop.steps[currentPhase].uiMessage = uiMatch[1];
             }
         }
 
@@ -181,7 +181,7 @@ function parseSkillFile(filePath) {
             // Format: errorCode,cause,actions
             const parts = trimmed.split(',');
             if (parts.length >= 3) {
-                skill.errorHandling.push({
+                sop.errorHandling.push({
                     code: parts[0].trim(),
                     cause: parts[1].trim(),
                     actions: parts
@@ -196,23 +196,23 @@ function parseSkillFile(filePath) {
         }
     }
 
-    return skill;
+    return sop;
 }
 
 /**
- * 掃描 skills 目錄，解析所有 .md 技能書
- * @param {string} skillsDir - skills 目錄路徑
- * @returns {object[]} 所有解析後的 skill 物件陣列
+ * 掃描 sops 目錄，解析所有 .md 標準作業程序書
+ * @param {string} sopsDir - sops 目錄路徑
+ * @returns {object[]} 所有解析後的 sop 物件陣列
  */
-function loadAllSkills(skillsDir) {
-    const resolvedDir = path.resolve(skillsDir);
+function loadAllSOPs(sopsDir) {
+    const resolvedDir = path.resolve(sopsDir);
 
     if (!fs.existsSync(resolvedDir)) {
-        throw new Error(`Skills directory not found: ${resolvedDir}`);
+        throw new Error(`SOPs directory not found: ${resolvedDir}`);
     }
 
     const files = fs.readdirSync(resolvedDir).filter((f) => f.endsWith('.md'));
-    return files.map((f) => parseSkillFile(path.join(resolvedDir, f)));
+    return files.map((f) => parseSOPFile(path.join(resolvedDir, f)));
 }
 
-module.exports = { parseSkillFile, loadAllSkills };
+module.exports = { parseSOPFile, loadAllSOPs };

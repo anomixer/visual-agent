@@ -11,12 +11,12 @@
 
 const path = require('path');
 const fs = require('fs');
-const { loadAllSkills, parseSkillFile } = require('./skill-parser');
-const { SkillExecutor } = require('./skill-executor');
+const { loadAllSOPs, parseSOPFile } = require('./sop-parser');
+const { SOPExecutor } = require('./sop-executor');
 
 // ── Config ─────────────────────────────────────────────────────────
-const SKILLS_DIR = path.resolve(__dirname, '..', 'skills');
-const EXPORT_FILE = path.resolve(__dirname, '..', 'skills-export.json');
+const SOPS_DIR = path.resolve(__dirname, '..', 'sops');
+const EXPORT_FILE = path.resolve(__dirname, '..', 'sops-export.json');
 
 // ── Pretty Logging ─────────────────────────────────────────────────
 const ICONS = {
@@ -38,18 +38,18 @@ function prettyLog(event) {
 
 // ── Commands ───────────────────────────────────────────────────────
 
-function listSkills() {
-    const skills = loadAllSkills(SKILLS_DIR);
+function listSOPs() {
+    const sops = loadAllSOPs(SOPS_DIR);
     console.log('\n┌─────────────────────────────────────────────────┐');
-    console.log('│          AI PC Agent — Skill 清單               │');
+    console.log('│          AI PC Agent — SOP 清單               │');
     console.log('└─────────────────────────────────────────────────┘\n');
 
-    if (skills.length === 0) {
-        console.log('  (沒有找到任何 skill 檔案)\n');
+    if (sops.length === 0) {
+        console.log('  (沒有找到任何 SOP 檔案)\n');
         return;
     }
 
-    for (const s of skills) {
+    for (const s of sops) {
         const phases = [];
         if (s.steps.check.commands.length > 0) phases.push('Check');
         if (s.steps.install.commands.length > 0) phases.push('Install');
@@ -66,45 +66,45 @@ function listSkills() {
     }
 }
 
-async function runSkill(skillId, dryRun = false) {
-    const skills = loadAllSkills(SKILLS_DIR);
-    const skill = skills.find((s) => s.id === skillId);
+async function runSOP(sopId, dryRun = false) {
+    const sops = loadAllSOPs(SOPS_DIR);
+    const sop = sops.find((s) => s.id === sopId);
 
-    if (!skill) {
-        console.error(`\n  ❌ 找不到 skill: "${skillId}"`);
-        console.error(`  可用的 skill ID: ${skills.map((s) => s.id).join(', ') || '(無)'}\n`);
+    if (!sop) {
+        console.error(`\n  ❌ 找不到 SOP: "${sopId}"`);
+        console.error(`  可用的 SOP ID: ${sops.map((s) => s.id).join(', ') || '(無)'}\n`);
         process.exit(1);
     }
 
     console.log(`\n┌─────────────────────────────────────────────────┐`);
-    console.log(`│  🚀 執行 Skill: ${skill.name || skill.id}`);
+    console.log(`│  🚀 執行 SOP: ${sop.name || sop.id}`);
     console.log(`│  模式: ${dryRun ? 'DRY-RUN (模擬)' : 'LIVE (真實執行)'}`);
     console.log(`└─────────────────────────────────────────────────┘\n`);
 
-    const executor = new SkillExecutor({ dryRun });
+    const executor = new SOPExecutor({ dryRun });
 
     executor.on('log', prettyLog);
-    executor.on('skill:start', (e) => console.log(`\n  ▶️  開始: ${e.name} (${e.id})`));
+    executor.on('sop:start', (e) => console.log(`\n  ▶️  開始: ${e.name} (${e.id})`));
     executor.on('phase:start', (e) => console.log(`\n  ── ${e.phase.toUpperCase()} Phase ──${e.attempt ? ` (嘗試 #${e.attempt})` : ''}`));
     executor.on('phase:end', (e) => console.log(`  ── /${e.phase.toUpperCase()} (${e.success ? '成功' : '失敗'}) ──`));
     executor.on('ui:message', (e) => console.log(`\n  💬 ${e.message}\n`));
-    executor.on('skill:end', (e) => {
+    executor.on('sop:end', (e) => {
         const icon = { success: '🎉', skipped: '⏭️', failed: '💔' }[e.status] || '❓';
         console.log(`\n  ${icon} 最終狀態: ${e.status.toUpperCase()}`);
         console.log(`     耗時: ${e.startTime} → ${e.endTime}\n`);
     });
 
-    const result = await executor.execute(skill);
+    const result = await executor.execute(sop);
     return result;
 }
 
-async function runAllSkills(dryRun = false) {
-    const skills = loadAllSkills(SKILLS_DIR);
-    console.log(`\n  📋 共發現 ${skills.length} 個 skill，依序執行...\n`);
+async function runAllSOPs(dryRun = false) {
+    const sops = loadAllSOPs(SOPS_DIR);
+    console.log(`\n  📋 共發現 ${sops.length} 個 SOP，依序執行...\n`);
 
     const results = [];
-    for (const skill of skills) {
-        const result = await runSkill(skill.id, dryRun);
+    for (const sop of sops) {
+        const result = await runSOP(sop.id, dryRun);
         results.push(result);
     }
 
@@ -114,15 +114,15 @@ async function runAllSkills(dryRun = false) {
     console.log('└─────────────────────────────────────────────────┘\n');
     for (const r of results) {
         const icon = { success: '✅', skipped: '⏭️', failed: '❌' }[r.status] || '❓';
-        console.log(`  ${icon} ${r.skillId}: ${r.status}`);
+        console.log(`  ${icon} ${r.sopId}: ${r.status}`);
     }
     console.log('');
 }
 
-function exportSkills() {
-    const skills = loadAllSkills(SKILLS_DIR);
-    fs.writeFileSync(EXPORT_FILE, JSON.stringify(skills, null, 2), 'utf-8');
-    console.log(`\n  ✅ 已匯出 ${skills.length} 個 skill 至: ${EXPORT_FILE}\n`);
+function exportSOPs() {
+    const sops = loadAllSOPs(SOPS_DIR);
+    fs.writeFileSync(EXPORT_FILE, JSON.stringify(sops, null, 2), 'utf-8');
+    console.log(`\n  ✅ 已匯出 ${sops.length} 個 SOP 至: ${EXPORT_FILE}\n`);
 }
 
 // ── CLI Argument Parsing ───────────────────────────────────────────
@@ -140,44 +140,44 @@ async function main() {
     switch (flag) {
         case '--run':
             if (!args[1]) {
-                console.error('  ❌ 請指定 skill ID，例如: node src/index.js --run sys_lang_ja_jp');
+                console.error('  ❌ 請指定 SOP ID，例如: node src/index.js --run sys_lang_ja_jp');
                 process.exit(1);
             }
-            await runSkill(args[1]);
+            await runSOP(args[1]);
             break;
 
         case '--dry-run':
             if (!args[1]) {
-                console.error('  ❌ 請指定 skill ID，例如: node src/index.js --dry-run sys_lang_ja_jp');
+                console.error('  ❌ 請指定 SOP ID，例如: node src/index.js --dry-run sys_lang_ja_jp');
                 process.exit(1);
             }
-            await runSkill(args[1], true);
+            await runSOP(args[1], true);
             break;
 
         case '--run-all':
-            await runAllSkills();
+            await runAllSOPs();
             break;
 
         case '--dry-run-all':
-            await runAllSkills(true);
+            await runAllSOPs(true);
             break;
 
         case '--export':
-            exportSkills();
+            exportSOPs();
             break;
 
         case '--help':
         default:
             console.log(`
-  AI PC Agent — Skill 執行工具
+  AI PC Agent — SOP 執行工具
 
   用法:
-    node src/index.js                       列出所有可用的 skill
-    node src/index.js --run <skill-id>      執行指定 skill
-    node src/index.js --dry-run <skill-id>  模擬執行（不實際跑 PowerShell）
-    node src/index.js --run-all             依序執行所有 skill
-    node src/index.js --dry-run-all         模擬執行所有 skill
-    node src/index.js --export              匯出所有 skill 為 JSON
+    node src/index.js                       列出所有可用的 SOP
+    node src/index.js --run <sop-id>      執行指定 SOP
+    node src/index.js --dry-run <sop-id>  模擬執行（不實際跑 PowerShell）
+    node src/index.js --run-all             依序執行所有 SOP
+    node src/index.js --dry-run-all         模擬執行所有 SOP
+    node src/index.js --export              匯出所有 SOP 為 JSON
     node src/index.js --help                顯示此說明
       `);
             break;

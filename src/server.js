@@ -1,16 +1,16 @@
 /**
  * AI PC Agent — Local Server
  * 
- * 提供 REST API 給前端 UI 使用，橋接 skill-parser 與 skill-executor。
+ * 提供 REST API 給前端 UI 使用，橋接 sop-parser 與 sop-executor。
  * 啟動後會自動開啟瀏覽器。
  */
 
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { loadAllSkills } = require('./skill-parser');
-const { SkillExecutor } = require('./skill-executor');
-const { checkOllamaStatus, chatWithLLM, invalidateCache } = require('./llm');
+const { loadAllSOPs } = require('./sop-parser');
+const { SOPExecutor } = require('./sop-executor');
+const { checkOllamaStatus, chatWithLLM, invalidateCache, listModels, setCurrentModel, getCurrentModel } = require('./llm');
 
 const app = express();
 const PORT = 3210;
@@ -39,37 +39,37 @@ if (!fs.existsSync(aipcDir)) {
 }
 
 const TASKS_FILE = path.join(aipcDir, 'tasks.json');
-const SKILLS_DIR = path.join(aipcDir, 'skills');
+const SOPS_DIR = path.join(aipcDir, 'sops');
 
-if (!fs.existsSync(SKILLS_DIR)) {
-    fs.mkdirSync(SKILLS_DIR, { recursive: true });
+if (!fs.existsSync(SOPS_DIR)) {
+    fs.mkdirSync(SOPS_DIR, { recursive: true });
 }
 
-// Copy default bundled skills to APPDATA if they exist internally (for pkg and pure node)
-function syncBundledSkills() {
+// Copy default bundled sops to APPDATA if they exist internally (for pkg and pure node)
+function syncBundledSOPs() {
     try {
         const possiblePaths = [
-            isPkg ? path.join(__dirname, '..', 'skills') : path.resolve(__dirname, '..', 'skills'),
-            path.join(process.cwd(), 'skills'),
-            path.join(path.dirname(process.execPath), 'skills'), // for sidecar context
+            isPkg ? path.join(__dirname, '..', 'sops') : path.resolve(__dirname, '..', 'sops'),
+            path.join(process.cwd(), 'sops'),
+            path.join(path.dirname(process.execPath), 'sops'), // for sidecar context
         ];
 
-        let bundledSkillsPath = null;
+        let bundledSOPsPath = null;
         for (const p of possiblePaths) {
             if (fs.existsSync(p)) {
-                bundledSkillsPath = p;
+                bundledSOPsPath = p;
                 break;
             }
         }
 
-        if (bundledSkillsPath) {
-            console.log(`  📂 偵測到內建 Skills 路徑: ${bundledSkillsPath}`);
-            const files = fs.readdirSync(bundledSkillsPath);
+        if (bundledSOPsPath) {
+            console.log(`  📂 偵測到內建 SOPs 路徑: ${bundledSOPsPath}`);
+            const files = fs.readdirSync(bundledSOPsPath);
             let copiedCount = 0;
             for (const file of files) {
                 if (file.endsWith('.md')) {
-                    const srcPath = path.join(bundledSkillsPath, file);
-                    const destPath = path.join(SKILLS_DIR, file);
+                    const srcPath = path.join(bundledSOPsPath, file);
+                    const destPath = path.join(SOPS_DIR, file);
                     // 即使資料夾在，如果檔案不在也要補齊
                     if (!fs.existsSync(destPath)) {
                         const content = fs.readFileSync(srcPath);
@@ -78,21 +78,21 @@ function syncBundledSkills() {
                     }
                 }
             }
-            if (copiedCount > 0) console.log(`  ✅ 已補齊 ${copiedCount} 個內建技能腳本`);
+            if (copiedCount > 0) console.log(`  ✅ 已補齊 ${copiedCount} 個內建 SOP 腳本`);
         } else {
-            console.warn(`  ⚠️ 找不到內含的 skills 目錄，請檢查專案結構`);
+            console.warn(`  ⚠️ 找不到內含的 sops 目錄，請檢查專案結構`);
         }
     } catch (e) {
-        console.error("Failed to sync bundled skills", e);
+        console.error("Failed to sync bundled sops", e);
     }
 }
 
-syncBundledSkills();
+syncBundledSOPs();
 
 // ── In-memory state ─────────────────────────────────────────────────
 let todoList = [];
 let logs = [];
-let runningSkill = null;
+let runningSOP = null;
 
 // Default recommend list
 // 推薦清單基本資料（按優先順序排列，AI 引擎放最前面）
@@ -193,13 +193,13 @@ loadTasks();
 
 // ── API Routes ──────────────────────────────────────────────────────
 
-// GET /api/skills — 取得所有可用的 skill
-app.get('/api/skills', (req, res) => {
+// GET /api/sops — 列出所有 SOP
+app.get('/api/sops', (req, res) => {
     try {
-        const skills = loadAllSkills(SKILLS_DIR);
-        res.json({ success: true, skills });
-    } catch (err) {
-        res.json({ success: false, error: err.message, skills: [] });
+        const sops = loadAllSOPs(SOPS_DIR);
+        res.json({ success: true, sops });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -211,12 +211,15 @@ app.get('/api/todo', (req, res) => {
 // POST /api/todo — 新增任務到 To-Do List
 app.post('/api/todo', (req, res) => {
     const { title, description, skillId, category } = req.body;
+    const sops = loadAllSOPs(SOPS_DIR);
+    const matchedSOP = sops.find((s) => s.id === skillId);
+
     const task = {
         id: `task_${Date.now()}`,
-        title,
-        description: description || '',
+        title: title || (matchedSOP ? matchedSOP.name : '未命名任務'),
+        description: description || (matchedSOP ? matchedSOP.name : ''),
         skillId: skillId || null,
-        category: category || '自訂',
+        category: category || (matchedSOP ? matchedSOP.category : '一般'),
         status: 'pending', // pending | running | success | failed | skipped
         progress: 0,
         logs: [],
@@ -316,10 +319,28 @@ app.get('/api/recommend', (req, res) => {
 app.get('/api/llm/status', async (req, res) => {
     try {
         const status = await checkOllamaStatus();
-        res.json({ success: true, ...status });
+        res.json({ success: true, ...status, currentModel: getCurrentModel() });
     } catch (err) {
         res.json({ success: false, available: false, modelReady: false, error: err.message });
     }
+});
+
+// GET /api/llm/models — 列出所有可用模型
+app.get('/api/llm/models', async (req, res) => {
+    try {
+        const models = await listModels();
+        res.json({ success: true, models, currentModel: getCurrentModel() });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// POST /api/llm/model — 切換模型
+app.post('/api/llm/model', (req, res) => {
+    const { modelName } = req.body;
+    if (!modelName) return res.json({ success: false, error: '缺少 modelName' });
+    setCurrentModel(modelName);
+    res.json({ success: true, currentModel: getCurrentModel() });
 });
 
 // POST /api/execute/:taskId — 執行指定任務
@@ -329,28 +350,28 @@ app.post('/api/execute/:taskId', async (req, res) => {
         return res.json({ success: false, error: '找不到任務' });
     }
 
-    if (runningSkill) {
+    if (runningSOP) {
         return res.json({ success: false, error: '目前有任務正在執行中，請稍候' });
     }
 
     if (!task.skillId) {
-        return res.json({ success: false, error: '此任務沒有對應的 Skill，無法自動執行' });
+        return res.json({ success: false, error: '此任務沒有對應的 SOP，無法自動執行' });
     }
 
-    const skills = loadAllSkills(SKILLS_DIR);
-    const skill = skills.find((s) => s.id === task.skillId);
-    if (!skill) {
-        return res.json({ success: false, error: `找不到 Skill: ${task.skillId}` });
+    const sops = loadAllSOPs(SOPS_DIR);
+    const sop = sops.find((s) => s.id === task.skillId);
+    if (!sop) {
+        return res.json({ success: false, error: `找不到 SOP: ${task.skillId}` });
     }
 
     // Start execution
     task.status = 'running';
     task.progress = 10;
     task.logs = [];
-    runningSkill = task.id;
+    runningSOP = task.id;
 
     const dryRun = req.body.dryRun ?? false;
-    const executor = new SkillExecutor({ dryRun });
+    const executor = new SOPExecutor({ dryRun });
 
     executor.on('log', (event) => {
         const logEntry = { ...event, timestamp: new Date().toISOString() };
@@ -375,7 +396,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
     res.json({ success: true, message: '任務已開始執行' });
 
     try {
-        const result = await executor.execute(skill);
+        const result = await executor.execute(sop);
         task.status = result.status;
         task.progress = 100;
         task.completedAt = new Date().toISOString();
@@ -385,9 +406,9 @@ app.post('/api/execute/:taskId', async (req, res) => {
         logs.push(finishLog);
 
         // 針對 AI 引擎相關任務，強制清除快取並重新偵測
-        if (skill.id === 'rec_install_ollama' || skill.id === 'rec_pull_llm_model' || task.skillId === 'rec_pull_llm_model') {
-            console.log(`[Server] 偵測到 AI 相關任務完成: ${skill.id}，執行快取更新...`);
-            fileLog(`AI Task Completed: ${skill.id}, invalidating cache.`);
+        if (sop.id === 'rec_install_ollama' || sop.id === 'rec_pull_llm_model' || task.skillId === 'rec_pull_llm_model') {
+            console.log(`[Server] 偵測到 AI 相關任務完成: ${sop.id}，執行快取更新...`);
+            fileLog(`AI Task Completed: ${sop.id}, invalidating cache.`);
             invalidateCache();
         }
     } catch (err) {
@@ -396,7 +417,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
         task.logs.push(errLog);
         logs.push(errLog);
     } finally {
-        runningSkill = null;
+        runningSOP = null;
         saveTasks();
     }
 });
@@ -417,64 +438,139 @@ app.post('/api/chat', async (req, res) => {
         return res.json({ success: false, error: '請輸入訊息' });
     }
 
-    const skills = loadAllSkills(SKILLS_DIR);
+    const sops = loadAllSOPs(SOPS_DIR);
 
-    // ── 關鍵字意圖比對（用來決定是否掛載 skill 任務）──────────────────
-    let matchedSkill = null;
+    // ── 意圖判斷 ──
+    let isActionTaken = false;
+    let matchedSOP = null;
     let taskAdded = null;
+    let executeTaskId = null;
 
-    if (/日文|日語|japanese|ja-jp/i.test(message)) {
-        matchedSkill = skills.find((s) => s.id === 'sys_lang_ja_jp');
-    }
-    if (/chrome|谷歌|瀏覽器/i.test(message)) {
-        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_install_chrome');
-    }
-    if (/copilot|科皮/i.test(message)) {
-        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_remove_copilot');
-    }
-    if (/備份|還原點|backup/i.test(message)) {
-        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_backup');
-    }
-    if (/ollama|llm|語言模型|ai引擎/i.test(message)) {
-        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_install_ollama');
-    }
-    if (/steam|steam|遊戲/i.test(message)) {
-        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_steam');
-    }
-    if (/office|辦公|word|excel|powerpoint/i.test(message)) {
-        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_office');
-    }
-    if (/driver|驅動|更新|顯示卡/i.test(message)) {
-        matchedSkill = matchedSkill || skills.find((s) => s.id === 'rec_driver_check');
-    }
+    // 1. 優先檢查是否為「清空/刪除」意圖
+    const isDeletionIntent = /刪除|移除|移掉|清空|清掉|delete|remove/.test(message);
 
-    if (matchedSkill) {
-        taskAdded = {
-            id: `task_${Date.now()}`,
-            title: `📦 ${matchedSkill.name}`,
-            description: `由對話建立：「${message}」`,
-            skillId: matchedSkill.id,
-            category: matchedSkill.category || '系統設定',
-            status: 'pending',
-            progress: 0,
-            logs: [],
-            createdAt: new Date().toISOString(),
-            completedAt: null,
-        };
-        todoList.push(taskAdded);
+    if (isDeletionIntent && /全部|所有|清單|工作表/.test(message) && !/(單一|這項|那個|個)/.test(message)) {
+        todoList = [];
         saveTasks();
+        executeTaskId = 'CLEAR_ALL';
+        isActionTaken = true;
+    } else if (isDeletionIntent) {
+        // [精細化比對] 移除動詞後的剩餘字串
+        const cleanQuery = message.replace(/刪除|移除|移掉|清空|清掉|這項|任務|工作|清單|delete|remove|task|安裝|平台/g, '').trim().toLowerCase();
+
+        let targetTask = null;
+        if (cleanQuery) {
+            targetTask = todoList.find(t => {
+                const title = t.title.toLowerCase().replace('📦 ', '');
+                return title.includes(cleanQuery) || cleanQuery.includes(title.replace('安裝', '').trim());
+            });
+        }
+
+        if (!targetTask && /這個|單一|這項|剛剛那個/i.test(message)) {
+            targetTask = todoList[todoList.length - 1];
+        }
+
+        if (targetTask) {
+            todoList = todoList.filter(t => t.id !== targetTask.id);
+            saveTasks();
+            executeTaskId = `DELETE_${targetTask.id}`;
+            isActionTaken = true;
+        } else {
+            // 只要有刪除關鍵字，即使沒找到目標也不應進入「新增」邏輯
+            isActionTaken = true;
+            executeTaskId = 'NOT_FOUND';
+        }
+    }
+
+    // 2. 如果沒有執行刪除行動，才檢查「新增任務」或「確認現有任務」
+    if (!isActionTaken) {
+        if (/日文|日語|japanese|ja-jp/i.test(message)) {
+            matchedSOP = sops.find((s) => s.id === 'sys_lang_ja_jp');
+        }
+        if (/chrome|谷歌|瀏覽器/i.test(message)) {
+            matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_install_chrome');
+        }
+        if (/copilot|科皮/i.test(message)) {
+            matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_remove_copilot');
+        }
+        if (/備份|還原點|backup/i.test(message)) {
+            matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_backup');
+        }
+        if (/ollama|llm|語言模型|ai引擎/i.test(message)) {
+            matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_install_ollama');
+        }
+        if (/steam|steam|遊戲/i.test(message)) {
+            matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_steam');
+        }
+        if (/office|辦公|word|excel|powerpoint/i.test(message)) {
+            matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_office');
+        }
+        if (/driver|驅動|更新|顯示卡/i.test(message)) {
+            matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_driver_check');
+        }
+
+        if (matchedSOP) {
+            taskAdded = {
+                id: `task_${Date.now()}`,
+                title: `📦 ${matchedSOP.name}`,
+                description: `由對話建立：「${message}」`,
+                skillId: matchedSOP.id,
+                category: matchedSOP.category || '系統設定',
+                status: 'pending',
+                progress: 0,
+                logs: [],
+                createdAt: new Date().toISOString(),
+                completedAt: null,
+            };
+            todoList.push(taskAdded);
+            saveTasks();
+            // 不再自動執行，改由下方的 contextNote 讓 LLM 問使用者
+        } else {
+            // 檢查是否是「確認執行」
+            if (/是|好|確定|執行|開始|跑|處理|ok|yes|do it/i.test(message)) {
+                const pendingTask = [...todoList].reverse().find(t => t.status === 'pending' && t.skillId);
+                if (pendingTask) {
+                    executeTaskId = pendingTask.id;
+                }
+            }
+        }
+    }
+
+    // ── 建立給 LLM 的任務背景資訊 ───────────────────────────────────
+    const recentTasks = todoList.slice(-3).map(t => {
+        let logSummary = t.logs.slice(-5).map(l => `[${l.level}] ${l.message}`).join('\n');
+        return `任務: ${t.title} (ID: ${t.id})
+狀態: ${t.status}
+進度: ${t.progress}%
+日誌摘要:
+${logSummary || '(尚無日誌)'}`;
+    }).join('\n---\n');
+
+    let contextNote = `\n\n[[任務狀態與日誌]]\n${recentTasks || '目前無任務。'}`;
+
+    if (taskAdded) {
+        contextNote += `\n\n[[系統提示：我剛剛幫使用者新增了任務「${taskAdded.title}」，請問他是否要現在執行。]]`;
+    } else if (executeTaskId === 'CLEAR_ALL') {
+        contextNote += `\n\n[[系統提示：我已經清空了所有工作清單，請口語回覆說好的，已幫你清空了。]]`;
+    } else if (executeTaskId === 'NOT_FOUND') {
+        contextNote += `\n\n[[系統提示：使用者想執行刪除或操作，但我找不到對應的任務，請口語回覆說找不到該項任務。]]`;
+    } else if (executeTaskId && executeTaskId.startsWith('DELETE_')) {
+        contextNote += `\n\n[[系統提示：我已經刪除了該項任務，請回報已移除成功。]]`;
+    } else if (executeTaskId) {
+        const t = todoList.find(x => x.id === executeTaskId);
+        if (t) {
+            contextNote += `\n\n[[系統提示：使用者同意執行「${t.title}」，我已經開始執行了，請口語回覆說好的並祝他順利。]]`;
+        } else {
+            contextNote += `\n\n[[系統提示：我找不到該任務，請口語回覆說找不到。]]`;
+        }
     }
 
     // ── LLM 優先回覆 ─────────────────────────────────────────────────
     try {
         const llmStatus = await checkOllamaStatus();
         if (llmStatus.available && llmStatus.modelReady) {
-            // 如果有任務被挂載，把這件事告訴模型，讓它不要自己發明方法
-            const contextNote = taskAdded
-                ? `\n\n[[系統讓你知道：使用者的請求已被自動識別，任務「${taskAdded.title}」已加入工作清單。你直接用口語確認一下，不要又出一串幹法或条列。]]`
-                : '';
             const llmReply = await chatWithLLM(message + contextNote);
-            return res.json({ success: true, reply: llmReply, task: taskAdded || undefined, llmUsed: true });
+            return res.json({ success: true, reply: llmReply, task: true, executeTaskId, llmUsed: true });
         }
     } catch (llmErr) {
         console.warn('[LLM] 呼叫失敗，切換為關鍵字模式:', llmErr.message);
@@ -482,13 +578,34 @@ app.post('/api/chat', async (req, res) => {
 
     // ── Fallback：關鍵字回覆 ─────────────────────────────────────────
     let reply = '';
-    if (taskAdded) {
-        reply = `我了解了！已幫你將「${taskAdded.title}」加入工作清單，點 ▶ 執行按鈕就會自動完成 ✅`;
+    if (executeTaskId === 'CLEAR_ALL') {
+        reply = `好的！我已經幫你清空所有工作清單了。 🧹`;
+    } else if (executeTaskId === 'NOT_FOUND') {
+        reply = `抱歉，我在工作清單中找不到您提到的這項任務。 🔍`;
+    } else if (executeTaskId && executeTaskId.startsWith('DELETE_')) {
+        reply = `沒問題，該任務已從清單中移除。`;
+    } else if (executeTaskId) {
+        const targetTask = todoList.find(t => t.id === executeTaskId);
+        if (targetTask) {
+            reply = `沒問題！我這就幫你執行「${targetTask.title}」🚀`;
+        } else {
+            reply = `抱歉，我找不到對應的任務。`;
+        }
+    } else if (taskAdded) {
+        reply = `我了解了！已幫你將「${taskAdded.title}」加入工作清單。請問現在要幫你執行嗎？ 😊`;
+    } else if (/成功|結果|好了沒|完成了嗎/i.test(message)) {
+        const last = todoList[todoList.length - 1];
+        if (last) {
+            reply = `最後一個任務「${last.title}」目前的狀態是：${last.status}。`;
+            if (last.status === 'failed') reply += ` 好像出了一點問題，你可以看下方日誌了解詳情。`;
+        } else {
+            reply = `目前沒有看到任何任務紀錄喔。`;
+        }
     } else {
         reply = `收到！「${message}」— 目前 AI 語意引擎尚未就緒，使用關鍵字模式。請先從推薦清單安裝 Ollama + 語言模型，即可升級為完整 AI 對話體驗！ 🚧`;
     }
 
-    res.json({ success: true, reply, task: taskAdded || undefined, llmUsed: false });
+    res.json({ success: true, reply, task: true, executeTaskId, llmUsed: false });
 });
 
 // GET /api/logs — 取得全域 log
@@ -511,8 +628,8 @@ app.listen(PORT, async () => {
     console.log(`\n  🖥️  ${startMsg}`);
     fileLog(startMsg);
     console.log(`  📍 http://localhost:${PORT}`);
-    console.log(`  📂 Skills 目錄: ${SKILLS_DIR}`);
-    fileLog(`Skills Directory: ${SKILLS_DIR}`);
+    console.log(`  📂 SOPs 目錄: ${SOPS_DIR}`);
+    fileLog(`SOPs Directory: ${SOPS_DIR}`);
 
     // 啟動時非同步檢查 LLM 狀態
     try {

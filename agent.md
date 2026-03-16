@@ -13,10 +13,10 @@
 - 修改 `capabilities/default.json` 賦予殼層最高執行權限 (`shell:allow-execute`)
 
 ### AppData 架構
-- 任務清單 (`tasks.json`) 與技能庫 (`skills/`) 儲存至 `%APPDATA%\aipc-agent\`
-- 初次啟動自動把內建 Skills 複製過去，確保零設定上手
+- 任務清單 (`tasks.json`) 與 SOP 庫 (`sops/`) 儲存至 `%APPDATA%\aipc-agent\`
+- 初次啟動自動把內建 SOPs 複製過去，確保零設定上手
 
-### 初始 Skills 庫
+### 初始 SOPs 庫
 - 🌐 `install-chrome.md` — 靜默下載安裝最新 Chrome
 - 🗑️ `remove-copilot.md` — 登錄檔停用 Copilot
 - 💾 `backup-system.md` — PowerShell 系統還原點
@@ -29,7 +29,7 @@
 ### 推薦清單一鍵執行
 - `renderRecommendList` 加入 **＋ 加入** / **▶ 執行** 雙按鈕
 - `addAndExecuteRecommend()` 一鍵「加入任務 + 立即執行」
-- 後端 `buildRecommendList()` 動態掃描 `skills/` 目錄，有對應 Skill 的項目才顯示 ⚡ 可自動執行 徽章
+- 後端 `buildRecommendList()` 動態掃描 `sops/` 目錄，有對應 SOP 的項目才顯示 ⚡ 可自動執行 徽章
 
 ### remove-copilot 升級
 - 同時寫入 HKCU + HKLM 登錄檔
@@ -48,7 +48,7 @@
 - System Prompt 口語化，`think: false` 關閉 qwen3.5 CoT 思考模式
 - 使用 `/api/chat` 格式（roles messages）效果比 `/api/generate` 自然
 
-### 新增 Skills
+### 新增 SOPs
 - 🧠 `install-ollama.md` — 靜默下載安裝 Ollama
 - 📥 `pull-llm-model.md` — `ollama pull qwen3.5:0.8b`
 
@@ -97,11 +97,11 @@
 ### `build.bat` 全自動編譯腳本
 - 實現從無到有的完整 Tauri 開發環境自動安裝與打包
 - 過程包含：偵測/安裝 Node.js → 安裝 `pkg` → 偵測/安裝 Rust C++ Toolchain → 安裝 `tauri-cli` → 編譯 `app.exe` (NSIS/MSI)
-- 自動將 Node 後端與 Skills 壓縮成 Sidecar Binary (`pkg` 虛擬檔案系統修復)
+- 自動將 Node 後端與 SOPs 壓縮成 Sidecar Binary (`pkg` 虛擬檔案系統修復)
 
 ### APPDATA 檔案存取修復
 - 修正 `pkg` 打包後 `fs.copyFileSync` 無法掛載虛擬檔案的錯誤
-- 確保所有預設 `.md` 技能腳本能在系統第一次啟動時，正確釋放到 `%APPDATA%\aipc-agent\skills` 中
+- 確保所有預設 `.md` SOP 腳本能在系統第一次啟動時，正確釋放到 `%APPDATA%\aipc-agent\sops` 中
 
 ---
 
@@ -116,7 +116,7 @@
 ### 日誌渲染革命：原地更新進度條
 - 修正大量 `curl` 下載訊息導致的日誌洗版問題
 - 實作 `addLogEntry` 智能覆蓋：偵測到 `%` 或 `###` 時，自動更新最後一行日誌而不新增行
-- 同步修正 `skill-executor.js`：將代碼區塊改為「整塊執行」，解決 PowerShell 變數無法跨行傳遞的 Bug
+- 同步修正 `sop-executor.js`：將代碼區塊改為「整塊執行」，解決 PowerShell 變數無法跨行傳遞的 Bug
 
 ### Ollama 安裝守護 (Installation Guard)
 - 升級 `install-ollama.md`：自動清理安裝後強制彈出的 Ollama App 視窗
@@ -129,9 +129,9 @@
 
 ---
 
-## 📌 v0.7 — 技能套件擴充與穩健化 (2026-03-07)
+## 📌 v0.7 — SOP 套件擴充與穩健化 (2026-03-07)
 
-### 新增卡片與對應 Skills
+### 新增卡片與對應 SOPs
 - 📄 `install-office.md` — 透過 `winget` 靜默安裝 LibreOffice
 - 🎮 `install-steam.md` — 下載並靜默安裝 Steam 遊戲平台
 - 🔍 `check-drivers.md` — 觸發系統 `UsoClient` 進行背景驅動與 Windows Update
@@ -186,9 +186,33 @@
   - 🟢 AI 就緒（都有）
 
 ### 錯誤處理改進
-- `skill-executor.js` 改進：非零 exit code 時記錄詳細錯誤訊息
+- `sop-executor.js` 改進：非零 exit code 時記錄詳細錯誤訊息
 - 改進 `runPhaseCommands` 的錯誤日誌級別（warn → error）
 - 確保所有異常都被正確捕捉並回傳給前端
+
+---
+
+## 📌 v0.9 — SOP 全面重構與 UI 體感進化 (2026-03-16)
+
+### 「SOP」標準化命名
+- **全專案重構**：將所有的 `Skills` 相關稱呼更替為 `SOPs` (Standard Operating Procedures / 標準作業程序)。
+- **目錄變更**：`skills/` ➔ `sops/`，內建腳本同步移動。
+- **程式碼對應**：`skill-parser.js` ➔ `sop-parser.js`，`skill-executor.js` ➔ `sop-executor.js`。
+- **後端 API**：`/api/skills` ➔ `/api/sops`。
+- **文件正名**：將所有開發文件、README、註解中提到的「技能書」修正為「**標準作業程序書**」。
+
+### 推薦清單智慧搜尋與優化
+- **新增搜尋欄 (Search Bar)**：側邊欄頂部加入即時過濾功能，輸入關鍵字即刻篩選 SOP 的標題與描述。
+- **沉底排序 (Bottom Sorting)**：已安裝/已執行的項目現在會被強制移動到清單的最底端，並有專屬的「已就緒」分隔線，不再干擾未完成任務。
+- **UI 相容性**：修正了灰色樣式（Opacity 0.5）的視覺呈現。
+
+### 對話系統與邏輯強化
+- **新增「清除對話」功能**：對話框右側加入清除按鈕，支援二次確認彈窗，提升操作靈活性。
+- **任務刪除邏輯改進**：強化了 AI 對「刪除、移除、移掉」等意圖的辨識，避免誤判為新增。
+- **崩潰防治 (Safe Guard)**：修復了一個在搜尋不到任務 ID 時會導致後端崩潰的 `TypeError` (Cannot read property 'title' of undefined)。
+
+### 穩定性與配置記憶
+- **模型記憶功能**：現在程式會自動記住上次選擇的 LLM 模型（如切換到了較大的模型），下次啟動會優先選取，若不存在才 fallback。
 
 ---
 
@@ -196,8 +220,8 @@
 
 - [ ] 硬體健康監控（S.M.A.R.T、CPU 溫度、風扇轉速）
 - [ ] 多輪對話歷史（contextual chat）
-- [ ] Skill 線上商城，動態下載更新
-- [ ] 更多 Skills：防毒掃描、軟體移除
+- [ ] SOP 線上商城，動態下載更新
+- [ ] 更多 SOPs：防毒掃描、軟體移除
 
 ---
 > 📝 這是一支不需要黑綠色文字終端，便能聰明幫你管理系統操作的助手。

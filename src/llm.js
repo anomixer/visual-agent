@@ -13,25 +13,63 @@ const path = require('path');
 const os = require('os');
 const OLLAMA_BASE = 'http://127.0.0.1:11434';
 const DEFAULT_MODEL = 'qwen3.5:0.8b';
+let currentModel = DEFAULT_MODEL;
+
+// 設定路徑：與任務清單共用目錄
+const APP_DATA_DIR = path.join(process.env.APPDATA || (process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Preferences') : path.join(os.homedir(), '.config')), 'aipc-agent');
+const CONFIG_PATH = path.join(APP_DATA_DIR, 'config.json');
+
+/**
+ * 載入預存設定
+ */
+function loadConfig() {
+    try {
+        if (fs.existsSync(CONFIG_PATH)) {
+            const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+            if (data.currentModel) {
+                currentModel = data.currentModel;
+                console.log(`[LLM] 載入預存模型: ${currentModel}`);
+            }
+        }
+    } catch (e) {
+        console.warn('[LLM] 載入設定失敗:', e.message);
+    }
+}
+
+/**
+ * 儲存設定
+ */
+function saveConfig() {
+    try {
+        if (!fs.existsSync(APP_DATA_DIR)) fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+        const config = { currentModel };
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+    } catch (e) {
+        console.error('[LLM] 儲存設定失敗:', e.message);
+    }
+}
+
+// 初始化載入
+loadConfig();
 
 // 系統 Prompt — 口語自然版，避免模型照稿念
-const SYSTEM_PROMPT = `你是「AI管家」，一個住在使用者電腦裡的聰明小幫手，說話像朋友一樣自然。
+const SYSTEM_PROMPT = `你是「AI管家」，一個住在使用者電腦裡的聰明小幫手。
 
-個性設定：
-- 說話直接、簡短，不廢話
-- 用繁體中文，偶爾可以加 emoji 讓回應活潑
-- 遇到系統任務直接告訴使用者「好，已經幫你排好了，按執行就搞定」
-- 不懂的事情就說「這我沒辦法，你去問谷歌吧」，不要亂掰
-- 禁止用條列格式或粗體，就像真人聊天一樣說話
+個性與行為準則：
+- 說話像朋友一樣自然，簡短不廢話。使用繁體中文。
+- **重要：** 看到系統任務需求（如安裝軟體），請告訴使用者「已幫你排入工作清單」，並明確詢問「現在要幫你執行嗎？」。
+- **禁止自動執行：** 除非使用者明確說「是」、「好」、「執行」或「處理」，否則不要觸發執行。
+- **感知能力：** 如果使用者問「有沒有安裝成功？」或「為什麼失敗？」，請參考下方提供的 [[任務狀態與日誌]] 進行分析。
+- **故障排除：** 若任務失敗，請根據日誌中的錯誤訊息幫使用者找出可能的原因（例如：網路中斷、權限不足、檔案被佔用等）。
 
-你能做的事（有技能腳本支援）：
+你能做的 SOP 清單：
 - 安裝 Google Chrome
 - 移除 Windows Copilot
 - 建立系統還原點（備份）
 - 安裝日文語系
 - 安裝 / 設定 Ollama 本地 AI
 
-碰到這些要求，記得說你已經幫他加到清單了，按執行就會自動跑。`;
+碰到這些要求，先確認任務已加入，再問使用者是否執行。`;
 
 let _cachedStatus = null;
 let _lastCheck = 0;
@@ -68,16 +106,26 @@ async function checkOllamaStatus(force = false) {
                 const tagsData = await tagsRes.json();
 
                 if (tagsData.models && Array.isArray(tagsData.models)) {
-                    // 優先尋找精確匹配 (qwen3.5:0.8b)
-                    let foundModel = tagsData.models.find(m => m.name === DEFAULT_MODEL);
+                    // 優先尋找目前設定的模型
+                    let foundModel = tagsData.models.find(m => m.name === currentModel);
 
-                    // 次要尋找任何帶有 qwen3.5 的模型
+                    // [改動] 如果目前記憶的模型不在 Ollama 中，嘗試 fallback
+                    if (!foundModel && currentModel !== DEFAULT_MODEL) {
+                        console.warn(`[LLM] 預設記憶模型 ${currentModel} 不存在，嘗試回退至 ${DEFAULT_MODEL}`);
+                        foundModel = tagsData.models.find(m => m.name === DEFAULT_MODEL);
+                        if (foundModel) {
+                            currentModel = DEFAULT_MODEL; // 正式回退
+                            saveConfig();
+                        }
+                    }
+
+                    // 次要尋找任何帶有 qwen3.5 的模型 (fallback)
                     if (!foundModel) {
-                        const modelPrefix = DEFAULT_MODEL.split(':')[0]; // 'qwen3.5'
+                        const modelPrefix = DEFAULT_MODEL.split(':')[0]; // e.g. 'qwen3.5'
                         foundModel = tagsData.models.find(m => m.name.startsWith(modelPrefix + ':') || m.name === modelPrefix);
                     }
 
-                    // 最後保底：只要包含 qwen 即可（應對未來版本或標籤變動）
+                    // 最後保底：只要包含 qwen 即可
                     if (!foundModel) {
                         foundModel = tagsData.models.find(m => m.name.toLowerCase().includes('qwen'));
                     }
@@ -120,6 +168,34 @@ function invalidateCache() {
     console.log('[LLM] 正在清除狀態快取...');
     _cachedStatus = null;
     _lastCheck = 0;
+}
+
+/**
+ * 取得當前 Ollama 已安裝的所有模型
+ */
+async function listModels() {
+    try {
+        const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+            signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            return data.models || [];
+        }
+    } catch (e) {
+        console.error('[LLM] List models failed:', e.message);
+    }
+    return [];
+}
+
+/**
+ * 設定當前對話使用的模型
+ */
+function setCurrentModel(modelName) {
+    console.log(`[LLM] 切換模型至: ${modelName}`);
+    currentModel = modelName;
+    saveConfig();
+    invalidateCache();
 }
 
 /**
@@ -174,7 +250,7 @@ async function chatWithLLM(userMessage) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            model: DEFAULT_MODEL,
+            model: currentModel,
             messages: [
                 { role: 'system', content: SYSTEM_PROMPT },
                 { role: 'user', content: userMessage },
@@ -204,13 +280,13 @@ async function chatWithLLM(userMessage) {
     return content || '（抱歉，我剛才走神了，你再說一次？）';
 }
 
-
-
 module.exports = {
     checkOllamaStatus,
     chatWithLLM,
     invalidateCache,
     ensureOllamaRunning,
-    DEFAULT_MODEL,
+    listModels,
+    setCurrentModel,
+    getCurrentModel: () => currentModel,
     OLLAMA_BASE,
 };

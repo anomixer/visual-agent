@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (v0.7)
+# AI PC Agent — 實作需求規格書 (v0.9)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -18,9 +18,9 @@
 ┌─────────────────────────────────────────────────────────┐
 │ TitleBar  [File][View][Help] ─── [●LLM] ─── [🌙 ↓ ↑] │
 ├──────────┬────────────────────────────┬─────────────────┤
-│          │                            │                 │
-│  推薦清單  │      📋 工作清單            │   💬 AI 對話    │
-│ (sidebar) │                           │                 │
+│ [搜尋...] │                            │                 │
+│  💡 推薦   │      📋 工作清單            │   💬 AI 對話    │
+│  (sidebar)│                           │   [🗑️ 清除]       │
 │  ←→ drag ─│────────────────────────── │  ←→ drag       │
 │           │   📝 工作日誌  ↕ drag      │  [輸入框]       │
 ├──────────┴────────────────────────────┴─────────────────┤
@@ -36,10 +36,10 @@
 
 | 模組 | 狀態 | 說明 |
 |------|------|------|
-| **Skill 執行引擎** | ✅ | 解析 `.md` 技能腳本，執行 Check/Install/Verify 三階段 |
-| **推薦清單** | ✅ | 動態偵測已有 Skill → 顯示 ⚡ 可自動執行，支援一鍵執行 |
+| **SOP 執行引擎** | ✅ | 解析 `.md` SOP 腳本，執行 Check/Install/Verify 三階段 |
+| **推薦清單** | ✅ | 動態偵測已有 SOP → 顯示 ⚡ 可自動執行，支援項目搜尋與安裝態沉底排序 |
 | **工作清單** | ✅ | 任務 CRUD，進度條，狀態標籤，JSON 匯出匯入 |
-| **AI 對話** | ✅ | 本地 Ollama LLM 優先，fallback 關鍵字模式 |
+| **AI 對話** | ✅ | 本地 Ollama LLM 優先，fallback 關鍵字模式，支援清除對話紀錄 |
 | **LLM 整合** | ✅ | qwen3.5:0.8b，`/api/chat` 格式，think:false |
 | **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載地端模型（qwen3.5:0.8b） |
 | **啟動啟始畫面** | ✅ | 首次執行顯示「環境設定中」，再次執行顯示「伺服器啟動中」，自動淡出 |
@@ -49,9 +49,9 @@
 | **主題切換** | ✅ | Dark / Light，localStorage 記憶 |
 | **EXE 一鍵打包** | ✅ | `.bat` 腳本全自動下載 Node/Rust/TauriCLI 依賴，將 Node Server 封裝成 Tauri Sidecar |
 
-### 2.3 Skills 庫
+### 2.3 SOPs 庫
 
-| Skill ID | 功能 | 狀態 |
+| SOP ID | 功能 | 狀態 |
 |----------|------|------|
 | `rec_install_ollama` | 安裝 Ollama 本地 AI 引擎 | ✅ |
 | `rec_pull_llm_model` | 下載 qwen3.5:0.8b 模型 | ✅ |
@@ -74,13 +74,13 @@ browser ──── public/index.html
                  ▼
              src/server.js      (Express API)
              src/llm.js         (Ollama 整合)
-             src/skill-parser.js
-             src/skill-executor.js
+             src/sop-parser.js
+             src/sop-executor.js
                  │
                  │ PowerShell
                  ▼
-             skills/*.md        (技能腳本庫)
-             %APPDATA%\aipc-agent\  (tasks.json, skills/)
+             sops/*.md        (SOP 腳本庫)
+             %APPDATA%\aipc-agent\  (tasks.json, sops/)
 ```
 
 ---
@@ -93,7 +93,7 @@ browser ──── public/index.html
 | POST | `/api/todo` | 新增任務 |
 | DELETE | `/api/todo/:id` | 刪除任務 |
 | POST | `/api/execute/:id` | 執行任務 |
-| GET | `/api/recommend` | 取得推薦清單（含 skillId）|
+| GET | `/api/recommend` | 取得推薦清單（含 sopId）|
 | GET | `/api/llm/status` | Ollama 狀態 + 模型就緒狀態 |
 | POST | `/api/chat` | AI 對話（LLM 優先）|
 | GET | `/api/logs` | 全域執行日誌 |
@@ -101,11 +101,11 @@ browser ──── public/index.html
 
 ---
 
-## 4. Skill 技能腳本格式
+## 4. SOP 腳本格式
 
 ```markdown
 1. 基本資訊 (Metadata)
-ID: skill_id
+ID: sop_id
 名稱: 顯示名稱
 分類: 分類名稱
 風險等級: 低|中|高
@@ -143,9 +143,9 @@ $true
 0x80070005,沒有管理員權限,1. 請求以系統管理員身分執行
 ```
 
-Skills 存放位置：
-- 開發時：`skills/*.md`
-- 執行時：`%APPDATA%\aipc-agent\skills\*.md`
+SOPs 存放位置：
+- 開發時：`sops/*.md`
+- 執行時：`%APPDATA%\aipc-agent\sops\*.md` (SOP 腳本庫)
 
 ---
 
@@ -154,15 +154,15 @@ Skills 存放位置：
 ### 短期
 - [ ] 多輪對話歷史 context（讓 LLM 記住上文）
 - [ ] 硬體健康監控（S.M.A.R.T、CPU 溫度）
-- [ ] 更多 Skills：防毒掃描、軟體移除
+- [ ] 更多 SOPs：防毒掃描、軟體移除
 
 ### 中期
-- [ ] Skill 線上商城，動態下載更新
+- [ ] SOP 線上商城，動態下載更新
 - [ ] 任務排程（定時執行）
 - [x] Tauri 打包為獨立桌面應用程式 (`build.bat`)
 
 ### 長期
-- [ ] 多輪語意理解（RAG over skill library）
+- [ ] 多輪語意理解（RAG over sop library）
 - [ ] 硬碟壽命預警、主動通知
 
 ---
