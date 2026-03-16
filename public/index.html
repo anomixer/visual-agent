@@ -12,6 +12,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     .splash-overlay {
       position: fixed;
@@ -151,17 +152,46 @@
       <!-- CENTER column: 工作清單 + 日誌 -->
       <div class="center-col">
 
-        <!-- CENTER TOP: 工作清單 -->
+        <!-- CENTER TOP: 多分頁視窗 -->
         <div class="center-top">
-          <div class="panel-titlebar">
-            <span class="panel-title">📋 工作清單</span>
-            <span class="badge" id="todoCount">0</span>
+          <!-- Chrome-like Tab Bar -->
+          <div class="tab-strip" id="centerTabStrip">
+            <div class="tab-item active" data-tab="chalkboard" id="tab-chalkboard">
+              <span class="tab-icon">🎨</span>
+              <span class="tab-title">Chalkboard</span>
+            </div>
+            <div class="tab-item hidden" data-tab="todolist" id="tab-todolist">
+              <span class="tab-icon">📋</span>
+              <span class="tab-title">工作清單</span>
+              <span class="badge" id="todoCount">0</span>
+              <button class="tab-close">✕</button>
+            </div>
           </div>
-          <div class="todo-body" id="todoListContainer">
-            <div class="empty-state" id="todoEmpty">
-              <div class="empty-icon">✨</div>
-              <p>還沒有任務</p>
-              <p class="empty-hint">從右側對話輸入需求，或從推薦清單加入</p>
+
+          <!-- Tab Contents -->
+          <div class="center-top-content">
+            <!-- Chalkboard View -->
+            <div class="tab-content active" id="content-chalkboard">
+              <div class="chalkboard-body">
+                <div class="chalkboard-welcome">
+                  <h2>歡迎使用 Chalkboard</h2>
+                  <p>這裡可以快速啟動推薦工具與瀏覽器。請從左側推薦清單選擇工具，或是直接與 AI 對話。</p>
+                  <div class="chalkboard-grid" id="chalkboardGrid">
+                    <!-- 這裡未來可以放像瀏覽器標籤一樣的快速連結 -->
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Todo List View -->
+            <div class="tab-content" id="content-todolist">
+              <div class="todo-body" id="todoListContainer">
+                <div class="empty-state" id="todoEmpty">
+                  <div class="empty-icon">✨</div>
+                  <p>目前沒有執行中的任務</p>
+                  <p class="empty-hint">您可以從左側推薦清單或透過對話新增任務</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -190,7 +220,7 @@
         <div class="chat-history" id="chatHistory">
           <div class="panel-titlebar">
             <span class="panel-title">💬 AI 對話</span>
-            <span class="chat-model-badge" id="chatModelBadge" style="display:none;">qwen3.5:0.8b</span>
+            <span class="chat-model-badge" id="chatModelBadge" style="display:none;">qwen3.5:4b</span>
           </div>
           <div class="chat-messages" id="chatMessages">
           </div>

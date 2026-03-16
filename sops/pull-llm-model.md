@@ -27,9 +27,9 @@ try {
 指令 (PowerShell):
 
 ```powershell
-UI 顯示內容: 「正在下載 Qwen3.5 語言模型 (約 1GB)，首次下載請耐心等候...」
+UI 顯示內容: 「正在下載 Qwen3.5 語言模型 (約 3.5GB)，首次下載請耐心等候...」
 $cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
-& $cmd pull qwen3.5:0.8b
+& $cmd pull qwen3.5:4b
 ```
 
 第三階段：驗證 (Verify)

@@ -25,6 +25,10 @@ let recognition = null;
 let currentLogIndex = 0;
 let recSearchQuery = '';
 
+// Tab State
+let activeTab = 'chalkboard';
+let openTabs = ['chalkboard']; // Initially only chalkboard
+
 // ── DOM ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -266,8 +270,8 @@ async function checkLLMStatus() {
             if (!window._llmWelcomed) {
                 // 顯示初始訊息
                 appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以用口語直接告訴我你需要安裝什麼軟體或是調整系統設定喔！');
-                appendChatBubble('ai', `🧠 AI 引擎就緒！模型 ${data.modelName || 'qwen3.5:0.8b'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
-                addUILog(`🧠 Ollama ${data.modelName || 'qwen3.5:0.8b'} 就緒`, 'success');
+                appendChatBubble('ai', `🧠 AI 引擎就緒！模型 ${data.modelName || 'qwen3.5:4b'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
+                addUILog(`🧠 Ollama ${data.modelName || 'qwen3.5:4b'} 就緒`, 'success');
                 window._llmWelcomed = true;
             }
 
@@ -341,29 +345,57 @@ async function toggleModelMenu() {
     menu = document.createElement('div');
     menu.className = 'model-menu';
     
-    // Header label
-    const head = document.createElement('div');
-    head.style.cssText = 'padding:8px 12px; font-size:10px; color:var(--text-muted); border-bottom:1px solid var(--border-subtle); background:var(--bg-sidebar);';
-    head.textContent = '選擇語言模型 (ollama list)';
-    menu.appendChild(head);
+    // Search Box
+    const searchWrapper = document.createElement('div');
+    searchWrapper.className = 'model-menu-search';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = '搜尋模型...';
+    searchInput.autocomplete = 'off';
+    searchWrapper.appendChild(searchInput);
+    menu.appendChild(searchWrapper);
 
-    data.models.forEach(m => {
-        const item = document.createElement('div');
-        item.className = `model-menu-item ${m.name === data.currentModel ? 'active' : ''}`;
-        item.innerHTML = `<span>${m.name}</span> <span style="font-size:9px;opacity:0.6">${(m.size / 1024 / 1024 / 1024).toFixed(1)}GB</span>`;
-        item.onclick = async () => {
-            const res = await api('/api/llm/model', { method: 'POST', body: { modelName: m.name } });
-            if (res.success) {
-                addUILog(`🧠 模型已切換至: ${m.name}`, 'success');
-                appendChatBubble('ai', `🧠 我現在切換到 **${m.name}** 囉！隨時可以開始對話。`);
-                checkLLMStatus();
-            }
-            menu.remove();
-        };
-        menu.appendChild(item);
-    });
+    const listContainer = document.createElement('div');
+    listContainer.className = 'model-menu-list';
+    menu.appendChild(listContainer);
+
+    const renderMenuContent = (filter = '') => {
+        listContainer.innerHTML = '';
+        const filtered = data.models.filter(m => m.name.toLowerCase().includes(filter.toLowerCase()));
+        
+        if (filtered.length === 0) {
+            const noRes = document.createElement('div');
+            noRes.style.cssText = 'padding:12px; font-size:11px; color:var(--text-muted); text-align:center;';
+            noRes.textContent = '找不到相符的模型';
+            listContainer.appendChild(noRes);
+            return;
+        }
+
+        filtered.forEach(m => {
+            const item = document.createElement('div');
+            item.className = `model-menu-item ${m.name === data.currentModel ? 'active' : ''}`;
+            item.innerHTML = `<span>${m.name}</span> <span style="font-size:9px;opacity:0.6">${(m.size / 1024 / 1024 / 1024).toFixed(1)}GB</span>`;
+            item.onclick = async () => {
+                const res = await api('/api/llm/model', { method: 'POST', body: { modelName: m.name } });
+                if (res.success) {
+                    addUILog(`🧠 模型已切換至: ${m.name}`, 'success');
+                    appendChatBubble('ai', `🧠 我現在切換到 **${m.name}** 囉！隨時可以開始對話。`);
+                    checkLLMStatus();
+                }
+                menu.remove();
+            };
+            listContainer.appendChild(item);
+        });
+    };
+
+    renderMenuContent();
+
+    searchInput.onclick = (e) => e.stopPropagation();
+    searchInput.oninput = (e) => renderMenuContent(e.target.value);
 
     document.querySelector('.chat-history').appendChild(menu);
+    // Focus search input on open
+    setTimeout(() => searchInput.focus(), 50);
 
     // Click outside to close
     setTimeout(() => {
@@ -552,7 +584,12 @@ async function addRecommendToTodo(item) {
         method: 'POST',
         body: { title: item.title, description: item.description, category: item.category, skillId: item.id },
     });
-    if (data.success) { todoList = data.todoList; renderTodoList(); addUILog(`＋ 已加入：${item.title}`, 'info'); }
+    if (data.success) { 
+        todoList = data.todoList; 
+        renderTodoList(); 
+        addUILog(`＋ 已加入：${item.title}`, 'info'); 
+        openTab('todolist');
+    }
 }
 
 async function addAndExecuteRecommend(item) {
@@ -563,6 +600,7 @@ async function addAndExecuteRecommend(item) {
     if (data.success) {
         todoList = data.todoList;
         renderTodoList();
+        openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
             addUILog(`▶ 開始執行：${item.title}`, 'info');
@@ -604,6 +642,7 @@ async function sendChat() {
         appendChatBubble('ai', data.reply);
         if (data.task) {
             await loadTodo();
+            openTab('todolist');
             // 如果清單被清空了，不需要展開 log
             if (todoList.length > 0) expandLog();
         }
@@ -620,13 +659,66 @@ function appendChatBubble(role, text) {
     const isAI = role === 'ai';
     const div = document.createElement('div');
     div.className = `message ${isAI ? 'ai-message' : 'user-message'}`;
-    div.innerHTML = `
-        <div class="msg-avatar">${isAI ? '🤖' : '👤'}</div>
-        <div class="msg-bubble">${escapeHtml(text)}</div>
-    `;
+    
+    if (isAI) {
+        // 設定 marked 選項 (若 library 已載入)
+        const htmlContent = typeof marked !== 'undefined' ? marked.parse(text) : escapeHtml(text).replace(/\n/g, '<br>');
+        
+        div.innerHTML = `
+            <div class="msg-avatar-col">
+                <div class="msg-avatar">🤖</div>
+                <button class="btn-speak" title="宣讀回覆">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12">
+                        <path fill-rule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.983 5.983 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.984 3.984 0 00-1.172-2.828 1 1 0 010-1.415z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            </div>
+            <div class="msg-bubble markdown-body">${htmlContent}</div>
+        `;
+        div.querySelector('.btn-speak').addEventListener('click', () => speakText(text, div.querySelector('.btn-speak')));
+    } else {
+        div.innerHTML = `
+            <div class="msg-avatar">👤</div>
+            <div class="msg-bubble">${escapeHtml(text)}</div>
+        `;
+    }
+    
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return div;
+}
+
+let speechSynth = window.speechSynthesis;
+let currentUtterance = null;
+
+function speakText(text, btn) {
+    if (speechSynth.speaking) {
+        speechSynth.cancel();
+        if (currentUtterance && currentUtterance._btn) {
+            currentUtterance._btn.classList.remove('speaking');
+        }
+        return;
+    }
+
+    // 移除 [ACTION:...] 標籤與 Emoji 再朗讀
+    let cleanText = text.replace(/\[ACTION:.*?\]/g, '');
+    // 移除常見的 Unicode Emoji
+    cleanText = cleanText.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}]/gu, '');
+    cleanText = cleanText.trim();
+    
+    if (!cleanText) return;
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = 'zh-TW';
+    utterance.rate = 1.0;
+    utterance._btn = btn;
+
+    utterance.onstart = () => btn.classList.add('speaking');
+    utterance.onend = () => btn.classList.remove('speaking');
+    utterance.onerror = () => btn.classList.remove('speaking');
+
+    currentUtterance = utterance;
+    speechSynth.speak(utterance);
 }
 
 function appendThinking() {
@@ -737,8 +829,27 @@ function showTaskModal(task) {
 //  THEME
 // ════════════════════════════════════════════════════════
 function applyTheme(theme) {
-    if (theme === 'light') document.documentElement.classList.add('theme-light');
+    const isLight = theme === 'light';
+    if (isLight) document.documentElement.classList.add('theme-light');
     else document.documentElement.classList.remove('theme-light');
+    
+    // 更新圖示：暗色時顯示太陽，亮色時顯示月亮
+    if (btnTheme) {
+        if (isLight) {
+            btnTheme.innerHTML = `
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                </svg>`;
+            btnTheme.title = '切換至深色模式';
+        } else {
+            btnTheme.innerHTML = `
+                <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+                    <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.243 3.05a1 1 0 010 1.414l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM14.243 14.95a1 1 0 01-1.414 0l-.707-.707a1 1 0 111.414-1.414l.707.707a1 1 0 010 1.414zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.243-3.05a1 1 0 010-1.414l.707-.707a1 1 0 111.414 1.414l-.707.707a1 1 0 01-1.414 0zM3 10a1 1 0 011-1h1a1 1 0 110 2H4a1 1 0 01-1-1zm3.05-4.243a1 1 0 011.414 0l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414zM10 6a4 4 0 100 8 4 4 0 000-8z" clip-rule="evenodd" />
+                </svg>`;
+            btnTheme.title = '切換至淺色模式';
+        }
+    }
+    
     localStorage.setItem('theme', theme);
 }
 
@@ -784,7 +895,20 @@ function setupSpeechRecognition() {
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.onresult = (e) => {
-        chatInput.value = e.results[0][0].transcript;
+        const transcript = e.results[0][0].transcript;
+        const start = chatInput.selectionStart;
+        const end = chatInput.selectionEnd;
+        const text = chatInput.value;
+        const before = text.substring(0, start);
+        const after = text.substring(end);
+
+        chatInput.value = before + transcript + after;
+
+        // Move cursor to the end of the newly inserted text
+        const newCursorPos = start + transcript.length;
+        chatInput.setSelectionRange(newCursorPos, newCursorPos);
+        chatInput.focus();
+
         stopRecording();
     };
     recognition.onend = () => stopRecording();
@@ -973,6 +1097,105 @@ function setupEventListeners() {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') modalOverlay.classList.remove('visible');
     });
+
+    // Center Tabs
+    $('#centerTabStrip')?.addEventListener('click', (e) => {
+        const item = e.target.closest('.tab-item');
+        if (!item) return;
+        const tabId = item.dataset.tab;
+        
+        if (e.target.closest('.tab-close')) {
+            e.stopPropagation();
+            closeTab(tabId);
+            return;
+        }
+        switchTab(tabId);
+    });
+
+    // Menu Bar
+    $('#menuView')?.addEventListener('click', toggleViewMenu);
+}
+
+// ── Tab Management ─────────────────────────────────────
+function switchTab(tabId) {
+    if (!openTabs.includes(tabId)) return;
+    activeTab = tabId;
+    
+    // Update tabs UI
+    $$('.tab-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.tab === tabId);
+    });
+    
+    // Update content UI
+    $$('.tab-content').forEach(content => {
+        content.classList.toggle('active', content.id === `content-${tabId}`);
+    });
+}
+
+function openTab(tabId) {
+    if (!openTabs.includes(tabId)) {
+        openTabs.push(tabId);
+        const tabEl = $(`#tab-${tabId}`);
+        if (tabEl) tabEl.classList.remove('hidden');
+    }
+    switchTab(tabId);
+}
+
+function closeTab(tabId) {
+    if (tabId === 'chalkboard') return; // Cannot close chalkboard
+    
+    openTabs = openTabs.filter(id => id !== tabId);
+    const tabEl = $(`#tab-${tabId}`);
+    if (tabEl) tabEl.classList.add('hidden');
+    
+    if (activeTab === tabId) {
+        switchTab('chalkboard');
+    }
+}
+
+// ── View Menu Logic ─────────────────────────────────────
+function toggleViewMenu(e) {
+    let menu = document.querySelector('.view-dropdown');
+    if (menu) { menu.remove(); return; }
+
+    menu = document.createElement('div');
+    menu.className = 'view-dropdown menu-dropdown';
+    
+    const items = [
+        { id: 'chalkboard', label: '🎨 Chalkboard', icon: '🎨' },
+        { id: 'todolist', label: '📋 工作清單', icon: '📋' }
+    ];
+
+    items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'menu-dropdown-item';
+        const isOpen = openTabs.includes(item.id);
+        div.innerHTML = `
+            <span>${item.label}</span>
+            <span style="font-size:10px; opacity:0.6">${isOpen ? '（已開啟）' : ''}</span>
+        `;
+        div.onclick = () => {
+            openTab(item.id);
+            menu.remove();
+        };
+        menu.appendChild(div);
+    });
+
+    document.body.appendChild(menu);
+    const rect = e.target.getBoundingClientRect();
+    menu.style.top = rect.bottom + 'px';
+    menu.style.left = rect.left + 'px';
+
+    // Close on outside click
+    setTimeout(() => {
+        const closer = (ev) => {
+            if (!menu.contains(ev.target)) {
+                menu.remove();
+                document.removeEventListener('click', closer);
+            }
+        };
+        document.addEventListener('click', closer);
+    }, 0);
 }
 
 // ════════════════════════════════════════════════════════

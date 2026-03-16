@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const OLLAMA_BASE = 'http://127.0.0.1:11434';
-const DEFAULT_MODEL = 'qwen3.5:0.8b';
+const DEFAULT_MODEL = 'qwen3.5:4b';
 let currentModel = DEFAULT_MODEL;
 
 // 設定路徑：與任務清單共用目錄
@@ -52,24 +52,38 @@ function saveConfig() {
 // 初始化載入
 loadConfig();
 
-// 系統 Prompt — 口語自然版，避免模型照稿念
-const SYSTEM_PROMPT = `你是「AI管家」，一個住在使用者電腦裡的聰明小幫手。
+// 基礎系統 Prompt
+const BASE_SYSTEM_PROMPT = `你是一名住在 Windows 電腦裡的「AI 智慧管家」與「資深軟體工程師」。
+你的存在是為了讓複雜的操作變得直覺。
 
-個性與行為準則：
-- 說話像朋友一樣自然，簡短不廢話。使用繁體中文。
-- **重要：** 看到系統任務需求（如安裝軟體），請告訴使用者「已幫你排入工作清單」，並明確詢問「現在要幫你執行嗎？」。
-- **禁止自動執行：** 除非使用者明確說「是」、「好」、「執行」或「處理」，否則不要觸發執行。
-- **感知能力：** 如果使用者問「有沒有安裝成功？」或「為什麼失敗？」，請參考下方提供的 [[任務狀態與日誌]] 進行分析。
-- **故障排除：** 若任務失敗，請根據日誌中的錯誤訊息幫使用者找出可能的原因（例如：網路中斷、權限不足、檔案被佔用等）。
+你的守則：
+1. **簡潔精準**：說話直擊重點，避免囉嗦。先給結論，再簡要說明原因。
+2. **專家直覺**：深度理解使用者意圖。若使用者提到電腦問題，主動連結相關 SOP。
+3. **安全第一**：涉及任何系統變動、執行任務或下載模型，必須先簡述風險並「徵得使用者同意」。
 
-你能做的 SOP 清單：
-- 安裝 Google Chrome
-- 移除 Windows Copilot
-- 建立系統還原點（備份）
-- 安裝日文語系
-- 安裝 / 設定 Ollama 本地 AI
+回覆規範：
+- 使用「繁體中文」。展現專業且親切的工程師態度。
+- 善用即時資訊：[[當前系統狀態]]、[[目前已安裝模型]]。
+- 若需操作系統，請在回覆末端附加協議標籤 [ACTION:...]。`;
 
-碰到這些要求，先確認任務已加入，再問使用者是否執行。`;
+/**
+ * 載入所有 Skill 定義並組合為 System Prompt
+ */
+function buildFullSystemPrompt() {
+    let fullPrompt = BASE_SYSTEM_PROMPT + '\n\n';
+    
+    // 掃描 skills 目錄
+    const skillsDir = path.join(__dirname, '..', 'skills');
+    if (fs.existsSync(skillsDir)) {
+        const files = fs.readdirSync(skillsDir).filter(f => f.endsWith('.md'));
+        files.forEach(file => {
+            const content = fs.readFileSync(path.join(skillsDir, file), 'utf-8');
+            fullPrompt += `### 技能定義 (${file}):\n${content}\n\n`;
+        });
+    }
+
+    return fullPrompt;
+}
 
 let _cachedStatus = null;
 let _lastCheck = 0;
@@ -252,15 +266,16 @@ async function chatWithLLM(userMessage) {
         body: JSON.stringify({
             model: currentModel,
             messages: [
-                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'system', content: buildFullSystemPrompt() },
                 { role: 'user', content: userMessage },
             ],
             stream: false,
             think: false,         // qwen3.5 專屬：關掉 chain-of-thought，直接輸出答案
             options: {
-                temperature: 0.85,
+                temperature: 0.7,   // 稍微降低隨機性，讓回答更穩定
                 top_p: 0.9,
-                num_predict: 300,
+                num_predict: 800,   // 設定一個合理的上限，避免過長
+                // 不指定 num_ctx，讓 Ollama 抓取 Model 檔案中定義的預設值 (例如 2048, 4096, 32k 等)
                 repeat_penalty: 1.1,
             },
         }),
