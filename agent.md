@@ -24,84 +24,28 @@
 
 ---
 
-## 📌 2026.03.05 — UI 強化 + 推薦執行
+## 📌 2026.03.05 — UI 強化、LLM 整合與打包發佈
 
-### 推薦清單一鍵執行
+### UI 強化 + 推薦執行
 - `renderRecommendList` 加入 **＋ 加入** / **▶ 執行** 雙按鈕
 - `addAndExecuteRecommend()` 一鍵「加入任務 + 立即執行」
 - 後端 `buildRecommendList()` 動態掃描 `sops/` 目錄，有對應 SOP 的項目才顯示 ⚡ 可自動執行 徽章
+- **remove-copilot 升級**：同時寫入 HKCU + HKLM 登錄檔，並嘗試移除 Copilot AppxPackage，提供驗證腳本。
 
-### remove-copilot 升級
-- 同時寫入 HKCU + HKLM 登錄檔
-- 嘗試移除 Copilot AppxPackage（all users）
-- 提供獨立驗證腳本 `verify-remove-copilot.ps1`
+### 本地 LLM 整合 (Ollama)
+- 新增 `src/llm.js` 負責 Ollama 狀態偵測與對話。
+- 啟動時自動 ping `127.0.0.1:11434`，偵測 Ollama 版本與模型是否就緒。
+- **全自動 AI 無縫體驗 (Auto-Bootstrap)**：新電初次啟動若無 Ollama，會自動背景觸發下載與靜默安裝，並自動 pull 模型。
+- **LLM 狀態指示燈**：Title bar 加入發光小圓點（🔴 未就緒 / 🟡 沒模型 / 🟢 已就緒）。
 
----
+### VS Code 風格 UI 重構
+- **三欄可拖拉介面**：側邊欄寬度、聊天欄寬度、日誌面板高度皆可滑鼠拖拉調整。
+- **設計系統**：VS Code 色彩配置、`JetBrains Mono` 日誌字體、Task card 狀態顯色。
+- **佈局持久化**：佈局設定自動儲存至 `localStorage`。
 
-## 📌 2026.03.05 — 本地 LLM 整合
-
-### Ollama + qwen3.5:4b 整合
-- 新增 `src/llm.js` 負責 Ollama 狀態偵測與對話
-- 啟動時自動 ping `localhost:11434`，偵測 Ollama 版本與模型是否就緒
-- `/api/chat` 升級：**LLM 優先**，Ollama 不可用時 fallback 到關鍵字比對
-- `/api/llm/status` 新 API 端點
-- System Prompt 口語化，`think: false` 關閉 qwen3.5 CoT 思考模式
-- 使用 `/api/chat` 格式（roles messages）效果比 `/api/generate` 自然
-
-### 新增 SOPs
-- 🧠 `install-ollama.md` — 靜默下載安裝 Ollama
-- 📥 `pull-llm-model.md` — `ollama pull qwen3.5:4b`
-
-### 全自動 AI 無縫體驗 (Auto-Bootstrap)
-- 新電腦初次開啟程式時，若未偵測到 Ollama，UI 提示並**自動背景觸發**下載與靜默安裝
-- Ollama 就緒後，若無模型，再次**自動加入並執行**模型下載任務
-- **模型選擇策略**：優先使用地端 `qwen3.5:4b`（更聰明的推理性能），無需詢問用戶
-- 使用者只需打開程式放置，即可全自動點亮「🟢 AI 就緒」進入智能管家狀態
-
-### LLM 狀態指示燈
-- Title bar 加入發光小圓點（🔴 AI 引擎未就緒 / 🟡 模型未就緒 / 🟢 AI 就緒）
-- Status bar 同步顯示狀態
-
-
----
-
-## 📌 2026.03.05 — VS Code 風格 UI 重構
-
-### 三欄可拖拉介面
-```
-┌─────────────────────────────────────────────────────────┐
-│ TitleBar  [File][View][Help] ─── [●AI就緒] ─── [🌙↓↑] │
-├──────────┬────────────────────────────┬─────────────────┤
-│ 推薦清單  │  📋 工作清單               │  💬 AI 對話     │
-│ (sidebar) │  (task cards)              │  (chat history) │
-│←→ resize ─│──────────────────────────  ←→ resize        │
-│           │  📝 工作日誌 ↕ resize      │  [使用者輸入框] │
-├──────────┴────────────────────────────┴─────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]    [2026.03.17][繁]   │
-└─────────────────────────────────────────────────────────┘
-```
-
-- 所有面板邊界皆可滑鼠拖拉調整：側邊欄寬度、聊天欄寬度、日誌面板高度
-- 佈局設定自動儲存至 `localStorage`
-
-### 設計系統
-- VS Code 色彩配置（`#1e1e1e` 背景、`#569cd6` accent）
-- `JetBrains Mono` 日誌字體
-- Task card 左邊框顏色代表狀態（藍=待執行、黃=執行中、綠=完成、紅=失敗）
-- Message bubble 對話氣泡（AI 左/使用者右）
-
----
-
-## 📌 2026.03.05 — 一鍵打包 EXE
-
-### `build.bat` 全自動編譯腳本
-- 實現從無到有的完整 Tauri 開發環境自動安裝與打包
-- 過程包含：偵測/安裝 Node.js → 安裝 `pkg` → 偵測/安裝 Rust C++ Toolchain → 安裝 `tauri-cli` → 編譯 `app.exe` (NSIS/MSI)
-- 自動將 Node 後端與 SOPs 壓縮成 Sidecar Binary (`pkg` 虛擬檔案系統修復)
-
-### APPDATA 檔案存取修復
-- 修正 `pkg` 打包後 `fs.copyFileSync` 無法掛載虛擬檔案的錯誤
-- 確保所有預設 `.md` SOP 腳本能在系統第一次啟動時，正確釋放到 `%APPDATA%\aipc-agent\sops` 中
+### 一鍵打包 EXE (Tauri)
+- **`build.bat` 全自動編譯腳本**：實現從無到有的完整 Tauri 開發環境自動安裝與打包（Node -> Rust -> Tauri）。
+- **APPDATA 檔案存取修復**：修正 `pkg` 打包後虛擬檔案系統的路徑掛載問題。
 
 ---
 
@@ -213,8 +157,6 @@
 
 ### 穩定性與配置記憶
 - **模型記憶功能**：現在程式會自動記住上次選擇的 LLM 模型（如切換到了較大的模型），下次啟動會優先選取，若不存在才 fallback。
-
----
 
 ---
 
