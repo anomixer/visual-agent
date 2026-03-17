@@ -1490,10 +1490,12 @@ async function updateHardwareStatus() {
             // CPU
             setGauge('cpu', h.cpu.load);
             if ($('#hw-cpu-model')) $('#hw-cpu-model').textContent = h.cpu.model;
+            if ($('#hw-cpu-temp')) $('#hw-cpu-temp').textContent = h.cpu.temp ? `${h.cpu.temp}°C` : '';
 
             // GPU
             setGauge('gpu', h.gpu.load);
             if ($('#hw-gpu-name')) $('#hw-gpu-name').textContent = h.gpu.name || 'N/A';
+            if ($('#hw-gpu-temp')) $('#hw-gpu-temp').textContent = h.gpu.temp ? `${h.gpu.temp}°C` : '';
 
             // RAM
             setGauge('ram', h.ram.usage);

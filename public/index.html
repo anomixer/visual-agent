@@ -238,7 +238,10 @@
                         <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
                         <circle class="gauge-ring-fill" id="gauge-cpu" cx="50" cy="50" r="40" style="stroke-dashoffset: 251.2;"></circle>
                       </svg>
-                      <div class="gauge-text" id="hw-cpu-load">0%</div>
+                      <div class="gauge-text">
+                        <span id="hw-cpu-load">0%</span>
+                        <span class="gauge-subtext" id="hw-cpu-temp"></span>
+                      </div>
                     </div>
                     <div class="card-note" id="hw-cpu-model">偵測中...</div>
                   </div>
@@ -251,7 +254,10 @@
                         <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
                         <circle class="gauge-ring-fill" id="gauge-gpu" cx="50" cy="50" r="40" style="stroke-dashoffset: 251.2;"></circle>
                       </svg>
-                      <div class="gauge-text" id="hw-gpu-load">0%</div>
+                      <div class="gauge-text">
+                        <span id="hw-gpu-load">0%</span>
+                        <span class="gauge-subtext" id="hw-gpu-temp"></span>
+                      </div>
                     </div>
                     <div class="card-note" id="hw-gpu-name">偵測中...</div>
                   </div>

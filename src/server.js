@@ -42,9 +42,11 @@ if (!fs.existsSync(aipcDir)) {
 const TASKS_FILE = path.join(aipcDir, 'tasks.json');
 const SOPS_DIR = path.join(aipcDir, 'sops');
 const SKILLS_DIR = path.join(aipcDir, 'skills');
+const PLUGINS_DIR = path.join(aipcDir, 'plugins');
 
 if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
 if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
+if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
 
 /**
  * 同步內建的腳本與技能至 AppData
@@ -69,6 +71,16 @@ function syncBundledAssets() {
             files.forEach(file => {
                 const dest = path.join(SKILLS_DIR, file);
                 if (!fs.existsSync(dest)) fs.copyFileSync(path.join(bundledSkillsDir, file), dest);
+            });
+        }
+
+        // 同步 Plugins
+        const bundledPluginsDir = path.join(__dirname, '..', 'plugins');
+        if (fs.existsSync(bundledPluginsDir)) {
+            const files = fs.readdirSync(bundledPluginsDir).filter(f => f.endsWith('.js'));
+            files.forEach(file => {
+                const dest = path.join(PLUGINS_DIR, file);
+                if (!fs.existsSync(dest)) fs.copyFileSync(path.join(bundledPluginsDir, file), dest);
             });
         }
     } catch (e) {
@@ -320,9 +332,9 @@ app.get('/api/recommend', (req, res) => {
 app.get('/api/llm/status', async (req, res) => {
     try {
         const status = await llm.checkOllamaStatus();
-        res.json({ 
-            success: true, 
-            ...status, 
+        res.json({
+            success: true,
+            ...status,
             currentModel: llm.getCurrentModel(),
             provider: llm.getCurrentProvider()
         });
@@ -730,10 +742,12 @@ app.listen(PORT, async () => {
     console.log(`\n  🖥️  ${startMsg}`);
     fileLog(startMsg);
     console.log(`  📍 http://localhost:${PORT}`);
-    console.log(`  📂 SOPs   目錄: ${SOPS_DIR}`);
-    console.log(`  🛠️ Skills 目錄: ${SKILLS_DIR}`);
+    console.log(`  📂 SOPs    目錄: ${SOPS_DIR}`);
+    console.log(`  🛠️ Skills  目錄: ${SKILLS_DIR}`);
+    console.log(`  🔌 Plugins 目錄: ${PLUGINS_DIR}`);
     fileLog(`SOPs Directory: ${SOPS_DIR}`);
     fileLog(`Skills Directory: ${SKILLS_DIR}`);
+    fileLog(`Plugins Directory: ${PLUGINS_DIR}`);
 
     // 啟動時非同步檢查 LLM 狀態
     try {
