@@ -738,16 +738,21 @@ app.listen(PORT, async () => {
     // 啟動時非同步檢查 LLM 狀態
     try {
         const result = await llm.checkOllamaStatus();
+        const provider = llm.getCurrentProvider();
         if (result.available && result.modelReady) {
-            const msg = `🧠 LLM 引擎就緒：Ollama v${result.version}，模型 ${result.modelName} 已載入`;
+            let msg = `🧠 LLM 就緒：${provider}`;
+            if (provider === 'Ollama' && result.version) {
+                msg += ` v${result.version}`;
+            }
+            msg += `，模型 ${result.modelName} 已載入`;
             console.log(`  ${msg}\n`);
             fileLog(msg);
         } else if (result.available) {
-            const msg = `🟡 Ollama 已安裝但模型尚未下載`;
+            const msg = `🟡 ${provider} 運作中，但模型尚未就緒`;
             console.log(`  ${msg}\n`);
             fileLog(msg);
         } else {
-            const msg = `🔴 未偵測到 Ollama`;
+            const msg = `🔴 未偵測到 ${provider} 服務 (${llm.getCurrentBaseUrl()})`;
             console.log(`  ${msg}\n`);
             fileLog(msg);
         }

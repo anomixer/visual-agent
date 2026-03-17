@@ -1299,6 +1299,7 @@ function toggleViewMenu(e) {
     
     const items = [
         { id: 'chalkboard', label: '🎨 Chalkboard', icon: '🎨' },
+        { id: 'hardware', label: '🌡️ 硬體狀態', icon: '🌡️' },
         { id: 'todolist', label: '📋 工作清單', icon: '📋' }
     ];
 
@@ -1496,24 +1497,26 @@ async function updateHardwareStatus() {
 
             // RAM
             setGauge('ram', h.ram.usage);
-            const ramTotalGB = (h.ram.total / 1024 / 1024 / 1024).toFixed(1);
-            if ($('#hw-ram-total')) $('#hw-ram-total').textContent = `${ramTotalGB} GB`;
+            const ramTotalGB = Math.round(h.ram.total / 1024 / 1024 / 1024);
+            const ramUsedGB = (h.ram.total - h.ram.free) / 1024 / 1024 / 1024;
+            if ($('#hw-ram-total')) $('#hw-ram-total').textContent = `${ramUsedGB.toFixed(1)} GB of ${ramTotalGB}GB`;
 
             // Disk (以第一個硬碟為代表)
             if (h.disk.drives && h.disk.drives.length > 0) {
                 const mainDisk = h.disk.drives[0];
                 const diskGauge = document.getElementById('gauge-disk');
+                
+                // 健康 = 100%, 警告 = 50%, 危險 = 20%
+                let healthScore = 100;
+                if (mainDisk.health === 'Warning') healthScore = 50;
+                if (mainDisk.health === 'Unhealthy' || h.disk.status === 'Warning') healthScore = 20;
+
                 if (diskGauge) {
-                    // 健康 = 100%, 警告 = 50%, 危險 = 10%
-                    let healthScore = 100;
-                    if (mainDisk.health === 'Warning') healthScore = 50;
-                    if (mainDisk.health === 'Unhealthy' || h.disk.status === 'Warning') healthScore = 20;
-                    
                     diskGauge.style.strokeDashoffset = CIRCUMFERENCE - (healthScore / 100) * CIRCUMFERENCE;
                     diskGauge.style.stroke = healthScore === 100 ? 'var(--accent-green)' : (healthScore === 50 ? 'orange' : 'var(--accent-red)');
                 }
-                if ($('#hw-disk-status')) $('#hw-disk-status').textContent = mainDisk.health;
-                if ($('#hw-disk-name')) $('#hw-disk-name').textContent = mainDisk.name;
+                if ($('#hw-disk-status')) $('#hw-disk-status').textContent = `${healthScore}%`;
+                if ($('#hw-disk-name')) $('#hw-disk-name').textContent = `S.M.A.R.T: ${mainDisk.name}`;
             }
 
             if ($('#hw-last-update')) {
