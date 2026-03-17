@@ -19,7 +19,10 @@ const API = 'http://localhost:3210';
 let todoList = [];
 let recommendList = [];
 let pollingInterval = null;
-let isLogCollapsed = false;
+let chatAbortController = null;
+let isSidebarCollapsed = false;
+let isChatCollapsed = false;
+let isPanelCollapsed = false; 
 let isRecording = false;
 let recognition = null;
 let currentLogIndex = 0;
@@ -54,13 +57,50 @@ const btnTheme = $('#btnTheme');
 const btnExport = $('#btnExport');
 const btnImport = $('#btnImport');
 const importFileInput = $('#importFileInput');
+const btnToggleSidebar = $('#btnToggleSidebar');
+const btnTogglePanel = $('#btnTogglePanel');
+const btnToggleChat = $('#btnToggleChat');
 const btnToggleLog = $('#btnToggleLog');
 const modalOverlay = $('#modalOverlay');
 const modalTitle = $('#modalTitle');
 const modalBody = $('#modalBody');
 const btnCloseModal = $('#btnCloseModal');
+
+// Provider Settings
+const providerSettingsOverlay = $('#providerSettingsOverlay');
+const btnCloseProviderModal = $('#btnCloseProviderModal');
+const settingProvider = $('#settingProvider');
+const settingBaseUrl = $('#settingBaseUrl');
+const settingApiKey = $('#settingApiKey');
+const settingModelName = $('#settingModelName');
+const settingModelSelect = $('#settingModelSelect');
+const btnSaveProviderSettings = $('#btnSaveProviderSettings');
+
+const PROVIDER_DEFAULTS = {
+    'OpenAI': 'https://api.openai.com/v1',
+    'Anthropic Claude': 'https://api.anthropic.com/v1',
+    'Google Gemini': 'https://generativelanguage.googleapis.com',
+    'Mistral': 'https://api.mistral.ai/v1',
+    'Groq': 'https://api.groq.com/openai/v1',
+    'xAI（Grok）': 'https://api.x.ai/v1',
+    'NVIDIA NIM': 'https://integrate.api.nvidia.com/v1',
+    'Together AI': 'https://api.together.xyz/v1',
+    'OpenRouter': 'https://openrouter.ai/api/v1',
+    'Kilo Gateway': 'https://api.kilo.ai/api/gateway/',
+    'Synthetic（Anthropic‑compatible）': 'https://api.synthetic.new/anthropic',
+    'Moonshot AI（Kimi）': 'https://api.moonshot.ai/v1',
+    'Vercel AI Gateway': 'https://gateway.ai.vercel.com/v1/',
+    'Cloudflare AI Gateway': 'https://gateway.ai.cloudflare.com/v1/',
+    'Ollama Cloud': 'https://ollama.com',
+    'Ollama': 'http://127.0.0.1:11434/v1',
+    'vLLM': 'http://127.0.0.1:8000/v1',
+    'SGLang': 'http://127.0.0.1:30000/v1',
+    'LM Studio': 'http://127.0.0.1:1234/v1',
+    'Customer Provider': 'http://127.0.0.1:11434/v1'
+};
 const llmDot = $('#llmDot');
 const llmLabel = $('#llmLabel');
+const llmStatus = $('#llmStatus');
 const statusLLM = $('#statusLLM');
 const statusTasks = $('#statusTasks');
 const chatModelBadge = $('#chatModelBadge');
@@ -75,6 +115,7 @@ async function api(endpoint, options = {}) {
         });
         return res.json();
     } catch (err) {
+        if (err.name === 'AbortError') throw err; // 讓呼叫端處理中斷
         console.error('[API]', endpoint, err);
         return { success: false, error: err.message };
     }
@@ -93,6 +134,11 @@ async function init() {
 
     // 並行載入資料，不要等待啟動畫面
     await Promise.all([loadTodo(), loadRecommend()]);
+
+    // 若有任務，自動開啟工作列表 (處理刷新時的需求)
+    if (todoList.length > 0) {
+        openTab('todolist');
+    }
 
     // 隱藏啟動畫面（立即隱藏，不要延遲）
     hideSplash();
@@ -261,17 +307,17 @@ async function checkLLMStatus() {
 
         if (!data.available) {
             // Case 1: Ollama 未安裝或未啟動 -> 只有在真的沒有時才 bootstrap
-            await bootstrapOllama();
+            // await bootstrapOllama(); // [2026.03.17] 暫時停用自動偵測安裝，避免干擾其他 Provider
         } else if (!data.modelReady) {
             // Case 2: Ollama 好了，但模型沒好
-            await bootstrapModel();
+            // await bootstrapModel(); // [2026.03.17] 暫時停用自動模型下載
         } else {
             // Case 3: 全都好了 — 顯示初始訊息和徽章
             if (!window._llmWelcomed) {
                 // 顯示初始訊息
                 appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以用口語直接告訴我你需要安裝什麼軟體或是調整系統設定喔！');
-                appendChatBubble('ai', `🧠 AI 引擎就緒！模型 ${data.modelName || 'qwen3.5:4b'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
-                addUILog(`🧠 Ollama ${data.modelName || 'qwen3.5:4b'} 就緒`, 'success');
+                appendChatBubble('ai', `🧠 AI 引擎就緒！模型 ${data.modelName || '預設'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
+                addUILog(`🧠 Ollama ${data.modelName || '就緒'}`, 'success');
                 window._llmWelcomed = true;
             }
 
@@ -627,6 +673,15 @@ async function deleteTask(taskId) {
 //  CHAT
 // ════════════════════════════════════════════════════════
 async function sendChat() {
+    // 如果目前正在處理中，點擊就是「中斷」
+    if (btnSend.classList.contains('stop')) {
+        if (chatAbortController) {
+            chatAbortController.abort();
+            chatAbortController = null;
+        }
+        return;
+    }
+
     const msg = chatInput.value.trim();
     if (!msg) return;
     chatInput.value = '';
@@ -635,27 +690,61 @@ async function sendChat() {
     appendChatBubble('user', msg);
     const thinkId = appendThinking();
 
-    const data = await api('/api/chat', { method: 'POST', body: { message: msg } });
+    // 初始化中斷控制
+    chatAbortController = new AbortController();
 
-    removeThinking(thinkId);
-    if (data.success) {
-        appendChatBubble('ai', data.reply);
-        if (data.task) {
-            await loadTodo();
-            openTab('todolist');
-            // 如果清單被清空了，不需要展開 log
-            if (todoList.length > 0) expandLog();
+    // 切換按鈕狀態為 Stop
+    const iconSend = btnSend.querySelector('.icon-send');
+    const iconStop = btnSend.querySelector('.icon-stop');
+    btnSend.classList.add('stop');
+    btnSend.title = '停止';
+    iconSend?.classList.add('hidden');
+    iconStop?.classList.remove('hidden');
+
+    try {
+        const data = await api('/api/chat', { 
+            method: 'POST', 
+            body: { message: msg },
+            signal: chatAbortController.signal
+        });
+
+        removeThinking(thinkId);
+
+        if (data.success) {
+            // 移除舊的建議按鈕
+            $$('.suggestions-container').forEach(el => el.remove());
+            
+            appendChatBubble('ai', data.reply, data.suggestions);
+            if (data.task) {
+                await loadTodo();
+                openTab('todolist');
+                if (todoList.length > 0) expandLog();
+            }
+            if (data.executeTaskId && !data.executeTaskId.includes('CLEAR') && !data.executeTaskId.includes('DELETE')) {
+                executeTask(data.executeTaskId);
+            }
+        } else {
+            appendChatBubble('ai', '抱歉，出現了點問題，請再試一次。');
         }
-        if (data.executeTaskId && !data.executeTaskId.includes('CLEAR') && !data.executeTaskId.includes('DELETE')) {
-            // 自動執行指定的任務
-            executeTask(data.executeTaskId);
+    } catch (err) {
+        removeThinking(thinkId);
+        if (err.name === 'AbortError') {
+            appendChatBubble('ai', '使用者中斷');
+        } else {
+            console.error('[Chat] Error:', err);
+            appendChatBubble('ai', '對話連線發生錯誤。');
         }
-    } else {
-        appendChatBubble('ai', '抱歉，出現了點問題，請再試一次。');
+    } finally {
+        // 恢復按鈕狀態
+        btnSend.classList.remove('stop');
+        btnSend.title = '送出';
+        iconSend?.classList.remove('hidden');
+        iconStop?.classList.add('hidden');
+        chatAbortController = null;
     }
 }
 
-function appendChatBubble(role, text) {
+function appendChatBubble(role, text, suggestions = []) {
     const isAI = role === 'ai';
     const div = document.createElement('div');
     div.className = `message ${isAI ? 'ai-message' : 'user-message'}`;
@@ -664,6 +753,14 @@ function appendChatBubble(role, text) {
         // 設定 marked 選項 (若 library 已載入)
         const htmlContent = typeof marked !== 'undefined' ? marked.parse(text) : escapeHtml(text).replace(/\n/g, '<br>');
         
+        let suggestionsHtml = '';
+        if (suggestions && suggestions.length > 0) {
+            suggestionsHtml = `
+                <div class="suggestions-container">
+                    ${suggestions.map(s => `<button class="btn-suggest">${escapeHtml(s)}</button>`).join('')}
+                </div>`;
+        }
+
         div.innerHTML = `
             <div class="msg-avatar-col">
                 <div class="msg-avatar">🤖</div>
@@ -673,9 +770,20 @@ function appendChatBubble(role, text) {
                     </svg>
                 </button>
             </div>
-            <div class="msg-bubble markdown-body">${htmlContent}</div>
+            <div class="msg-bubble-wrapper">
+                <div class="msg-bubble markdown-body">${htmlContent}</div>
+                ${suggestionsHtml}
+            </div>
         `;
         div.querySelector('.btn-speak').addEventListener('click', () => speakText(text, div.querySelector('.btn-speak')));
+        
+        // 建議按鈕點擊事件
+        div.querySelectorAll('.btn-suggest').forEach(btn => {
+            btn.addEventListener('click', () => {
+                chatInput.value = btn.textContent;
+                sendChat();
+            });
+        });
     } else {
         div.innerHTML = `
             <div class="msg-avatar">👤</div>
@@ -1074,8 +1182,33 @@ function setupEventListeners() {
     // Theme
     btnTheme?.addEventListener('click', cycleTheme);
 
-    // Model selection
-    document.getElementById('chatModelBadge')?.addEventListener('click', toggleModelMenu);
+    // AI Provider 點擊打開設定
+    llmStatus?.addEventListener('click', openProviderSettings);
+    chatModelBadge?.addEventListener('click', toggleModelMenu);
+    btnCloseProviderModal?.addEventListener('click', () => providerSettingsOverlay.classList.remove('visible'));
+    providerSettingsOverlay?.addEventListener('click', (e) => { if (e.target === providerSettingsOverlay) providerSettingsOverlay.classList.remove('visible'); });
+    btnSaveProviderSettings?.addEventListener('click', saveProviderSettings);
+
+    // Layout Toggles
+    btnToggleSidebar?.addEventListener('click', toggleSidebar);
+    btnTogglePanel?.addEventListener('click', toggleLog);
+    btnToggleChat?.addEventListener('click', toggleChat);
+    updateLayoutButtons();
+
+    // 初始化 Provider 下拉選單
+    if (settingProvider) {
+        const providerOptions = Object.keys(PROVIDER_DEFAULTS).map(p => `<option value="${p}">${p}</option>`).join('');
+        settingProvider.innerHTML = providerOptions;
+        
+        // 當切換 Provider 時，自動帶入預設 URL
+        settingProvider.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (PROVIDER_DEFAULTS[val]) {
+                settingBaseUrl.value = PROVIDER_DEFAULTS[val];
+            }
+            onProviderChange(val);
+        });
+    }
 
     // Export / Import
     btnExport?.addEventListener('click', exportTasks);
@@ -1083,11 +1216,7 @@ function setupEventListeners() {
     importFileInput?.addEventListener('change', (e) => { if (e.target.files[0]) importTasks(e.target.files[0]); });
 
     // Toggle log
-    btnToggleLog?.addEventListener('click', () => {
-        isLogCollapsed = !isLogCollapsed;
-        logPanel.classList.toggle('collapsed', isLogCollapsed);
-        btnToggleLog.textContent = isLogCollapsed ? '展開 ▲' : '收起 ▼';
-    });
+    btnToggleLog?.addEventListener('click', toggleLog);
 
     // Modal close
     btnCloseModal?.addEventListener('click', () => modalOverlay.classList.remove('visible'));
@@ -1201,6 +1330,86 @@ function toggleViewMenu(e) {
 // ════════════════════════════════════════════════════════
 //  UTIL
 // ════════════════════════════════════════════════════════
+/**
+ * 開啟 AI 設定視窗
+ */
+async function openProviderSettings() {
+    const data = await api('/api/llm/config');
+    if (data.success) {
+        settingProvider.value = data.provider || 'Ollama';
+        settingBaseUrl.value = data.baseUrl || 'http://127.0.0.1:11434/v1';
+        settingApiKey.value = data.apiKey || '';
+        
+        // 切換 UI 狀態
+        await onProviderChange(data.provider, data.model);
+        
+        providerSettingsOverlay.classList.add('visible');
+    }
+}
+
+/**
+ * 當 Provider 改變時處理 Model 名稱欄位
+ */
+async function onProviderChange(provider, currentModel = '') {
+    if (provider === 'Ollama') {
+        settingModelName.style.display = 'none';
+        settingModelSelect.style.display = 'block';
+        
+        // 抓取 Ollama 模型清單
+        settingModelSelect.innerHTML = '<option value="">正在載入模型...</option>';
+        try {
+            const data = await api('/api/llm/models');
+            if (data.success && data.models.length > 0) {
+                settingModelSelect.innerHTML = data.models.map(m => 
+                    `<option value="${m.name}" ${m.name === currentModel ? 'selected' : ''}>${m.name}</option>`
+                ).join('');
+            } else {
+                settingModelSelect.innerHTML = '<option value="">(無可用模型，請先下載)</option>';
+            }
+        } catch (e) {
+            settingModelSelect.innerHTML = '<option value="">(無法連線至 Ollama)</option>';
+        }
+    } else {
+        settingModelName.style.display = 'block';
+        settingModelSelect.style.display = 'none';
+        settingModelName.value = currentModel;
+    }
+}
+
+/**
+ * 儲存 AI 設定
+ */
+async function saveProviderSettings() {
+    const provider = settingProvider.value;
+    const baseUrl = settingBaseUrl.value.trim();
+    const apiKey = settingApiKey.value.trim();
+    const model = (provider === 'Ollama') ? settingModelSelect.value : settingModelName.value.trim();
+
+    if (!baseUrl) return alert('請輸入 API Base URL');
+
+    const data = await api('/api/llm/config', {
+        method: 'POST',
+        body: { provider, baseUrl, apiKey, model }
+    });
+
+    if (data.success) {
+        providerSettingsOverlay.classList.remove('visible');
+        addUILog('🚀 AI 引擎設定已更新，正在重新啟動服務...', 'success');
+
+        // 立即更新 UI 上的模型名稱
+        if (chatModelBadge && model) {
+            chatModelBadge.textContent = model;
+            chatModelBadge.style.display = 'inline-block';
+            chatModelBadge.title = `當前模型: ${model} (點擊切換)`;
+        }
+
+        // 重新整理頁面以套用新設定
+        setTimeout(() => location.reload(), 1000);
+    } else {
+        alert('儲存失敗: ' + (data.error || '不明錯誤'));
+    }
+}
+
 function escapeHtml(str) {
     return String(str)
         .replace(/&/g, '&amp;')
@@ -1215,5 +1424,58 @@ function stripAnsi(str) {
     return str.replace(/[\u001b\u009b][[()#;?]*(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~]*)*|[a-zA-Z\d])/g, '');
 }
 
+/**
+ * 佈局切換功能
+ */
+function updateLayoutButtons() {
+    btnToggleSidebar?.classList.toggle('active', !isSidebarCollapsed);
+    btnTogglePanel?.classList.toggle('active', !isPanelCollapsed);
+    btnToggleChat?.classList.toggle('active', !isChatCollapsed);
+}
+
+function toggleSidebar() {
+    isSidebarCollapsed = !isSidebarCollapsed;
+    sidebar.classList.toggle('collapsed', isSidebarCollapsed);
+    $('#sidebarResizer')?.classList.toggle('hidden', isSidebarCollapsed);
+    updateLayoutButtons();
+    addUILog(isSidebarCollapsed ? '側邊欄已收起' : '側邊欄已展開', 'info');
+}
+
+function toggleLog() {
+    isPanelCollapsed = !isPanelCollapsed;
+    logPanel.classList.toggle('collapsed', isPanelCollapsed);
+    $('#logResizer')?.classList.toggle('hidden', isPanelCollapsed);
+    updateLayoutButtons();
+    if (btnToggleLog) btnToggleLog.textContent = isPanelCollapsed ? '展開 ▲' : '收起 ▼';
+    addUILog(isPanelCollapsed ? '日誌面板已收起' : '日誌面板已展開', 'info');
+}
+
+function toggleChat() {
+    isChatCollapsed = !isChatCollapsed;
+    chatCol.classList.toggle('collapsed', isChatCollapsed);
+    $('#chatResizer')?.classList.toggle('hidden', isChatCollapsed);
+    updateLayoutButtons();
+    addUILog(isChatCollapsed ? '對話欄已收起' : '對話欄已展開', 'info');
+}
+
 // ── Start ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', init);
+
+// Hotkeys
+document.addEventListener('keydown', (e) => {
+    // Ctrl+B: Toggle Sidebar
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyB') {
+        e.preventDefault();
+        toggleSidebar();
+    }
+    // Ctrl+J: Toggle Panel
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyJ') {
+        e.preventDefault();
+        toggleLog();
+    }
+    // Ctrl+Alt+B: Toggle Chat
+    if (e.ctrlKey && e.altKey && e.code === 'KeyB') {
+        e.preventDefault();
+        toggleChat();
+    }
+});

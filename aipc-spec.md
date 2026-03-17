@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (v1.0)
+# AI PC Agent — 實作需求規格書 (2026.03.17)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]                     [v1.0] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]               [2026.03.17] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -41,13 +41,16 @@
 | **推薦清單** | ✅ | 動態偵測已有 SOP → 顯示 ⚡ 可自動執行，支援項目搜尋與安裝態沉底排序 |
 | **工作清單** | ✅ | 任務 CRUD，進度條，狀態標籤，具備 Tab 分頁與 Badge 提醒 |
 | **AI 對話** | ✅ | 本地 LLM，支援 Markdown 渲染、語音朗讀 (TTS) 與清除紀錄 |
-| **LLM 整合** | ✅ | qwen3.5:4b，`/api/chat` 格式，think:false |
+| **AI 整合** | ✅ | qwen3.5:4b，`/api/chat` 格式，支援 OpenAI V1 與 API Key |
+| **AI Provider 設定** | ✅ | 支援 20+ 種雲端與地端 Provider，自動帶入 Base URL，儲存於 AppData |
+| **互動安全機制** | ✅ | 「先問後做」攔截、按鈕式建議 (SUGGEST)、對話中斷 (AbortController) |
 | **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載地端模型（qwen3.5:4b） |
 | **啟動啟始畫面** | ✅ | 首次執行顯示「環境設定中」，再次執行顯示「伺服器啟動中」，自動淡出 |
 | **UTF-8 編碼修復** | ✅ | PowerShell 輸出正確顯示中文，使用 `chcp 65001` 和 UTF-8 編碼 |
 | **執行日誌** | ✅ | Mono 字體，依等級顯示色（info/warn/error/success），支援進度條原地更新 |
 | **語音輸入** | ✅ | Web Speech API，中文語音轉文字 |
 | **主題切換** | ✅ | Dark / Light，localStorage 記憶 |
+| **風險預警提示** | ✅ | 歡迎畫面加入安全風險提示，提醒查證指令 |
 | **EXE 一鍵打包** | ✅ | `.bat` 腳本全自動下載 Node/Rust/TauriCLI 依賴，將 Node Server 封裝成 Tauri Sidecar |
 
 ### 2.3 SOPs 庫
@@ -96,6 +99,8 @@ browser ──── public/index.html
 | POST | `/api/execute/:id` | 執行任務 |
 | GET | `/api/recommend` | 取得推薦清單（含 sopId）|
 | GET | `/api/llm/status` | Ollama 狀態 + 模型就緒狀態 |
+| GET | `/api/llm/config` | 取得 LLM Provider 設定 |
+| POST | `/api/llm/config` | 更新 LLM Provider 設定 |
 | POST | `/api/chat` | AI 對話（LLM 優先）|
 | GET | `/api/logs` | 全域執行日誌 |
 | POST | `/api/import` | 匯入任務清單 |
