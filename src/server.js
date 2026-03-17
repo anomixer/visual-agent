@@ -11,6 +11,7 @@ const fs = require('fs');
 const { loadAllSOPs } = require('./sop-parser');
 const { SOPExecutor } = require('./sop-executor');
 const llm = require('./llm');
+const { getSystemHealth } = require('./system');
 
 const app = express();
 const PORT = 3210;
@@ -81,6 +82,18 @@ let todoList = [];
 let logs = [];
 let runningSOP = null;
 let chatHistory = []; // 儲存最近 6 則對話：[{role: 'user', content: '...'}, {role: 'assistant', content: '...'}]
+
+/**
+ * 獲取系統健康狀態 (CPU, RAM, Disk)
+ */
+app.get('/api/system/health', async (req, res) => {
+    try {
+        const health = await getSystemHealth();
+        res.json({ success: true, health });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
 
 // Default recommend list
 // 推薦清單基本資料（按優先順序排列，AI 引擎放最前面）
@@ -457,16 +470,23 @@ app.post('/api/chat', async (req, res) => {
             const taskContext = todoList.map(t => `- ID: ${t.id}, 標題: ${t.title}, 狀態: ${t.status}`).join('\n');
             const installedModels = await llm.listModels();
             const modelListStr = installedModels.map(m => `- ${m.name} (${(m.size / 1024 / 1024 / 1024).toFixed(1)}GB)`).join('\n');
+            const systemHealth = await getSystemHealth();
 
             const contextNote = `
 [[當前系統狀態]]
-1. 可用 SOP 列表 (使用 ADD_TASK 時請務必對應正確的 ID):
+1. 硬體健康:
+   - CPU: ${systemHealth.cpu.model} (負載: ${systemHealth.cpu.load}%)
+   - GPU: ${systemHealth.gpu.name} (負載: ${systemHealth.gpu.load}%)
+   - RAM: ${(systemHealth.ram.total / 1024 / 1024 / 1024).toFixed(1)}GB (使用率: ${systemHealth.ram.usage}%)
+   - 磁碟狀態: ${systemHealth.disk.status}
+
+2. 可用 SOP 列表 (使用 ADD_TASK 時請務必對應正確的 ID):
 ${sopCatalog || '(無可用 SOP)'}
 
-2. 目前工作清單:
+3. 目前工作清單:
 ${taskContext || '(目前清單為空)'}
 
-3. 目前已安裝模型 ([[目前已安裝模型]]):
+4. 目前已安裝模型 ([[目前已安裝模型]]):
 ${modelListStr || '(無已安裝模型)'}
 當前正在使用的模型為: ${llm.getCurrentModel()}
 

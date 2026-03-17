@@ -30,7 +30,7 @@ let recSearchQuery = '';
 
 // Tab State
 let activeTab = 'chalkboard';
-let openTabs = ['chalkboard']; // Initially only chalkboard
+let openTabs = ['chalkboard', 'hardware']; // Initially chalkboard and hardware
 
 // ── DOM ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -133,7 +133,10 @@ async function init() {
     setupSpeechRecognition();
 
     // 並行載入資料，不要等待啟動畫面
-    await Promise.all([loadTodo(), loadRecommend()]);
+    await Promise.all([loadTodo(), loadRecommend(), updateHardwareStatus()]);
+    
+    // 設定硬體監控定時器 (每 5 秒更新一次)
+    setInterval(updateHardwareStatus, 5000);
 
     // 若有任務，自動開啟工作列表 (處理刷新時的需求)
     if (todoList.length > 0) {
@@ -1233,6 +1236,10 @@ function setupEventListeners() {
         if (!item) return;
         const tabId = item.dataset.tab;
         
+        if (tabId === 'hardware') {
+            updateHardwareStatus();
+        }
+        
         if (e.target.closest('.tab-close')) {
             e.stopPropagation();
             closeTab(tabId);
@@ -1456,6 +1463,67 @@ function toggleChat() {
     $('#chatResizer')?.classList.toggle('hidden', isChatCollapsed);
     updateLayoutButtons();
     addUILog(isChatCollapsed ? '對話欄已收起' : '對話欄已展開', 'info');
+}
+
+/**
+ * 獲取並更新硬體狀態 UI
+ */
+async function updateHardwareStatus() {
+    try {
+        const res = await fetch(`${API}/api/system/health`);
+        const data = await res.json();
+        if (data.success) {
+            const h = data.health;
+            const CIRCUMFERENCE = 251.2;
+
+            const setGauge = (id, percent) => {
+                const el = document.getElementById(`gauge-${id}`);
+                const txt = document.getElementById(`hw-${id}-load`) || document.getElementById(`hw-${id}-usage`);
+                if (el) {
+                    const offset = CIRCUMFERENCE - (percent / 100) * CIRCUMFERENCE;
+                    el.style.strokeDashoffset = offset;
+                }
+                if (txt) txt.textContent = `${percent}%`;
+            };
+
+            // CPU
+            setGauge('cpu', h.cpu.load);
+            if ($('#hw-cpu-model')) $('#hw-cpu-model').textContent = h.cpu.model;
+
+            // GPU
+            setGauge('gpu', h.gpu.load);
+            if ($('#hw-gpu-name')) $('#hw-gpu-name').textContent = h.gpu.name || 'N/A';
+
+            // RAM
+            setGauge('ram', h.ram.usage);
+            const ramTotalGB = (h.ram.total / 1024 / 1024 / 1024).toFixed(1);
+            if ($('#hw-ram-total')) $('#hw-ram-total').textContent = `${ramTotalGB} GB`;
+
+            // Disk (以第一個硬碟為代表)
+            if (h.disk.drives && h.disk.drives.length > 0) {
+                const mainDisk = h.disk.drives[0];
+                const diskGauge = document.getElementById('gauge-disk');
+                if (diskGauge) {
+                    // 健康 = 100%, 警告 = 50%, 危險 = 10%
+                    let healthScore = 100;
+                    if (mainDisk.health === 'Warning') healthScore = 50;
+                    if (mainDisk.health === 'Unhealthy' || h.disk.status === 'Warning') healthScore = 20;
+                    
+                    diskGauge.style.strokeDashoffset = CIRCUMFERENCE - (healthScore / 100) * CIRCUMFERENCE;
+                    diskGauge.style.stroke = healthScore === 100 ? 'var(--accent-green)' : (healthScore === 50 ? 'orange' : 'var(--accent-red)');
+                }
+                if ($('#hw-disk-status')) $('#hw-disk-status').textContent = mainDisk.health;
+                if ($('#hw-disk-name')) $('#hw-disk-name').textContent = mainDisk.name;
+            }
+
+            if ($('#hw-last-update')) {
+                const now = new Date();
+                $('#hw-last-update').textContent = `上次更新: ${now.toLocaleTimeString()}`;
+            }
+        }
+    } catch (e) {
+        console.error('[System] Update hardware status failed:', e);
+    }
 }
 
 // ── Start ──────────────────────────────────────────────

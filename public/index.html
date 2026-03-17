@@ -181,6 +181,10 @@
               <span class="tab-icon">🎨</span>
               <span class="tab-title">Chalkboard</span>
             </div>
+            <div class="tab-item" data-tab="hardware" id="tab-hardware">
+              <span class="tab-icon">🌡️</span>
+              <span class="tab-title">硬體狀態</span>
+            </div>
             <div class="tab-item hidden" data-tab="todolist" id="tab-todolist">
               <span class="tab-icon">📋</span>
               <span class="tab-title">工作清單</span>
@@ -212,6 +216,74 @@
                   <div class="empty-icon">✨</div>
                   <p>目前沒有執行中的任務</p>
                   <p class="empty-hint">您可以從左側推薦清單或透過對話新增任務</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hardware Health View -->
+            <div class="tab-content" id="content-hardware">
+              <div class="hardware-dashboard">
+                <div class="dashboard-header">
+                  <h3>🌡️ 系統硬體狀態</h3>
+                  <p>即時監控內機硬體健康與效能</p>
+                </div>
+                
+                <div class="monitor-grid">
+                  <!-- CPU Card -->
+                  <div class="monitor-card gauge-card">
+                    <div class="card-title">中央處理器 (CPU)</div>
+                    <div class="gauge-container">
+                      <svg class="gauge-svg" viewBox="0 0 100 100">
+                        <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
+                        <circle class="gauge-ring-fill" id="gauge-cpu" cx="50" cy="50" r="40" style="stroke-dashoffset: 251.2;"></circle>
+                      </svg>
+                      <div class="gauge-text" id="hw-cpu-load">0%</div>
+                    </div>
+                    <div class="card-note" id="hw-cpu-model">偵測中...</div>
+                  </div>
+
+                  <!-- GPU Card -->
+                  <div class="monitor-card gauge-card">
+                    <div class="card-title">繪圖處理器 (GPU)</div>
+                    <div class="gauge-container">
+                      <svg class="gauge-svg" viewBox="0 0 100 100">
+                        <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
+                        <circle class="gauge-ring-fill" id="gauge-gpu" cx="50" cy="50" r="40" style="stroke-dashoffset: 251.2;"></circle>
+                      </svg>
+                      <div class="gauge-text" id="hw-gpu-load">0%</div>
+                    </div>
+                    <div class="card-note" id="hw-gpu-name">偵測中...</div>
+                  </div>
+
+                  <!-- RAM Card -->
+                  <div class="monitor-card gauge-card">
+                    <div class="card-title">記憶體 (RAM)</div>
+                    <div class="gauge-container">
+                      <svg class="gauge-svg" viewBox="0 0 100 100">
+                        <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
+                        <circle class="gauge-ring-fill" id="gauge-ram" cx="50" cy="50" r="40" style="stroke-dashoffset: 251.2;"></circle>
+                      </svg>
+                      <div class="gauge-text" id="hw-ram-usage">0%</div>
+                    </div>
+                    <div class="card-note" id="hw-ram-total">-- GB</div>
+                  </div>
+
+                  <!-- Disk Card -->
+                  <div class="monitor-card gauge-card">
+                    <div class="card-title">主硬碟健康度</div>
+                    <div class="gauge-container">
+                      <svg class="gauge-svg" viewBox="0 0 100 100">
+                        <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
+                        <circle class="gauge-ring-fill" id="gauge-disk" cx="50" cy="50" r="40" style="stroke-dashoffset: 0;"></circle>
+                      </svg>
+                      <div class="gauge-text" id="hw-disk-status">OK</div>
+                    </div>
+                    <div class="card-note" id="hw-disk-name">掃描中...</div>
+                  </div>
+                </div>
+
+                <div class="dashboard-footer">
+                  <span id="hw-last-update">上次更新: --</span>
                 </div>
               </div>
             </div>
