@@ -42,6 +42,9 @@
 | **工作清單** | ✅ | 任務 CRUD，進度條，狀態標籤，具備 Tab 分頁與 Badge 提醒 |
 | **AI 對話** | ✅ | 本地 LLM，支援 Markdown 渲染、語音朗讀 (TTS) 與清除紀錄 |
 | **AI 整合** | ✅ | qwen3.5:4b，`/api/chat` 格式，支援 OpenAI V1 與 API Key |
+| **多輪對話** | ✅ | 支援最近 6 則對話 Context 記憶，支援追問 |
+| **硬體健康監控** | ✅ | 圓圈式監控，支援 CPU/GPU/RAM/Disk 偵測與顯卡溫度 |
+| **監控插件系統** | ✅ | 支援 `plugins/*.js` 動態擴充監控項目，自動同步至 AppData |
 | **AI Provider 設定** | ✅ | 支援 20+ 種雲端與地端 Provider，自動帶入 Base URL，儲存於 AppData |
 | **互動安全機制** | ✅ | 「先問後做」攔截、按鈕式建議 (SUGGEST)、對話中斷 (AbortController) |
 | **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載地端模型（qwen3.5:4b） |
@@ -80,12 +83,18 @@ browser ──── public/index.html
              src/llm.js         (Ollama 整合)
              src/sop-parser.js
              src/sop-executor.js
+             src/system.js    (插件載入器)
                  │
-                 │ PowerShell
+                 │ Dynamic Load
+                 ▼
+             plugins/*.js     (硬體監控插件)
+                 │
+                 │ PowerShell / API
                  ▼
              sops/*.md        (SOP 腳本庫)
-             %APPDATA%\aipc-agent\  (tasks.json, sops/)
+             %APPDATA%\aipc-agent\  (tasks.json, sops/, plugins/)
 ```
+- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\aipc-agent\plugins\` 目錄，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
 
 ---
 
@@ -158,8 +167,7 @@ SOPs 存放位置：
 ## 5. 未來規劃
 
 ### 短期
-- [ ] 多輪對話歷史 context（讓 LLM 記住上文）
-- [ ] 硬體健康監控（S.M.A.R.T、CPU 溫度）
+- [ ] SOP 線上商城，動態下載更新
 - [ ] 更多 SOPs：防毒掃描、軟體移除
 
 ### 中期

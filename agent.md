@@ -195,9 +195,21 @@
   - **GPU**: 智慧辨識 (如 RTX 4000) 與繪圖引擎負載。
   - **RAM**: 已使用容量與百分比。
   - **Disk**: 主硬碟名稱與 S.M.A.R.T 健康度辨識 (SSD/NVMe 智慧辨識)。
+- **溫度監測**：支援 NVIDIA GPU 即時溫度顯示，顯示於百分比下方。
+
+### 插件化架構 (Plugin System)
+- **監控插件化**：`src/system.js` 重構為插件載入器，自動讀取 `plugins/*.js`。
+- **獨立監控插件**：
+  - `hardware-info.js`: 核心負載與 S.M.A.R.T 偵測。
+  - `temperature-monitor.js`: 專責偵測 GPU (nvidia-smi) 溫度。
+- **AppData 同步**：啟動時自動同步內建插件至 `%APPDATA%\aipc-agent\plugins\`。
+
+### 對話與 UI 體感進化
 - **多輪對話歷史 (Contextual Chat)**：
   - **情境記憶**：AI 現在會記得最近 6 則對話紀錄，支援追問與承接前文。
   - **硬體覺醒 (Hardware-Awareness)**：後端自動將即時硬體狀態注入 Prompt，AI 能根據您的硬體狀況給出建議（例如：發現 CPU 負載高時主動提醒）。
+- **RWD 儀表板**：硬體監控卡片支援響應式佈局，自動根據左右面板寬度切換 4 欄或 2x2 排列。
+- **啟動資訊強化**：Console 與日誌現在會顯示 `Plugins` 資料夾路徑，方便擴充。
 
 ---
 
