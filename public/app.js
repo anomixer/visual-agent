@@ -22,11 +22,12 @@ let pollingInterval = null;
 let chatAbortController = null;
 let isSidebarCollapsed = false;
 let isChatCollapsed = false;
-let isPanelCollapsed = false; 
+let isLogCollapsed = false; 
 let isRecording = false;
 let recognition = null;
 let currentLogIndex = 0;
 let recSearchQuery = '';
+let hardwareInterval = null;
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -75,6 +76,7 @@ const settingApiKey = $('#settingApiKey');
 const settingModelName = $('#settingModelName');
 const settingModelSelect = $('#settingModelSelect');
 const btnSaveProviderSettings = $('#btnSaveProviderSettings');
+const btnRefreshModels = $('#btnRefreshModels');
 
 const PROVIDER_DEFAULTS = {
     'OpenAI': 'https://api.openai.com/v1',
@@ -121,6 +123,17 @@ async function api(endpoint, options = {}) {
     }
 }
 
+/**
+ * Debounce utility
+ */
+function debounce(fn, delay) {
+    let timer = null;
+    return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
 // ════════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════════
@@ -133,10 +146,12 @@ async function init() {
     setupSpeechRecognition();
 
     // 並行載入資料，不要等待啟動畫面
-    await Promise.all([loadTodo(), loadRecommend(), updateHardwareStatus()]);
+    await Promise.all([loadTodo(), loadRecommend()]);
     
-    // 設定硬體監控定時器 (每 5 秒更新一次)
-    setInterval(updateHardwareStatus, 5000);
+    // 硬體監控改為「顯示時才執行」，避免啟動延遲
+    if (activeTab === 'hardware') {
+        startHardwarePolling();
+    }
 
     // 若有任務，自動開啟工作列表 (處理刷新時的需求)
     if (todoList.length > 0) {
@@ -319,8 +334,9 @@ async function checkLLMStatus() {
             if (!window._llmWelcomed) {
                 // 顯示初始訊息
                 appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以用口語直接告訴我你需要安裝什麼軟體或是調整系統設定喔！');
-                appendChatBubble('ai', `🧠 AI 引擎就緒！模型 ${data.modelName || '預設'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
-                addUILog(`🧠 Ollama ${data.modelName || '就緒'}`, 'success');
+                const versionStr = data.version ? ` (v${data.version})` : '';
+                appendChatBubble('ai', `🧠 AI 引擎就緒！${data.provider || 'Ollama'}${versionStr} 模型 ${data.modelName || '預設'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
+                addUILog(`🧠 AI 引擎就緒${versionStr}：${data.modelName || '已載入'}`, 'success');
                 window._llmWelcomed = true;
             }
 
@@ -1211,6 +1227,12 @@ function setupEventListeners() {
             }
             onProviderChange(val);
         });
+
+        // 當 URL 或 API Key 改變時，自動刷新模型清單 (Debounced)
+        const debouncedRefresh = debounce(() => onProviderChange(settingProvider.value), 800);
+        settingBaseUrl?.addEventListener('input', debouncedRefresh);
+        settingApiKey?.addEventListener('input', debouncedRefresh);
+        btnRefreshModels?.addEventListener('click', () => onProviderChange(settingProvider.value));
     }
 
     // Export / Import
@@ -1266,6 +1288,13 @@ function switchTab(tabId) {
     $$('.tab-content').forEach(content => {
         content.classList.toggle('active', content.id === `content-${tabId}`);
     });
+
+    // 硬體監控：切換到該分頁時才啟動，切離則關閉
+    if (tabId === 'hardware') {
+        startHardwarePolling();
+    } else {
+        stopHardwarePolling();
+    }
 }
 
 function openTab(tabId) {
@@ -1286,6 +1315,10 @@ function closeTab(tabId) {
     
     if (activeTab === tabId) {
         switchTab('chalkboard');
+    }
+
+    if (tabId === 'hardware') {
+        stopHardwarePolling();
     }
 }
 
@@ -1359,28 +1392,55 @@ async function openProviderSettings() {
  * 當 Provider 改變時處理 Model 名稱欄位
  */
 async function onProviderChange(provider, currentModel = '') {
-    if (provider === 'Ollama') {
+    // 判斷哪些 Provider 支援模型下拉清單
+    const supportList = ['Ollama', 'Ollama Cloud', 'NVIDIA NIM', 'Mistral', 'Together AI', 'Groq', 'OpenAI', 'DeepSeek'];
+    
+    // 如果沒帶 currentModel，嘗試抓取目前下拉選單的值（保留選取項）
+    if (!currentModel && settingModelSelect.value) {
+        currentModel = settingModelSelect.value;
+    }
+
+    const baseUrl = settingBaseUrl.value.trim();
+    const apiKey = settingApiKey.value.trim();
+
+    if (supportList.includes(provider)) {
         settingModelName.style.display = 'none';
         settingModelSelect.style.display = 'block';
+        if (btnRefreshModels) btnRefreshModels.style.display = 'inline-block';
         
-        // 抓取 Ollama 模型清單
-        settingModelSelect.innerHTML = '<option value="">正在載入模型...</option>';
+        // 抓取模型清單
+        settingModelSelect.innerHTML = '<option value="">正在載入模型清單...</option>';
         try {
-            const data = await api('/api/llm/models');
+            // 切換為 POST 請求以支援帶有特殊符號的 API Key 並避免長 URL 問題
+            const data = await api('/api/llm/models', {
+                method: 'POST',
+                body: { provider, baseUrl, apiKey }
+            });
+            
             if (data.success && data.models.length > 0) {
                 settingModelSelect.innerHTML = data.models.map(m => 
                     `<option value="${m.name}" ${m.name === currentModel ? 'selected' : ''}>${m.name}</option>`
                 ).join('');
             } else {
-                settingModelSelect.innerHTML = '<option value="">(無可用模型，請先下載)</option>';
+                settingModelSelect.innerHTML = '<option value="">(無可用模型，請手動確認)</option>';
+                // 若無清單，切換回手動輸入以防萬一
+                settingModelName.style.display = 'block';
+                settingModelSelect.style.display = 'none';
+                settingModelName.value = currentModel;
+                if (btnRefreshModels) btnRefreshModels.style.display = 'none';
             }
         } catch (e) {
-            settingModelSelect.innerHTML = '<option value="">(無法連線至 Ollama)</option>';
+            settingModelSelect.innerHTML = `<option value="">(無法連線至 ${provider})</option>`;
+            settingModelName.style.display = 'block';
+            settingModelSelect.style.display = 'none';
+            settingModelName.value = currentModel;
+            if (btnRefreshModels) btnRefreshModels.style.display = 'none';
         }
     } else {
         settingModelName.style.display = 'block';
         settingModelSelect.style.display = 'none';
         settingModelName.value = currentModel;
+        if (btnRefreshModels) btnRefreshModels.style.display = 'none';
     }
 }
 
@@ -1391,7 +1451,8 @@ async function saveProviderSettings() {
     const provider = settingProvider.value;
     const baseUrl = settingBaseUrl.value.trim();
     const apiKey = settingApiKey.value.trim();
-    const model = (provider === 'Ollama') ? settingModelSelect.value : settingModelName.value.trim();
+    const isDropdown = (settingModelSelect.style.display === 'block');
+    const model = isDropdown ? settingModelSelect.value : settingModelName.value.trim();
 
     if (!baseUrl) return alert('請輸入 API Base URL');
 
@@ -1437,7 +1498,7 @@ function stripAnsi(str) {
  */
 function updateLayoutButtons() {
     btnToggleSidebar?.classList.toggle('active', !isSidebarCollapsed);
-    btnTogglePanel?.classList.toggle('active', !isPanelCollapsed);
+    btnTogglePanel?.classList.toggle('active', !isLogCollapsed);
     btnToggleChat?.classList.toggle('active', !isChatCollapsed);
 }
 
@@ -1450,12 +1511,12 @@ function toggleSidebar() {
 }
 
 function toggleLog() {
-    isPanelCollapsed = !isPanelCollapsed;
-    logPanel.classList.toggle('collapsed', isPanelCollapsed);
-    $('#logResizer')?.classList.toggle('hidden', isPanelCollapsed);
+    isLogCollapsed = !isLogCollapsed;
+    logPanel.classList.toggle('collapsed', isLogCollapsed);
+    $('#logResizer')?.classList.toggle('hidden', isLogCollapsed);
     updateLayoutButtons();
-    if (btnToggleLog) btnToggleLog.textContent = isPanelCollapsed ? '展開 ▲' : '收起 ▼';
-    addUILog(isPanelCollapsed ? '日誌面板已收起' : '日誌面板已展開', 'info');
+    if (btnToggleLog) btnToggleLog.textContent = isLogCollapsed ? '展開 ▲' : '收起 ▼';
+    addUILog(isLogCollapsed ? '日誌面板已收起' : '日誌面板已展開', 'info');
 }
 
 function toggleChat() {
@@ -1464,6 +1525,21 @@ function toggleChat() {
     $('#chatResizer')?.classList.toggle('hidden', isChatCollapsed);
     updateLayoutButtons();
     addUILog(isChatCollapsed ? '對話欄已收起' : '對話欄已展開', 'info');
+}
+
+function startHardwarePolling() {
+    if (hardwareInterval) return;
+    updateHardwareStatus(); // 立即執行一次
+    hardwareInterval = setInterval(updateHardwareStatus, 5000);
+    console.log('[System] Hardware polling started.');
+}
+
+function stopHardwarePolling() {
+    if (hardwareInterval) {
+        clearInterval(hardwareInterval);
+        hardwareInterval = null;
+        console.log('[System] Hardware polling stopped.');
+    }
 }
 
 /**

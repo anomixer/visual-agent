@@ -343,10 +343,16 @@ app.get('/api/llm/status', async (req, res) => {
     }
 });
 
-// GET /api/llm/models — 列出所有可用模型
-app.get('/api/llm/models', async (req, res) => {
+// GET/POST /api/llm/models — 列出所有可用模型 (支援動態參數預覽)
+app.all('/api/llm/models', async (req, res) => {
     try {
-        const models = await llm.listModels();
+        // 同時支援 GET (query) 與 POST (body)
+        const params = req.method === 'POST' ? req.body : req.query;
+        const { provider, baseUrl, apiKey } = params;
+        
+        console.log(`[LLM] 預覽模型列表: Provider=${provider || '預設'}, URL=${baseUrl || '預設'}`);
+        
+        const models = await llm.listModels({ provider, baseUrl, apiKey, forceRefresh: true });
         res.json({ success: true, models, currentModel: llm.getCurrentModel() });
     } catch (err) {
         res.json({ success: false, error: err.message });
@@ -472,42 +478,31 @@ app.post('/api/chat', async (req, res) => {
     if (!message) return res.json({ success: false, error: '請輸入訊息' });
 
     const sops = loadAllSOPs(SOPS_DIR);
+    let suggestions = ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
+    let llmErrorForFallback = null;
+    // 1. 快速蒐集背景資訊 (不使用 await 耗時操作，使用快取或 OS 基本資訊)
+    const sopCatalog = sops.map(s => `- ID: ${s.id}, 名稱: ${s.name}`).join('\n');
+    const taskContext = todoList.map(t => `- ID: ${t.id}, 標題: ${t.title}, 狀態: ${t.status}`).join('\n');
+    const ramUsage = Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100);
+    
+    // 取得快取的狀態 (不強制刷新，約 5ms 以內)
     const llmStatus = await llm.checkOllamaStatus();
 
-    // ── 情境 1：LLM 在線且就緒 (AI 技能驅動模式) ───────────────────────
+    // ── 情境 1：AI 引擎就緒 (驅動模式) ───────────────────────
     if (llmStatus.available && llmStatus.modelReady) {
         try {
-            // 1. 準備背景資訊 (Context)
-            const sopCatalog = sops.map(s => `- ID: ${s.id}, 名稱: ${s.name}`).join('\n');
-            const taskContext = todoList.map(t => `- ID: ${t.id}, 標題: ${t.title}, 狀態: ${t.status}`).join('\n');
-            const installedModels = await llm.listModels();
-            const modelListStr = installedModels.map(m => `- ${m.name} (${(m.size / 1024 / 1024 / 1024).toFixed(1)}GB)`).join('\n');
-            const systemHealth = await getSystemHealth();
-
             const contextNote = `
-[[當前系統狀態]]
-1. 硬體健康:
-   - CPU: ${systemHealth.cpu.model} (負載: ${systemHealth.cpu.load}%)
-   - GPU: ${systemHealth.gpu.name} (負載: ${systemHealth.gpu.load}%)
-   - RAM: ${(systemHealth.ram.total / 1024 / 1024 / 1024).toFixed(1)}GB (使用率: ${systemHealth.ram.usage}%)
-   - 磁碟狀態: ${systemHealth.disk.status}
-
-2. 可用 SOP 列表 (使用 ADD_TASK 時請務必對應正確的 ID):
-${sopCatalog || '(無可用 SOP)'}
-
-3. 目前工作清單:
-${taskContext || '(目前清單為空)'}
-
-4. 目前已安裝模型 ([[目前已安裝模型]]):
-${modelListStr || '(無已安裝模型)'}
-當前正在使用的模型為: ${llm.getCurrentModel()}
-
-[[任務日誌摘要]]
-${todoList.slice(-2).map(t => `任務「${t.title}」日誌:\n${t.logs.slice(-3).map(l => l.message).join('\n')}`).join('\n---\n')}
+[[當前系統環境]]
+1. 硬體簡報: CPU: ${os.cpus()[0].model.trim()}, RAM: ${Math.round(os.totalmem()/1024/1024/1024)}GB (Usage: ${ramUsage}%)
+2. 可用 SOP (ID 列表):
+${sopCatalog || '(無)'}
+3. 待辦任務清單:
+${taskContext || '(空)'}
+4. 當前使用的 AI 模型: ${llm.getCurrentModel()}
 `;
 
             // 2. 呼叫 LLM (附帶歷史紀錄)
-            let llmReply = await llm.chatWithLLM(message + contextNote, chatHistory);
+            let llmReply = await llm.chatWithLLM(message + "\n\n" + contextNote, chatHistory);
 
             // 3. 解析與安全過濾
             const actionRegex = /\[ACTION:(.*?)\]/g;
@@ -519,31 +514,27 @@ ${todoList.slice(-2).map(t => `任務「${t.title}」日誌:\n${t.logs.slice(-3)
 
             // ── 執行安全攔截 ──
             const hasSuggestions = actions.length > 0 && llmReply.includes('[SUGGEST:');
-            // 只針對「真正的問句」或「諮詢類詞彙」進行攔截
             const isQuestioning = /[\?？]|是否要|確認點選|要不要執行|您是否同意/.test(llmReply);
 
             let executeTaskId = null;
             let hasActionTaken = false;
 
-            // 核心邏輯：如果 AI 給了建議按鈕且明確在詢問，則禁止執行 ACTION
             if (hasSuggestions && isQuestioning) {
-                console.log(`[Safety] AI 提供了選擇按鈕，已攔截 ${actions.length} 個「偷跑」動作，等待使用者點擊按鈕。`);
-                // 清空 actions 以免進入下方執行迴圈
-                actions.length = 0;
+                actions.length = 0; // 攔截待確認動作
             }
 
             for (const actionStr of actions) {
                 if (actionStr.startsWith('ADD_TASK')) {
                     const idMatch = actionStr.match(/sop_id="(.*?)"/);
                     if (idMatch) {
-                        const matchedSOP = sops.find(s => s.id === idMatch[1]);
-                        if (matchedSOP) {
+                        const mSop = sops.find(s => s.id === idMatch[1]);
+                        if (mSop) {
                             todoList.push({
                                 id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-                                title: `📦 ${matchedSOP.name}`,
+                                title: `📦 ${mSop.name}`,
                                 description: `由 AI 智慧管家排程`,
-                                skillId: matchedSOP.id,
-                                category: matchedSOP.category || '系統維護',
+                                skillId: mSop.id,
+                                category: mSop.category || '系統維護',
                                 status: 'pending', progress: 0, logs: [],
                                 createdAt: new Date().toISOString()
                             });
@@ -570,32 +561,17 @@ ${todoList.slice(-2).map(t => `任務「${t.title}」日誌:\n${t.logs.slice(-3)
                     const nameMatch = actionStr.match(/name="(.*?)"/);
                     if (nameMatch) llm.setCurrentModel(nameMatch[1]);
                 }
-                if (actionStr.startsWith('PULL_MODEL')) {
-                    const nameMatch = actionStr.match(/name="(.*?)"/);
-                    if (nameMatch) {
-                        todoList.push({
-                            id: `task_pull_${Date.now()}`,
-                            title: `📥 下載模型: ${nameMatch[1]}`, status: 'pending', progress: 0, logs: [],
-                            dynamicCmd: `ollama pull ${nameMatch[1]}`
-                        });
-                        hasActionTaken = true;
-                    }
-                }
             }
             if (hasActionTaken) saveTasks();
 
-            // 4. 更新對話紀錄 (保持最近 6 條)
+            // 4. 更新對話紀錄
             chatHistory.push({ role: 'user', content: message });
-            const cleanReply = llmReply
-                .replace(/\[ACTION:.*?\]/g, '')
-                .replace(/\[SUGGEST:.*?\]/g, '')
-                .trim();
-            chatHistory.push({ role: 'assistant', content: cleanReply }); // Store cleaned reply
+            const cleanReply = llmReply.replace(/\[ACTION:.*?\]/g, '').replace(/\[SUGGEST:.*?\]/g, '').trim();
+            chatHistory.push({ role: 'assistant', content: cleanReply });
             if (chatHistory.length > 6) chatHistory = chatHistory.slice(-6);
 
-            // 5. 整理回傳資料
             const suggestMatch = llmReply.match(/\[SUGGEST:(.*?)\]/);
-            let finalSuggestions = suggestMatch ? suggestMatch[1].split(',').map(s => s.trim()) : [];
+            let finalSuggestions = suggestMatch ? suggestMatch[1].split(',').map(s => s.trim()) : suggestions;
 
             return res.json({
                 success: true,
@@ -608,6 +584,8 @@ ${todoList.slice(-2).map(t => `任務「${t.title}」日誌:\n${t.logs.slice(-3)
 
         } catch (llmErr) {
             console.error('[LLM] 智慧管家處理失敗:', llmErr);
+            llmErrorForFallback = llmErr.message;
+            // 發生錯誤不中斷，讓它往下走到關鍵字比對模式
         }
     }
 
@@ -616,7 +594,7 @@ ${todoList.slice(-2).map(t => `任務「${t.title}」日誌:\n${t.logs.slice(-3)
     let taskAdded = null;
     let executeTaskId = null;
     let isActionTaken = false;
-    let suggestions = ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態'];
+    suggestions = ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態'];
 
     const isDeletionIntent = /刪除|移除|移掉|清空|清掉|delete|remove/.test(message);
     const isConfirmation = /是|好|確定|執行|同意/.test(message);
@@ -689,7 +667,8 @@ ${todoList.slice(-2).map(t => `任務「${t.title}」日誌:\n${t.logs.slice(-3)
     } else if (executeTaskId) {
         reply = `沒問題，這就開始執行！ 🚀`;
     } else {
-        reply = `收到您的訊息：「${message}」— (AI 引擎未就緒，目前為關鍵字比對模式)`;
+        const errorHint = llmErrorForFallback ? ` (AI 引擎故障: ${llmErrorForFallback})` : ' (AI 引擎未就緒，目前為關鍵字模式)';
+        reply = `收到您的訊息：「${message}」${errorHint}`;
     }
 
     return res.json({

@@ -10,6 +10,46 @@ let currentProvider = 'Ollama';
 let currentBaseUrl = 'http://127.0.0.1:11434/v1';
 let currentApiKey = '';
 
+/**
+ * Provider 端點資料庫 (Database)
+ * 依照 Provider 分類其特定的模型清單與 API 格式
+ */
+const PROVIDER_ENDPOINTS = {
+    'Ollama': {
+        type: 'ollama',
+        list: '/api/tags'
+    },
+    'Ollama Cloud': {
+        type: 'ollama',
+        list: '/api/tags',
+        check: '/api/tags'
+    },
+    'OpenAI': {
+        type: 'openai',
+        list: '/models'
+    },
+    'Groq': {
+        type: 'openai',
+        list: '/models'
+    },
+    'DeepSeek': {
+        type: 'openai',
+        list: '/models'
+    },
+    'NVIDIA NIM': {
+        type: 'openai',
+        list: '/models'
+    },
+    'Mistral': {
+        type: 'openai',
+        list: '/models'
+    },
+    'Together AI': {
+        type: 'openai',
+        list: '/models'
+    }
+};
+
 // 設定路徑：與任務清單共用目錄
 const APP_DATA_DIR = path.join(process.env.APPDATA || (process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Preferences') : path.join(os.homedir(), '.config')), 'aipc-agent');
 const CONFIG_PATH = path.join(APP_DATA_DIR, 'config.json');
@@ -122,96 +162,121 @@ async function checkOllamaStatus(force = false) {
     }
 
     const status = { available: false, modelReady: false, version: null, modelName: null };
+    const meta = PROVIDER_ENDPOINTS[currentProvider] || { type: 'openai', list: '/models' };
     const apiRoot = currentBaseUrl.replace(/\/v1\/?$/, ''); // 拿掉末尾的 /v1 得到根路徑
 
-    if (currentProvider !== 'Ollama') {
-        // 非 Ollama 模式：嘗試通用的 OpenAI 格式檢查
+    // ==========================================
+    // 1. 處理 OpenAI 類型 Provider
+    // ==========================================
+    if (meta.type === 'openai') {
+        const listPath = meta.list || '/models';
+        const checkUrl = currentBaseUrl.endsWith('/') ? `${currentBaseUrl}${listPath.substring(1)}` : `${currentBaseUrl}${listPath}`;
         try {
-            const res = await fetch(`${currentBaseUrl}/models`, {
+            const res = await fetch(checkUrl, {
                 headers: currentApiKey ? { 'Authorization': `Bearer ${currentApiKey}` } : {},
                 signal: AbortSignal.timeout(5000)
             }).catch(() => null);
 
             if (res && res.ok) {
-                status.available = true;
-                status.modelReady = true; // 雲端模組通常視為已就緒
-                status.modelName = currentModel || 'Cloud Model';
+                const contentType = res.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    status.available = true;
+                    status.modelReady = true; 
+                    status.modelName = currentModel || 'Cloud Model';
+
+                    // 額外嘗試獲取版本 (針對本地 Ollama)
+                    if (currentProvider === 'Ollama') {
+                        try {
+                            const verRes = await fetch(`${apiRoot}/api/version`, { signal: AbortSignal.timeout(2000) });
+                            if (verRes.ok) {
+                                const verData = await verRes.json();
+                                status.version = verData.version;
+                            }
+                        } catch { /* 忽略錯誤 */ }
+                    }
+                } else {
+                    let hint = '';
+                    if (currentBaseUrl.includes('ollama.com')) {
+                        hint = ' (提示：https://ollama.com 是官網，API 路徑通常與本地不同)';
+                    }
+                    console.warn(`[LLM] Check ${currentProvider} status failed. URL: ${checkUrl}, Expected JSON but got ${contentType}${hint}`);
+                }
+            } else if (res) {
+                console.warn(`[LLM] Check ${currentProvider} status returned error ${res.status} for ${checkUrl}`);
+            } else if (currentProvider === 'Ollama') {
+                // Fetch failed and it's local Ollama
+                console.warn('[LLM] 本地 Ollama 未響應，嘗試啟動服務...');
+                await ensureOllamaRunning();
             }
         } catch (e) {
-            console.warn(`[LLM] Check ${currentProvider} status failed:`, e.message);
+            console.warn(`[LLM] Check ${currentProvider} status failed for ${checkUrl}:`, e.message);
+            if (currentProvider === 'Ollama') {
+                await ensureOllamaRunning();
+            }
         }
         _cachedStatus = status;
         _lastCheck = now;
         return status;
     }
 
+    // ==========================================
+    // 2. 處理 Ollama 類型 Provider
+    // ==========================================
     try {
-        // 1. 檢查服務是否在線 (試探根路徑版本)
-        const res = await fetch(`${apiRoot}/api/version`, {
+        const checkPath = meta.check || '/api/version';
+        const checkUrl = `${apiRoot}${checkPath}`;
+        
+        const res = await fetch(checkUrl, {
             signal: AbortSignal.timeout(3000),
         }).catch(() => null);
 
         if (res && res.ok) {
-            const data = await res.json();
-            status.available = true;
-            status.version = data.version ?? 'unknown';
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const data = await res.json();
+                status.available = true;
+                status.version = data.version ?? 'unknown';
 
-            // 2. 檢查模型清單 (Ollama 專屬路徑)
-            try {
-                const tagsRes = await fetch(`${apiRoot}/api/tags`, {
-                    signal: AbortSignal.timeout(5000),
-                });
-                const tagsData = await tagsRes.json();
+                // 檢查模型清單
+                const listPath = meta.list || '/api/tags';
+                try {
+                    const tagsRes = await fetch(`${apiRoot}${listPath}`, {
+                        signal: AbortSignal.timeout(5000),
+                    });
+                    const tagsData = await tagsRes.json();
 
-                if (tagsData.models && Array.isArray(tagsData.models)) {
-                    // 優先尋找目前設定的模型
-                    let foundModel = tagsData.models.find(m => m.name === currentModel);
-
-                    // 如果目前記憶的模型不在 Ollama 中，嘗試 fallback
-                    if (!foundModel && currentModel !== DEFAULT_MODEL) {
-                        foundModel = tagsData.models.find(m => m.name === DEFAULT_MODEL);
+                    if (tagsData.models && Array.isArray(tagsData.models)) {
+                        let foundModel = tagsData.models.find(m => m.name === currentModel);
+                        if (!foundModel && currentModel !== DEFAULT_MODEL) {
+                            foundModel = tagsData.models.find(m => m.name === DEFAULT_MODEL);
+                            if (foundModel) {
+                                currentModel = DEFAULT_MODEL;
+                                saveConfig();
+                            }
+                        }
+                        if (!foundModel) {
+                            const modelPrefix = DEFAULT_MODEL.split(':')[0];
+                            foundModel = tagsData.models.find(m => m.name.startsWith(modelPrefix + ':') || m.name === modelPrefix);
+                        }
+                        if (!foundModel) {
+                            foundModel = tagsData.models.find(m => m.name.toLowerCase().includes('qwen'));
+                        }
                         if (foundModel) {
-                            currentModel = DEFAULT_MODEL;
-                            saveConfig();
+                            status.modelReady = true;
+                            status.modelName = foundModel.name;
                         }
                     }
-
-                    // 次要尋找任何帶有 qwen3.5 的模型 (fallback)
-                    if (!foundModel) {
-                        const modelPrefix = DEFAULT_MODEL.split(':')[0]; // e.g. 'qwen3.5'
-                        foundModel = tagsData.models.find(m => m.name.startsWith(modelPrefix + ':') || m.name === modelPrefix);
-                    }
-
-                    // 最後保底：只要包含 qwen 即可
-                    if (!foundModel) {
-                        foundModel = tagsData.models.find(m => m.name.toLowerCase().includes('qwen'));
-                    }
-
-                    if (foundModel) {
-                        status.modelReady = true;
-                        status.modelName = foundModel.name;
-                    }
+                } catch (tagsErr) {
+                    console.warn(`[LLM] 讀取模型清單失敗 (${listPath}):`, tagsErr.message);
                 }
-            } catch (tagsErr) {
-                console.warn('[LLM] 讀取模型清單失敗:', tagsErr.message);
-                status.modelReady = false;
+            } else {
+                console.warn(`[LLM] 檢查 ${currentProvider} 失敗。預期 JSON 但收到 ${contentType}。網址: ${checkUrl}`);
             }
         }
     } catch (err) {
         if (currentProvider === 'Ollama') {
-            // Ollama 未啟動，嘗試啟動它
-            console.warn('[LLM] Ollama 服務未響應，嘗試啟動服務...');
+            console.warn('[LLM] 本地 Ollama 未響應，嘗試啟動服務...');
             await ensureOllamaRunning();
-
-            // 啟動後再次快速檢查一次
-            try {
-                const retry = await fetch(`${apiRoot}/api/version`, { signal: AbortSignal.timeout(2000) });
-                if (retry.ok) {
-                    status.available = true;
-                    const data = await retry.json();
-                    status.version = data.version;
-                }
-            } catch { /* 依舊失敗則放棄 */ }
         }
     }
 
@@ -227,44 +292,109 @@ function invalidateCache() {
     console.log('[LLM] 正在清除狀態快取...');
     _cachedStatus = null;
     _lastCheck = 0;
+    _cachedModels = null;
+    _lastModelsCheck = 0;
 }
 
+let _cachedModels = null;
+let _lastModelsCheck = 0;
+
 /**
- * 取得當前 Ollama 已安裝的所有模型
+ * 取得當前已安裝的所有模型
  */
-async function listModels() {
-    if (currentProvider !== 'Ollama') {
-        try {
-            const res = await fetch(`${currentBaseUrl}/models`, {
-                headers: currentApiKey ? { 'Authorization': `Bearer ${currentApiKey}` } : {},
-                signal: AbortSignal.timeout(5000)
-            });
-            if (res.ok) {
-                const data = await res.json();
-                // OpenAI 返回格式是 { data: [{ id: '...', ... }] }
-                if (data.data && Array.isArray(data.data)) {
-                    return data.data.map(m => ({ name: m.id, size: 0 }));
-                }
-            }
-        } catch (e) {
-            console.error(`[LLM] List models from ${currentProvider} failed:`, e.message);
-        }
-        return [];
+async function listModels(options = {}) {
+    const forceRefresh = options.forceRefresh || false;
+    const now = Date.now();
+    
+    // 如果有快取且未過期 (30秒)，直接回傳
+    if (!forceRefresh && _cachedModels && (now - _lastModelsCheck < 30000)) {
+        return _cachedModels;
     }
 
-    const apiRoot = currentBaseUrl.replace(/\/v1\/?$/, '');
-    try {
-        const res = await fetch(`${apiRoot}/api/tags`, {
-            signal: AbortSignal.timeout(3000),
-        });
-        if (res.ok) {
+    const provider = (options.provider !== undefined) ? options.provider : currentProvider;
+    const baseUrl = (options.baseUrl !== undefined) ? options.baseUrl : currentBaseUrl;
+    const apiKey = (options.apiKey !== undefined) ? options.apiKey : currentApiKey;
+
+    const meta = PROVIDER_ENDPOINTS[provider] || { type: 'openai', list: '/models' };
+    const apiRoot = baseUrl.replace(/\/v1\/?$/, '');
+
+    // ==========================================
+    // 1. 處理 OpenAI 類型 Provider
+    // ==========================================
+    if (meta.type === 'openai') {
+        const listPath = meta.list || '/models';
+        const checkUrl = baseUrl.endsWith('/') ? `${baseUrl}${listPath.substring(1)}` : `${baseUrl}${listPath}`;
+        try {
+            const res = await fetch(checkUrl, {
+                headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {},
+                signal: AbortSignal.timeout(5000)
+            });
+
+            if (!res.ok) {
+                console.warn(`[LLM] List models from ${provider} failed with status: ${res.status}`);
+                return [];
+            }
+
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                const text = await res.text();
+                console.warn(`[LLM] Expected JSON from ${provider} but got ${contentType}. URL: ${checkUrl}`);
+                return [];
+            }
+
             const data = await res.json();
-            return data.models || [];
+            let models = [];
+            if (data && data.data && Array.isArray(data.data)) {
+                models = data.data.map(m => ({ name: m.id, size: 0 }));
+            }
+            
+            // 只有在非預覽（沒帶 options）時才更新進階快取
+            if (Object.keys(options).length === 0 || (Object.keys(options).length === 1 && options.forceRefresh !== undefined)) {
+                _cachedModels = models;
+                _lastModelsCheck = Date.now();
+            }
+            return models;
+        } catch (e) {
+            console.error(`[LLM] List models from ${provider} failed:`, e.message);
+            return [];
         }
-    } catch (e) {
-        console.error('[LLM] List models failed:', e.message);
     }
-    return [];
+
+    // ==========================================
+    // 2. 處理 Ollama 類型 Provider
+    // ==========================================
+    const listPath = meta.list || '/api/tags';
+    const checkUrl = `${apiRoot}${listPath}`;
+    try {
+        const res = await fetch(checkUrl, {
+            headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {},
+            signal: AbortSignal.timeout(5000),
+        });
+
+        if (!res.ok) {
+            console.warn(`[LLM] List models from ${provider} failed with status: ${res.status} (${checkUrl})`);
+            return [];
+        }
+
+        const data = await res.json();
+        let models = [];
+        if (data.models && Array.isArray(data.models)) {
+            models = data.models.map(m => ({
+                name: m.name,
+                size: m.size || 0
+            }));
+        }
+        
+        // 只有在非預覽（沒帶 options）時才更新進階快取
+        if (Object.keys(options).length === 0 || (Object.keys(options).length === 1 && options.forceRefresh !== undefined)) {
+            _cachedModels = models;
+            _lastModelsCheck = Date.now();
+        }
+        return models;
+    } catch (err) {
+        console.error(`[LLM] List models from ${provider} failed:`, err.message);
+        return [];
+    }
 }
 
 /**
@@ -326,6 +456,7 @@ function ensureOllamaRunning() {
  * @returns {Promise<string>} LLM 回應文字
  */
 async function chatWithLLM(userMessage, history = []) {
+    const meta = PROVIDER_ENDPOINTS[currentProvider] || { type: 'openai' };
     const messages = [
         { role: 'system', content: buildFullSystemPrompt() },
         ...history,
@@ -335,44 +466,84 @@ async function chatWithLLM(userMessage, history = []) {
     const headers = { 'Content-Type': 'application/json' };
     if (currentApiKey) headers['Authorization'] = `Bearer ${currentApiKey}`;
 
-    // 判斷使用的 Endpoint (有些 Provider 可能沒帶 /v1)
-    const chatUrl = currentBaseUrl.endsWith('/') ? `${currentBaseUrl}chat/completions` : `${currentBaseUrl}/chat/completions`;
+    const apiRoot = currentBaseUrl.replace(/\/v1\/?$/, '');
+    let chatUrl = '';
 
-    const res = await fetch(chatUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-            model: currentModel,
-            messages: messages,
-            stream: false,
-            // 某些 Provider 需要這些 OpenAI 標準以外的參數，需視情況調整
-            think: false,
-            temperature: 0.7,
-            top_p: 0.9,
-            max_tokens: 1000,
-        }),
-        signal: AbortSignal.timeout(60000),
-    });
+    if (meta.type === 'ollama') {
+        // 使用 Ollama 原生 API 路徑
+        chatUrl = `${apiRoot}/api/chat`;
+    } else {
+        // 使用 OpenAI 相容路徑
+        chatUrl = currentBaseUrl.endsWith('/') ? `${currentBaseUrl}chat/completions` : `${currentBaseUrl}/chat/completions`;
+    }
+    
+    console.log(`[LLM] 傳送對話請求：Provider=${currentProvider}, URL=${chatUrl}, Model=${currentModel}`);
+
+    const body = {
+        model: currentModel,
+        messages: messages,
+        stream: false,
+    };
+
+    // 移除硬編碼的 options 與 tokens 限制，尊重模型自訂設定與完整輸出能力
+    body.temperature = 0.7;
+
+    let res;
+    try {
+        res = await fetch(chatUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(180000), // 延長至 3 分鐘，配合「思考型」或地端加載較慢的模型
+        });
+    } catch (fetchErr) {
+        if (fetchErr.name === 'TimeoutError' || fetchErr.message.includes('timeout')) {
+            throw new Error(`AI 引擎回應超時（已等待 3 分鐘）。這通常發生在模型正在加載或正在進行深度思考。請確保您的硬體資源充足，或稍後再試。`);
+        }
+        throw fetchErr;
+    }
 
     if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`API error (${res.status}): ${errText}`);
+        throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        const html = await res.text();
+        throw new Error(`API error: Expected JSON but got ${contentType}. Content start: ${html.substring(0, 100)}`);
     }
 
     const data = await res.json();
-    // 兼顧 OpenAI (choices[0].message.content) 與 Ollama (message.content) 格式
+    
+    // 兼顧 OpenAI 與 Ollama 的各種欄位格式
     let content = '';
-    if (data.choices && data.choices[0]?.message?.content) {
+    if (data && data.choices && data.choices[0]?.message) {
         content = data.choices[0].message.content;
-    } else if (data.message?.content) {
+    } else if (data && data.message) {
         content = data.message.content;
+    } else if (data && data.content) {
+        content = data.content;
+    } else if (data && data.response) {
+        content = data.response; // 支援 Ollama /api/generate 格式混用
     }
-    content = content.trim();
 
-    // 安全過濾：移除殘留的 <think>...</think> 標籤（以防 think:false 沒完全生效）
-    content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    content = (content || '').trim();
 
-    return content || '（抱歉，我剛才走神了，你再說一次？）';
+    // 處理思考標籤 (Thought Tags)
+    // 如果模型只回傳了 <think>...</think>，我們保留它（或者至少不轉為空字串導致報錯）
+    const thoughtMatch = content.match(/<think>([\s\S]*?)<\/think>/i);
+    const thought = thoughtMatch ? thoughtMatch[1].trim() : null;
+    const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+    const finalReply = cleanContent || thought || '';
+
+    if (!finalReply) {
+        console.error(`[LLM] 收到空的回應！原始資料:`, JSON.stringify(data));
+        throw new Error('AI 引擎回傳了空內容，這可能是因為模型正在加載或上下文過長，請再試一次。');
+    }
+
+    return finalReply;
 }
 
 module.exports = {
