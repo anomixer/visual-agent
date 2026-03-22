@@ -411,7 +411,10 @@
           <input type="password" id="settingApiKey" class="form-input" placeholder="可留空">
         </div>
         <div class="form-group">
-          <label>模型名稱 (Model Name)</label>
+          <label style="display:flex; justify-content:space-between; align-items:center;">
+             <span>模型名稱 (Model Name)</span>
+             <button id="btnRefreshModels" class="btn-text" style="font-size:11px; color:var(--accent-blue); display:none;">🔄 刷新清單</button>
+          </label>
           <div id="modelNameContainer">
             <input type="text" id="settingModelName" class="form-input" placeholder="例如: qwen3.5:4b">
             <select id="settingModelSelect" class="form-input" style="display:none;"></select>

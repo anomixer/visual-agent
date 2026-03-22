@@ -39,36 +39,21 @@ try {
 指令 (PowerShell):
 
 ```powershell
-Write-Host "正在安裝 Ollama 本地 AI 引擎 (約 120MB)，請稍候..."
-$installerPath = "$env:TEMP\OllamaSetup.exe"
-$downloadUrl = "https://ollama.com/download/OllamaSetup.exe"
+Write-Host "正在透過 winget 安裝 Ollama 本地 AI 引擎，請稍候..."
 
-Write-Host "下載中..."
-curl.exe -fsSL $downloadUrl -o $installerPath
-
-if (-not (Test-Path $installerPath)) {
-    throw "下載失敗"
+# 檢查 winget 是否可用
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget 未安裝或不在 PATH 中，請先安裝 App Installer"
 }
 
-Write-Host "下載完成，開始安裝..."
-$process = Start-Process -FilePath $installerPath -ArgumentList "/SILENT /NORESTART" -PassThru -WindowStyle Hidden
+# 使用 winget 安裝 Ollama
+Write-Host "執行 winget install..."
+& winget install --id Ollama.Ollama --silent --accept-package-agreements --accept-source-agreements
 
-$timeout = 180
-$elapsed = 0
-while ($elapsed -lt $timeout -and -not $process.HasExited) {
-    Start-Sleep -Seconds 1
-    $elapsed += 1
-    if ($elapsed % 10 -eq 0) {
-        Write-Host "安裝進度: $elapsed/$timeout 秒"
-    }
+if ($LASTEXITCODE -ne 0) {
+    throw "winget 安裝失敗，錯誤代碼: $LASTEXITCODE"
 }
 
-if (-not $process.HasExited) {
-    Write-Host "安裝超時，強制結束..."
-    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-}
-
-Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
 Write-Host "安裝程序完成，等待初始化..."
 Start-Sleep -Seconds 2
 ```

@@ -16,7 +16,17 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell): 
 ```powershell
-if (Test-Path "C:\Program Files (x86)\Steam\steam.exe" -or Test-Path "C:\Program Files\Steam\steam.exe") { $true } else { $false }
+try {
+    $cmd = if (Get-Command steam -ErrorAction Ignore) { "steam" } else { "C:\Program Files (x86)\Steam\steam.exe" }
+    if (Test-Path $cmd) {
+        Write-Host "已安裝"
+        $true
+    } else {
+        $false
+    }
+} catch {
+    $false
+}
 ```
 
 預期結果: 若回傳 True 則標記為「已安裝」，跳過執行。
@@ -25,16 +35,39 @@ if (Test-Path "C:\Program Files (x86)\Steam\steam.exe" -or Test-Path "C:\Program
 指令 (PowerShell):
 
 ```powershell
-Invoke-WebRequest -Uri "https://cdn.akamai.steamstatic.com/client/installer/SteamSetup.exe" -OutFile "$env:TEMP\SteamSetup.exe"
-Start-Process -FilePath "$env:TEMP\SteamSetup.exe" -Args "/S" -Wait
-Remove-Item "$env:TEMP\SteamSetup.exe" -Force
-UI 顯示內容: 「正在從 Steam 伺服器下載並自動安裝中...」
+Write-Host "正在透過 winget 安裝 Steam 遊戲平台，請稍候..."
+
+# 檢查 winget 是否可用
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget 未安裝或不在 PATH 中，請先安裝 App Installer"
+}
+
+# 使用 winget 安裝 Steam
+Write-Host "執行 winget install..."
+& winget install --id Valve.Steam --silent --accept-package-agreements --accept-source-agreements
+
+if ($LASTEXITCODE -ne 0) {
+    throw "winget 安裝失敗，錯誤代碼: $LASTEXITCODE"
+}
+
+Write-Host "安裝程序完成，等待初始化..."
+Start-Sleep -Seconds 2
 ```
 
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-if (Test-Path "C:\Program Files (x86)\Steam\steam.exe" -or Test-Path "C:\Program Files\Steam\steam.exe") { $true } else { $false }
+Write-Host "驗證 Steam 安裝..."
+$cmd = if (Get-Command steam -ErrorAction Ignore) { "steam" } else { "C:\Program Files (x86)\Steam\steam.exe" }
+
+if (-not (Test-Path $cmd)) {
+    Write-Host "錯誤: Steam 執行檔不存在"
+    $false
+    exit
+}
+
+Write-Host "Steam 已安裝"
+$true
 ```
 
 4. 自動排錯邏輯 (Error Handling)

@@ -16,7 +16,22 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell): 
 ```powershell
-if (Test-Path "C:\Program Files\Google\Chrome\Application\chrome.exe" -or Test-Path "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe") { $true } else { $false }
+try {
+    $cmd = if (Get-Command chrome -ErrorAction Ignore) { "chrome" } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
+    if (Test-Path $cmd) {
+        $v = & $cmd --version 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "已安裝"
+            $true
+        } else {
+            $false
+        }
+    } else {
+        $false
+    }
+} catch {
+    $false
+}
 ```
 
 預期結果: 若回傳 True 則標記為「已安裝」，跳過執行。
@@ -25,16 +40,50 @@ if (Test-Path "C:\Program Files\Google\Chrome\Application\chrome.exe" -or Test-P
 指令 (PowerShell):
 
 ```powershell
-Invoke-WebRequest -Uri "https://dl.google.com/chrome/install/latest/chrome_installer.exe" -OutFile "$env:TEMP\chrome_installer.exe"
-Start-Process -FilePath "$env:TEMP\chrome_installer.exe" -Args "/silent /install" -Wait
-Remove-Item "$env:TEMP\chrome_installer.exe" -Force
-UI 顯示內容: 「正在從 Google 伺服器下載 Chrome 並安裝...」
+Write-Host "正在透過 winget 安裝 Google Chrome，請稍候..."
+
+# 檢查 winget 是否可用
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget 未安裝或不在 PATH 中，請先安裝 App Installer"
+}
+
+# 使用 winget 安裝 Chrome
+Write-Host "執行 winget install..."
+& winget install --id Google.Chrome --silent --accept-package-agreements --accept-source-agreements
+
+if ($LASTEXITCODE -ne 0) {
+    throw "winget 安裝失敗，錯誤代碼: $LASTEXITCODE"
+}
+
+Write-Host "安裝程序完成，等待初始化..."
+Start-Sleep -Seconds 2
 ```
 
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-if (Test-Path "C:\Program Files\Google\Chrome\Application\chrome.exe" -or Test-Path "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe") { $true } else { $false }
+Write-Host "驗證 Chrome 安裝..."
+$cmd = if (Get-Command chrome -ErrorAction Ignore) { "chrome" } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
+
+if (-not (Test-Path $cmd)) {
+    Write-Host "錯誤: Chrome 執行檔不存在"
+    $false
+    exit
+}
+
+try {
+    $v = & $cmd --version 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Chrome 已安裝，版本: $v"
+        $true
+    } else {
+        Write-Host "Chrome 驗證失敗"
+        $false
+    }
+} catch {
+    Write-Host "無法驗證 Chrome: $_"
+    $false
+}
 ```
 
 4. 自動排錯邏輯 (Error Handling)

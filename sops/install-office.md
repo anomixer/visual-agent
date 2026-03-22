@@ -16,7 +16,17 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell): 
 ```powershell
-if (Get-Command "soffice" -ErrorAction Ignore -or Test-Path "C:\Program Files\LibreOffice\program\soffice.exe") { $true } else { $false }
+try {
+    $cmd = if (Get-Command soffice -ErrorAction Ignore) { "soffice" } else { "C:\Program Files\LibreOffice\program\soffice.exe" }
+    if (Test-Path $cmd) {
+        Write-Host "已安裝"
+        $true
+    } else {
+        $false
+    }
+} catch {
+    $false
+}
 ```
 
 預期結果: 若回傳 True 則標記為「已安裝」，跳過執行。
@@ -25,14 +35,39 @@ if (Get-Command "soffice" -ErrorAction Ignore -or Test-Path "C:\Program Files\Li
 指令 (PowerShell):
 
 ```powershell
-UI 顯示內容: 「正在為您準備辦公軟體 (全自動安裝開源 LibreOffice 中...)」
-winget install -e --id TheDocumentFoundation.LibreOffice --accept-package-agreements --accept-source-agreements --silent
+Write-Host "正在透過 winget 安裝 LibreOffice 辦公套件，請稍候..."
+
+# 檢查 winget 是否可用
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget 未安裝或不在 PATH 中，請先安裝 App Installer"
+}
+
+# 使用 winget 安裝 LibreOffice
+Write-Host "執行 winget install..."
+& winget install --id TheDocumentFoundation.LibreOffice --silent --accept-package-agreements --accept-source-agreements
+
+if ($LASTEXITCODE -ne 0) {
+    throw "winget 安裝失敗，錯誤代碼: $LASTEXITCODE"
+}
+
+Write-Host "安裝程序完成，等待初始化..."
+Start-Sleep -Seconds 2
 ```
 
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-if (Get-Command "soffice" -ErrorAction Ignore -or Test-Path "C:\Program Files\LibreOffice\program\soffice.exe") { $true } else { $false }
+Write-Host "驗證 LibreOffice 安裝..."
+$cmd = if (Get-Command soffice -ErrorAction Ignore) { "soffice" } else { "C:\Program Files\LibreOffice\program\soffice.exe" }
+
+if (-not (Test-Path $cmd)) {
+    Write-Host "錯誤: LibreOffice 執行檔不存在"
+    $false
+    exit
+}
+
+Write-Host "LibreOffice 已安裝"
+$true
 ```
 
 4. 自動排錯邏輯 (Error Handling)
