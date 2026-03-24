@@ -1,4 +1,4 @@
-# AI PC Agent 開發日誌
+﻿# AI PC Agent 開發日誌
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
@@ -240,51 +240,33 @@
 
 ---
 
-## 2026.03.24 - AI Provider ???????/????
+## 2026.03.24 - AI Provider 與 SOP 穩定性修正
 
-### AI ????????
-- OpenAI / Gemini / Groq / DeepSeek / Mistral / Together AI ?? OpenAI-compatible ??
-- Anthropic Claude ?? Native ????? API ??
-- Ollama / vLLM / SGLang / LM Studio ??????????
+### AI Provider
+- OpenAI 維持僅支援 API Key。
+- Gemini 使用 Google 的 OpenAI-compatible 入口。
+- Anthropic Claude 改走原生認證與原生訊息 API。
+- Customer Provider 支援 API Key 與 OAuth 2.0 Client Credentials。
 
-### ????
-- ?? OAuth 2.0 Client Credentials,? Customer Provider / ?? Gateway / Azure AD ?????
-- OpenAI ?? API Key ??,??? OpenAI ????? OAuth
+### SOP 執行流程
+- 任務完成後，AI 對話區會主動回報 `success`、`failed`、`skipped`。
+- SOP 載入時會依 `id` 去重，並優先採用正式檔名，不再被 `Copy` 類副本覆蓋。
+- 內建 SOP、skill、plugin 在內容變更時，會同步到 `%APPDATA%\aipc-agent\`。
 
-### Provider ??
-- Gemini ?? URL ??? Google ?? OpenAI compatibility ??
-- AI ??????????????,????? provider / ?? / model
+### 執行器修正
+- 移除可能觸發 `Out-File` / `nul` 裝置錯誤的 PowerShell 包裝方式。
+- `Check` 階段即使同時輸出提示文字，仍可正確辨識布林值。
+- `Verify` 階段若明確輸出 `false`，現在會視為真正失敗。
 
-### 2026.03.24 ?? - AI ?????? UX ??
-- ?????? provider ???,???? AI ?????? API Key????????????
-- Provider ???????? OpenAI-compatible / Native / Local ??,??????
-- ?? Anthropic Native?Gemini OpenAI compatibility?Customer Provider OAuth ???,????????????????
+### SOP 修正
+- 強化 Steam、Chrome、LibreOffice、Ollama、Qwen 模型下載、系統還原點、日文語言包 SOP。
+- 將脆弱的 `Get-Command + Test-Path "command-name"` 改為先解析執行檔路徑再驗證。
+- 系統還原點 SOP 的 `Check` 改為無副作用。
 
-## 2026.03.24 - SOP Stability Hardening
+## 2026.03.24 - 工作日誌與版本同步
 
-### Runtime behavior
-- Task completion now posts an AI chat message for `success`, `failed`, and `skipped` states.
-- SOP loading now de-duplicates duplicated IDs and prefers the canonical file over `Copy` variants.
-- Bundled SOP/skill/plugin assets now sync to `%APPDATA%\aipc-agent\` when content changes, not only on first copy.
-
-### Executor fixes
-- Removed the PowerShell wrapper pattern that could trigger `Out-File` / `nul` device errors.
-- `Check` phase now accepts boolean output even when scripts also emit helper text.
-- `Verify` phase now treats explicit `false` output as a real failure.
-
-### SOP fixes
-- Fixed install verification logic for Steam, Chrome, LibreOffice, Ollama, and Qwen model pull SOPs.
-- Replaced fragile `Get-Command + Test-Path "command-name"` patterns with resolved executable-path checks.
-- Backup SOP `Check` no longer mutates system state; restore-point creation moved to `Install`.
-- Japanese language-pack SOP `Verify` now returns an explicit pass/fail signal.
-
-## 2026.03.24 - Log UX and Version Sync
-
-### UI / Log panel
-- Work log now auto-scrolls only when the user is already pinned to the bottom.
-- Spinner / download-progress style messages are merged in place instead of flooding multiple lines.
-
-### Versioning
-- Status-bar version is no longer hard-coded.
-- Frontend now reads app version from `/api/meta`, which is sourced from `package.json`.
-- Package version updated to `2026.03.24`.
+- 工作日誌僅在畫面已停在底部時才自動往下捲。
+- Spinner 與下載進度類訊息會原地更新，不再洗出多行。
+- 狀態列版本號不再寫死。
+- 前端改由 `/api/meta` 讀取版本，來源為 `package.json`。
+- 套件版本更新為 `2026.03.24`。

@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (2026.03.18)
+﻿# AI PC Agent — 實作需求規格書 (2026.03.18)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -186,48 +186,31 @@ SOPs 存放位置：
 
 ---
 
-## 6. 2026.03.24 AI Provider ????
+## 6. 2026.03.24 AI Provider 與 SOP 穩定性
 
-### 6.1 ????
-- OpenAI-compatible: ?? Authorization: Bearer ... ? /chat/completions
-- Anthropic Native: ?? x-api-key?anthropic-version ? /v1/messages
-- Local Engines: Ollama / vLLM / SGLang / LM Studio ???????,UI ??????
-- OAuth: ??????? Client Credentials
+### 6.1 Provider 模型
+- OpenAI-compatible provider 使用 Bearer 認證與 `/chat/completions`。
+- Anthropic Claude 使用原生 headers 與 `/v1/messages`。
+- Ollama、vLLM、SGLang、LM Studio 等本地引擎預設維持無認證。
+- Customer Provider 支援 API Key 與 OAuth 2.0 Client Credentials。
 
-### 6.2 Provider UX
-- AI ???????? provider ??: [OpenAI-compatible]?[Native]?[Local]
-- Gemini ?? Base URL ?? Google ?? OpenAI compatibility ??
-- ??????????????,??? provider + model ??????
+### 6.2 Runtime 規則
+- 任務完成時，必須在 AI 對話區回報 `success`、`failed`、`skipped`。
+- Runtime 必須依 `id` 去重 SOP，並優先採用正式檔名，不使用 `Copy` 類副本。
+- 內建 SOP、skill、plugin 在內容變更時，需同步至 `%APPDATA%\aipc-agent\`。
 
-### 6.3 API ??
-- ?? POST /api/llm/test
-- GET /api/llm/config ? POST /api/llm/config ??? provider ? authConfig
+### 6.3 執行器契約
+- `Check` 回傳 `true` 表示可跳過；即使同時有提示文字，執行器仍需辨識布林值。
+- `Verify` 在 PowerShell 非零結束碼或 stdout 明確為 `false` 時，必須判定失敗。
+- PowerShell 啟動包裝不可使用可能對 `nul` 或裝置處理失敗的 shell 寫法。
 
-### 6.4 AI ?????? UX
-- Provider ??????,??????????????
-- ??????????? provider ????
-- ?????????: ? provider -> ? key -> ??? model -> ????
+### 6.4 SOP 撰寫規則
+- 不可在 `Get-Command` 後直接用 `Test-Path "command-name"`，應先解析執行檔實際路徑。
+- `Check` 應為無副作用。
+- `Verify` 應回傳明確成功或失敗訊號；硬失敗時優先使用 `throw`。
+- 依賴本地服務的安裝流程，除了驗證執行檔，也需驗證服務可用性。
 
-## 6. 2026.03.24 SOP Stability Hardening
-
-### 6.1 Runtime updates
-- Task completion must surface back into the AI chat area with explicit success / failed / skipped feedback.
-- The runtime must de-duplicate SOPs by `id` and prefer canonical filenames over `Copy` variants.
-- Bundled SOPs, skills, and plugins must sync into `%APPDATA%\aipc-agent\` when file contents differ.
-
-### 6.2 Executor contract
-- `Check` returns `true` to skip; helper text may coexist, but the executor must still detect the boolean line.
-- `Verify` must fail the task when PowerShell exits non-zero or when stdout explicitly resolves to `false`.
-- PowerShell bootstrap code must avoid shell wrappers that can fail on `nul` / device handling.
-
-### 6.3 SOP authoring rules
-- Do not use `Test-Path "command-name"` after `Get-Command`; resolve the executable path first.
-- `Check` should be side-effect free.
-- `Verify` should return an unambiguous pass/fail result; prefer `throw` on hard failure.
-- Installers that depend on a local service (for example Ollama) should verify both binary presence and service readiness.
-
-## 6.4 2026.03.24 Log UX and Version Sync
-
-- Work log auto-scroll should only happen when the viewport is already at the bottom.
-- Progress-like log output (spinner, transfer size, block progress) should collapse into a single updating row.
-- Status-bar version must be driven from `package.json` via runtime metadata instead of a hard-coded HTML literal.
+### 6.5 工作日誌與版本同步
+- 工作日誌僅在畫面已停留底部時才自動捲動。
+- 進度型日誌輸出應合併為單列更新。
+- 狀態列版本需由 runtime metadata 自 `package.json` 取得，不可寫死在 HTML。

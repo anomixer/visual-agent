@@ -1,4 +1,4 @@
-# 🤖 AI PC Agent
+﻿# 🤖 AI PC Agent
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
@@ -296,36 +296,33 @@ Ollama 未安裝或未啟動。從推薦清單點「🧠 安裝 Ollama → ▶ �
 
 ---
 
-## AI Provider ????
+## AI Provider
 
-- OpenAI / Groq / DeepSeek / Mistral / Together AI / Gemini ? OpenAI-compatible
-- Gemini ???? API Key + Model,?? gemini-2.5-flash
-- Anthropic Claude ?? Native ??? /v1/messages,??? OpenAI-compatible
-- Customer Provider ?? API Key ? OAuth 2.0 Client Credentials
-- ??????????????,????? provider / ?? / model
+- OpenAI、Groq、DeepSeek、Mistral、Together AI、Gemini 走 OpenAI-compatible 流程。
+- Gemini 通常需要同時填入 API Key 與 Model，例如 `gemini-2.5-flash`。
+- Anthropic Claude 使用原生認證與原生 `/v1/messages`。
+- Customer Provider 支援 API Key 與 OAuth 2.0 Client Credentials。
 
-> OpenAI ???? API Key ??,????????? OpenAI ?????? API Key?????
+> OpenAI 官方 API 仍以 API Key 為主，本專案不使用 OpenAI 帳號 OAuth 來呼叫 OpenAI API。
 
-### AI ??????
-- Provider ????????
-- ? provider ????????????,????????????
-- ???????: ? AI ?? -> ? API Key -> ????? -> ????
+### Provider 設定
+- 先選擇 provider。
+- 依 provider 顯示 API Key 或 OAuth 欄位。
+- 選擇或手填 model，儲存前可先用模型測試按鈕驗證。
 
-## 2026.03.24 SOP stability updates
+## 2026.03.24 SOP 穩定性更新
 
-This round tightened SOP execution reliability.
+- 任務完成後，AI 對話區會主動回報 `success`、`failed`、`skipped`。
+- SOP 載入時會依 `id` 去重，優先採用正式檔名，避免 `Copy` 類副本蓋掉正本。
+- 內建 SOP、skill、plugin 在來源內容變更時，會重新同步到 `%APPDATA%\aipc-agent\`。
+- 執行器在 `Verify` 明確輸出 `false` 時，會視為失敗。
+- Steam、Chrome、LibreOffice、Ollama、Qwen 模型下載、系統還原點、日文語言包 SOP 都已加強，避免誤判成功或失敗。
 
-- Task completion now also posts an AI chat message for `success`, `failed`, and `skipped` outcomes.
-- SOP loading now de-duplicates duplicated IDs and prefers the canonical file instead of accidental `Copy` files.
-- Bundled SOP / skill / plugin files now refresh into `%APPDATA%\aipc-agent\` when source content changes.
-- The executor now treats explicit `false` during `Verify` as failure.
-- Steam, Chrome, LibreOffice, Ollama, Qwen model pull, backup, and Japanese language-pack SOPs were hardened to avoid false positives and false failures.
+若你在本機修改 SOP 後要測試，請重跑一次 `npm run start`，讓 runtime 重新同步 `%APPDATA%\aipc-agent\sops`。
 
-If you are testing locally after SOP changes, restart `npm run start` once so the runtime re-syncs `%APPDATA%\aipc-agent\sops`.
+## 2026.03.24 工作日誌與版本修整
 
-## 2026.03.24 log and version polish
-
-- Work log now keeps following output only when you are already at the bottom.
-- Progress-like output is merged into one updating row instead of spamming many lines.
-- Status-bar version now comes from `package.json` through `/api/meta`.
-- Current package version: `2026.03.24`.
+- 工作日誌只有在你原本停在底部時才會自動往下捲。
+- 進度型輸出會合併成同一列更新，不再大量洗版。
+- 狀態列版本號改由 `/api/meta` 自 `package.json` 讀取。
+- 目前套件版本為 `2026.03.24`。
