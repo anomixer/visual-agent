@@ -44,11 +44,13 @@ const sidebarBody = $('#recommendListContainer');
 const centerCol = document.querySelector('.center-col');
 const chatCol = document.querySelector('.chat-col');
 const logPanel = $('#logPanel');
+const logBody = $('#logBody');
 const todoContainer = $('#todoListContainer');
 const todoEmpty = $('#todoEmpty');
 const todoCount = $('#todoCount');
 const recCount = $('#recCount');
 const logEntries = $('#logEntries');
+const statusVersion = $('#statusVersion');
 const chatMessages = $('#chatMessages');
 const chatInput = $('#chatInput');
 const btnSend = $('#btnSend');
@@ -252,6 +254,7 @@ function debounce(fn, delay) {
 //  INIT
 // ════════════════════════════════════════════════════════
 async function init() {
+    loadAppMeta();
     checkFirstRun();
     applyTheme(localStorage.getItem('theme') || 'dark');
     restoreLayout();
@@ -279,6 +282,13 @@ async function init() {
 
     // 首次檢查 LLM 狀態（會觸發 bootstrap 或顯示歡迎訊息）
     await checkLLMStatus();
+}
+
+async function loadAppMeta() {
+    const data = await api('/api/meta');
+    if (data.success && statusVersion) {
+        statusVersion.textContent = `AI PC Agent v${data.version || 'dev'}`;
+    }
 }
 
 function checkFirstRun() {
@@ -1014,6 +1024,15 @@ function appendThinking() {
 }
 function removeThinking(id) { document.getElementById(id)?.remove(); }
 
+function isLogPinnedToBottom() {
+    const threshold = 24;
+    return logBody.scrollTop + logBody.clientHeight >= logBody.scrollHeight - threshold;
+}
+
+function isProgressLogMessage(message) {
+    return /%|#{3,}|pulling|downloading|extracting|verifying|MB\s*\/|GB\s*\/|^\.\.\.\s*[\\\/|~-]$|[█▏▎▍▌▋▊▉]/i.test(message);
+}
+
 function clearChatMessages() {
     if (confirm('確定要清除所有對話紀錄嗎？')) {
         chatMessages.innerHTML = '';
@@ -1027,24 +1046,27 @@ function clearChatMessages() {
 function addLogEntry(logItem) {
     const cleanMsg = stripAnsi(logItem.message);
     const emptyEl = logEntries.querySelector('.log-empty');
+    const shouldStickToBottom = isLogPinnedToBottom();
     if (emptyEl) emptyEl.remove();
 
     // 檢查是否為進度條或是相似內容的重複更新 (Progress Update)
     // 判斷邏輯：包含百分比、或是包含一連串的 # 字符、或是有明確的 progress 標記
     // 加入 common 關鍵字如 pulling, downloading, extracting 等
-    const isProgress = /%|#{3,}|pulling|downloading|extracting|verifying/i.test(cleanMsg);
+    const isProgress = isProgressLogMessage(cleanMsg);
     const lastEntry = logEntries.lastElementChild;
 
     if (isProgress && lastEntry) {
         // 如果內容相似度高（例如都是下載進度）或最後一筆也是進度條，則原地更新
         const lastMsg = stripAnsi(lastEntry.querySelector('span:last-child')?.textContent || '');
-        const isLastProgress = /%|#{3,}|pulling|downloading|extracting|verifying/i.test(lastMsg);
+        const isLastProgress = isProgressLogMessage(lastMsg);
 
         if (isLastProgress) {
             const time = logItem.timestamp ? new Date(logItem.timestamp).toLocaleTimeString('zh-TW', { hour12: false }) : '';
             lastEntry.className = `log-entry ${logItem.level || 'info'}`;
             lastEntry.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(cleanMsg)}</span>`;
-            logEntries.scrollTop = logEntries.scrollHeight;
+            if (shouldStickToBottom) {
+                logBody.scrollTop = logBody.scrollHeight;
+            }
             return;
         }
     }
@@ -1060,7 +1082,9 @@ function addLogEntry(logItem) {
     el.className = `log-entry ${level}`;
     el.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(cleanMsg)}</span>`;
     logEntries.appendChild(el);
-    logEntries.scrollTop = logEntries.scrollHeight;
+    if (shouldStickToBottom) {
+        logBody.scrollTop = logBody.scrollHeight;
+    }
 }
 
 function addUILog(msg, level = 'info') {

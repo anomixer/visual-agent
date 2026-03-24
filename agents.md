@@ -277,3 +277,14 @@
 - Replaced fragile `Get-Command + Test-Path "command-name"` patterns with resolved executable-path checks.
 - Backup SOP `Check` no longer mutates system state; restore-point creation moved to `Install`.
 - Japanese language-pack SOP `Verify` now returns an explicit pass/fail signal.
+
+## 2026.03.24 - Log UX and Version Sync
+
+### UI / Log panel
+- Work log now auto-scrolls only when the user is already pinned to the bottom.
+- Spinner / download-progress style messages are merged in place instead of flooding multiple lines.
+
+### Versioning
+- Status-bar version is no longer hard-coded.
+- Frontend now reads app version from `/api/meta`, which is sourced from `package.json`.
+- Package version updated to `2026.03.24`.

@@ -322,3 +322,10 @@ This round tightened SOP execution reliability.
 - Steam, Chrome, LibreOffice, Ollama, Qwen model pull, backup, and Japanese language-pack SOPs were hardened to avoid false positives and false failures.
 
 If you are testing locally after SOP changes, restart `npm run start` once so the runtime re-syncs `%APPDATA%\aipc-agent\sops`.
+
+## 2026.03.24 log and version polish
+
+- Work log now keeps following output only when you are already at the bottom.
+- Progress-like output is merged into one updating row instead of spamming many lines.
+- Status-bar version now comes from `package.json` through `/api/meta`.
+- Current package version: `2026.03.24`.

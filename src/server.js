@@ -8,6 +8,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const pkg = require('../package.json');
 const { loadAllSOPs } = require('./sop-parser');
 const { SOPExecutor } = require('./sop-executor');
 const llm = require('./llm');
@@ -15,6 +16,7 @@ const { getSystemHealth } = require('./system');
 
 const app = express();
 const PORT = 3210;
+const APP_VERSION = pkg.version || 'dev';
 
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -121,6 +123,14 @@ app.get('/api/system/health', async (req, res) => {
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
+});
+
+app.get('/api/meta', (req, res) => {
+    res.json({
+        success: true,
+        name: pkg.name || 'aipc-agent',
+        version: APP_VERSION,
+    });
 });
 
 // Default recommend list

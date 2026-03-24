@@ -225,3 +225,9 @@ SOPs 存放位置：
 - `Check` should be side-effect free.
 - `Verify` should return an unambiguous pass/fail result; prefer `throw` on hard failure.
 - Installers that depend on a local service (for example Ollama) should verify both binary presence and service readiness.
+
+## 6.4 2026.03.24 Log UX and Version Sync
+
+- Work log auto-scroll should only happen when the viewport is already at the bottom.
+- Progress-like log output (spinner, transfer size, block progress) should collapse into a single updating row.
+- Status-bar version must be driven from `package.json` via runtime metadata instead of a hard-coded HTML literal.
