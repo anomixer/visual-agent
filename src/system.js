@@ -10,8 +10,8 @@ async function getSystemHealth() {
     const health = {
         cpu: { load: 0, temp: null, cores: os.cpus().length, model: os.cpus()[0].model },
         ram: { total: os.totalmem(), free: os.freemem(), usage: 0 },
-        gpu: { name: 'N/A', load: 0, temp: null },
-        disk: { status: 'OK', drives: [] },
+        gpu: { name: 'N/A', load: 0, temp: null, details: null },
+        disk: { status: 'OK', drives: [], volumes: [] },
         uptime: os.uptime(),
         timestamp: new Date().toISOString()
     };

@@ -271,13 +271,25 @@
 - 前端改由 `/api/meta` 讀取版本，來源為 `package.json`。
 - 套件版本更新為 `2026.03.24`。
 
-## 2026.03.24 - EXE Startup and Export Fixes
+## 2026.03.24 - EXE 啟動與匯出修正
 
-### EXE startup
-- Tauri now starts the Node sidecar in the background so the local HTML splash can render first.
-- On first launch the splash shows: `首次執行本程式，正設定環境中，請稍候...`
-- On later launches the splash shows: `啟動後端伺服器中，請稍候...`
+### EXE 啟動
+- Tauri 改為背景啟動 Node sidecar，讓本地 HTML splash 可以先顯示，不再黑畫面等待。
+- 首次執行顯示：`首次執行本程式，正設定環境中，請稍候...`
+- 後續執行顯示：`啟動後端伺服器中，請稍候...`
 
-### Task export
-- EXE task export now uses the native Windows SaveFileDialog flow via `/api/todo/export-file`.
-- Browser-style blob download is kept only as a fallback.
+### 任務匯出
+- EXE 模式下的任務匯出改為優先使用 `/api/todo/export-file` 的原生 Windows 另存新檔流程。
+- 瀏覽器型 blob 下載僅作為 fallback。
+
+## 2026.03.24 - 硬體上下文與語系 SOP 拆分
+
+### 硬體上下文
+- AI 對話 prompt 現在會注入 CPU、GPU、RAM、磁碟健康與磁碟剩餘空間摘要。
+- NVIDIA 環境會額外帶入 `nvidia-smi` 的結構化資訊，包含 driver、VRAM 使用量與功耗。
+
+### 語系 SOP
+- 語言包安裝已拆成 `en-US`、`zh-TW`、`zh-CN`、`ja-JP` 四支獨立 SOP。
+- 每支語系 SOP 都只會把自己的語言 append 到既有 Windows 使用者語言清單，不會覆蓋整份清單。
+- 暫時性的英文與繁中復原 SOP 已在拆分後移除。
+- 日文語言安裝遇到 access denied 時，會在 install 階段直接失敗，不再拖到 verify 才暴露問題。

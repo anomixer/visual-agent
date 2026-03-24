@@ -1833,6 +1833,7 @@ async function updateHardwareStatus() {
             if (h.disk.drives && h.disk.drives.length > 0) {
                 const mainDisk = h.disk.drives[0];
                 const diskGauge = document.getElementById('gauge-disk');
+                const mainVolume = Array.isArray(h.disk.volumes) && h.disk.volumes.length > 0 ? h.disk.volumes[0] : null;
                 
                 // 健康 = 100%, 警告 = 50%, 危險 = 20%
                 let healthScore = 100;
@@ -1844,7 +1845,11 @@ async function updateHardwareStatus() {
                     diskGauge.style.stroke = healthScore === 100 ? 'var(--accent-green)' : (healthScore === 50 ? 'orange' : 'var(--accent-red)');
                 }
                 if ($('#hw-disk-status')) $('#hw-disk-status').textContent = `${healthScore}%`;
-                if ($('#hw-disk-name')) $('#hw-disk-name').textContent = `S.M.A.R.T: ${mainDisk.name}`;
+                if ($('#hw-disk-name')) {
+                    $('#hw-disk-name').textContent = mainVolume
+                        ? `S.M.A.R.T: ${mainDisk.name} | ${mainVolume.name} free ${Math.round(mainVolume.free / 1024 / 1024 / 1024)}GB`
+                        : `S.M.A.R.T: ${mainDisk.name}`;
+                }
             }
 
             if ($('#hw-last-update')) {

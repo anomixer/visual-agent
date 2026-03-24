@@ -327,9 +327,17 @@ Ollama 未安裝或未啟動。從推薦清單點「🧠 安裝 Ollama → ▶ �
 - 狀態列版本號改由 `/api/meta` 自 `package.json` 讀取。
 - 目前套件版本為 `2026.03.24`。
 
-## 2026.03.24 EXE startup and export fixes
+## 2026.03.24 EXE 啟動與匯出修正
 
-- Packaged EXE now lets the splash screen render before the Node sidecar finishes starting.
-- Splash text now distinguishes first launch vs later launches.
-- Task export in EXE mode now uses the native Windows save dialog.
-- If native export fails, the app still falls back to browser-style download.
+- 封裝後的 EXE 現在會先顯示 splash，再於背景啟動 Node sidecar。
+- Splash 文案會區分首次執行與後續啟動。
+- EXE 模式下的任務匯出改為使用原生 Windows 另存新檔對話框。
+- 若原生匯出失敗，仍會 fallback 到瀏覽器式下載。
+
+## 2026.03.24 硬體與語系更新
+
+- AI 現在會取得更完整的硬體上下文：CPU、GPU、RAM、磁碟健康與磁碟剩餘空間。
+- NVIDIA 系統可額外帶入 `nvidia-smi` 的 GPU 詳細資訊。
+- 語言包安裝已拆成 `en-US`、`zh-TW`、`zh-CN`、`ja-JP` 四支獨立 SOP。
+- 這些 SOP 會 append 到既有 Windows 語言清單，不會覆蓋原本設定。
+- 暫時性的語系復原 SOP 已移除。

@@ -215,10 +215,18 @@ SOPs 存放位置：
 - 進度型日誌輸出應合併為單列更新。
 - 狀態列版本需由 runtime metadata 自 `package.json` 取得，不可寫死在 HTML。
 
-## 6.6 2026.03.24 EXE startup and export behavior
+## 6.6 2026.03.24 EXE 啟動與匯出行為
 
-- Tauri must not block initial window rendering on synchronous sidecar startup.
-- Splash text must be available before `app.js` finishes loading.
-- First run text: `首次執行本程式，正設定環境中，請稍候...`
-- Subsequent run text: `啟動後端伺服器中，請稍候...`
-- In packaged EXE mode, task export should prefer native save-dialog flow over browser download semantics.
+- Tauri 不可因同步啟動 sidecar 而阻塞初始視窗渲染。
+- Splash 文案必須在 `app.js` 載入完成前即可顯示。
+- 首次執行文案：`首次執行本程式，正設定環境中，請稍候...`
+- 後續執行文案：`啟動後端伺服器中，請稍候...`
+- 在封裝 EXE 模式下，任務匯出應優先使用原生另存新檔流程，而非瀏覽器下載語意。
+
+## 6.7 2026.03.24 硬體上下文與語系 SOP 拆分
+
+- AI 硬體上下文必須包含 CPU、GPU、RAM、磁碟健康與磁碟剩餘空間。
+- 在 NVIDIA 系統上，runtime 應優先使用 `nvidia-smi` 的結構化資訊，而不是只依 GPU 名稱做摘要。
+- 語言包 SOP 必須依 locale 拆分：`en-US`、`zh-TW`、`zh-CN`、`ja-JP`。
+- 語系 SOP 必須 append 到 `Get-WinUserLanguageList`，不可覆蓋既有使用者語言清單。
+- 語言安裝遇到 access denied 時，必須在 install 階段直接 fail，不可只在 verify 階段暴露錯誤。

@@ -15,6 +15,7 @@ module.exports = async function(health) {
     const psCommand = `
         $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 LoadPercentage;
         $disk = Get-PhysicalDisk | Select-Object DeviceID, FriendlyName, MediaType, HealthStatus, OperationalStatus;
+        $logicalDisk = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID, VolumeName, Size, FreeSpace;
         $gpu = Get-CimInstance Win32_VideoController | Select-Object Name;
         $gpuLoadRaw = Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty CounterSamples | Measure-Object -Property CookedValue -Sum;
         $smart = Get-WmiObject -namespace root\\wmi -class MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue;
@@ -24,6 +25,7 @@ module.exports = async function(health) {
             gpuName = $gpu.Name;
             gpuLoad = [math]::Round($gpuLoadRaw.Sum);
             disks = $disk;
+            logicalDisks = $logicalDisk;
             smart = $smart;
         } | ConvertTo-Json -Depth 3
     `;
@@ -55,6 +57,16 @@ module.exports = async function(health) {
                         if (health.disk.drives.some(d => d.health !== 'Healthy')) {
                             health.disk.status = 'Warning';
                         }
+                    }
+
+                    if (raw.logicalDisks) {
+                        const logicalDiskArr = Array.isArray(raw.logicalDisks) ? raw.logicalDisks : [raw.logicalDisks];
+                        health.disk.volumes = logicalDiskArr.map(d => ({
+                            name: d.DeviceID,
+                            label: d.VolumeName || d.DeviceID,
+                            size: Number(d.Size) || 0,
+                            free: Number(d.FreeSpace) || 0,
+                        }));
                     }
 
                     if (raw.smart) {

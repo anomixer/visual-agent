@@ -506,10 +506,41 @@ app.post('/api/chat', async (req, res) => {
     const sops = loadAllSOPs(SOPS_DIR);
     let suggestions = ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
     let llmErrorForFallback = null;
-    // 1. 快速蒐集背景資訊 (不使用 await 耗時操作，使用快取或 OS 基本資訊)
+    // 1. 快速蒐集背景資訊
     const sopCatalog = sops.map(s => `- ID: ${s.id}, 名稱: ${s.name}`).join('\n');
     const taskContext = todoList.map(t => `- ID: ${t.id}, 標題: ${t.title}, 狀態: ${t.status}`).join('\n');
-    const ramUsage = Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100);
+    let systemHealth = null;
+    try {
+        systemHealth = await getSystemHealth();
+    } catch {
+        systemHealth = null;
+    }
+
+    const hardwareSummary = (() => {
+        if (!systemHealth) {
+            const ramUsage = Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100);
+            return `CPU: ${os.cpus()[0].model.trim()}, RAM: ${Math.round(os.totalmem()/1024/1024/1024)}GB (Usage: ${ramUsage}%)`;
+        }
+
+        const cpuPart = `CPU: ${systemHealth.cpu.model} (Load: ${systemHealth.cpu.load}%)`;
+        const gpuPart = `GPU: ${systemHealth.gpu.name || 'N/A'} (Load: ${systemHealth.gpu.load || 0}%${systemHealth.gpu.temp ? `, Temp: ${systemHealth.gpu.temp}°C` : ''})`;
+        const gpuDetails = systemHealth.gpu.details
+            ? `GPU Detail: Driver ${systemHealth.gpu.details.driverVersion || 'N/A'}, VRAM ${Math.round((systemHealth.gpu.details.memoryUsedMB || 0) / 1024)}GB / ${Math.round((systemHealth.gpu.details.memoryTotalMB || 0) / 1024)}GB used, Power ${systemHealth.gpu.details.powerDrawW || 0}W / ${systemHealth.gpu.details.powerLimitW || 0}W`
+            : null;
+        const ramTotalGb = Math.round(systemHealth.ram.total / 1024 / 1024 / 1024);
+        const ramPart = `RAM: ${ramTotalGb}GB (Usage: ${systemHealth.ram.usage}%)`;
+        const diskList = Array.isArray(systemHealth.disk.drives) ? systemHealth.disk.drives : [];
+        const volumeList = Array.isArray(systemHealth.disk.volumes) ? systemHealth.disk.volumes : [];
+        const diskHealthPart = diskList.length > 0
+            ? diskList.map(d => `${d.name} [${d.type}, ${d.health}]`).join('; ')
+            : (systemHealth.disk.status || 'Unknown');
+        const diskFreePart = volumeList.length > 0
+            ? volumeList.map(v => `${v.name} ${Math.round(v.free / 1024 / 1024 / 1024)}GB / ${Math.round(v.size / 1024 / 1024 / 1024)}GB free`).join('; ')
+            : 'N/A';
+        const diskPart = `Disk: ${diskHealthPart}, Free Space: ${diskFreePart}`;
+
+        return [cpuPart, gpuPart, gpuDetails, ramPart, diskPart].filter(Boolean).join(', ');
+    })();
     
     // 取得快取的狀態 (不強制刷新，約 5ms 以內)
     const llmStatus = await llm.checkOllamaStatus();
@@ -519,7 +550,7 @@ app.post('/api/chat', async (req, res) => {
         try {
             const contextNote = `
 [[當前系統環境]]
-1. 硬體簡報: CPU: ${os.cpus()[0].model.trim()}, RAM: ${Math.round(os.totalmem()/1024/1024/1024)}GB (Usage: ${ramUsage}%)
+1. 硬體簡報: ${hardwareSummary}
 2. 可用 SOP (ID 列表):
 ${sopCatalog || '(無)'}
 3. 待辦任務清單:
@@ -675,6 +706,9 @@ ${taskContext || '(空)'}
 
     if (!isActionTaken && !isConfirmation) {
         if (/日文|日語|japanese|ja-jp/i.test(message)) matchedSOP = sops.find((s) => s.id === 'sys_lang_ja_jp');
+        if (/英文|english|en-us/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'sys_lang_en_us');
+        if (/繁中|繁體中文|traditional chinese|zh-tw/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'sys_lang_zh_tw');
+        if (/簡中|簡體中文|simplified chinese|zh-cn/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'sys_lang_zh_cn');
         if (/chrome|谷歌|瀏覽器/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_install_chrome');
         if (/ollama|llm|語言模型|ai引擎/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_install_ollama');
         if (/steam|steam|遊戲/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_steam');

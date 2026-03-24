@@ -1,7 +1,7 @@
 1. 基本資訊 (Metadata)
-ID: sys_lang_ja_jp
+ID: sys_lang_en_us
 
-名稱: 安裝日文語言包與輸入法
+名稱: 安裝 English (US) 語言包與輸入法
 分類: 系統設定 / 語系
 風險等級: 低 (系統原生功能)
 
@@ -9,14 +9,14 @@ ID: sys_lang_ja_jp
 OS: Windows 10 / 11
 
 權限: 需要 Administrator (觸發 UAC)
-網路: 需要網際網路連接 (下載語件包)
+網路: 需要網際網路連接 (下載語言包)
 
 3. 執行流程 (Execution Steps)
 
 第一階段：環境檢測 (Check)
 指令 (PowerShell): 
 ```powershell
-(Get-InstalledLanguage | Select-Object -ExpandProperty LanguageId) -contains "ja-JP"
+(Get-InstalledLanguage | Select-Object -ExpandProperty LanguageId) -contains "en-US"
 ```
 
 預期結果: 若回傳 True 則標記為「已安裝」，跳過執行。
@@ -26,23 +26,23 @@ OS: Windows 10 / 11
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-Install-Language -Language ja-JP -ErrorAction Stop
+Install-Language -Language en-US -ErrorAction Stop
 $langList = Get-WinUserLanguageList
-if (-not ($langList.LanguageTag -contains 'ja-JP')) {
-    $langList.Add('ja-JP')
+if (-not ($langList.LanguageTag -contains 'en-US')) {
+    $langList.Add('en-US')
     Set-WinUserLanguageList -LanguageList $langList -Force -ErrorAction Stop
 }
-UI 顯示內容: 「正在向 Microsoft 伺服器請求日文語言包，這可能需要幾分鐘...」
+UI 顯示內容: 「正在向 Microsoft 伺服器請求 English (US) 語言包，這可能需要幾分鐘...」
 ```
 
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-$installed = Get-InstalledLanguage | Where-Object {$_.LanguageId -eq "ja-JP"}
+$installed = Get-InstalledLanguage | Where-Object {$_.LanguageId -eq "en-US"}
 if ($installed) {
     $true
 } else {
-    throw "找不到 ja-JP 語言包"
+    throw "找不到 en-US 語言包"
 }
 ```
 
