@@ -230,3 +230,10 @@ SOPs 存放位置：
 - 語言包 SOP 必須依 locale 拆分：`en-US`、`zh-TW`、`zh-CN`、`ja-JP`。
 - 語系 SOP 必須 append 到 `Get-WinUserLanguageList`，不可覆蓋既有使用者語言清單。
 - 語言安裝遇到 access denied 時，必須在 install 階段直接 fail，不可只在 verify 階段暴露錯誤。
+
+## 6.8 2026.03.24 共用 UAC 提權規則
+
+- 執行器必須提供共用的 elevated runner，供所有需要管理員權限的 SOP 重用。
+- 當 SOP 的權限需求標記為 `Administrator`、`Admin` 或 `UAC` 時，install 階段應自動以 `RunAs` 方式提權。
+- 使用者取消 UAC 時，runtime 必須回報失敗，不可進入自動重試。
+- 語系 SOP 的安裝偵測不可假設 `Get-InstalledLanguage` 一定存在 `LanguageId` 欄位，需容忍欄位差異。

@@ -293,3 +293,14 @@
 - 每支語系 SOP 都只會把自己的語言 append 到既有 Windows 使用者語言清單，不會覆蓋整份清單。
 - 暫時性的英文與繁中復原 SOP 已在拆分後移除。
 - 日文語言安裝遇到 access denied 時，會在 install 階段直接失敗，不再拖到 verify 才暴露問題。
+
+## 2026.03.24 - 共用 UAC 提權執行器
+
+### 提權執行
+- SOP Executor 現在內建共用的 `runPowerShellElevated()`。
+- 只要 SOP 的權限標記包含 `Administrator`、`Admin` 或 `UAC`，install 階段就會自動走提權流程。
+- 提權流程會透過 `Start-Process -Verb RunAs` 觸發 Windows UAC 視窗。
+
+### 失敗處理
+- 若使用者取消 UAC，任務會直接失敗，不再假裝修復成功後重試。
+- 語系 SOP 的 `Check` 與 `Verify` 不再只依賴單一 `LanguageId` 欄位，會同時接受 `LanguageTag`、`LocaleName`、`Language` 等欄位。

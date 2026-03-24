@@ -16,7 +16,13 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell): 
 ```powershell
-(Get-InstalledLanguage | Select-Object -ExpandProperty LanguageId) -contains "en-US"
+$installed = @(Get-InstalledLanguage) | Where-Object {
+    $_.LanguageId -eq 'en-US' -or
+    $_.LanguageTag -eq 'en-US' -or
+    $_.LocaleName -eq 'en-US' -or
+    $_.Language -eq 'en-US'
+}
+[bool]$installed
 ```
 
 預期結果: 若回傳 True 則標記為「已安裝」，跳過執行。
@@ -38,7 +44,12 @@ UI 顯示內容: 「正在向 Microsoft 伺服器請求 English (US) 語言包�
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-$installed = Get-InstalledLanguage | Where-Object {$_.LanguageId -eq "en-US"}
+$installed = @(Get-InstalledLanguage) | Where-Object {
+    $_.LanguageId -eq 'en-US' -or
+    $_.LanguageTag -eq 'en-US' -or
+    $_.LocaleName -eq 'en-US' -or
+    $_.Language -eq 'en-US'
+}
 if ($installed) {
     $true
 } else {

@@ -11,10 +11,27 @@
  * emits EventEmitter 事件以便 UI 層非同步呈現進度。
  */
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { spawn } = require('child_process');
 const EventEmitter = require('events');
 
 class SOPExecutor extends EventEmitter {
+    buildWrappedCommand(command) {
+        return [
+            '$utf8NoBom = New-Object System.Text.UTF8Encoding($false)',
+            '[Console]::InputEncoding = $utf8NoBom',
+            '[Console]::OutputEncoding = $utf8NoBom',
+            '$OutputEncoding = $utf8NoBom',
+            command,
+        ].join('; ');
+    }
+
+    escapePowerShellSingleQuoted(value) {
+        return String(value).replace(/'/g, "''");
+    }
+
     /**
      * @param {object} options
      * @param {boolean} [options.dryRun=false] - true 時僅列出將執行的指令，不實際執行
@@ -42,13 +59,7 @@ class SOPExecutor extends EventEmitter {
             }
 
             // 直接在 PowerShell 內設定 UTF-8，避免 chcp > nul 在部分環境觸發 Out-File / device 錯誤
-            const wrappedCommand = [
-                '$utf8NoBom = New-Object System.Text.UTF8Encoding($false)',
-                '[Console]::InputEncoding = $utf8NoBom',
-                '[Console]::OutputEncoding = $utf8NoBom',
-                '$OutputEncoding = $utf8NoBom',
-                command,
-            ].join('; ');
+            const wrappedCommand = this.buildWrappedCommand(command);
 
             const child = spawn('powershell.exe', [
                 '-NoProfile',
@@ -122,6 +133,119 @@ class SOPExecutor extends EventEmitter {
      * @param {object[]} errorHandlers - sop.errorHandling 陣列
      * @returns {object|null} 匹配到的 errorHandler 或 null
      */
+    runPowerShellElevated(command) {
+        return new Promise((resolve, reject) => {
+            if (this.dryRun) {
+                this.emit('log', { level: 'dry-run', message: `[DRY-RUN][ELEVATED] ${command}` });
+                resolve({ exitCode: 0, stdout: '[dry-run elevated]', stderr: '' });
+                return;
+            }
+
+            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aipc-elevated-'));
+            const runnerPath = path.join(tempDir, 'runner.ps1');
+            const logPath = path.join(tempDir, 'combined.log');
+            const exitPath = path.join(tempDir, 'exitcode.txt');
+
+            const quotedRunnerPath = this.escapePowerShellSingleQuoted(runnerPath);
+            const quotedLogPath = this.escapePowerShellSingleQuoted(logPath);
+            const quotedExitPath = this.escapePowerShellSingleQuoted(exitPath);
+
+            const runnerScript = [
+                "$utf8NoBom = New-Object System.Text.UTF8Encoding($false)",
+                "[Console]::InputEncoding = $utf8NoBom",
+                "[Console]::OutputEncoding = $utf8NoBom",
+                "$OutputEncoding = $utf8NoBom",
+                "$ErrorActionPreference = 'Continue'",
+                "$global:LASTEXITCODE = 0",
+                'try {',
+                '    & {',
+                command,
+                `    } *> '${quotedLogPath}'`,
+                '    $exitCode = if ($LASTEXITCODE -is [int]) { $LASTEXITCODE } else { 0 }',
+                '} catch {',
+                `    ($_ | Out-String) | Out-File -FilePath '${quotedLogPath}' -Append -Encoding utf8`,
+                '    $exitCode = 1',
+                '}',
+                `Set-Content -Path '${quotedExitPath}' -Value $exitCode -Encoding utf8`,
+                'exit $exitCode',
+            ].join('\r\n');
+
+            fs.writeFileSync(runnerPath, runnerScript, 'utf8');
+
+            const launchCommand = [
+                '$ErrorActionPreference = "Stop"',
+                'try {',
+                `    $proc = Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '${quotedRunnerPath}')`,
+                '    exit $proc.ExitCode',
+                '} catch {',
+                '    $msg = $_ | Out-String',
+                "    if ($msg -match 'cancelled by the user' -or $msg -match 'canceled by the user' -or $msg -match 'operation was canceled') {",
+                "        Write-Error 'UAC elevation was cancelled by user.'",
+                '        exit 1223',
+                '    }',
+                '    Write-Error $msg',
+                '    exit 1',
+                '}',
+            ].join('; ');
+
+            this.emit('log', {
+                level: 'info',
+                phase: 'install',
+                message: '此任務需要系統管理員權限，正在觸發 UAC 視窗...',
+            });
+
+            const child = spawn('powershell.exe', [
+                '-NoProfile',
+                '-NonInteractive',
+                '-ExecutionPolicy', 'Bypass',
+                '-Command', launchCommand,
+            ]);
+
+            let stderr = '';
+            let timedOut = false;
+
+            const cleanup = () => {
+                try {
+                    fs.rmSync(tempDir, { recursive: true, force: true });
+                } catch {}
+            };
+
+            const timer = setTimeout(() => {
+                timedOut = true;
+                child.kill('SIGTERM');
+            }, this.timeoutMs);
+
+            child.stderr.setEncoding('utf8');
+            child.stderr.on('data', (data) => {
+                stderr += data;
+            });
+
+            child.on('close', (code) => {
+                clearTimeout(timer);
+                if (timedOut) {
+                    cleanup();
+                    reject(new Error(`Elevated command timed out after ${this.timeoutMs}ms: ${command}`));
+                    return;
+                }
+
+                const stdout = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8').trim() : '';
+                const fileExitCode = fs.existsSync(exitPath)
+                    ? Number.parseInt(fs.readFileSync(exitPath, 'utf8').trim(), 10)
+                    : Number.NaN;
+                const exitCode = Number.isNaN(fileExitCode) ? (code ?? 1) : fileExitCode;
+
+                cleanup();
+                resolve({ exitCode, stdout, stderr: stderr.trim() });
+            });
+
+            child.on('error', (err) => {
+                clearTimeout(timer);
+                cleanup();
+                reject(err);
+            });
+        });
+    }
+
     matchError(errorText, errorHandlers) {
         if (!errorText || !errorHandlers || errorHandlers.length === 0) return null;
         const combined = errorText.toLowerCase();
@@ -140,8 +264,9 @@ class SOPExecutor extends EventEmitter {
      * @param {string} phaseName
      * @returns {Promise<{success: boolean, outputs: object[], error: string|null}>}
      */
-    async runPhaseCommands(commands, phaseName) {
+    async runPhaseCommands(commands, phaseName, options = {}) {
         const outputs = [];
+        const runner = options.elevate ? this.runPowerShellElevated.bind(this) : this.runPowerShell.bind(this);
 
         for (const cmd of commands) {
             this.emit('log', {
@@ -151,7 +276,7 @@ class SOPExecutor extends EventEmitter {
             });
 
             try {
-                const result = await this.runPowerShell(cmd);
+                const result = await runner(cmd);
                 outputs.push({ command: cmd, ...result });
 
                 if (result.exitCode !== 0) {
@@ -240,6 +365,8 @@ class SOPExecutor extends EventEmitter {
             message: `偵測到錯誤 ${handler.code}: ${handler.cause}`,
         });
 
+        let requiresManual = false;
+
         for (const action of handler.actions) {
             this.emit('log', {
                 level: 'info',
@@ -258,15 +385,17 @@ class SOPExecutor extends EventEmitter {
                             phase: 'error-handling',
                             message: `修復動作失敗: ${result.stderr}`,
                         });
-                        return false;
+                        return { fixed: false, requiresManual };
                     }
                 } catch {
-                    return false;
+                    return { fixed: false, requiresManual };
                 }
+            } else {
+                requiresManual = true;
             }
         }
 
-        return true;
+        return { fixed: !requiresManual, requiresManual };
     }
 
     /**
@@ -308,6 +437,11 @@ class SOPExecutor extends EventEmitter {
      * @param {object} sop — 由 sop-parser 產生的結構化 sop 物件
      * @returns {Promise<object>} 執行結果
      */
+    sopRequiresElevation(sop) {
+        const permissions = sop?.prerequisites?.permissions || '';
+        return /administrator|admin|uac/i.test(permissions);
+    }
+
     async execute(sop) {
         const result = {
             sopId: sop.id,
@@ -319,6 +453,7 @@ class SOPExecutor extends EventEmitter {
         };
 
         this.emit('sop:start', { id: sop.id, name: sop.name });
+        const requiresElevation = this.sopRequiresElevation(sop);
 
         // ── Phase 1: Check ──────────────────────────────────────────────
         if (sop.steps.check.commands.length > 0) {
@@ -362,7 +497,11 @@ class SOPExecutor extends EventEmitter {
 
             this.emit('phase:start', { phase: 'install', sop: sop.id, attempt: retries + 1 });
 
-            const installResult = await this.runPhaseCommands(sop.steps.install.commands, 'install');
+            const installResult = await this.runPhaseCommands(
+                sop.steps.install.commands,
+                'install',
+                { elevate: requiresElevation }
+            );
             result.phases.install = installResult;
 
             if (installResult.success) {
@@ -375,8 +514,8 @@ class SOPExecutor extends EventEmitter {
             const handler = this.matchError(installResult.error, sop.errorHandling);
 
             if (handler && retries < this.maxRetries) {
-                const fixed = await this.executeErrorHandler(handler);
-                if (fixed) {
+                const fixResult = await this.executeErrorHandler(handler);
+                if (fixResult.fixed) {
                     retries++;
                     this.emit('log', {
                         level: 'info',
@@ -384,6 +523,14 @@ class SOPExecutor extends EventEmitter {
                         message: `修復完成，重新嘗試安裝 (第 ${retries} 次重試)...`,
                     });
                     continue;
+                }
+
+                if (fixResult.requiresManual) {
+                    this.emit('log', {
+                        level: 'error',
+                        phase: 'install',
+                        message: '此錯誤需要手動處理，停止自動重試。',
+                    });
                 }
             }
 

@@ -16,7 +16,13 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell): 
 ```powershell
-(Get-InstalledLanguage | Select-Object -ExpandProperty LanguageId) -contains "zh-TW"
+$installed = @(Get-InstalledLanguage) | Where-Object {
+    $_.LanguageId -eq 'zh-TW' -or
+    $_.LanguageTag -eq 'zh-TW' -or
+    $_.LocaleName -eq 'zh-TW' -or
+    $_.Language -eq 'zh-TW'
+}
+[bool]$installed
 ```
 
 預期結果: 若回傳 True 則標記為「已安裝」，跳過執行。
@@ -38,7 +44,12 @@ UI 顯示內容: 「正在向 Microsoft 伺服器請求 Traditional Chinese 語�
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-$installed = Get-InstalledLanguage | Where-Object {$_.LanguageId -eq "zh-TW"}
+$installed = @(Get-InstalledLanguage) | Where-Object {
+    $_.LanguageId -eq 'zh-TW' -or
+    $_.LanguageTag -eq 'zh-TW' -or
+    $_.LocaleName -eq 'zh-TW' -or
+    $_.Language -eq 'zh-TW'
+}
 if ($installed) {
     $true
 } else {

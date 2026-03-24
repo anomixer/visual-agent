@@ -16,7 +16,13 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell): 
 ```powershell
-(Get-InstalledLanguage | Select-Object -ExpandProperty LanguageId) -contains "ja-JP"
+$installed = @(Get-InstalledLanguage) | Where-Object {
+    $_.LanguageId -eq 'ja-JP' -or
+    $_.LanguageTag -eq 'ja-JP' -or
+    $_.LocaleName -eq 'ja-JP' -or
+    $_.Language -eq 'ja-JP'
+}
+[bool]$installed
 ```
 
 預期結果: 若回傳 True 則標記為「已安裝」，跳過執行。
@@ -38,7 +44,12 @@ UI 顯示內容: 「正在向 Microsoft 伺服器請求日文語言包，這可�
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-$installed = Get-InstalledLanguage | Where-Object {$_.LanguageId -eq "ja-JP"}
+$installed = @(Get-InstalledLanguage) | Where-Object {
+    $_.LanguageId -eq 'ja-JP' -or
+    $_.LanguageTag -eq 'ja-JP' -or
+    $_.LocaleName -eq 'ja-JP' -or
+    $_.Language -eq 'ja-JP'
+}
 if ($installed) {
     $true
 } else {

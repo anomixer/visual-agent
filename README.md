@@ -341,3 +341,10 @@ Ollama 未安裝或未啟動。從推薦清單點「🧠 安裝 Ollama → ▶ �
 - 語言包安裝已拆成 `en-US`、`zh-TW`、`zh-CN`、`ja-JP` 四支獨立 SOP。
 - 這些 SOP 會 append 到既有 Windows 語言清單，不會覆蓋原本設定。
 - 暫時性的語系復原 SOP 已移除。
+
+## 2026.03.24 共用 UAC 提權更新
+
+- 需要系統管理員權限的 SOP，現在會共用同一套提權執行器。
+- install 階段會自動嘗試觸發 Windows UAC 視窗，不需要再手動猜哪支 SOP 要用 admin 開。
+- 若使用者取消 UAC，任務會直接失敗，不再重複假修復。
+- 語系 SOP 也同步修正了語言安裝檢查，避免因 `Get-InstalledLanguage` 欄位差異而誤判。
