@@ -1,86 +1,56 @@
-﻿# 🤖 AI PC Agent
+# AI PC Agent
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
 
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen)](https://nodejs.org/) [![Ollama](https://img.shields.io/badge/Ollama-0.17%2B-blue)](https://ollama.com/) [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4)](https://www.microsoft.com/windows)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen)](https://nodejs.org/)
+[![Ollama](https://img.shields.io/badge/Ollama-0.17%2B-blue)](https://ollama.com/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4)](https://www.microsoft.com/windows)
 
 ---
 
-## 📌 這是什麼？
+## 這是什麼？
 
-AI PC Agent 是一個跑在你電腦本地端、**不需要打開終端機**的 Windows 系統自動化工具。
+AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可以直接用中文描述需求，或從推薦清單點選項目，系統會替你建立任務、執行 SOP、驗證結果，並把完整過程顯示在 UI 與工作日誌中。
 
-用中文說需求，或直接點推薦清單，它就能自動幫你安裝軟體、調整系統設定、移除廣告元件，並把整個過程視覺化呈現在畫面上。
-
-```
-你說：「幫我把 Copilot 移除掉」
-它就：自動執行 PowerShell 腳本 → 修改登錄檔 → 驗證結果 → 告訴你完成了
+```text
+你說：「幫我移除 Copilot」
+它就：建立任務 -> 執行 SOP -> 修改系統設定 -> 驗證結果 -> 回報成功或失敗
 ```
 
 ---
 
-## ✨ 功能一覽
+## 功能一覽
 
 | 功能 | 說明 |
 |------|------|
-| 💡 **推薦清單** | 系統常用優化項目，支援關鍵字搜尋與一鍵執行 |
-|  **工作清單** | 任務進度條、狀態顯示、JSON 匯出匯入 |
-| 🧠 **AI 對話** | 支援本地 Ollama 與 20 多種 AI Provider (OpenAI 相容) |
-| ⚙️ **引擎設定** | 點擊燈號即可快速切換 AI Provider、網址與 API Key |
-| 🛡️ **安全互動** | 實作「先問後做」確認機制與對話即時中斷功能 |
-| 🔲 **佈局切換** | 右上角一鍵切換視窗各面板，支援 Ctrl+B / Ctrl+J 等 VS Code 熱鍵 |
-| 🪄 **自動初始設定**| 全新電腦初次執行時，自動於背景下載安裝 Ollama 與 AI 模型 |
-| 📦 **一鍵 EXE 打包**| 內建 `build.bat`，開發者能藉由 Tauri 全自動發佈安裝檔 |
-| 📝 **執行日誌** | 即時顯示每個步驟，Mono 字體，依嚴重度顯色，進度條原地更新 |
-| 🎤 **語音輸入** | 中文語音辨識，說話就能下指令 |
-| 🔲 **多分頁介面** | Chrome 風格分頁架構，支援 Chalkboard 與動態工作清單分頁 |
-| 🌓 **深淺色主題** | 一鍵切換（☀️/🌙），介面佈局與配色自動記憶 |
-| 📝 **Markdown 渲染** | AI 回覆支援標題、代碼塊與列表，閱讀更清晰 |
-| 📢 **語音朗讀 (TTS)** | 一鍵點擊喇叭，AI 主動宣讀內容（自動過濾標籤與表情） |
-| 🧹 **對話管理** | 支援手動清除對話紀錄，保持對話視窗整潔 |
-| ⚠️ **風險預警** | 歡迎畫面加入安全風險提示，守護系統穩定 |
-| ✅ **安裝動態感知** | 自動偵測已就續的環境或已安裝的工具，UI 動態墊底並打勾 |
-| 🌡️ **硬體監控中心** | 圓形計量器儀表板，支援 CPU/GPU/RAM/Disk 監控與 GPU 溫度 |
-| 🔌 **監控插件系統** | 支援用 `.js` 編寫擴充插件，實現自定義的系統狀態監測 |
-| 🔄 **多輪對話歷史** | 記憶最近 6 則對話，自動注入 SOP 與硬體即時情境，AI 能根據現狀給予建議 |
-| ⚡ **秒開對話效能** | 重構異步架規與快取機制，對話啟動延遲近乎為 0，支援「即發即收」 |
-| 🔤 **UTF-8 編碼修復** | PowerShell 輸出正確顯示中文，不再亂碼 |
+| 推薦清單 | 常用系統優化與安裝項目，支援搜尋、加入任務、立即執行 |
+| 工作清單 | 顯示任務狀態、進度與結果，支援 JSON 匯出匯入 |
+| AI 對話 | 支援 Ollama、本機 OpenAI-compatible API 與雲端 Provider |
+| Provider 設定 | 可設定 Provider、Base URL、API Key、OAuth 2.0 與模型名稱 |
+| 安全互動 | 採用 consent-before-action，先建議再由使用者確認執行 |
+| 工作日誌 | 即時顯示 SOP 執行輸出，進度類訊息會原地更新 |
+| 硬體監控 | 顯示 CPU、GPU、RAM、Disk 與 NVIDIA GPU 溫度資訊 |
+| 插件系統 | 可用 `.js` 擴充系統監控能力 |
+| 自動初始化 | 首次執行可自動安裝 Ollama 與預設模型 |
+| Tauri 打包 | 可打包成獨立 Windows EXE，Node 後端以 sidecar 方式隨附 |
 
 ---
 
-## 🖥️ 介面預覽
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ AI PC Agent  [檔案][檢視][說明]  ──  [●AI就緒]  ── [☀️↓↑] │
-├────────────┬──────────────────────────┬─────────────────────┤
-│ [搜尋...]   │ [🎨 Chalkboard] [📋 工作] │                     │
-│  💡 推薦清單 │ ─────────────────────── │   💬 AI 對話        │
-│            │     (Tab Content)        │   [🗑️ 清除]          │
-│  ←→ 拖拉  ─┤──────────────────────────│  ←→ 拖拉            │
-│            │  📖 工作日誌  ↕ 拖拉      │  [使用者輸入框]      │
-├────────────┴──────────────────────────┴─────────────────────┤
-│ [🟢 AI就緒] │ [0 個任務]                [v2026.03.18] [繁中]  │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## ⚙️ 環境需求
+## 環境需求
 
 | 項目 | 需求 |
 |------|------|
-| **OS** | Windows 10 / 11 |
-| **Node.js** | 18 以上 → [下載](https://nodejs.org/) |
-| **Ollama**（可選） | AI 對話功能 → [下載](https://ollama.com/) |
-| **執行權限** | 部分 SOP 需要「系統管理員身分執行」 |
+| OS | Windows 10 / 11 |
+| Node.js | 18 以上 |
+| Ollama | 選用，若要使用本地 LLM 對話 |
+| 權限 | 部分 SOP 需要系統管理員權限，會觸發 UAC |
 
-> 若只是要一鍵安裝軟體、不用 AI 對話，不裝 Ollama 也可以跑。
+> 若只使用推薦清單與待辦管理，不一定需要先安裝 Ollama。
 
 ---
 
-## 🚀 快速開始
+## 快速開始
 
 ### 1. 複製專案
 
@@ -95,99 +65,81 @@ cd aipc-agent
 npm install
 ```
 
-> 若出現 `scripts is disabled` 錯誤：
-> ```powershell
-> powershell -ExecutionPolicy Bypass -Command "npm install"
-> ```
-
-### 3. 啟動伺服器
+若 PowerShell 擋下 script execution：
 
 ```powershell
-node src/server.js
+powershell -ExecutionPolicy Bypass -Command "npm install"
 ```
 
-### 4. 開啟瀏覽器
+### 3. 啟動開發伺服器
 
+```powershell
+npm run start
 ```
+
+### 4. 開啟介面
+
+```text
 http://localhost:3210
 ```
 
 ---
 
-## 🧠 啟用 AI 對話（Ollama）
+## AI 對話與 Provider
 
-**AI PC Agent 內建 Auto-Bootstrap！**  
-若你的電腦是一張白紙，只要在執行專案後放著不動，它會主動偵測缺少的依賴項目。
-1. 若系統未安裝 Ollama，它會自動將安裝腳本加入佇列並執行。
-2. Ollama 啟動後，它會背景自動發送指令下載 `qwen3.5:4b` 模型（性能更強、推理更準）。
+### 本機 Ollama
 
-待介面上方的指示燈變成 **🟢 AI 就緒**，對話框就能真正無縫理解你說的話了！（你也可以手動從推薦清單中觸發它）
+系統可自動偵測 Ollama 是否存在，若缺少則可透過內建 SOP 自動安裝，並下載預設模型 `qwen3.5:4b`。當 UI 顯示 `AI 就緒` 時，就可以直接在右側對話區輸入需求。
+
+### 其他 Provider
+
+- OpenAI、Groq、DeepSeek、Mistral、Together AI、Gemini 走 OpenAI-compatible 流程。
+- Gemini 可使用 Google 的 OpenAI-compatible 入口。
+- Anthropic Claude 使用原生認證與原生 `/v1/messages`。
+- Customer Provider 支援 API Key 與 OAuth 2.0 Client Credentials。
 
 ---
 
-## 📦 打包為獨立 EXE
+## 打包為 EXE
 
-如果你是開發者，想要產生能發給別人直接執行的 `.exe` 安裝檔，不需要手動設定：
+開發者可直接執行：
 
 ```cmd
-C:\aipc-agent> build.bat
+build.bat
 ```
 
-腳本會自動幫你下載與安裝 Node.js、Rust C++ 開發環境、Tauri CLI 等依賴。
-最終產出位於 `src-tauri\target\release\bundle\nsis\`（包含你的 Node 後端與 SOPs 腳本）。
+此腳本會安裝所需環境並建置 Tauri 桌面版。產物位於：
+
+```text
+src-tauri\target\release\bundle\nsis\
+```
 
 ---
 
-## 🎮 三種使用方式
-
-### 方式一：推薦清單（最快）
-
-1. 左側「💡 推薦清單」找到要執行的項目
-2. 滑鼠移上去 → 出現 **＋ 加入** 和 **▶ 執行** 按鈕
-3. 點 **▶ 執行** → 自動加入清單並立即執行
-4. 中間工作清單顯示進度，下方日誌即時更新
-
-> 有 ⚡ **可自動執行** 標籤的項目，背後有完整的 SOP 腳本支援
-
-### 方式二：AI 對話輸入
-
-在右下輸入框打字（或按 🎤 語音）：
-
-```
-幫我移除 Windows Copilot
-我電腦很久沒備份了
-安裝 Google Chrome
-```
-
-AI 理解你的意圖後，自動建立任務 → 加入清單 → 等你按執行。
-
-### 方式三：自訂任務
-
-直接從右下輸入框描述需求，若有對應 SOP 則自動掛載執行腳本；若沒有則作為待辦事項加入清單。
-
----
-
-## � 內建 SOPs
+## 內建 SOP
 
 | SOP | 說明 | 需要管理員 |
-|-------|------|-----------|
-| 🧠 `install-ollama` | 靜默下載安裝 Ollama | ✅ |
-| 📥 `pull-llm-model` | 下載 qwen3.5:4b 語言模型 | ❌ |
-| 🌐 `install-chrome` | 靜默安裝最新版 Google Chrome | ✅ |
-| 🗑️ `remove-copilot` | 移除 Windows Copilot（HKCU+HKLM+AppxPackage）| ✅ |
-| 💾 `backup-system` | 建立 Windows 系統還原點 | ✅ |
-| 🇯🇵 `install-language-ja` | 安裝日文語系包 | ✅ |
-| 📄 `install-office` | 透過 Winget 安裝 LibreOffice | ✅ |
-| 🎮 `install-steam` | 靜默安裝 Steam 遊戲平台 | ✅ |
-| 🔍 `check-drivers` | 呼叫 UsoClient 進行系統更新與驅動掃描 | ✅ |
+|-----|------|-----------|
+| `install-ollama` | 靜默下載安裝 Ollama | 是 |
+| `pull-llm-model` | 下載預設 LLM 模型 | 否 |
+| `install-chrome` | 靜默安裝最新版 Google Chrome | 是 |
+| `remove-copilot` | 停用並移除 Windows Copilot | 是 |
+| `backup-system` | 建立 Windows 系統還原點 | 是 |
+| `install-office` | 透過 Winget 安裝 LibreOffice | 是 |
+| `install-steam` | 靜默安裝 Steam | 是 |
+| `check-drivers` | 觸發 Windows Update 與驅動掃描 | 是 |
+| `install-language-en-us` | 安裝英文語言包並保留既有語言清單 | 是 |
+| `install-language-zh-tw` | 安裝繁體中文語言包並保留既有語言清單 | 是 |
+| `install-language-zh-cn` | 安裝簡體中文語言包並保留既有語言清單 | 是 |
+| `install-language-ja` | 安裝日文語言包並保留既有語言清單 | 是 |
 
 ---
 
-## ✍️ 新增自訂 SOP
+## 自訂 SOP
 
-把 `.md` 檔案放進 `sops/`（開發）或 `%APPDATA%\aipc-agent\sops\`（執行），格式如下：
+將 `.md` 檔放進開發目錄 `sops/`，或執行時目錄 `%APPDATA%\aipc-agent\sops\`。格式範例：
 
-```markdown
+````markdown
 1. 基本資訊 (Metadata)
 ID: my_sop_id
 名稱: 我的自訂 SOP
@@ -204,14 +156,13 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell):
 ```powershell
-$false   # 回傳 $true 則跳過安裝
+$false
 ```
 
 第二階段：安裝 (Install)
 指令 (PowerShell):
 ```powershell
-UI 顯示內容: 「正在執行...」
-Write-Host "Hello from my sop!"
+Write-Host "正在執行..."
 ```
 
 第三階段：驗證 (Verify)
@@ -219,132 +170,95 @@ Write-Host "Hello from my sop!"
 ```powershell
 $true
 ```
-```
+````
 
-存檔後重新整理頁面即自動載入。
+重新整理頁面後，系統會重新掃描並載入新的 SOP。
 
 ---
 
-## � 專案結構
+## 專案結構
 
-```
+```text
 aipc-agent/
 ├── public/
-│   ├── index.html          # VS Code 三欄介面
-│   ├── style.css           # 設計系統（深色 + JetBrains Mono）
-│   └── app.js              # 前端邏輯 + 可拖拉 resize
-│
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
 ├── src/
-│   ├── server.js           # Express API 伺服器 (port 3210)
-│   ├── llm.js              # Ollama 整合（狀態偵測 + 對話）
-│   ├── system.js           # 硬體監控核心（插件載入器）
-│   ├── sop-parser.js     # 解析 .md SOP 腳本
-│   ├── sop-executor.js   # 執行 PowerShell + 三階段流程
-│   └── index.js            # Tauri sidecar 入口
-│
-├── plugins/              # 系統監控插件 (.js)
-│   ├── hardware-info.js    # 核心硬體資訊
-│   └── temperature-monitor.js # 溫度偵測
-│
-├── sops/                 # SOP 腳本庫
-│   ├── install-ollama.md
-│   ├── pull-llm-model.md
-│   ├── install-chrome.md
-│   ├── remove-copilot.md
+│   ├── index.js
+│   ├── llm.js
+│   ├── server.js
+│   ├── sop-executor.js
+│   ├── sop-parser.js
+│   └── system.js
+├── plugins/
+│   ├── hardware-info.js
+│   └── temperature-monitor.js
+├── skills/
+│   ├── manager.md
+│   └── ollama.md
+├── sops/
 │   ├── backup-system.md
-│   └── install-language-ja.md
-│
-├── agents.md               # 開發日誌
-├── aipc-spec.md            # 實作規格書
-├── verify-remove-copilot.ps1  # Copilot 移除驗證腳本（VM 測試用）
-└── package.json
+│   ├── check-drivers.md
+│   ├── install-chrome.md
+│   ├── install-language-en-us.md
+│   ├── install-language-ja.md
+│   ├── install-language-zh-cn.md
+│   ├── install-language-zh-tw.md
+│   ├── install-office.md
+│   ├── install-ollama.md
+│   ├── install-steam.md
+│   ├── pull-llm-model.md
+│   └── remove-copilot.md
+├── src-tauri/
+├── agents.md
+├── aipc-spec.md
+├── build.bat
+├── package.json
+└── verify-remove-copilot.ps1
 ```
 
 ---
 
-## ❓ 常見問題
+## 近期更新
 
-**Q: npm 出現「scripts is disabled」？**
+### 2026.03.24
+
+- 任務完成後，AI 對話區會回報 `success`、`failed`、`skipped`。
+- SOP 載入時會依 `id` 去重，優先使用正式檔名。
+- 內建 SOP、skill、plugin 內容更新後會同步到 `%APPDATA%\aipc-agent\`。
+- `Verify` 階段若明確輸出 `false`，會視為真正失敗。
+- 工作日誌只在使用者停在底部時自動捲動。
+- 版本號改由 `/api/meta` 從 `package.json` 讀取。
+- EXE 啟動時會先顯示 splash，再於背景啟動 Node sidecar。
+- 語系 SOP 已拆分為 `en-US`、`zh-TW`、`zh-CN`、`ja-JP` 四支。
+- 需要管理員權限的 SOP 會共用 UAC 提權執行器。
+
+---
+
+## 常見問題
+
+**Q: PowerShell 顯示 `scripts is disabled`？**
+
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "npm install"
-powershell -ExecutionPolicy Bypass -Command "node src/server.js"
+powershell -ExecutionPolicy Bypass -Command "npm run start"
 ```
 
-**Q: SOP 執行需要管理員權限怎麼辦？**  
-以「系統管理員身分」開啟 PowerShell 或 Terminal，再執行 `node src/server.js`。
+**Q: 為什麼有些 SOP 會跳出 UAC 視窗？**  
+因為這些 SOP 需要系統管理員權限。現在 install 階段會自動走共用提權流程，若使用者取消 UAC，任務會直接失敗。
 
-**Q: Header 上的 AI 指示燈是紅色？**  
-Ollama 未安裝或未啟動。從推薦清單點「🧠 安裝 Ollama → ▶ 執行」，或手動至 [ollama.com](https://ollama.com) 下載安裝。
+**Q: 新增 SOP 後沒有出現？**  
+確認檔案放在 `sops/` 或 `%APPDATA%\aipc-agent\sops\`，再重新整理頁面。
 
-**Q: AI 回應感覺很死板？**  
-確認 `qwen3.5:4b` 已下載且 Ollama 正在執行中（指示燈顯示 🟢 AI 就緒）。關鍵字模式的回應確實較制式。
-
-**Q: 新增的 SOP 沒有出現？**  
-確認 `.md` 放在 `%APPDATA%\aipc-agent\sops\` 或開發用的 `sops/`，並重新整理頁面。
+**Q: AI 指示燈是紅色或黃色？**  
+通常代表 Ollama 尚未安裝、未啟動，或模型尚未下載完成。
 
 ---
 
-## 🚀 未來計畫
+## 開發說明
 
-- [ ] SOP 線上商城，動態下載更新
-- [ ] 更多 SOPs：防毒掃描、軟體移除
-- [x] Tauri 打包成獨立 `.exe`（不再依賴本機 Node.js）
+- 開發日誌請見 `agents.md`。
+- 產品規格請見 `aipc-spec.md`。
+- 目前套件版本：`2026.03.24`。
 
----
-
-> 📝 這是一支不需要黑綠色文字終端，便能聰明幫你管理系統操作的助手。
-
----
-
-## AI Provider
-
-- OpenAI、Groq、DeepSeek、Mistral、Together AI、Gemini 走 OpenAI-compatible 流程。
-- Gemini 通常需要同時填入 API Key 與 Model，例如 `gemini-2.5-flash`。
-- Anthropic Claude 使用原生認證與原生 `/v1/messages`。
-- Customer Provider 支援 API Key 與 OAuth 2.0 Client Credentials。
-
-> OpenAI 官方 API 仍以 API Key 為主，本專案不使用 OpenAI 帳號 OAuth 來呼叫 OpenAI API。
-
-### Provider 設定
-- 先選擇 provider。
-- 依 provider 顯示 API Key 或 OAuth 欄位。
-- 選擇或手填 model，儲存前可先用模型測試按鈕驗證。
-
-## 2026.03.24 SOP 穩定性更新
-
-- 任務完成後，AI 對話區會主動回報 `success`、`failed`、`skipped`。
-- SOP 載入時會依 `id` 去重，優先採用正式檔名，避免 `Copy` 類副本蓋掉正本。
-- 內建 SOP、skill、plugin 在來源內容變更時，會重新同步到 `%APPDATA%\aipc-agent\`。
-- 執行器在 `Verify` 明確輸出 `false` 時，會視為失敗。
-- Steam、Chrome、LibreOffice、Ollama、Qwen 模型下載、系統還原點、日文語言包 SOP 都已加強，避免誤判成功或失敗。
-
-若你在本機修改 SOP 後要測試，請重跑一次 `npm run start`，讓 runtime 重新同步 `%APPDATA%\aipc-agent\sops`。
-
-## 2026.03.24 工作日誌與版本修整
-
-- 工作日誌只有在你原本停在底部時才會自動往下捲。
-- 進度型輸出會合併成同一列更新，不再大量洗版。
-- 狀態列版本號改由 `/api/meta` 自 `package.json` 讀取。
-- 目前套件版本為 `2026.03.24`。
-
-## 2026.03.24 EXE 啟動與匯出修正
-
-- 封裝後的 EXE 現在會先顯示 splash，再於背景啟動 Node sidecar。
-- Splash 文案會區分首次執行與後續啟動。
-- EXE 模式下的任務匯出改為使用原生 Windows 另存新檔對話框。
-- 若原生匯出失敗，仍會 fallback 到瀏覽器式下載。
-
-## 2026.03.24 硬體與語系更新
-
-- AI 現在會取得更完整的硬體上下文：CPU、GPU、RAM、磁碟健康與磁碟剩餘空間。
-- NVIDIA 系統可額外帶入 `nvidia-smi` 的 GPU 詳細資訊。
-- 語言包安裝已拆成 `en-US`、`zh-TW`、`zh-CN`、`ja-JP` 四支獨立 SOP。
-- 這些 SOP 會 append 到既有 Windows 語言清單，不會覆蓋原本設定。
-- 暫時性的語系復原 SOP 已移除。
-
-## 2026.03.24 共用 UAC 提權更新
-
-- 需要系統管理員權限的 SOP，現在會共用同一套提權執行器。
-- install 階段會自動嘗試觸發 Windows UAC 視窗，不需要再手動猜哪支 SOP 要用 admin 開。
-- 若使用者取消 UAC，任務會直接失敗，不再重複假修復。
-- 語系 SOP 也同步修正了語言安裝檢查，避免因 `Get-InstalledLanguage` 欄位差異而誤判。
