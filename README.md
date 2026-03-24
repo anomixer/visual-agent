@@ -254,7 +254,7 @@ aipc-agent/
 │   ├── backup-system.md
 │   └── install-language-ja.md
 │
-├── agent.md                # 開發日誌
+├── agents.md               # 開發日誌
 ├── aipc-spec.md            # 實作規格書
 ├── verify-remove-copilot.ps1  # Copilot 移除驗證腳本（VM 測試用）
 └── package.json
