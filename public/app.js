@@ -18,6 +18,7 @@ const API = 'http://localhost:3210';
 // ── State ─────────────────────────────────────────────────────────
 let todoList = [];
 let recommendList = [];
+let sopsList = [];
 let pollingInterval = null;
 let chatAbortController = null;
 let isSidebarCollapsed = false;
@@ -29,6 +30,7 @@ let currentLogIndex = 0;
 let recSearchQuery = '';
 let hardwareInterval = null;
 let knownTaskStatuses = new Map();
+let activeSidebarTab = 'recommend';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -40,7 +42,9 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 // Panel refs
 const sidebar = $('#sidebar');
-const sidebarBody = $('#recommendListContainer');
+const recommendListContainer = $('#recommendListContainer');
+const sopListContainer = $('#sopListContainer');
+const sidebarTabs = $('#sidebarTabs');
 const centerCol = document.querySelector('.center-col');
 const chatCol = document.querySelector('.chat-col');
 const logPanel = $('#logPanel');
@@ -49,6 +53,7 @@ const todoContainer = $('#todoListContainer');
 const todoEmpty = $('#todoEmpty');
 const todoCount = $('#todoCount');
 const recCount = $('#recCount');
+const sopCount = $('#sopCount');
 const logEntries = $('#logEntries');
 const statusVersion = $('#statusVersion');
 const chatMessages = $('#chatMessages');
@@ -263,7 +268,7 @@ async function init() {
     setupSpeechRecognition();
 
     // 並行載入資料，不要等待啟動畫面
-    await Promise.all([loadTodo(), loadRecommend()]);
+    await Promise.all([loadTodo(), loadRecommend(), loadSops()]);
     
     // 硬體監控改為「顯示時才執行」，避免啟動延遲
     if (activeTab === 'hardware') {
@@ -334,11 +339,23 @@ async function loadRecommend() {
         const data = await api('/api/recommend');
         if (data.success && data.recommendList?.length > 0) {
             recommendList = data.recommendList;
-            renderRecommendList();
+            renderSidebarTab();
             hideSplash(); // 抓到資料後隱藏
         }
     } catch (e) {
         console.error("Load recommend failed", e);
+    }
+}
+
+async function loadSops() {
+    try {
+        const data = await api('/api/sops');
+        if (data.success && Array.isArray(data.sops)) {
+            sopsList = data.sops;
+            renderSidebarTab();
+        }
+    } catch (e) {
+        console.error('Load sops failed', e);
     }
 }
 
@@ -556,7 +573,7 @@ function updateLLMIndicator(status) {
     }
 
     if (shouldRender) {
-        renderRecommendList();
+        renderSidebarTab();
     }
 }
 
@@ -642,9 +659,9 @@ async function toggleModelMenu() {
 //  RENDER — RECOMMEND LIST (sidebar)
 // ════════════════════════════════════════════════════════
 function renderRecommendList() {
-    sidebarBody.innerHTML = '';
+    recommendListContainer.innerHTML = '';
     if (!recommendList.length) {
-        sidebarBody.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:11px;">推薦清單載入中...</div>';
+        recommendListContainer.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:11px;">推薦清單載入中...</div>';
         return;
     }
 
@@ -661,7 +678,7 @@ function renderRecommendList() {
         const empty = document.createElement('div');
         empty.style.cssText = 'padding:16px;color:var(--text-muted);font-size:11px;text-align:center;';
         empty.textContent = '找不到相符的項目 🔍';
-        sidebarBody.appendChild(empty);
+        recommendListContainer.appendChild(empty);
         return;
     }
 
@@ -681,10 +698,10 @@ function renderRecommendList() {
         header.className = 'sidebar-section-header';
         header.style.cssText = 'padding:12px 10px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);';
         header.textContent = cat;
-        sidebarBody.appendChild(header);
+        recommendListContainer.appendChild(header);
 
         items.forEach(item => {
-            sidebarBody.appendChild(createRecommendCard(item, false));
+            recommendListContainer.appendChild(createRecommendCard(item, false));
         });
     });
 
@@ -694,10 +711,10 @@ function renderRecommendList() {
         header.className = 'sidebar-section-header';
         header.style.cssText = 'padding:20px 10px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent-green);opacity:0.8;';
         header.textContent = '── 已就緒 / 已安裝 ──';
-        sidebarBody.appendChild(header);
+        recommendListContainer.appendChild(header);
 
         installed.forEach(item => {
-            sidebarBody.appendChild(createRecommendCard(item, true));
+            recommendListContainer.appendChild(createRecommendCard(item, true));
         });
     }
 }
@@ -739,6 +756,110 @@ function createRecommendCard(item, isInstalled) {
             addAndExecuteRecommend(item);
         });
     }
+    return card;
+}
+
+function renderSidebarTab() {
+    renderRecommendList();
+    renderSopList();
+    syncSidebarTabUI();
+}
+
+function syncSidebarTabUI() {
+    $$('.sidebar-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.sidebarTab === activeSidebarTab);
+    });
+    recommendListContainer?.classList.toggle('active', activeSidebarTab === 'recommend');
+    sopListContainer?.classList.toggle('active', activeSidebarTab === 'sops');
+    if (recSearchInput) {
+        recSearchInput.placeholder = activeSidebarTab === 'recommend'
+            ? '搜尋推薦項目...'
+            : '搜尋 SOP 名稱、ID 或分類...';
+    }
+}
+
+function renderSopList() {
+    if (!sopListContainer) return;
+    sopListContainer.innerHTML = '';
+    if (sopCount) sopCount.textContent = String(sopsList.length);
+
+    if (!sopsList.length) {
+        sopListContainer.innerHTML = '<div class="sidebar-empty">SOP 清單載入中...</div>';
+        return;
+    }
+
+    const filtered = sopsList.filter(sop => {
+        if (!recSearchQuery) return true;
+        const searchStr = `${sop.name || ''} ${sop.id || ''} ${sop.category || ''}`.toLowerCase();
+        return searchStr.includes(recSearchQuery);
+    });
+
+    if (sopCount) sopCount.textContent = String(filtered.length);
+
+    if (!filtered.length) {
+        sopListContainer.appendChild(createSidebarEmptyState('找不到相符的 SOP'));
+        return;
+    }
+
+    const groups = {};
+    filtered.forEach(sop => {
+        const cat = sop.category || '其他';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(sop);
+    });
+
+    Object.entries(groups).forEach(([cat, items]) => {
+        sopListContainer.appendChild(createSidebarSectionHeader(cat));
+        items.forEach(sop => {
+            sopListContainer.appendChild(createSopCard(sop));
+        });
+    });
+}
+
+function createSidebarSectionHeader(title, accented = false) {
+    const header = document.createElement('div');
+    header.className = `sidebar-section-header${accented ? ' accented' : ''}`;
+    header.textContent = accented ? `-- ${title} --` : title;
+    return header;
+}
+
+function createSidebarEmptyState(text) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-empty';
+    empty.textContent = text;
+    return empty;
+}
+
+function createSopCard(sop) {
+    const card = document.createElement('div');
+    card.className = 'recommend-card sop-card';
+    const requiresAdmin = /administrator|admin|uac/i.test(sop?.prerequisites?.permissions || '');
+    const riskLabel = sop.riskLevel || '未標示';
+
+    card.innerHTML = `
+        <div class="recommend-card-top">
+          <div class="recommend-title">${sop.name || sop.id}</div>
+          <div class="recommend-btn-group sop-btn-group">
+            <button class="btn-add-todo" title="加入清單">＋</button>
+            <button class="btn-run-now" title="立即執行">▶</button>
+          </div>
+        </div>
+        <div class="recommend-desc sop-id">${sop.id || ''}</div>
+        <div class="recommend-meta">
+          <span class="recommend-category">${sop.category || '其他'}</span>
+          <span class="recommend-skill-badge">${requiresAdmin ? 'UAC / Admin' : '一般權限'}</span>
+          <span class="recommend-skill-badge">風險 ${riskLabel}</span>
+        </div>
+    `;
+
+    card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        addSopToTodo(sop);
+    });
+    card.querySelector('.btn-run-now')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await addAndExecuteSop(sop);
+    });
     return card;
 }
 
@@ -1087,6 +1208,48 @@ function addLogEntry(logItem) {
     }
 }
 
+async function addSopToTodo(sop) {
+    const data = await api('/api/todo', {
+        method: 'POST',
+        body: {
+            title: sop.name || sop.id,
+            description: sop.id || '',
+            category: sop.category || 'SOP',
+            skillId: sop.id
+        },
+    });
+    if (data.success) {
+        todoList = data.todoList;
+        renderTodoList();
+        addUILog(`＋ 已加入 SOP：${sop.name || sop.id}`, 'info');
+        openTab('todolist');
+    }
+}
+
+async function addAndExecuteSop(sop) {
+    const data = await api('/api/todo', {
+        method: 'POST',
+        body: {
+            title: sop.name || sop.id,
+            description: sop.id || '',
+            category: sop.category || 'SOP',
+            skillId: sop.id
+        },
+    });
+    if (data.success) {
+        todoList = data.todoList;
+        renderTodoList();
+        openTab('todolist');
+        const newTask = data.task || data.todoList[data.todoList.length - 1];
+        if (newTask?.id) {
+            addUILog(`▶ 開始執行 SOP：${sop.name || sop.id}`, 'info');
+            appendChatBubble('ai', `🚀 正在啟動「${sop.name || sop.id}」...`);
+            expandLog();
+            await executeTask(newTask.id);
+        }
+    }
+}
+
 function addUILog(msg, level = 'info') {
     addLogEntry({ message: msg, level, timestamp: new Date().toISOString() });
 }
@@ -1268,7 +1431,7 @@ function setupResizers() {
         'chatResizer',
         () => chatCol.offsetWidth,
         (w) => { chatCol.style.width = w + 'px'; saveLayout(); },
-        220, 600,
+        220, () => getChatMaxWidth(),
         true // inverted (drag left = wider)
     );
 
@@ -1303,7 +1466,8 @@ function setupHorizontalResizer(id, getSize, setSize, min, max, inverted = false
 
         const onMove = (e) => {
             const dx = inverted ? startX - e.clientX : e.clientX - startX;
-            const newW = Math.max(min, Math.min(max, startW + dx));
+            const maxWidth = typeof max === 'function' ? max() : max;
+            const newW = Math.max(min, Math.min(maxWidth, startW + dx));
             setSize(newW);
         };
         const onUp = () => {
@@ -1356,7 +1520,7 @@ function restoreLayout() {
     try {
         const saved = JSON.parse(localStorage.getItem('layout') || '{}');
         if (saved.sidebarW) sidebar.style.width = saved.sidebarW + 'px';
-        if (saved.chatW) chatCol.style.width = saved.chatW + 'px';
+        if (saved.chatW) chatCol.style.width = Math.min(saved.chatW, getChatMaxWidth()) + 'px';
         if (saved.logH) {
             logPanel.style.minHeight = saved.logH + 'px';
             logPanel.style.maxHeight = saved.logH + 'px';
@@ -1388,7 +1552,22 @@ function setupEventListeners() {
     // Sidebar Search
     recSearchInput?.addEventListener('input', (e) => {
         recSearchQuery = e.target.value.trim().toLowerCase();
-        renderRecommendList();
+        renderSidebarTab();
+    });
+
+    sidebarTabs?.addEventListener('click', (e) => {
+        const tab = e.target.closest('.sidebar-tab');
+        if (!tab) return;
+        activeSidebarTab = tab.dataset.sidebarTab || 'recommend';
+        syncSidebarTabUI();
+    });
+
+    window.addEventListener('resize', () => {
+        const maxChatWidth = getChatMaxWidth();
+        if (chatCol.offsetWidth > maxChatWidth) {
+            chatCol.style.width = maxChatWidth + 'px';
+            saveLayout();
+        }
     });
 
     // Theme
@@ -1727,6 +1906,12 @@ async function testProviderSettings() {
         addUILog(`🧪 模型測試失敗：${provider} / ${model} - ${data.error || 'Unknown error'}`, 'error');
         alert(`測試失敗\n\n${data.error || 'Unknown error'}`);
     }
+}
+
+function getChatMaxWidth() {
+    const workspace = document.querySelector('.workspace');
+    if (!workspace) return 600;
+    return Math.max(220, Math.floor(workspace.clientWidth / 2));
 }
 
 function escapeHtml(str) {

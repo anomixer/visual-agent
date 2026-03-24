@@ -393,12 +393,85 @@ ol {
   border-right: none !important;
 }
 
-.sidebar-body {
+.sidebar-tabs {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.sidebar-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  transition: background var(--transition), color var(--transition);
+}
+
+.sidebar-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.sidebar-tab.active {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}
+
+.sidebar-tab .badge {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+}
+
+.sidebar-tab.active .badge {
+  background: var(--accent-indigo);
+  color: #fff;
+}
+
+.sidebar-content {
+  position: relative;
   flex: 1;
+  min-height: 0;
+}
+
+.sidebar-body {
+  position: absolute;
+  inset: 0;
+  display: none;
   overflow-y: auto;
   padding: 6px 8px;
   scrollbar-width: thin;
   scrollbar-color: #424242 transparent;
+}
+
+.sidebar-body.active {
+  display: block;
+}
+
+.sidebar-section-header {
+  padding: 12px 10px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.sidebar-section-header.accented {
+  padding-top: 20px;
+  padding-bottom: 8px;
+  color: var(--accent-green);
+  opacity: 0.8;
+}
+
+.sidebar-empty {
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
 }
 
 /* Resize handle */
@@ -490,6 +563,15 @@ ol {
 
 .recommend-card:hover .recommend-btn-group {
   opacity: 1;
+}
+
+.sop-card .recommend-btn-group {
+  opacity: 0.92;
+}
+
+.sop-id {
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .btn-add-todo,
@@ -1064,6 +1146,7 @@ ol {
 /* ── RIGHT — Chat Column ──────────────────────────────────────── */
 .chat-col {
   width: var(--chat-w);
+  max-width: 50%;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

@@ -25,6 +25,7 @@ AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可�
 | 功能 | 說明 |
 |------|------|
 | 推薦清單 | 常用系統優化與安裝項目，支援搜尋、加入任務、立即執行 |
+| SOP 清單 | 左側可切換查看全部 SOP，支援依名稱、ID、分類搜尋與直接執行 |
 | 工作清單 | 顯示任務狀態、進度與結果，支援 JSON 匯出匯入 |
 | AI 對話 | 支援 Ollama、本機 OpenAI-compatible API 與雲端 Provider |
 | Provider 設定 | 可設定 Provider、Base URL、API Key、OAuth 2.0 與模型名稱 |
@@ -233,6 +234,8 @@ aipc-agent/
 - EXE 啟動時會先顯示 splash，再於背景啟動 Node sidecar。
 - 語系 SOP 已拆分為 `en-US`、`zh-TW`、`zh-CN`、`ja-JP` 四支。
 - 需要管理員權限的 SOP 會共用 UAC 提權執行器。
+- 右側 AI 對話欄可往左拖拉到工作區一半寬度。
+- 左側 sidebar 新增 `SOP 清單` tab，可列出所有 SOP 並支援加入任務與立即執行。
 
 ---
 
@@ -261,4 +264,3 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
 - 目前套件版本：`2026.03.24`。
-

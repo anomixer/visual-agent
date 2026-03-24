@@ -304,3 +304,15 @@
 ### 失敗處理
 - 若使用者取消 UAC，任務會直接失敗，不再假裝修復成功後重試。
 - 語系 SOP 的 `Check` 與 `Verify` 不再只依賴單一 `LanguageId` 欄位，會同時接受 `LanguageTag`、`LocaleName`、`Language` 等欄位。
+
+## 2026.03.24 - Sidebar 與 Chat 佈局補強
+
+### 右側 AI 對話欄
+- 放寬 chat window 拖拉上限，現在可往左拉到工作區約一半寬度。
+- 佈局還原時會自動依目前視窗大小重新夾住 chat 欄寬度，避免縮窗後超界。
+
+### 左側 Sidebar
+- 原本只有「推薦清單」單一面板，現在改為 tab 式 sidebar。
+- 新增「SOP 清單」tab，直接列出 `/api/sops` 載入的所有 SOP。
+- SOP 清單支援依名稱、ID、分類搜尋，並可直接「加入任務」或「立即執行」。
+- 搜尋框 placeholder 會隨 sidebar tab 切換成對應文案。
