@@ -9,6 +9,10 @@ let currentModel = DEFAULT_MODEL;
 let currentProvider = 'Ollama';
 let currentBaseUrl = 'http://127.0.0.1:11434/v1';
 let currentApiKey = '';
+let currentAuthType = 'none';
+let currentAuthConfig = { type: 'none' };
+let cachedAccessToken = null;
+let cachedAccessTokenExpiresAt = 0;
 
 /**
  * Provider 端點資料庫 (Database)
@@ -23,6 +27,11 @@ const PROVIDER_ENDPOINTS = {
         type: 'ollama',
         list: '/api/tags',
         check: '/api/tags'
+    },
+    'Anthropic Claude': {
+        type: 'anthropic',
+        list: '/models',
+        chat: '/messages'
     },
     'OpenAI': {
         type: 'openai',
@@ -65,6 +74,12 @@ function loadConfig() {
             if (data.currentProvider) currentProvider = data.currentProvider;
             if (data.currentBaseUrl) currentBaseUrl = data.currentBaseUrl;
             if (data.currentApiKey) currentApiKey = data.currentApiKey;
+            if (data.currentAuthType) currentAuthType = data.currentAuthType;
+            if (data.currentAuthConfig) currentAuthConfig = data.currentAuthConfig;
+            if (!data.currentAuthType && data.currentApiKey) {
+                currentAuthType = 'api_key';
+                currentAuthConfig = { type: 'api_key', apiKey: data.currentApiKey };
+            }
 
             console.log(`[LLM] 載入設定: ${currentProvider} @ ${currentBaseUrl}`);
         }
@@ -83,7 +98,9 @@ function saveConfig() {
             currentModel,
             currentProvider,
             currentBaseUrl,
-            currentApiKey
+            currentApiKey,
+            currentAuthType,
+            currentAuthConfig
         };
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
     } catch (e) {
@@ -94,10 +111,36 @@ function saveConfig() {
 /**
  * 更新 Provider 設定
  */
-function updateProviderSettings(provider, baseUrl, apiKey, model) {
+function normalizeAuthConfig(authConfig = {}, legacyApiKey = '') {
+    const type = authConfig.type || (legacyApiKey ? 'api_key' : 'none');
+
+    if (type === 'api_key') {
+        return {
+            type,
+            apiKey: authConfig.apiKey !== undefined ? authConfig.apiKey : legacyApiKey
+        };
+    }
+
+    if (type === 'oauth_client_credentials') {
+        return {
+            type,
+            tokenUrl: authConfig.tokenUrl || '',
+            clientId: authConfig.clientId || '',
+            clientSecret: authConfig.clientSecret || '',
+            scope: authConfig.scope || '',
+            audience: authConfig.audience || ''
+        };
+    }
+
+    return { type: 'none' };
+}
+
+function updateProviderSettings(provider, baseUrl, apiKey, model, authConfig = null) {
     currentProvider = provider;
     currentBaseUrl = baseUrl;
-    currentApiKey = apiKey;
+    currentAuthConfig = normalizeAuthConfig(authConfig || {}, apiKey);
+    currentAuthType = currentAuthConfig.type;
+    currentApiKey = currentAuthType === 'api_key' ? (currentAuthConfig.apiKey || '') : '';
     if (model) currentModel = model;
     saveConfig();
     invalidateCache();
@@ -168,12 +211,13 @@ async function checkOllamaStatus(force = false) {
     // ==========================================
     // 1. 處理 OpenAI 類型 Provider
     // ==========================================
-    if (meta.type === 'openai') {
+    if (meta.type === 'openai' || meta.type === 'anthropic') {
         const listPath = meta.list || '/models';
         const checkUrl = currentBaseUrl.endsWith('/') ? `${currentBaseUrl}${listPath.substring(1)}` : `${currentBaseUrl}${listPath}`;
         try {
+            const authHeaders = await getRequestHeaders(currentProvider);
             const res = await fetch(checkUrl, {
-                headers: currentApiKey ? { 'Authorization': `Bearer ${currentApiKey}` } : {},
+                headers: authHeaders,
                 signal: AbortSignal.timeout(5000)
             }).catch(() => null);
 
@@ -294,14 +338,78 @@ function invalidateCache() {
     _lastCheck = 0;
     _cachedModels = null;
     _lastModelsCheck = 0;
+    cachedAccessToken = null;
+    cachedAccessTokenExpiresAt = 0;
 }
 
 let _cachedModels = null;
 let _lastModelsCheck = 0;
 
+async function getAuthorizationHeader(authConfig = null) {
+    const effectiveAuth = normalizeAuthConfig(authConfig || currentAuthConfig || {}, currentApiKey);
+
+    if (effectiveAuth.type === 'api_key') {
+        return effectiveAuth.apiKey ? { 'Authorization': `Bearer ${effectiveAuth.apiKey}` } : {};
+    }
+
+    if (effectiveAuth.type !== 'oauth_client_credentials') {
+        return {};
+    }
+
+    const now = Date.now();
+    if (cachedAccessToken && cachedAccessTokenExpiresAt > now + 10000) {
+        return { 'Authorization': `Bearer ${cachedAccessToken}` };
+    }
+
+    const form = new URLSearchParams();
+    form.set('grant_type', 'client_credentials');
+    form.set('client_id', effectiveAuth.clientId || '');
+    form.set('client_secret', effectiveAuth.clientSecret || '');
+    if (effectiveAuth.scope) form.set('scope', effectiveAuth.scope);
+    if (effectiveAuth.audience) form.set('audience', effectiveAuth.audience);
+
+    const res = await fetch(effectiveAuth.tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+        signal: AbortSignal.timeout(10000)
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`OAuth token 取得失敗 (${res.status}): ${errText.substring(0, 200)}`);
+    }
+
+    const data = await res.json();
+    if (!data.access_token) {
+        throw new Error('OAuth token 回應缺少 access_token');
+    }
+
+    const expiresIn = Number(data.expires_in || 3600);
+    cachedAccessToken = data.access_token;
+    cachedAccessTokenExpiresAt = Date.now() + (expiresIn * 1000);
+    return { 'Authorization': `Bearer ${cachedAccessToken}` };
+}
+
 /**
  * 取得當前已安裝的所有模型
  */
+async function getRequestHeaders(provider, authConfig = null) {
+    const meta = PROVIDER_ENDPOINTS[provider] || { type: 'openai' };
+    const effectiveAuth = normalizeAuthConfig(authConfig || currentAuthConfig || {}, currentApiKey);
+
+    if (meta.type === 'anthropic') {
+        return effectiveAuth.apiKey ? {
+            'x-api-key': effectiveAuth.apiKey,
+            'anthropic-version': '2023-06-01'
+        } : {
+            'anthropic-version': '2023-06-01'
+        };
+    }
+
+    return getAuthorizationHeader(authConfig);
+}
+
 async function listModels(options = {}) {
     const forceRefresh = options.forceRefresh || false;
     const now = Date.now();
@@ -313,7 +421,7 @@ async function listModels(options = {}) {
 
     const provider = (options.provider !== undefined) ? options.provider : currentProvider;
     const baseUrl = (options.baseUrl !== undefined) ? options.baseUrl : currentBaseUrl;
-    const apiKey = (options.apiKey !== undefined) ? options.apiKey : currentApiKey;
+    const authConfig = (options.authConfig !== undefined) ? options.authConfig : currentAuthConfig;
 
     const meta = PROVIDER_ENDPOINTS[provider] || { type: 'openai', list: '/models' };
     const apiRoot = baseUrl.replace(/\/v1\/?$/, '');
@@ -321,12 +429,13 @@ async function listModels(options = {}) {
     // ==========================================
     // 1. 處理 OpenAI 類型 Provider
     // ==========================================
-    if (meta.type === 'openai') {
+    if (meta.type === 'openai' || meta.type === 'anthropic') {
         const listPath = meta.list || '/models';
         const checkUrl = baseUrl.endsWith('/') ? `${baseUrl}${listPath.substring(1)}` : `${baseUrl}${listPath}`;
         try {
+            const authHeaders = await getRequestHeaders(provider, authConfig);
             const res = await fetch(checkUrl, {
-                headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {},
+                headers: authHeaders,
                 signal: AbortSignal.timeout(5000)
             });
 
@@ -346,6 +455,8 @@ async function listModels(options = {}) {
             let models = [];
             if (data && data.data && Array.isArray(data.data)) {
                 models = data.data.map(m => ({ name: m.id, size: 0 }));
+            } else if (data && data.models && Array.isArray(data.models)) {
+                models = data.models.map(m => ({ name: m.name, size: m.size || 0 }));
             }
             
             // 只有在非預覽（沒帶 options）時才更新進階快取
@@ -366,8 +477,9 @@ async function listModels(options = {}) {
     const listPath = meta.list || '/api/tags';
     const checkUrl = `${apiRoot}${listPath}`;
     try {
+        const authHeaders = await getAuthorizationHeader(authConfig);
         const res = await fetch(checkUrl, {
-            headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {},
+            headers: authHeaders,
             signal: AbortSignal.timeout(5000),
         });
 
@@ -457,14 +569,51 @@ function ensureOllamaRunning() {
  */
 async function chatWithLLM(userMessage, history = []) {
     const meta = PROVIDER_ENDPOINTS[currentProvider] || { type: 'openai' };
+    if (meta.type === 'anthropic') {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(await getRequestHeaders(currentProvider))
+        };
+        const apiRoot = currentBaseUrl.replace(/\/v1\/?$/, '');
+        const chatUrl = `${apiRoot}${meta.chat || '/messages'}`;
+        const body = {
+            model: currentModel,
+            max_tokens: 1024,
+            system: buildFullSystemPrompt(),
+            messages: [...history, { role: 'user', content: userMessage }].map(m => ({
+                role: m.role === 'assistant' ? 'assistant' : 'user',
+                content: m.content
+            }))
+        };
+        const res = await fetch(chatUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(180000),
+        });
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
+        }
+        const data = await res.json();
+        const content = Array.isArray(data?.content)
+            ? data.content.filter(item => item?.type === 'text').map(item => item.text).join('\n').trim()
+            : '';
+        if (!content) {
+            throw new Error('AI 引擎回傳了空內容，請確認 Anthropic model 名稱與權限設定。');
+        }
+        return content;
+    }
     const messages = [
         { role: 'system', content: buildFullSystemPrompt() },
         ...history,
         { role: 'user', content: userMessage },
     ];
 
-    const headers = { 'Content-Type': 'application/json' };
-    if (currentApiKey) headers['Authorization'] = `Bearer ${currentApiKey}`;
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(await getRequestHeaders(currentProvider))
+    };
 
     const apiRoot = currentBaseUrl.replace(/\/v1\/?$/, '');
     let chatUrl = '';
@@ -546,6 +695,70 @@ async function chatWithLLM(userMessage, history = []) {
     return finalReply;
 }
 
+async function testProviderConnection({ provider, baseUrl, authConfig, model }) {
+    const meta = PROVIDER_ENDPOINTS[provider] || { type: 'openai' };
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(await getRequestHeaders(provider, authConfig))
+    };
+
+    const apiRoot = baseUrl.replace(/\/v1\/?$/, '');
+    const chatUrl = meta.type === 'ollama'
+        ? `${apiRoot}/api/chat`
+        : meta.type === 'anthropic'
+            ? `${apiRoot}${meta.chat || '/messages'}`
+            : (baseUrl.endsWith('/') ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`);
+
+    const body = meta.type === 'anthropic'
+        ? {
+            model,
+            max_tokens: 32,
+            system: 'Reply with exactly OK.',
+            messages: [{ role: 'user', content: 'Test connection' }]
+        }
+        : {
+            model,
+            messages: [
+                { role: 'system', content: 'Reply with exactly OK.' },
+                { role: 'user', content: 'Test connection' },
+            ],
+            stream: false,
+            temperature: 0
+        };
+
+    const res = await fetch(chatUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000)
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        const raw = await res.text();
+        throw new Error(`API error: Expected JSON but got ${contentType}. Content start: ${raw.substring(0, 100)}`);
+    }
+
+    const data = await res.json();
+    const reply = data?.choices?.[0]?.message?.content
+        || (Array.isArray(data?.content) ? data.content.filter(item => item?.type === 'text').map(item => item.text).join('\n') : '')
+        || data?.message?.content
+        || data?.content
+        || data?.response
+        || '';
+
+    if (!String(reply).trim()) {
+        throw new Error('模型有回應，但內容為空。請檢查 model 名稱與 provider 相容格式。');
+    }
+
+    return String(reply).trim();
+}
+
 module.exports = {
     checkOllamaStatus,
     chatWithLLM,
@@ -558,4 +771,7 @@ module.exports = {
     getCurrentProvider: () => currentProvider,
     getCurrentBaseUrl: () => currentBaseUrl,
     getCurrentApiKey: () => currentApiKey,
+    getCurrentAuthType: () => currentAuthType,
+    getCurrentAuthConfig: () => currentAuthConfig,
+    testProviderConnection,
 };

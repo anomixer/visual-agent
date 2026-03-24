@@ -73,15 +73,26 @@ const btnCloseProviderModal = $('#btnCloseProviderModal');
 const settingProvider = $('#settingProvider');
 const settingBaseUrl = $('#settingBaseUrl');
 const settingApiKey = $('#settingApiKey');
+const authTypeGroup = $('#authTypeGroup');
+const settingAuthType = $('#settingAuthType');
+const apiKeyGroup = $('#apiKeyGroup');
+const settingApiKey2 = $('#settingApiKey2');
+const oauthFields = $('#oauthFields');
+const settingTokenUrl = $('#settingTokenUrl');
+const settingClientId = $('#settingClientId');
+const settingClientSecret = $('#settingClientSecret');
+const settingScope = $('#settingScope');
+const settingAudience = $('#settingAudience');
 const settingModelName = $('#settingModelName');
 const settingModelSelect = $('#settingModelSelect');
+const btnTestProviderSettings = $('#btnTestProviderSettings');
 const btnSaveProviderSettings = $('#btnSaveProviderSettings');
 const btnRefreshModels = $('#btnRefreshModels');
 
 const PROVIDER_DEFAULTS = {
     'OpenAI': 'https://api.openai.com/v1',
     'Anthropic Claude': 'https://api.anthropic.com/v1',
-    'Google Gemini': 'https://generativelanguage.googleapis.com',
+    'Google Gemini': 'https://generativelanguage.googleapis.com/v1beta/openai',
     'Mistral': 'https://api.mistral.ai/v1',
     'Groq': 'https://api.groq.com/openai/v1',
     'xAI（Grok）': 'https://api.x.ai/v1',
@@ -106,6 +117,82 @@ const llmStatus = $('#llmStatus');
 const statusLLM = $('#statusLLM');
 const statusTasks = $('#statusTasks');
 const chatModelBadge = $('#chatModelBadge');
+
+const LOCAL_NOAUTH_PROVIDERS = ['Ollama', 'vLLM', 'SGLang', 'LM Studio'];
+const API_KEY_ONLY_PROVIDERS = [
+    'OpenAI',
+    'Anthropic Claude',
+    'Google Gemini',
+    'Mistral',
+    'Groq',
+    'xAIï¼ˆGrokï¼‰',
+    'NVIDIA NIM',
+    'Together AI',
+    'OpenRouter',
+    'Kilo Gateway',
+    'Syntheticï¼ˆAnthropicâ€‘compatibleï¼‰',
+    'Moonshot AIï¼ˆKimiï¼‰',
+    'Vercel AI Gateway',
+    'Cloudflare AI Gateway',
+    'Ollama Cloud',
+    'DeepSeek'
+];
+
+function getProviderAuthMode(provider) {
+    if (LOCAL_NOAUTH_PROVIDERS.includes(provider)) return 'none_only';
+    if (API_KEY_ONLY_PROVIDERS.includes(provider)) return 'api_key_only';
+    return 'flex';
+}
+
+function getProviderDisplayLabel(provider) {
+    if (provider === 'Anthropic Claude') return `${provider} [Native]`;
+    if (LOCAL_NOAUTH_PROVIDERS.includes(provider)) return `${provider} [Local]`;
+    return `${provider} [OpenAI-compatible]`;
+}
+
+function getAuthPayload() {
+    const authType = settingAuthType?.value || 'api_key';
+    const authConfig = { type: authType };
+
+    if (authType === 'api_key') {
+        authConfig.apiKey = settingApiKey2?.value.trim() || '';
+    } else if (authType === 'oauth_client_credentials') {
+        authConfig.tokenUrl = settingTokenUrl?.value.trim() || '';
+        authConfig.clientId = settingClientId?.value.trim() || '';
+        authConfig.clientSecret = settingClientSecret?.value.trim() || '';
+        authConfig.scope = settingScope?.value.trim() || '';
+        authConfig.audience = settingAudience?.value.trim() || '';
+    }
+
+    return authConfig;
+}
+
+function updateAuthFields(authType = 'api_key') {
+    if (apiKeyGroup) apiKeyGroup.style.display = authType === 'api_key' ? 'block' : 'none';
+    if (oauthFields) oauthFields.style.display = authType === 'oauth_client_credentials' ? 'block' : 'none';
+    if (settingApiKey) settingApiKey.closest('.form-group').style.display = 'none';
+}
+
+function syncProviderAuthUI(provider) {
+    const mode = getProviderAuthMode(provider);
+
+    if (mode === 'none_only') {
+        if (authTypeGroup) authTypeGroup.style.display = 'none';
+        if (settingAuthType) settingAuthType.value = 'none';
+        updateAuthFields('none');
+        return;
+    }
+
+    if (mode === 'api_key_only') {
+        if (authTypeGroup) authTypeGroup.style.display = 'none';
+        if (settingAuthType) settingAuthType.value = 'api_key';
+        updateAuthFields('api_key');
+        return;
+    }
+
+    if (authTypeGroup) authTypeGroup.style.display = 'block';
+    updateAuthFields(settingAuthType?.value || 'api_key');
+}
 
 // ── API Helpers ────────────────────────────────────────────────────
 async function api(endpoint, options = {}) {
@@ -1206,6 +1293,7 @@ function setupEventListeners() {
     chatModelBadge?.addEventListener('click', toggleModelMenu);
     btnCloseProviderModal?.addEventListener('click', () => providerSettingsOverlay.classList.remove('visible'));
     providerSettingsOverlay?.addEventListener('click', (e) => { if (e.target === providerSettingsOverlay) providerSettingsOverlay.classList.remove('visible'); });
+    btnTestProviderSettings?.addEventListener('click', testProviderSettings);
     btnSaveProviderSettings?.addEventListener('click', saveProviderSettings);
 
     // Layout Toggles
@@ -1216,7 +1304,7 @@ function setupEventListeners() {
 
     // 初始化 Provider 下拉選單
     if (settingProvider) {
-        const providerOptions = Object.keys(PROVIDER_DEFAULTS).map(p => `<option value="${p}">${p}</option>`).join('');
+        const providerOptions = Object.keys(PROVIDER_DEFAULTS).map(p => `<option value="${p}">${getProviderDisplayLabel(p)}</option>`).join('');
         settingProvider.innerHTML = providerOptions;
         
         // 當切換 Provider 時，自動帶入預設 URL
@@ -1225,6 +1313,7 @@ function setupEventListeners() {
             if (PROVIDER_DEFAULTS[val]) {
                 settingBaseUrl.value = PROVIDER_DEFAULTS[val];
             }
+            syncProviderAuthUI(val);
             onProviderChange(val);
         });
 
@@ -1232,6 +1321,16 @@ function setupEventListeners() {
         const debouncedRefresh = debounce(() => onProviderChange(settingProvider.value), 800);
         settingBaseUrl?.addEventListener('input', debouncedRefresh);
         settingApiKey?.addEventListener('input', debouncedRefresh);
+        settingApiKey2?.addEventListener('input', debouncedRefresh);
+        settingTokenUrl?.addEventListener('input', debouncedRefresh);
+        settingClientId?.addEventListener('input', debouncedRefresh);
+        settingClientSecret?.addEventListener('input', debouncedRefresh);
+        settingScope?.addEventListener('input', debouncedRefresh);
+        settingAudience?.addEventListener('input', debouncedRefresh);
+        settingAuthType?.addEventListener('change', () => {
+            syncProviderAuthUI(settingProvider.value);
+            onProviderChange(settingProvider.value);
+        });
         btnRefreshModels?.addEventListener('click', () => onProviderChange(settingProvider.value));
     }
 
@@ -1380,6 +1479,14 @@ async function openProviderSettings() {
         settingProvider.value = data.provider || 'Ollama';
         settingBaseUrl.value = data.baseUrl || 'http://127.0.0.1:11434/v1';
         settingApiKey.value = data.apiKey || '';
+        settingAuthType.value = data.authType || ((data.apiKey || '').trim() ? 'api_key' : 'none');
+        settingApiKey2.value = data.apiKey || '';
+        settingTokenUrl.value = data.authConfig?.tokenUrl || '';
+        settingClientId.value = data.authConfig?.clientId || '';
+        settingClientSecret.value = data.authConfig?.clientSecret || '';
+        settingScope.value = data.authConfig?.scope || '';
+        settingAudience.value = data.authConfig?.audience || '';
+        syncProviderAuthUI(settingProvider.value);
         
         // 切換 UI 狀態
         await onProviderChange(data.provider, data.model);
@@ -1392,6 +1499,7 @@ async function openProviderSettings() {
  * 當 Provider 改變時處理 Model 名稱欄位
  */
 async function onProviderChange(provider, currentModel = '') {
+    syncProviderAuthUI(provider);
     // 判斷哪些 Provider 支援模型下拉清單
     const supportList = ['Ollama', 'Ollama Cloud', 'NVIDIA NIM', 'Mistral', 'Together AI', 'Groq', 'OpenAI', 'DeepSeek'];
     
@@ -1401,7 +1509,7 @@ async function onProviderChange(provider, currentModel = '') {
     }
 
     const baseUrl = settingBaseUrl.value.trim();
-    const apiKey = settingApiKey.value.trim();
+    const authConfig = getAuthPayload();
 
     if (supportList.includes(provider)) {
         settingModelName.style.display = 'none';
@@ -1414,7 +1522,7 @@ async function onProviderChange(provider, currentModel = '') {
             // 切換為 POST 請求以支援帶有特殊符號的 API Key 並避免長 URL 問題
             const data = await api('/api/llm/models', {
                 method: 'POST',
-                body: { provider, baseUrl, apiKey }
+                body: { provider, baseUrl, authConfig }
             });
             
             if (data.success && data.models.length > 0) {
@@ -1450,15 +1558,18 @@ async function onProviderChange(provider, currentModel = '') {
 async function saveProviderSettings() {
     const provider = settingProvider.value;
     const baseUrl = settingBaseUrl.value.trim();
-    const apiKey = settingApiKey.value.trim();
+    const authConfig = getAuthPayload();
     const isDropdown = (settingModelSelect.style.display === 'block');
     const model = isDropdown ? settingModelSelect.value : settingModelName.value.trim();
 
     if (!baseUrl) return alert('請輸入 API Base URL');
+    if (authConfig.type === 'oauth_client_credentials' && (!authConfig.tokenUrl || !authConfig.clientId || !authConfig.clientSecret)) {
+        return alert('OAuth 模式請完整填入 Token URL、Client ID、Client Secret');
+    }
 
     const data = await api('/api/llm/config', {
         method: 'POST',
-        body: { provider, baseUrl, apiKey, model }
+        body: { provider, baseUrl, authConfig, model }
     });
 
     if (data.success) {
@@ -1476,6 +1587,39 @@ async function saveProviderSettings() {
         setTimeout(() => location.reload(), 1000);
     } else {
         alert('儲存失敗: ' + (data.error || '不明錯誤'));
+    }
+}
+
+async function testProviderSettings() {
+    const provider = settingProvider.value;
+    const baseUrl = settingBaseUrl.value.trim();
+    const authConfig = getAuthPayload();
+    const isDropdown = (settingModelSelect.style.display === 'block');
+    const model = isDropdown ? settingModelSelect.value : settingModelName.value.trim();
+
+    if (!baseUrl) return alert('請輸入 API Base URL');
+    if (!model) return alert('請先輸入或選擇模型名稱');
+    if (authConfig.type === 'oauth_client_credentials' && (!authConfig.tokenUrl || !authConfig.clientId || !authConfig.clientSecret)) {
+        return alert('OAuth 模式請完整填入 Token URL、Client ID、Client Secret');
+    }
+
+    btnTestProviderSettings.disabled = true;
+    btnTestProviderSettings.textContent = '測試中...';
+
+    const data = await api('/api/llm/test', {
+        method: 'POST',
+        body: { provider, baseUrl, authConfig, model }
+    });
+
+    btnTestProviderSettings.disabled = false;
+    btnTestProviderSettings.textContent = '測試模型';
+
+    if (data.success) {
+        addUILog(`🧪 模型測試成功：${provider} / ${model}`, 'success');
+        alert(`測試成功\n\nProvider: ${provider}\nModel: ${model}\nReply: ${data.reply || 'OK'}`);
+    } else {
+        addUILog(`🧪 模型測試失敗：${provider} / ${model} - ${data.error || 'Unknown error'}`, 'error');
+        alert(`測試失敗\n\n${data.error || 'Unknown error'}`);
     }
 }
 

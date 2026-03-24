@@ -348,11 +348,11 @@ app.all('/api/llm/models', async (req, res) => {
     try {
         // 同時支援 GET (query) 與 POST (body)
         const params = req.method === 'POST' ? req.body : req.query;
-        const { provider, baseUrl, apiKey } = params;
+        const { provider, baseUrl, apiKey, authConfig } = params;
         
         console.log(`[LLM] 預覽模型列表: Provider=${provider || '預設'}, URL=${baseUrl || '預設'}`);
         
-        const models = await llm.listModels({ provider, baseUrl, apiKey, forceRefresh: true });
+        const models = await llm.listModels({ provider, baseUrl, apiKey, authConfig, forceRefresh: true });
         res.json({ success: true, models, currentModel: llm.getCurrentModel() });
     } catch (err) {
         res.json({ success: false, error: err.message });
@@ -702,20 +702,36 @@ app.get('/api/llm/config', (req, res) => {
         provider: llm.getCurrentProvider(),
         baseUrl: llm.getCurrentBaseUrl(),
         apiKey: llm.getCurrentApiKey(),
+        authType: llm.getCurrentAuthType(),
+        authConfig: llm.getCurrentAuthConfig(),
         model: llm.getCurrentModel()
     });
 });
 
 app.post('/api/llm/config', (req, res) => {
-    const { provider, baseUrl, apiKey, model } = req.body;
+    const { provider, baseUrl, apiKey, model, authConfig } = req.body;
     if (!provider || !baseUrl) {
         return res.status(400).json({ success: false, error: '缺少必要參數' });
     }
-    llm.updateProviderSettings(provider, baseUrl, apiKey, model);
+    llm.updateProviderSettings(provider, baseUrl, apiKey, model, authConfig);
     res.json({ success: true, message: '設定已儲存' });
 });
 
 // ── Start Server ────────────────────────────────────────────────────
+app.post('/api/llm/test', async (req, res) => {
+    try {
+        const { provider, baseUrl, model, authConfig } = req.body;
+        if (!provider || !baseUrl || !model) {
+            return res.status(400).json({ success: false, error: 'ç¼ºå°‘ provider、baseUrl æˆ– model' });
+        }
+
+        const reply = await llm.testProviderConnection({ provider, baseUrl, authConfig, model });
+        res.json({ success: true, reply });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
 app.listen(PORT, async () => {
     const startMsg = `AI PC Agent 已啟動！ (PID: ${process.pid}, Path: ${process.execPath})`;
     console.log(`\n  🖥️  ${startMsg}`);

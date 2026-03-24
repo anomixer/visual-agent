@@ -406,9 +406,43 @@
           <label>API Base URL</label>
           <input type="text" id="settingBaseUrl" class="form-input" placeholder="例如: http://localhost:11434/v1">
         </div>
-        <div class="form-group">
+        <div class="form-group" style="display:none;">
           <label>API Key</label>
           <input type="password" id="settingApiKey" class="form-input" placeholder="可留空">
+        </div>
+        <div class="form-group" id="authTypeGroup">
+          <label>認證方式</label>
+          <select id="settingAuthType" class="form-input">
+            <option value="none">無認證</option>
+            <option value="api_key">API Key</option>
+            <option value="oauth_client_credentials">OAuth 2.0 Client Credentials</option>
+          </select>
+        </div>
+        <div class="form-group" id="apiKeyGroup">
+          <label>API Key</label>
+          <input type="password" id="settingApiKey2" class="form-input" placeholder="Bearer Token / API Key">
+        </div>
+        <div id="oauthFields" style="display:none;">
+          <div class="form-group">
+            <label>Token URL</label>
+            <input type="text" id="settingTokenUrl" class="form-input" placeholder="例如: https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token">
+          </div>
+          <div class="form-group">
+            <label>Client ID</label>
+            <input type="text" id="settingClientId" class="form-input" placeholder="OAuth Client ID">
+          </div>
+          <div class="form-group">
+            <label>Client Secret</label>
+            <input type="password" id="settingClientSecret" class="form-input" placeholder="OAuth Client Secret">
+          </div>
+          <div class="form-group">
+            <label>Scope</label>
+            <input type="text" id="settingScope" class="form-input" placeholder="例如: https://cognitiveservices.azure.com/.default">
+          </div>
+          <div class="form-group">
+            <label>Audience / Resource（選填）</label>
+            <input type="text" id="settingAudience" class="form-input" placeholder="部分 IdP 需要">
+          </div>
         </div>
         <div class="form-group">
           <label style="display:flex; justify-content:space-between; align-items:center;">
@@ -420,7 +454,8 @@
             <select id="settingModelSelect" class="form-input" style="display:none;"></select>
           </div>
         </div>
-        <div style="margin-top:20px; text-align:right;">
+        <div style="margin-top:20px; text-align:right; display:flex; justify-content:space-between; gap:10px;">
+          <button class="btn-secondary" id="btnTestProviderSettings">測試模型</button>
           <button class="btn-primary" id="btnSaveProviderSettings">儲存並刷新</button>
         </div>
       </div>

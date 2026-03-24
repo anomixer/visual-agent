@@ -1622,6 +1622,29 @@ select.form-input {
 .btn-primary:hover {
   filter: brightness(1.1);
 }
+
+.btn-secondary {
+  background: color-mix(in srgb, var(--accent-indigo) 78%, white 22%);
+  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--accent-indigo) 88%, white 12%);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter var(--transition), transform var(--transition);
+}
+
+.btn-secondary:hover {
+  filter: brightness(1.08);
+}
+
+.btn-secondary:disabled,
+.btn-primary:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
 .status-bar {
   display: flex;
   align-items: center;
