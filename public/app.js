@@ -85,6 +85,9 @@ const settingScope = $('#settingScope');
 const settingAudience = $('#settingAudience');
 const settingModelName = $('#settingModelName');
 const settingModelSelect = $('#settingModelSelect');
+const providerHelpTitle = $('#providerHelpTitle');
+const providerHelpText = $('#providerHelpText');
+const modelHelpText = $('#modelHelpText');
 const btnTestProviderSettings = $('#btnTestProviderSettings');
 const btnSaveProviderSettings = $('#btnSaveProviderSettings');
 const btnRefreshModels = $('#btnRefreshModels');
@@ -119,24 +122,36 @@ const statusTasks = $('#statusTasks');
 const chatModelBadge = $('#chatModelBadge');
 
 const LOCAL_NOAUTH_PROVIDERS = ['Ollama', 'vLLM', 'SGLang', 'LM Studio'];
-const API_KEY_ONLY_PROVIDERS = [
-    'OpenAI',
-    'Anthropic Claude',
-    'Google Gemini',
-    'Mistral',
-    'Groq',
-    'xAIï¼ˆGrokï¼‰',
-    'NVIDIA NIM',
-    'Together AI',
-    'OpenRouter',
-    'Kilo Gateway',
-    'Syntheticï¼ˆAnthropicâ€‘compatibleï¼‰',
-    'Moonshot AIï¼ˆKimiï¼‰',
-    'Vercel AI Gateway',
-    'Cloudflare AI Gateway',
-    'Ollama Cloud',
-    'DeepSeek'
-];
+const API_KEY_ONLY_PROVIDERS = Object.keys(PROVIDER_DEFAULTS).filter(
+    p => !LOCAL_NOAUTH_PROVIDERS.includes(p) && p !== 'Customer Provider'
+);
+const PROVIDER_HELP = {
+    'OpenAI': {
+        title: 'OpenAI',
+        text: '填入 API Key 與模型名稱即可。OpenAI API 目前仍以 API Key 為主。',
+        model: '例如 gpt-4.1、gpt-4o-mini。'
+    },
+    'Google Gemini': {
+        title: 'Gemini',
+        text: '這裡走 Google 官方 OpenAI compatibility 入口，通常需要 API Key 與 model 名稱。',
+        model: '例如 gemini-2.5-flash。'
+    },
+    'Anthropic Claude': {
+        title: 'Anthropic Native',
+        text: 'Anthropic 走原生 API，不硬套 OpenAI-compatible。請填 API Key 與 Claude model。',
+        model: '例如 claude-sonnet-4-20250514。'
+    },
+    'Ollama': {
+        title: '本地 Ollama',
+        text: '通常不需要 API Key。只要本機服務已啟動，就可以直接選模型。',
+        model: '建議直接從模型清單選擇。'
+    },
+    'Customer Provider': {
+        title: '自訂 Provider',
+        text: '用於企業 Gateway 或自架服務。可選 API Key 或 OAuth 2.0 Client Credentials。',
+        model: '請填服務端實際支援的模型名稱。'
+    }
+};
 
 function getProviderAuthMode(provider) {
     if (LOCAL_NOAUTH_PROVIDERS.includes(provider)) return 'none_only';
@@ -145,9 +160,19 @@ function getProviderAuthMode(provider) {
 }
 
 function getProviderDisplayLabel(provider) {
-    if (provider === 'Anthropic Claude') return `${provider} [Native]`;
-    if (LOCAL_NOAUTH_PROVIDERS.includes(provider)) return `${provider} [Local]`;
-    return `${provider} [OpenAI-compatible]`;
+    return provider;
+}
+
+function updateProviderHelp(provider) {
+    const help = PROVIDER_HELP[provider] || {
+        title: getProviderDisplayLabel(provider),
+        text: '請填入此 provider 需要的 API Key、連線網址與模型名稱。',
+        model: '若服務支援模型清單，可直接刷新後選擇。'
+    };
+
+    if (providerHelpTitle) providerHelpTitle.textContent = help.title;
+    if (providerHelpText) providerHelpText.textContent = help.text;
+    if (modelHelpText) modelHelpText.textContent = help.model;
 }
 
 function getAuthPayload() {
@@ -175,6 +200,7 @@ function updateAuthFields(authType = 'api_key') {
 
 function syncProviderAuthUI(provider) {
     const mode = getProviderAuthMode(provider);
+    updateProviderHelp(provider);
 
     if (mode === 'none_only') {
         if (authTypeGroup) authTypeGroup.style.display = 'none';

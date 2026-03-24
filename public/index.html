@@ -392,7 +392,7 @@
 
   <!-- AI Provider & API Settings Modal -->
   <div class="modal-overlay" id="providerSettingsOverlay">
-    <div class="modal" style="max-width: 400px;">
+    <div class="modal provider-modal">
       <div class="modal-header">
         <h3>AI 引擎設定</h3>
         <button class="btn-close" id="btnCloseProviderModal">&times;</button>
@@ -402,8 +402,12 @@
           <label>AI Provider</label>
           <select id="settingProvider" class="form-input"></select>
         </div>
+        <div class="provider-help-card">
+          <div class="provider-help-title" id="providerHelpTitle">快速設定</div>
+          <div class="provider-help-text" id="providerHelpText">選擇 AI 引擎後，系統會提示你需要 API Key、模型名稱，或本地服務網址。</div>
+        </div>
         <div class="form-group">
-          <label>API Base URL</label>
+          <label>連線網址 (Base URL)</label>
           <input type="text" id="settingBaseUrl" class="form-input" placeholder="例如: http://localhost:11434/v1">
         </div>
         <div class="form-group" style="display:none;">
@@ -452,9 +456,10 @@
           <div id="modelNameContainer">
             <input type="text" id="settingModelName" class="form-input" placeholder="例如: qwen3.5:4b">
             <select id="settingModelSelect" class="form-input" style="display:none;"></select>
+            <div class="form-help" id="modelHelpText">雲端模型通常需要手動填入 model 名稱，本地引擎可直接從清單選擇。</div>
           </div>
         </div>
-        <div style="margin-top:20px; text-align:right; display:flex; justify-content:space-between; gap:10px;">
+        <div class="provider-actions">
           <button class="btn-secondary" id="btnTestProviderSettings">測試模型</button>
           <button class="btn-primary" id="btnSaveProviderSettings">儲存並刷新</button>
         </div>
