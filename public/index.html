@@ -67,6 +67,20 @@
     <div class="splash-logo">🤖</div>
     <div class="splash-text" id="splashText">正啟動應用程式中...</div>
   </div>
+  <script>
+    (() => {
+      const splashText = document.getElementById('splashText');
+      if (!splashText) return;
+      try {
+        const hasRun = localStorage.getItem('aipc_has_run');
+        splashText.textContent = hasRun
+          ? '啟動後端伺服器中，請稍候...'
+          : '首次執行本程式，正設定環境中，請稍候...';
+      } catch {
+        splashText.textContent = '啟動後端伺服器中，請稍候...';
+      }
+    })();
+  </script>
 
   <div class="app-shell">
 

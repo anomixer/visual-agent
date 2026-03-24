@@ -1167,14 +1167,29 @@ function cycleTheme() {
 //  EXPORT / IMPORT
 // ════════════════════════════════════════════════════════
 function exportTasks() {
-    const json = JSON.stringify(todoList, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `aipc-tasks-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    api('/api/todo/export-file', { method: 'POST' }).then((data) => {
+        if (data.success) {
+            addUILog(`✅ 任務清單已匯出：${data.fileName || data.filePath}`, 'success');
+            appendChatBubble('ai', `✅ 任務清單已匯出成功。`);
+            return;
+        }
+
+        if (data.cancelled) {
+            addUILog('ℹ️ 已取消匯出任務清單', 'info');
+            return;
+        }
+
+        // fallback: 若原生另存失敗，仍嘗試瀏覽器下載
+        const json = JSON.stringify(todoList, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `aipc-tasks-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        addUILog(`⚠️ 原生匯出失敗，已改用瀏覽器下載：${data.error || 'Unknown error'}`, 'warn');
+    });
 }
 
 function importTasks(file) {

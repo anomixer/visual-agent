@@ -270,3 +270,14 @@
 - 狀態列版本號不再寫死。
 - 前端改由 `/api/meta` 讀取版本，來源為 `package.json`。
 - 套件版本更新為 `2026.03.24`。
+
+## 2026.03.24 - EXE Startup and Export Fixes
+
+### EXE startup
+- Tauri now starts the Node sidecar in the background so the local HTML splash can render first.
+- On first launch the splash shows: `首次執行本程式，正設定環境中，請稍候...`
+- On later launches the splash shows: `啟動後端伺服器中，請稍候...`
+
+### Task export
+- EXE task export now uses the native Windows SaveFileDialog flow via `/api/todo/export-file`.
+- Browser-style blob download is kept only as a fallback.

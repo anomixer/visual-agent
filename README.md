@@ -326,3 +326,10 @@ Ollama 未安裝或未啟動。從推薦清單點「🧠 安裝 Ollama → ▶ �
 - 進度型輸出會合併成同一列更新，不再大量洗版。
 - 狀態列版本號改由 `/api/meta` 自 `package.json` 讀取。
 - 目前套件版本為 `2026.03.24`。
+
+## 2026.03.24 EXE startup and export fixes
+
+- Packaged EXE now lets the splash screen render before the Node sidecar finishes starting.
+- Splash text now distinguishes first launch vs later launches.
+- Task export in EXE mode now uses the native Windows save dialog.
+- If native export fails, the app still falls back to browser-style download.

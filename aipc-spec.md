@@ -214,3 +214,11 @@ SOPs 存放位置：
 - 工作日誌僅在畫面已停留底部時才自動捲動。
 - 進度型日誌輸出應合併為單列更新。
 - 狀態列版本需由 runtime metadata 自 `package.json` 取得，不可寫死在 HTML。
+
+## 6.6 2026.03.24 EXE startup and export behavior
+
+- Tauri must not block initial window rendering on synchronous sidecar startup.
+- Splash text must be available before `app.js` finishes loading.
+- First run text: `首次執行本程式，正設定環境中，請稍候...`
+- Subsequent run text: `啟動後端伺服器中，請稍候...`
+- In packaged EXE mode, task export should prefer native save-dialog flow over browser download semantics.

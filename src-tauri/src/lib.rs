@@ -17,12 +17,32 @@ pub fn run() {
         )?;
       }
       
-      let sidecar_command = app.shell().sidecar("server").unwrap();
-      let (_receiver, child) = sidecar_command
-        .spawn()
-        .expect("Failed to spawn sidecar");
+      app.manage(SidecarState(Mutex::new(None)));
 
-      app.manage(SidecarState(Mutex::new(Some(child))));
+      let app_handle = app.handle().clone();
+      std::thread::spawn(move || {
+        let sidecar_command = match app_handle.shell().sidecar("server") {
+          Ok(command) => command,
+          Err(err) => {
+            eprintln!("Failed to prepare sidecar: {err}");
+            return;
+          }
+        };
+
+        let (_receiver, child) = match sidecar_command.spawn() {
+          Ok(result) => result,
+          Err(err) => {
+            eprintln!("Failed to spawn sidecar: {err}");
+            return;
+          }
+        };
+
+        if let Some(state) = app_handle.try_state::<SidecarState>() {
+          if let Ok(mut child_lock) = state.0.lock() {
+            *child_lock = Some(child);
+          }
+        }
+      });
 
       Ok(())
     })
