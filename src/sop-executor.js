@@ -41,8 +41,14 @@ class SOPExecutor extends EventEmitter {
                 return;
             }
 
-            // 使用 chcp 65001 設定 UTF-8 代碼頁
-            const wrappedCommand = `chcp 65001 >nul; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${command}`;
+            // 直接在 PowerShell 內設定 UTF-8，避免 chcp > nul 在部分環境觸發 Out-File / device 錯誤
+            const wrappedCommand = [
+                '$utf8NoBom = New-Object System.Text.UTF8Encoding($false)',
+                '[Console]::InputEncoding = $utf8NoBom',
+                '[Console]::OutputEncoding = $utf8NoBom',
+                '$OutputEncoding = $utf8NoBom',
+                command,
+            ].join('; ');
 
             const child = spawn('powershell.exe', [
                 '-NoProfile',
@@ -159,6 +165,17 @@ class SOPExecutor extends EventEmitter {
                     return { success: false, outputs, error: errorMsg };
                 }
 
+                if (phaseName === 'verify' && this.isVerifyFailed(result.stdout)) {
+                    const errorMsg = result.stdout || 'Verify returned false';
+                    this.emit('log', {
+                        level: 'error',
+                        phase: phaseName,
+                        message: '驗證腳本回傳 false',
+                        detail: errorMsg,
+                    });
+                    return { success: false, outputs, error: errorMsg };
+                }
+
                 this.emit('log', {
                     level: 'success',
                     phase: phaseName,
@@ -177,6 +194,38 @@ class SOPExecutor extends EventEmitter {
         }
 
         return { success: true, outputs, error: null };
+    }
+
+    /**
+     * Check 階段允許 stdout 夾帶提示文字，只要有獨立一行 true 就視為已完成
+     * @param {string} stdout
+     * @returns {boolean}
+     */
+    isCheckSatisfied(stdout) {
+        if (!stdout) return false;
+        const lines = stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim().toLowerCase())
+            .filter(Boolean);
+
+        if (lines.length === 0) return false;
+        return lines.includes('true') || lines[lines.length - 1] === 'true';
+    }
+
+    /**
+     * Verify 階段若明確輸出 false，應視為驗證失敗
+     * @param {string} stdout
+     * @returns {boolean}
+     */
+    isVerifyFailed(stdout) {
+        if (!stdout) return false;
+        const lines = stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim().toLowerCase())
+            .filter(Boolean);
+
+        if (lines.length === 0) return false;
+        return lines.includes('false') && !lines.includes('true');
     }
 
     /**
@@ -281,7 +330,7 @@ class SOPExecutor extends EventEmitter {
             if (checkResult.success) {
                 // 檢查回傳值是否為 True（表示已安裝，可跳過）
                 const lastOutput = checkResult.outputs[checkResult.outputs.length - 1];
-                if (lastOutput && lastOutput.stdout && lastOutput.stdout.trim().toLowerCase() === 'true') {
+                if (lastOutput && this.isCheckSatisfied(lastOutput.stdout)) {
                     this.emit('log', {
                         level: 'success',
                         phase: 'check',

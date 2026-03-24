@@ -259,3 +259,21 @@
 - ?????? provider ???,???? AI ?????? API Key????????????
 - Provider ???????? OpenAI-compatible / Native / Local ??,??????
 - ?? Anthropic Native?Gemini OpenAI compatibility?Customer Provider OAuth ???,????????????????
+
+## 2026.03.24 - SOP Stability Hardening
+
+### Runtime behavior
+- Task completion now posts an AI chat message for `success`, `failed`, and `skipped` states.
+- SOP loading now de-duplicates duplicated IDs and prefers the canonical file over `Copy` variants.
+- Bundled SOP/skill/plugin assets now sync to `%APPDATA%\aipc-agent\` when content changes, not only on first copy.
+
+### Executor fixes
+- Removed the PowerShell wrapper pattern that could trigger `Out-File` / `nul` device errors.
+- `Check` phase now accepts boolean output even when scripts also emit helper text.
+- `Verify` phase now treats explicit `false` output as a real failure.
+
+### SOP fixes
+- Fixed install verification logic for Steam, Chrome, LibreOffice, Ollama, and Qwen model pull SOPs.
+- Replaced fragile `Get-Command + Test-Path "command-name"` patterns with resolved executable-path checks.
+- Backup SOP `Check` no longer mutates system state; restore-point creation moved to `Install`.
+- Japanese language-pack SOP `Verify` now returns an explicit pass/fail signal.

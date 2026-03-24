@@ -17,11 +17,11 @@ OS: Windows 10 / 11
 指令 (PowerShell): 
 ```powershell
 try {
-    $cmd = if (Get-Command chrome -ErrorAction Ignore) { "chrome" } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
-    if (Test-Path $cmd) {
-        $v = & $cmd --version 2>&1
+    $chromeCmd = Get-Command chrome.exe -ErrorAction SilentlyContinue
+    $chromeExe = if ($chromeCmd) { $chromeCmd.Source } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
+    if (Test-Path $chromeExe) {
+        $v = & $chromeExe --version 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "已安裝"
             $true
         } else {
             $false
@@ -63,26 +63,23 @@ Start-Sleep -Seconds 2
 指令 (PowerShell): 
 ```powershell
 Write-Host "驗證 Chrome 安裝..."
-$cmd = if (Get-Command chrome -ErrorAction Ignore) { "chrome" } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
+$chromeCmd = Get-Command chrome.exe -ErrorAction SilentlyContinue
+$chromeExe = if ($chromeCmd) { $chromeCmd.Source } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
 
-if (-not (Test-Path $cmd)) {
-    Write-Host "錯誤: Chrome 執行檔不存在"
-    $false
-    exit
+if (-not (Test-Path $chromeExe)) {
+    throw "Chrome 執行檔不存在: $chromeExe"
 }
 
 try {
-    $v = & $cmd --version 2>&1
+    $v = & $chromeExe --version 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Chrome 已安裝，版本: $v"
         $true
     } else {
-        Write-Host "Chrome 驗證失敗"
-        $false
+        throw "Chrome 驗證失敗"
     }
 } catch {
-    Write-Host "無法驗證 Chrome: $_"
-    $false
+    throw "無法驗證 Chrome: $_"
 }
 ```
 

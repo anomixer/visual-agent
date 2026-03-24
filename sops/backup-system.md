@@ -16,24 +16,29 @@ OS: Windows 10 / 11
 第一階段：環境檢測 (Check)
 指令 (PowerShell): 
 ```powershell
-Enable-ComputerRestore -Drive "C:\"
-$true
+$false
 ```
 
-預期結果: 總是回傳 True，因為系統還原點可以多次建立。
+預期結果: 一律回傳 False，確保每次都會建立新的系統還原點。
 
 第二階段：安裝 (Install)
 指令 (PowerShell):
 
 ```powershell
+Enable-ComputerRestore -Drive "C:\"
 Checkpoint-Computer -Description "AIPC Agent 手動備份" -RestorePointType "MODIFY_SETTINGS"
-UI 顯示內容: 「正在建立 Windows 系統還原點，請耐心等候...」
+UI 顯示內容: 「正在建立 Windows 系統還原點，請耐心等待...」
 ```
 
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-if (Get-ComputerRestorePoint) { $true } else { $false }
+$restorePoint = Get-ComputerRestorePoint -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($restorePoint) {
+    $true
+} else {
+    throw "找不到任何系統還原點"
+}
 ```
 
 4. 自動排錯邏輯 (Error Handling)

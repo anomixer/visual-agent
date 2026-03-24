@@ -17,9 +17,10 @@ OS: Windows 10 / 11
 指令 (PowerShell): 
 ```powershell
 try {
-    $cmd = if (Get-Command steam -ErrorAction Ignore) { "steam" } else { "C:\Program Files (x86)\Steam\steam.exe" }
-    if (Test-Path $cmd) {
-        Write-Host "已安裝"
+    $steamCmd = Get-Command steam.exe -ErrorAction SilentlyContinue
+    $steamExe = if ($steamCmd) { $steamCmd.Source } else { "C:\Program Files (x86)\Steam\steam.exe" }
+
+    if (Test-Path $steamExe) {
         $true
     } else {
         $false
@@ -58,15 +59,14 @@ Start-Sleep -Seconds 2
 指令 (PowerShell): 
 ```powershell
 Write-Host "驗證 Steam 安裝..."
-$cmd = if (Get-Command steam -ErrorAction Ignore) { "steam" } else { "C:\Program Files (x86)\Steam\steam.exe" }
+$steamCmd = Get-Command steam.exe -ErrorAction SilentlyContinue
+$steamExe = if ($steamCmd) { $steamCmd.Source } else { "C:\Program Files (x86)\Steam\steam.exe" }
 
-if (-not (Test-Path $cmd)) {
-    Write-Host "錯誤: Steam 執行檔不存在"
-    $false
-    exit
+if (-not (Test-Path $steamExe)) {
+    throw "Steam 執行檔不存在: $steamExe"
 }
 
-Write-Host "Steam 已安裝"
+Write-Host "Steam 已安裝: $steamExe"
 $true
 ```
 

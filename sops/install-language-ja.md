@@ -24,7 +24,7 @@ OS: Windows 10 / 11
 第二階段：安裝 (Install)
 指令 (PowerShell):
 
-```PowerShell
+```powershell
 Install-Language -Language ja-JP
 Set-WinUserLanguageList -LanguageList (New-WinUserLanguageList -Language ja-JP) -Force
 UI 顯示內容: 「正在向 Microsoft 伺服器請求日文語言包，這可能需要幾分鐘...」
@@ -33,7 +33,12 @@ UI 顯示內容: 「正在向 Microsoft 伺服器請求日文語言包，這可�
 第三階段：驗證 (Verify)
 指令 (PowerShell): 
 ```powershell
-Get-InstalledLanguage | Where-Object {$_.LanguageId -eq "ja-JP"}
+$installed = Get-InstalledLanguage | Where-Object {$_.LanguageId -eq "ja-JP"}
+if ($installed) {
+    $true
+} else {
+    throw "找不到 ja-JP 語言包"
+}
 ```
 
 4. 自動排錯邏輯 (Error Handling)

@@ -55,13 +55,27 @@ function syncBundledAssets() {
     try {
         const bundledSopsDir = path.join(__dirname, '..', 'sops');
         const bundledSkillsDir = path.join(__dirname, '..', 'skills');
+        const syncIfChanged = (src, dest) => {
+            if (!fs.existsSync(src)) return;
+            if (!fs.existsSync(dest)) {
+                fs.copyFileSync(src, dest);
+                return;
+            }
+
+            const srcContent = fs.readFileSync(src);
+            const destContent = fs.readFileSync(dest);
+            if (!srcContent.equals(destContent)) {
+                fs.copyFileSync(src, dest);
+            }
+        };
 
         // 同步 SOPs
         if (fs.existsSync(bundledSopsDir)) {
             const files = fs.readdirSync(bundledSopsDir).filter(f => f.endsWith('.md'));
             files.forEach(file => {
+                const src = path.join(bundledSopsDir, file);
                 const dest = path.join(SOPS_DIR, file);
-                if (!fs.existsSync(dest)) fs.copyFileSync(path.join(bundledSopsDir, file), dest);
+                syncIfChanged(src, dest);
             });
         }
 
@@ -69,8 +83,9 @@ function syncBundledAssets() {
         if (fs.existsSync(bundledSkillsDir)) {
             const files = fs.readdirSync(bundledSkillsDir).filter(f => f.endsWith('.md'));
             files.forEach(file => {
+                const src = path.join(bundledSkillsDir, file);
                 const dest = path.join(SKILLS_DIR, file);
-                if (!fs.existsSync(dest)) fs.copyFileSync(path.join(bundledSkillsDir, file), dest);
+                syncIfChanged(src, dest);
             });
         }
 
@@ -79,8 +94,9 @@ function syncBundledAssets() {
         if (fs.existsSync(bundledPluginsDir)) {
             const files = fs.readdirSync(bundledPluginsDir).filter(f => f.endsWith('.js'));
             files.forEach(file => {
+                const src = path.join(bundledPluginsDir, file);
                 const dest = path.join(PLUGINS_DIR, file);
-                if (!fs.existsSync(dest)) fs.copyFileSync(path.join(bundledPluginsDir, file), dest);
+                syncIfChanged(src, dest);
             });
         }
     } catch (e) {

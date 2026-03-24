@@ -28,6 +28,7 @@ let recognition = null;
 let currentLogIndex = 0;
 let recSearchQuery = '';
 let hardwareInterval = null;
+let knownTaskStatuses = new Map();
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -310,7 +311,12 @@ function hideSplash() {
 // ════════════════════════════════════════════════════════
 async function loadTodo() {
     const data = await api('/api/todo');
-    if (data.success) { todoList = data.todoList; renderTodoList(); }
+    if (data.success) {
+        announceTaskStatusChanges(todoList, data.todoList);
+        todoList = data.todoList;
+        syncKnownTaskStatuses(todoList);
+        renderTodoList();
+    }
 }
 
 async function loadRecommend() {
@@ -334,14 +340,49 @@ function startPolling() {
             loadRecommend();
         }
 
-        const data = await api('/api/todo');
-        if (data.success && JSON.stringify(data.todoList) !== JSON.stringify(todoList)) {
-            todoList = data.todoList;
-            renderTodoList();
-        }
+        await loadTodo();
         pollLogs();
         checkLLMStatus();
     }, 2000);
+}
+
+function syncKnownTaskStatuses(tasks) {
+    knownTaskStatuses = new Map(tasks.map(task => [task.id, task.status]));
+}
+
+function buildTaskCompletionMessage(task) {
+    if (task.status === 'success') {
+        return `✅「${task.title}」已安裝/執行完成。`;
+    }
+    if (task.status === 'skipped') {
+        return `ℹ️「${task.title}」已經存在，所以我幫你跳過了。`;
+    }
+    if (task.status === 'failed') {
+        return `❌「${task.title}」執行失敗。你可以看一下下方工作日誌，我再幫你排除。`;
+    }
+    return '';
+}
+
+function announceTaskStatusChanges(previousTasks, nextTasks) {
+    if (!Array.isArray(nextTasks) || nextTasks.length === 0) return;
+
+    // 首次載入只建立狀態，不補歷史訊息
+    if (!Array.isArray(previousTasks) || previousTasks.length === 0 && knownTaskStatuses.size === 0) {
+        return;
+    }
+
+    nextTasks.forEach(task => {
+        const previousStatus = knownTaskStatuses.get(task.id);
+        if (!previousStatus || previousStatus === task.status) return;
+
+        if (!['success', 'failed', 'skipped'].includes(task.status)) return;
+        if (!['pending', 'running'].includes(previousStatus)) return;
+
+        const message = buildTaskCompletionMessage(task);
+        if (message) {
+            appendChatBubble('ai', message);
+        }
+    });
 }
 
 async function pollLogs() {

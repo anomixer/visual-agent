@@ -17,9 +17,9 @@ OS: Windows 10 / 11
 指令 (PowerShell): 
 ```powershell
 try {
-    $cmd = if (Get-Command soffice -ErrorAction Ignore) { "soffice" } else { "C:\Program Files\LibreOffice\program\soffice.exe" }
-    if (Test-Path $cmd) {
-        Write-Host "已安裝"
+    $officeCmd = Get-Command soffice.exe -ErrorAction SilentlyContinue
+    $officeExe = if ($officeCmd) { $officeCmd.Source } else { "C:\Program Files\LibreOffice\program\soffice.exe" }
+    if (Test-Path $officeExe) {
         $true
     } else {
         $false
@@ -58,15 +58,14 @@ Start-Sleep -Seconds 2
 指令 (PowerShell): 
 ```powershell
 Write-Host "驗證 LibreOffice 安裝..."
-$cmd = if (Get-Command soffice -ErrorAction Ignore) { "soffice" } else { "C:\Program Files\LibreOffice\program\soffice.exe" }
+$officeCmd = Get-Command soffice.exe -ErrorAction SilentlyContinue
+$officeExe = if ($officeCmd) { $officeCmd.Source } else { "C:\Program Files\LibreOffice\program\soffice.exe" }
 
-if (-not (Test-Path $cmd)) {
-    Write-Host "錯誤: LibreOffice 執行檔不存在"
-    $false
-    exit
+if (-not (Test-Path $officeExe)) {
+    throw "LibreOffice 執行檔不存在: $officeExe"
 }
 
-Write-Host "LibreOffice 已安裝"
+Write-Host "LibreOffice 已安裝: $officeExe"
 $true
 ```
 

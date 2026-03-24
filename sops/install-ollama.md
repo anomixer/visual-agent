@@ -16,11 +16,11 @@ OS: Windows 10 / 11
 指令 (PowerShell):
 ```powershell
 try { 
-    $cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
-    if (Test-Path $cmd) { 
-        $v = & $cmd --version 2>&1
+    $ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
+    $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+    if (Test-Path $ollamaExe) { 
+        $v = & $ollamaExe --version 2>&1
         if ($LASTEXITCODE -eq 0) { 
-            Write-Host "已安裝"
             $true 
         } else { 
             $false 
@@ -62,12 +62,11 @@ Start-Sleep -Seconds 2
 指令 (PowerShell):
 ```powershell
 Write-Host "驗證 Ollama 安裝..."
-$cmd = if (Get-Command ollama -ErrorAction Ignore) { "ollama" } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+$ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
+$ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
 
-if (-not (Test-Path $cmd)) {
-    Write-Host "錯誤: Ollama 執行檔不存在"
-    $false
-    exit
+if (-not (Test-Path $ollamaExe)) {
+    throw "Ollama 執行檔不存在: $ollamaExe"
 }
 
 Write-Host "Ollama 執行檔已找到，啟動服務..."
@@ -80,13 +79,12 @@ while ($retryCount -lt $maxRetries) {
         $response = Invoke-RestMethod -Uri "http://127.0.0.1:11434/api/version" -ErrorAction Stop -TimeoutSec 2
         if ($response.version) {
             Write-Host "Ollama 服務已在執行，版本: $($response.version)"
-            $true
-            exit
+            return $true
         }
     } catch {
         if ($retryCount -eq 0) {
             Write-Host "啟動 Ollama 服務..."
-            Start-Process $cmd -ArgumentList "serve" -WindowStyle Hidden
+            Start-Process $ollamaExe -ArgumentList "serve" -WindowStyle Hidden
             Start-Sleep -Seconds 2
         }
     }
@@ -104,12 +102,10 @@ try {
         Write-Host "Ollama 服務驗證成功"
         $true 
     } else { 
-        Write-Host "Ollama 服務驗證失敗"
-        $false 
+        throw "Ollama 服務驗證失敗"
     }
 } catch { 
-    Write-Host "無法連接 Ollama 服務: $_"
-    $false 
+    throw "無法連接 Ollama 服務: $_"
 }
 ```
 

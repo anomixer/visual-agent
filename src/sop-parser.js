@@ -212,7 +212,31 @@ function loadAllSOPs(sopsDir) {
     }
 
     const files = fs.readdirSync(resolvedDir).filter((f) => f.endsWith('.md'));
-    return files.map((f) => parseSOPFile(path.join(resolvedDir, f)));
+    const parsed = files.map((f) => parseSOPFile(path.join(resolvedDir, f)));
+    const deduped = new Map();
+
+    const scoreFile = (sop) => {
+        const name = (sop.sourceFile || '').toLowerCase();
+        let score = 0;
+        if (!name.includes('copy')) score += 10;
+        if (!name.includes('副本')) score += 10;
+        if (name === `${sop.id}.md`) score += 5;
+        return score;
+    };
+
+    for (const sop of parsed) {
+        if (!sop.id) {
+            deduped.set(`${sop.sourceFile}:${Math.random()}`, sop);
+            continue;
+        }
+
+        const existing = deduped.get(sop.id);
+        if (!existing || scoreFile(sop) > scoreFile(existing)) {
+            deduped.set(sop.id, sop);
+        }
+    }
+
+    return Array.from(deduped.values());
 }
 
 module.exports = { parseSOPFile, loadAllSOPs };

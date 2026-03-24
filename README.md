@@ -310,3 +310,15 @@ Ollama 未安裝或未啟動。從推薦清單點「🧠 安裝 Ollama → ▶ �
 - Provider ????????
 - ? provider ????????????,????????????
 - ???????: ? AI ?? -> ? API Key -> ????? -> ????
+
+## 2026.03.24 SOP stability updates
+
+This round tightened SOP execution reliability.
+
+- Task completion now also posts an AI chat message for `success`, `failed`, and `skipped` outcomes.
+- SOP loading now de-duplicates duplicated IDs and prefers the canonical file instead of accidental `Copy` files.
+- Bundled SOP / skill / plugin files now refresh into `%APPDATA%\aipc-agent\` when source content changes.
+- The executor now treats explicit `false` during `Verify` as failure.
+- Steam, Chrome, LibreOffice, Ollama, Qwen model pull, backup, and Japanese language-pack SOPs were hardened to avoid false positives and false failures.
+
+If you are testing locally after SOP changes, restart `npm run start` once so the runtime re-syncs `%APPDATA%\aipc-agent\sops`.

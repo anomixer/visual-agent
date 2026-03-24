@@ -207,3 +207,21 @@ SOPs 存放位置：
 - Provider ??????,??????????????
 - ??????????? provider ????
 - ?????????: ? provider -> ? key -> ??? model -> ????
+
+## 6. 2026.03.24 SOP Stability Hardening
+
+### 6.1 Runtime updates
+- Task completion must surface back into the AI chat area with explicit success / failed / skipped feedback.
+- The runtime must de-duplicate SOPs by `id` and prefer canonical filenames over `Copy` variants.
+- Bundled SOPs, skills, and plugins must sync into `%APPDATA%\aipc-agent\` when file contents differ.
+
+### 6.2 Executor contract
+- `Check` returns `true` to skip; helper text may coexist, but the executor must still detect the boolean line.
+- `Verify` must fail the task when PowerShell exits non-zero or when stdout explicitly resolves to `false`.
+- PowerShell bootstrap code must avoid shell wrappers that can fail on `nul` / device handling.
+
+### 6.3 SOP authoring rules
+- Do not use `Test-Path "command-name"` after `Get-Command`; resolve the executable path first.
+- `Check` should be side-effect free.
+- `Verify` should return an unambiguous pass/fail result; prefer `throw` on hard failure.
+- Installers that depend on a local service (for example Ollama) should verify both binary presence and service readiness.
