@@ -31,6 +31,7 @@ let recSearchQuery = '';
 let hardwareInterval = null;
 let knownTaskStatuses = new Map();
 let activeSidebarTab = 'recommend';
+let isChalkboardAttachmentEnabled = localStorage.getItem('chat_attach_chalkboard') === 'true';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -60,6 +61,7 @@ const chatMessages = $('#chatMessages');
 const chatInput = $('#chatInput');
 const btnSend = $('#btnSend');
 const btnMic = $('#btnMic');
+const btnChalkAttach = $('#btnChalkAttach');
 const btnClearChat = $('#btnClearChat');
 const recSearchInput = $('#recSearchInput');
 const btnTheme = $('#btnTheme');
@@ -78,6 +80,7 @@ const chalkboardCanvas = $('#chalkboardCanvas');
 const chalkboardSurface = $('#chalkboardSurface');
 const chalkboardHeading = $('.chalkboard-heading');
 const chalkPlacementGuide = $('#chalkPlacementGuide');
+const chalkSelectionBox = $('#chalkSelectionBox');
 const chalkTextBox = $('#chalkTextBox');
 const chalkTextBoxContent = $('#chalkTextBoxContent');
 const chalkTools = $$('.chalk-tool');
@@ -86,6 +89,9 @@ const chalkSizeButtons = $$('.chalk-size');
 const chalkSaveButton = $('#chalkSaveButton');
 const chalkClearButton = $('#chalkClearButton');
 const chalkUndoButton = $('#chalkUndoButton');
+const chalkCopyButton = $('#chalkCopyButton');
+const chalkCutButton = $('#chalkCutButton');
+const chalkPasteButton = $('#chalkPasteButton');
 const chalkUploadButton = $('#chalkUploadButton');
 const chalkImageInput = $('#chalkImageInput');
 const textToolOverlay = $('#textToolOverlay');
@@ -119,9 +125,12 @@ const settingScope = $('#settingScope');
 const settingAudience = $('#settingAudience');
 const settingModelName = $('#settingModelName');
 const settingModelSelect = $('#settingModelSelect');
+const settingVisionModelName = $('#settingVisionModelName');
+const settingVisionModelSelect = $('#settingVisionModelSelect');
 const providerHelpTitle = $('#providerHelpTitle');
 const providerHelpText = $('#providerHelpText');
 const modelHelpText = $('#modelHelpText');
+const visionModelHelpText = $('#visionModelHelpText');
 const btnTestProviderSettings = $('#btnTestProviderSettings');
 const btnSaveProviderSettings = $('#btnSaveProviderSettings');
 const btnRefreshModels = $('#btnRefreshModels');
@@ -175,6 +184,8 @@ const chalkboardState = {
     pendingTextRect: null,
     pendingTextSnapshot: null,
     pendingTextPreviewUrl: null,
+    selectionRect: null,
+    clipboardImage: null,
     hoverPoint: null,
     dragPresetEnd: null,
     pendingShapePreview: false,
@@ -190,7 +201,8 @@ const chalkboardState = {
         italic: false
     },
     textToolResolver: null,
-    history: []
+    history: [],
+    hasUserContent: false
 };
 
 const LOCAL_NOAUTH_PROVIDERS = ['Ollama', 'vLLM', 'SGLang', 'LM Studio'];
@@ -319,6 +331,224 @@ function debounce(fn, delay) {
     };
 }
 
+function markChalkboardUserContent(hasContent = true) {
+    chalkboardState.hasUserContent = Boolean(hasContent);
+}
+
+function buildChalkboardChatAttachment() {
+    if (!chalkboardCanvas || !chalkboardState.ctx || !chalkboardState.hasUserContent) {
+        return null;
+    }
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = chalkboardCanvas.width;
+    exportCanvas.height = chalkboardCanvas.height;
+    const exportCtx = exportCanvas.getContext('2d');
+    if (!exportCtx) return null;
+
+    exportCtx.fillStyle = '#173b2f';
+    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    exportCtx.drawImage(chalkboardCanvas, 0, 0);
+
+    return {
+        mimeType: 'image/jpeg',
+        dataUrl: exportCanvas.toDataURL('image/jpeg', 0.86),
+        width: exportCanvas.width,
+        height: exportCanvas.height
+    };
+}
+
+function getNormalizedRect(start, end) {
+    const left = Math.max(0, Math.min(start.x, end.x));
+    const top = Math.max(0, Math.min(start.y, end.y));
+    const right = Math.min(chalkboardState.cssWidth, Math.max(start.x, end.x));
+    const bottom = Math.min(chalkboardState.cssHeight, Math.max(start.y, end.y));
+    return {
+        left,
+        top,
+        width: Math.max(1, right - left),
+        height: Math.max(1, bottom - top)
+    };
+}
+
+function getChalkSurfaceInset() {
+    if (!chalkboardSurface) {
+        return { left: 0, top: 0 };
+    }
+
+    const style = window.getComputedStyle(chalkboardSurface);
+    return {
+        left: parseFloat(style.borderLeftWidth || '0') || 0,
+        top: parseFloat(style.borderTopWidth || '0') || 0
+    };
+}
+
+function syncSelectionBox() {
+    if (!chalkSelectionBox || !chalkboardState.selectionRect) {
+        chalkSelectionBox?.classList.remove('visible');
+        return;
+    }
+
+    const rect = chalkboardState.selectionRect;
+    const inset = getChalkSurfaceInset();
+    chalkSelectionBox.style.left = `${rect.left + inset.left}px`;
+    chalkSelectionBox.style.top = `${rect.top + inset.top}px`;
+    chalkSelectionBox.style.width = `${rect.width}px`;
+    chalkSelectionBox.style.height = `${rect.height}px`;
+    chalkSelectionBox.classList.add('visible');
+}
+
+function clearSelectionBox() {
+    chalkboardState.selectionRect = null;
+    chalkSelectionBox?.classList.remove('visible');
+}
+
+function getSelectionCanvas() {
+    const rect = chalkboardState.selectionRect;
+    if (!rect || !chalkboardCanvas) return null;
+
+    const scaleX = chalkboardState.cssWidth > 0 ? (chalkboardCanvas.width / chalkboardState.cssWidth) : 1;
+    const scaleY = chalkboardState.cssHeight > 0 ? (chalkboardCanvas.height / chalkboardState.cssHeight) : 1;
+    const sourceX = Math.max(0, Math.round(rect.left * scaleX));
+    const sourceY = Math.max(0, Math.round(rect.top * scaleY));
+    const sourceWidth = Math.max(1, Math.round(rect.width * scaleX));
+    const sourceHeight = Math.max(1, Math.round(rect.height * scaleY));
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.drawImage(
+        chalkboardCanvas,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+    return canvas;
+}
+
+async function writeCanvasToClipboard(canvas) {
+    if (!canvas || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+        return false;
+    }
+
+    try {
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) return false;
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function copySelectionToClipboard(cut = false) {
+    const canvas = getSelectionCanvas();
+    if (!canvas || !chalkboardState.selectionRect) return;
+
+    chalkboardState.clipboardImage = canvas;
+    await writeCanvasToClipboard(canvas);
+
+    if (cut && chalkboardState.ctx) {
+        pushChalkHistory();
+        const rect = chalkboardState.selectionRect;
+        chalkboardState.ctx.clearRect(rect.left, rect.top, rect.width, rect.height);
+        markChalkboardUserContent(true);
+        clearSelectionBox();
+    }
+}
+
+async function pasteClipboardImage() {
+    let imageBlob = null;
+
+    if (navigator.clipboard?.read) {
+        try {
+            const items = await navigator.clipboard.read();
+            for (const item of items) {
+                const imageType = item.types.find(type => type.startsWith('image/'));
+                if (imageType) {
+                    imageBlob = await item.getType(imageType);
+                    break;
+                }
+            }
+        } catch {
+            imageBlob = null;
+        }
+    }
+
+    if (!imageBlob && chalkboardState.clipboardImage) {
+        imageBlob = await new Promise(resolve => chalkboardState.clipboardImage.toBlob(resolve, 'image/png'));
+    }
+
+    if (!imageBlob) return;
+
+    const objectUrl = URL.createObjectURL(imageBlob);
+    const img = new Image();
+    img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        chalkboardState.pendingImage = img;
+        chalkboardState.tool = 'image';
+        clearSelectionBox();
+        syncChalkboardUI();
+        updatePlacementGuide({
+            x: chalkboardState.cssWidth / 2,
+            y: chalkboardState.cssHeight / 2
+        });
+    };
+    img.src = objectUrl;
+}
+
+function syncChalkAttachButton() {
+    if (!btnChalkAttach) return;
+    btnChalkAttach.classList.toggle('active', isChalkboardAttachmentEnabled);
+    btnChalkAttach.setAttribute('aria-pressed', isChalkboardAttachmentEnabled ? 'true' : 'false');
+    btnChalkAttach.title = isChalkboardAttachmentEnabled ? '已啟用 Chalkboard 附圖' : '附上 Chalkboard';
+}
+
+function toggleChalkboardAttachment() {
+    isChalkboardAttachmentEnabled = !isChalkboardAttachmentEnabled;
+    localStorage.setItem('chat_attach_chalkboard', String(isChalkboardAttachmentEnabled));
+    syncChalkAttachButton();
+}
+
+function isVisionCapableModelName(modelName) {
+    return /(vision|vlm|multimodal|nano-vl|paligemma|kosmos|fuyu|neva|vila|deplot|-vl\b)/i.test(String(modelName || ''));
+}
+
+function syncVisionModelInputs(useDropdown, visionModel = '', models = []) {
+    if (!settingVisionModelName || !settingVisionModelSelect) return;
+
+    if (useDropdown) {
+        settingVisionModelName.style.display = 'none';
+        settingVisionModelSelect.style.display = 'block';
+        const visionModels = models.filter(model => isVisionCapableModelName(model.name));
+        const options = ['<option value="">自動挑選 Vision 模型</option>']
+            .concat(visionModels.map(model => `<option value="${model.name}" ${model.name === visionModel ? 'selected' : ''}>${model.name}</option>`));
+        settingVisionModelSelect.innerHTML = options.join('');
+        if (visionModel && !visionModels.some(model => model.name === visionModel)) {
+            settingVisionModelSelect.innerHTML += `<option value="${visionModel}" selected>${visionModel}（目前設定）</option>`;
+        }
+        if (visionModelHelpText) {
+            visionModelHelpText.textContent = visionModels.length > 0
+                ? '這裡可指定處理 Chalkboard 與圖片理解的 vision 模型；留空則自動挑選。'
+                : '此 Provider 的模型清單裡目前沒有明確辨識出的 vision 模型；可留空自動挑選，或手動填入。';
+        }
+    } else {
+        settingVisionModelName.style.display = 'block';
+        settingVisionModelSelect.style.display = 'none';
+        settingVisionModelName.value = visionModel;
+        if (visionModelHelpText) {
+            visionModelHelpText.textContent = '用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。';
+        }
+    }
+}
+
 function setupChalkboard() {
     if (!chalkboardCanvas || !chalkboardSurface) return;
 
@@ -332,6 +562,7 @@ function setupChalkboard() {
                 commitPendingTextPlacement();
             }
             cancelPendingChalkPreview();
+            clearSelectionBox();
             const tool = btn.dataset.tool || 'chalk';
             if (tool === 'chalk') {
                 chalkboardState.tool = 'chalk';
@@ -371,6 +602,9 @@ function setupChalkboard() {
     chalkSaveButton?.addEventListener('click', saveChalkboardImage);
     chalkClearButton?.addEventListener('click', clearChalkboard);
     chalkUndoButton?.addEventListener('click', undoChalkAction);
+    chalkCopyButton?.addEventListener('click', () => copySelectionToClipboard(false));
+    chalkCutButton?.addEventListener('click', () => copySelectionToClipboard(true));
+    chalkPasteButton?.addEventListener('click', pasteClipboardImage);
 
     chalkboardCanvas.addEventListener('pointerdown', startChalkStroke);
     chalkboardCanvas.addEventListener('pointermove', drawChalkStroke);
@@ -381,20 +615,54 @@ function setupChalkboard() {
     chalkTextBox?.addEventListener('pointermove', moveTextBoxManipulation);
     chalkTextBox?.addEventListener('pointerup', endTextBoxManipulation);
     chalkTextBox?.addEventListener('pointercancel', endTextBoxManipulation);
+
+    document.addEventListener('keydown', (event) => {
+        if (activeTab !== 'chalkboard' || !chalkboardState.hasInteracted) return;
+        if (!(event.ctrlKey || event.metaKey)) return;
+        const target = event.target;
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) {
+            return;
+        }
+        const key = event.key.toLowerCase();
+        if (key === 'c' && chalkboardState.selectionRect) {
+            event.preventDefault();
+            copySelectionToClipboard(false);
+        } else if (key === 'x' && chalkboardState.selectionRect) {
+            event.preventDefault();
+            copySelectionToClipboard(true);
+        } else if (key === 'v') {
+            event.preventDefault();
+            pasteClipboardImage();
+        }
+    });
 }
 
 function syncChalkboardUI() {
+    const toolsLocked = !chalkboardState.hasInteracted;
+
     chalkModeButtons.forEach(btn => {
         const tool = btn.dataset.tool;
         const active = tool === 'chalk'
             ? chalkboardState.tool === 'chalk' && btn.dataset.color === chalkboardState.color
             : chalkboardState.tool === tool;
         btn.classList.toggle('active', active);
+        btn.disabled = toolsLocked;
     });
 
     chalkSizeButtons.forEach(btn => {
         btn.classList.toggle('active', Number(btn.dataset.size || 0) === chalkboardState.size);
+        btn.disabled = toolsLocked;
     });
+
+    chalkSaveButton && (chalkSaveButton.disabled = toolsLocked);
+    chalkClearButton && (chalkClearButton.disabled = toolsLocked);
+    chalkUndoButton && (chalkUndoButton.disabled = toolsLocked);
+    chalkCopyButton && (chalkCopyButton.disabled = toolsLocked || !chalkboardState.selectionRect);
+    chalkCutButton && (chalkCutButton.disabled = toolsLocked || !chalkboardState.selectionRect);
+    chalkPasteButton && (chalkPasteButton.disabled = toolsLocked);
+    chalkUploadButton && (chalkUploadButton.disabled = toolsLocked);
+
+    syncSelectionBox();
     updateChalkboardCursor();
 }
 
@@ -484,6 +752,21 @@ function startChalkStroke(event) {
         commitPendingTextPlacement();
     }
 
+    if (tool !== 'select' && chalkboardState.selectionRect) {
+        clearSelectionBox();
+        syncChalkboardUI();
+    }
+
+    if (tool === 'select') {
+        chalkboardState.drawing = true;
+        chalkboardState.dragStart = point;
+        chalkboardState.hoverPoint = point;
+        chalkboardState.selectionRect = getNormalizedRect(point, point);
+        syncSelectionBox();
+        chalkboardCanvas.setPointerCapture?.(event.pointerId);
+        return;
+    }
+
     if (tool === 'chalk' || tool === 'eraser') {
         pushChalkHistory();
         chalkboardState.drawing = true;
@@ -565,6 +848,13 @@ function drawChalkStroke(event) {
         updateChalkboardCursor();
     }
 
+    if (tool === 'select') {
+        if (!chalkboardState.drawing || !chalkboardState.dragStart) return;
+        chalkboardState.selectionRect = getNormalizedRect(chalkboardState.dragStart, point);
+        syncSelectionBox();
+        return;
+    }
+
     if ((tool === 'line' || tool === 'rect' || tool === 'circle') && chalkboardState.dragStart) {
         previewChalkObject(point);
         return;
@@ -637,6 +927,11 @@ function endChalkStroke(event) {
     if (!chalkboardState.drawing) return;
     const eventPoint = event ? getChalkPoint(event) : chalkboardState.lastPoint;
     const point = chalkboardState.hoverPoint || chalkboardState.dragPresetEnd || eventPoint;
+    const completedTool = chalkboardState.tool;
+    if (completedTool === 'select' && chalkboardState.dragStart) {
+        chalkboardState.selectionRect = getNormalizedRect(chalkboardState.dragStart, point);
+        syncChalkboardUI();
+    }
     if (chalkboardState.tool === 'image' && chalkboardState.dragStart) {
         commitChalkObject(point);
     }
@@ -648,6 +943,10 @@ function endChalkStroke(event) {
         chalkboardState.hoverPoint = null;
         chalkboardState.dragPresetEnd = null;
     }
+    if (chalkboardState.tool === 'select') {
+        chalkboardState.dragStart = null;
+        chalkboardState.hoverPoint = null;
+    }
     if (chalkboardState.tool === 'text') {
         chalkboardState.textManipulation = null;
         syncPendingTextBox();
@@ -655,6 +954,9 @@ function endChalkStroke(event) {
     hidePlacementGuide();
     if (event?.pointerId !== undefined) {
         chalkboardCanvas.releasePointerCapture?.(event.pointerId);
+    }
+    if (completedTool === 'chalk' || completedTool === 'eraser') {
+        markChalkboardUserContent(true);
     }
 }
 
@@ -768,6 +1070,7 @@ function undoChalkAction() {
     cancelPendingChalkPreview(false);
     hidePlacementGuide();
     hidePendingTextBox();
+    clearSelectionBox();
     chalkboardState.pendingText = null;
     chalkboardState.pendingTextRect = null;
     chalkboardState.pendingTextSnapshot = null;
@@ -779,6 +1082,7 @@ function undoChalkAction() {
 
     clearChalkboardSurface();
     chalkboardState.ctx.drawImage(snapshot, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+    markChalkboardUserContent(chalkboardState.history.length > 0);
 }
 
 function clearChalkboard() {
@@ -788,12 +1092,14 @@ function clearChalkboard() {
     pushChalkHistory();
     cancelPendingChalkPreview(false);
     hidePendingTextBox();
+    clearSelectionBox();
     chalkboardState.pendingText = null;
     chalkboardState.pendingTextRect = null;
     chalkboardState.pendingTextSnapshot = null;
     chalkboardState.pendingTextPreviewUrl = null;
     chalkboardState.textManipulation = null;
     chalkboardState.ctx.clearRect(0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+    markChalkboardUserContent(false);
 }
 
 function saveChalkboardImage() {
@@ -834,6 +1140,7 @@ function activateChalkboard() {
     chalkboardState.history = [];
     clearChalkboardSurface();
     drawChalkboardHint();
+    syncChalkboardUI();
     return true;
 }
 
@@ -903,6 +1210,7 @@ function commitChalkObject(point) {
     pushChalkHistory(chalkboardState.dragSnapshot);
     restoreCanvasSnapshot(chalkboardState.dragSnapshot);
     drawChalkObject(chalkboardState.dragStart, point, false);
+    markChalkboardUserContent(true);
 }
 
 function drawChalkObject(start, end, preview) {
@@ -982,6 +1290,7 @@ function drawChalkboardWelcome() {
     if (!ctx) return;
 
     chalkboardState.history = [];
+    markChalkboardUserContent(false);
     clearChalkboardSurface();
 
     const padX = 34;
@@ -1026,6 +1335,7 @@ function drawChalkboardWelcome() {
 function drawChalkboardHint() {
     if (chalkboardState.hintDrawn) return;
     chalkboardState.hintDrawn = true;
+    markChalkboardUserContent(false);
     drawChalkText('用粉筆直接畫', 34, 62, {
         font: '700 30px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
         color: '#f4efe2',
@@ -1357,6 +1667,7 @@ function commitPendingTextPlacement() {
     restoreCanvasSnapshot(snapshot);
     const rect = chalkboardState.pendingTextRect;
     drawPlacedText(rect.left, rect.top, rect.width, rect.height, false);
+    markChalkboardUserContent(true);
     chalkboardState.pendingText = null;
     chalkboardState.pendingTextRect = null;
     chalkboardState.pendingTextSnapshot = null;
@@ -1398,6 +1709,10 @@ function hidePlacementGuide() {
 
 function updateChalkboardCursor() {
     if (!chalkboardCanvas) return;
+    if (chalkboardState.tool === 'select') {
+        chalkboardCanvas.style.cursor = 'crosshair';
+        return;
+    }
     if (chalkboardState.tool === 'image' && chalkboardState.pendingImage) {
         chalkboardCanvas.style.cursor = 'copy';
         return;
@@ -1688,7 +2003,7 @@ async function checkLLMStatus() {
             // Case 3: 全都好了 — 顯示初始訊息和徽章
             if (!window._llmWelcomed) {
                 // 顯示初始訊息
-                appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以用口語直接告訴我你需要安裝什麼軟體或是調整系統設定喔！');
+                appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以輸入文字、用嘴巴說，或是畫圖，來告訴我你需要安裝什麼軟體，或是調整系統設定喔！');
                 const versionStr = data.version ? ` (v${data.version})` : '';
                 appendChatBubble('ai', `🧠 AI 引擎就緒！${data.provider || 'Ollama'}${versionStr} 模型 ${data.modelName || '預設'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
                 addUILog(`🧠 AI 引擎就緒${versionStr}：${data.modelName || '已載入'}`, 'success');
@@ -2162,10 +2477,11 @@ async function sendChat() {
 
     const msg = chatInput.value.trim();
     if (!msg) return;
+    const chalkboardAttachment = isChalkboardAttachmentEnabled ? buildChalkboardChatAttachment() : null;
     chatInput.value = '';
     chatInput.style.height = '';
 
-    appendChatBubble('user', msg);
+    appendChatBubble('user', chalkboardAttachment ? `${msg}\n\n[已附上 Chalkboard 草圖供 AI 參考]` : msg);
     const thinkId = appendThinking();
 
     // 初始化中斷控制
@@ -2182,7 +2498,7 @@ async function sendChat() {
     try {
         const data = await api('/api/chat', { 
             method: 'POST', 
-            body: { message: msg },
+            body: { message: msg, chalkboard: chalkboardAttachment },
             signal: chatAbortController.signal
         });
 
@@ -2751,6 +3067,8 @@ function setupEventListeners() {
 
     // Theme
     btnTheme?.addEventListener('click', cycleTheme);
+    btnChalkAttach?.addEventListener('click', toggleChalkboardAttachment);
+    syncChalkAttachButton();
 
     // AI Provider 點擊打開設定
     llmStatus?.addEventListener('click', openProviderSettings);
@@ -2967,10 +3285,11 @@ async function openProviderSettings() {
         settingClientSecret.value = data.authConfig?.clientSecret || '';
         settingScope.value = data.authConfig?.scope || '';
         settingAudience.value = data.authConfig?.audience || '';
+        if (settingVisionModelName) settingVisionModelName.value = data.visionModel || '';
         syncProviderAuthUI(settingProvider.value);
         
         // 切換 UI 狀態
-        await onProviderChange(data.provider, data.model);
+        await onProviderChange(data.provider, data.model, data.visionModel || '');
         
         providerSettingsOverlay.classList.add('visible');
     }
@@ -2979,7 +3298,7 @@ async function openProviderSettings() {
 /**
  * 當 Provider 改變時處理 Model 名稱欄位
  */
-async function onProviderChange(provider, currentModel = '') {
+async function onProviderChange(provider, currentModel = '', currentVisionModel = '') {
     syncProviderAuthUI(provider);
     // 判斷哪些 Provider 支援模型下拉清單
     const supportList = ['Ollama', 'Ollama Cloud', 'NVIDIA NIM', 'Mistral', 'Together AI', 'Groq', 'OpenAI', 'DeepSeek'];
@@ -2987,6 +3306,10 @@ async function onProviderChange(provider, currentModel = '') {
     // 如果沒帶 currentModel，嘗試抓取目前下拉選單的值（保留選取項）
     if (!currentModel && settingModelSelect.value) {
         currentModel = settingModelSelect.value;
+    }
+    if (!currentVisionModel) {
+        const isVisionDropdown = settingVisionModelSelect?.style.display === 'block';
+        currentVisionModel = isVisionDropdown ? (settingVisionModelSelect?.value || '') : (settingVisionModelName?.value.trim() || '');
     }
 
     const baseUrl = settingBaseUrl.value.trim();
@@ -3010,12 +3333,14 @@ async function onProviderChange(provider, currentModel = '') {
                 settingModelSelect.innerHTML = data.models.map(m => 
                     `<option value="${m.name}" ${m.name === currentModel ? 'selected' : ''}>${m.name}</option>`
                 ).join('');
+                syncVisionModelInputs(true, currentVisionModel, data.models);
             } else {
                 settingModelSelect.innerHTML = '<option value="">(無可用模型，請手動確認)</option>';
                 // 若無清單，切換回手動輸入以防萬一
                 settingModelName.style.display = 'block';
                 settingModelSelect.style.display = 'none';
                 settingModelName.value = currentModel;
+                syncVisionModelInputs(false, currentVisionModel);
                 if (btnRefreshModels) btnRefreshModels.style.display = 'none';
             }
         } catch (e) {
@@ -3023,12 +3348,14 @@ async function onProviderChange(provider, currentModel = '') {
             settingModelName.style.display = 'block';
             settingModelSelect.style.display = 'none';
             settingModelName.value = currentModel;
+            syncVisionModelInputs(false, currentVisionModel);
             if (btnRefreshModels) btnRefreshModels.style.display = 'none';
         }
     } else {
         settingModelName.style.display = 'block';
         settingModelSelect.style.display = 'none';
         settingModelName.value = currentModel;
+        syncVisionModelInputs(false, currentVisionModel);
         if (btnRefreshModels) btnRefreshModels.style.display = 'none';
     }
 }
@@ -3042,6 +3369,8 @@ async function saveProviderSettings() {
     const authConfig = getAuthPayload();
     const isDropdown = (settingModelSelect.style.display === 'block');
     const model = isDropdown ? settingModelSelect.value : settingModelName.value.trim();
+    const isVisionDropdown = (settingVisionModelSelect?.style.display === 'block');
+    const visionModel = isVisionDropdown ? settingVisionModelSelect.value : settingVisionModelName.value.trim();
 
     if (!baseUrl) return alert('請輸入 API Base URL');
     if (authConfig.type === 'oauth_client_credentials' && (!authConfig.tokenUrl || !authConfig.clientId || !authConfig.clientSecret)) {
@@ -3050,7 +3379,7 @@ async function saveProviderSettings() {
 
     const data = await api('/api/llm/config', {
         method: 'POST',
-        body: { provider, baseUrl, authConfig, model }
+        body: { provider, baseUrl, authConfig, model, visionModel }
     });
 
     if (data.success) {

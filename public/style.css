@@ -883,20 +883,37 @@ ol {
   transform: scale(1);
 }
 
+.chalk-selection-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dashed rgba(255, 238, 168, 0.95);
+  border-radius: 8px;
+  background: rgba(255, 238, 168, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 238, 168, 0.18);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.chalk-selection-box.visible {
+  opacity: 1;
+}
+
 .chalk-text-box {
   position: absolute;
+  display: none;
   box-sizing: border-box;
   border: 2px solid rgba(244, 239, 226, 0.94);
   border-radius: 8px;
   background: rgba(244, 239, 226, 0.05);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  pointer-events: auto;
-  opacity: 0;
+  pointer-events: none;
   overflow: visible;
+  cursor: move;
 }
 
 .chalk-text-box.visible {
-  opacity: 1;
+  display: block;
+  pointer-events: auto;
 }
 
 .chalk-text-box-content {
@@ -933,9 +950,9 @@ ol {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px 18px;
-  min-height: 72px;
+  gap: 8px;
+  padding: 10px 14px;
+  min-height: 64px;
   border-radius: 0 0 18px 18px;
   background:
     linear-gradient(180deg, #7b5635 0%, #5a3d25 100%);
@@ -1009,14 +1026,14 @@ ol {
 .chalk-size-group {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 2px 0 6px;
+  gap: 6px;
+  padding: 0 2px 0 4px;
 }
 
 .shape-tool-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .shape-tool {
@@ -1034,6 +1051,16 @@ ol {
 .shape-tool.active {
   background: rgba(255, 244, 225, 0.24);
   box-shadow: inset 0 0 0 1px rgba(255, 244, 225, 0.22);
+}
+
+.shape-tool:disabled,
+.chalk-size:disabled,
+.tray-action:disabled,
+.chalk-tool:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  filter: saturate(0.55);
+  box-shadow: none;
 }
 
 .chalk-size {
@@ -1054,7 +1081,7 @@ ol {
 
 .chalk-tray-spacer {
   flex: 1;
-  min-width: 16px;
+  min-width: 8px;
 }
 
 .tray-action {
@@ -1084,6 +1111,14 @@ ol {
 
 .tray-action:hover {
   background: rgba(255, 248, 235, 0.22);
+}
+
+.shape-tool:disabled:hover,
+.chalk-size:disabled:hover,
+.tray-action:disabled:hover,
+.chalk-tool:disabled:hover {
+  background: rgba(255, 248, 235, 0.12);
+  transform: none;
 }
 
 .tray-action.danger {
@@ -1885,6 +1920,12 @@ ol {
 .input-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
+}
+
+.input-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  color: #cfd4ff;
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.28);
 }
 
 .input-btn.recording {

@@ -11,6 +11,7 @@ let currentBaseUrl = 'http://127.0.0.1:11434/v1';
 let currentApiKey = '';
 let currentAuthType = 'none';
 let currentAuthConfig = { type: 'none' };
+let currentVisionModel = '';
 let cachedAccessToken = null;
 let cachedAccessTokenExpiresAt = 0;
 
@@ -76,6 +77,7 @@ function loadConfig() {
             if (data.currentApiKey) currentApiKey = data.currentApiKey;
             if (data.currentAuthType) currentAuthType = data.currentAuthType;
             if (data.currentAuthConfig) currentAuthConfig = data.currentAuthConfig;
+            if (data.currentVisionModel !== undefined) currentVisionModel = data.currentVisionModel || '';
             if (!data.currentAuthType && data.currentApiKey) {
                 currentAuthType = 'api_key';
                 currentAuthConfig = { type: 'api_key', apiKey: data.currentApiKey };
@@ -100,7 +102,8 @@ function saveConfig() {
             currentBaseUrl,
             currentApiKey,
             currentAuthType,
-            currentAuthConfig
+            currentAuthConfig,
+            currentVisionModel
         };
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
     } catch (e) {
@@ -135,13 +138,14 @@ function normalizeAuthConfig(authConfig = {}, legacyApiKey = '') {
     return { type: 'none' };
 }
 
-function updateProviderSettings(provider, baseUrl, apiKey, model, authConfig = null) {
+function updateProviderSettings(provider, baseUrl, apiKey, model, authConfig = null, visionModel = '') {
     currentProvider = provider;
     currentBaseUrl = baseUrl;
     currentAuthConfig = normalizeAuthConfig(authConfig || {}, apiKey);
     currentAuthType = currentAuthConfig.type;
     currentApiKey = currentAuthType === 'api_key' ? (currentAuthConfig.apiKey || '') : '';
     if (model) currentModel = model;
+    currentVisionModel = visionModel || '';
     saveConfig();
     invalidateCache();
 }
@@ -163,6 +167,7 @@ const BASE_SYSTEM_PROMPT = `你是一名住在 Windows 電腦裡的「AI 智慧�
 1. **簡潔精準**：說話直擊重點，避免囉嗦。先給結論，再簡要說明原因。
 2. **專家直覺**：深度理解使用者意圖。若使用者發現問題，應根據「可用 SOP 列表」主動推薦解決方案。
 3. **安全第一**：涉及任何系統變動、執行任務，必須先簡述風險並「徵得使用者同意」。
+4. **語言一致**：預設一律使用「繁體中文（zh-TW）」回覆。即使使用者上傳圖片、草圖、截圖或混用英文關鍵字，只要使用者沒有明確要求其他語言，都要用繁體中文輸出。只有當使用者明確指定英文、日文或其他語言時，才切換回覆語言。
 
 - 若需操作系統，請在回覆末端附加協議標籤 [ACTION:...]。
 - **混合模式守則**：
@@ -187,6 +192,98 @@ function buildFullSystemPrompt() {
     }
 
     return fullPrompt;
+}
+
+function stripDataUrlPrefix(dataUrl = '') {
+    const match = String(dataUrl).match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+    return {
+        mimeType: match[1],
+        base64: match[2]
+    };
+}
+
+function buildOpenAIMessageContent(text, attachment) {
+    if (!attachment?.dataUrl) {
+        return text;
+    }
+
+    return [
+        { type: 'text', text },
+        {
+            type: 'image_url',
+            image_url: {
+                url: attachment.dataUrl,
+                detail: 'high'
+            }
+        }
+    ];
+}
+
+function buildAnthropicMessageContent(text, attachment) {
+    if (!attachment?.dataUrl) {
+        return text;
+    }
+
+    const parsed = stripDataUrlPrefix(attachment.dataUrl);
+    if (!parsed) {
+        return text;
+    }
+
+    return [
+        { type: 'text', text },
+        {
+            type: 'image',
+            source: {
+                type: 'base64',
+                media_type: attachment.mimeType || parsed.mimeType || 'image/jpeg',
+                data: parsed.base64
+            }
+        }
+    ];
+}
+
+function buildOllamaMessage(role, text, attachment) {
+    const message = { role, content: text };
+    if (role === 'user' && attachment?.dataUrl) {
+        const parsed = stripDataUrlPrefix(attachment.dataUrl);
+        if (parsed?.base64) {
+            message.images = [parsed.base64];
+        }
+    }
+    return message;
+}
+
+function modelSupportsVision(modelName = '') {
+    const normalized = String(modelName || '').toLowerCase();
+    if (!normalized) return false;
+    return /(vision|vlm|multimodal|nano-vl|paligemma|kosmos|fuyu|neva|vila|deplot|-vl\b)/i.test(normalized);
+}
+
+async function getVisionCapableModel(options = {}) {
+    const models = await listModels({ ...options, forceRefresh: options.forceRefresh ?? false });
+    const names = Array.isArray(models) ? models.map(model => model?.name).filter(Boolean) : [];
+    if (!names.length) return null;
+
+    const preferredModels = [
+        'meta/llama-3.2-90b-vision-instruct',
+        'meta/llama-3.2-11b-vision-instruct',
+        'microsoft/phi-4-multimodal-instruct',
+        'microsoft/phi-3.5-vision-instruct',
+        'microsoft/phi-3-vision-128k-instruct',
+        'google/paligemma',
+        'adept/fuyu-8b',
+        'nvidia/nemotron-nano-12b-v2-vl',
+        'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
+        'nvidia/neva-22b',
+        'nvidia/vila',
+        'microsoft/kosmos-2'
+    ];
+
+    const exactMatch = preferredModels.find(model => names.includes(model));
+    if (exactMatch) return exactMatch;
+
+    return names.find(modelSupportsVision) || null;
 }
 
 let _cachedStatus = null;
@@ -567,23 +664,34 @@ function ensureOllamaRunning() {
  * @param {Array} history - 過去的對話歷史 [{role, content}, ...]
  * @returns {Promise<string>} LLM 回應文字
  */
-async function chatWithLLM(userMessage, history = []) {
-    const meta = PROVIDER_ENDPOINTS[currentProvider] || { type: 'openai' };
+async function chatWithLLM(userMessage, history = [], options = {}) {
+    const provider = options.providerOverride || currentProvider;
+    const modelName = options.modelOverride || currentModel;
+    const baseUrl = options.baseUrlOverride || currentBaseUrl;
+    const authConfig = options.authConfigOverride || currentAuthConfig;
+    const meta = PROVIDER_ENDPOINTS[provider] || { type: 'openai' };
+    const chalkboardAttachment = options.chalkboardAttachment || null;
     if (meta.type === 'anthropic') {
         const headers = {
             'Content-Type': 'application/json',
-            ...(await getRequestHeaders(currentProvider))
+            ...(await getRequestHeaders(provider, authConfig))
         };
-        const apiRoot = currentBaseUrl.replace(/\/v1\/?$/, '');
+        const apiRoot = baseUrl.replace(/\/v1\/?$/, '');
         const chatUrl = `${apiRoot}${meta.chat || '/messages'}`;
         const body = {
-            model: currentModel,
+            model: modelName,
             max_tokens: 1024,
             system: buildFullSystemPrompt(),
-            messages: [...history, { role: 'user', content: userMessage }].map(m => ({
-                role: m.role === 'assistant' ? 'assistant' : 'user',
-                content: m.content
-            }))
+            messages: [
+                ...history.map(m => ({
+                    role: m.role === 'assistant' ? 'assistant' : 'user',
+                    content: typeof m.content === 'string' ? m.content : String(m.content || '')
+                })),
+                {
+                    role: 'user',
+                    content: buildAnthropicMessageContent(userMessage, chalkboardAttachment)
+                }
+            ]
         };
         const res = await fetch(chatUrl, {
             method: 'POST',
@@ -604,18 +712,28 @@ async function chatWithLLM(userMessage, history = []) {
         }
         return content;
     }
-    const messages = [
-        { role: 'system', content: buildFullSystemPrompt() },
-        ...history,
-        { role: 'user', content: userMessage },
-    ];
+    const historyMessages = history.map(m => ({
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : String(m.content || '')
+    }));
+
+    const messages = meta.type === 'ollama'
+        ? [
+            ...historyMessages.map(m => buildOllamaMessage(m.role, m.content)),
+            buildOllamaMessage('user', userMessage, chalkboardAttachment),
+        ]
+        : [
+            { role: 'system', content: buildFullSystemPrompt() },
+            ...historyMessages,
+            { role: 'user', content: buildOpenAIMessageContent(userMessage, chalkboardAttachment) },
+        ];
 
     const headers = {
         'Content-Type': 'application/json',
-        ...(await getRequestHeaders(currentProvider))
+        ...(await getRequestHeaders(provider, authConfig))
     };
 
-    const apiRoot = currentBaseUrl.replace(/\/v1\/?$/, '');
+    const apiRoot = baseUrl.replace(/\/v1\/?$/, '');
     let chatUrl = '';
 
     if (meta.type === 'ollama') {
@@ -623,16 +741,22 @@ async function chatWithLLM(userMessage, history = []) {
         chatUrl = `${apiRoot}/api/chat`;
     } else {
         // 使用 OpenAI 相容路徑
-        chatUrl = currentBaseUrl.endsWith('/') ? `${currentBaseUrl}chat/completions` : `${currentBaseUrl}/chat/completions`;
+        chatUrl = baseUrl.endsWith('/') ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`;
     }
     
-    console.log(`[LLM] 傳送對話請求：Provider=${currentProvider}, URL=${chatUrl}, Model=${currentModel}`);
+    console.log(`[LLM] 傳送對話請求：Provider=${provider}, URL=${chatUrl}, Model=${modelName}`);
 
-    const body = {
-        model: currentModel,
-        messages: messages,
-        stream: false,
-    };
+    const body = meta.type === 'ollama'
+        ? {
+            model: modelName,
+            messages,
+            stream: false,
+        }
+        : {
+            model: modelName,
+            messages,
+            stream: false,
+        };
 
     // 移除硬編碼的 options 與 tokens 限制，尊重模型自訂設定與完整輸出能力
     body.temperature = 0.7;
@@ -762,11 +886,14 @@ async function testProviderConnection({ provider, baseUrl, authConfig, model }) 
 module.exports = {
     checkOllamaStatus,
     chatWithLLM,
+    modelSupportsVision,
+    getVisionCapableModel,
     invalidateCache,
     ensureOllamaRunning,
     listModels,
     setCurrentModel,
     getCurrentModel: () => currentModel,
+    getCurrentVisionModel: () => currentVisionModel,
     updateProviderSettings,
     getCurrentProvider: () => currentProvider,
     getCurrentBaseUrl: () => currentBaseUrl,

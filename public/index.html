@@ -201,6 +201,7 @@
                     </div>
                     <canvas class="chalkboard-canvas" id="chalkboardCanvas"></canvas>
                     <div class="chalk-placement-guide" id="chalkPlacementGuide" aria-hidden="true"></div>
+                    <div class="chalk-selection-box" id="chalkSelectionBox" aria-hidden="true"></div>
                     <div class="chalk-text-box" id="chalkTextBox" aria-hidden="true">
                       <img class="chalk-text-box-content" id="chalkTextBoxContent" alt="">
                       <div class="chalk-text-box-handle" data-handle="nw"></div>
@@ -237,12 +238,37 @@
                     </div>
                     <div class="chalk-tray-spacer"></div>
                     <div class="shape-tool-group" id="shapeToolGroup">
+                      <button class="shape-tool chalk-mode" id="chalkSelectButton" type="button" data-tool="select" title="選取">▭</button>
                       <button class="shape-tool chalk-mode" type="button" data-tool="line" title="直線">/</button>
                       <button class="shape-tool chalk-mode" type="button" data-tool="rect" title="矩形">□</button>
                       <button class="shape-tool chalk-mode" type="button" data-tool="circle" title="圓形">○</button>
                       <button class="shape-tool chalk-mode" id="chalkTextButton" type="button" data-tool="text" title="文字">T</button>
                     </div>
                     <div class="chalk-tray-spacer"></div>
+                    <button class="tray-action tray-icon" id="chalkCopyButton" type="button" title="複製" aria-label="複製">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+                        <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                        <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </button>
+                    <button class="tray-action tray-icon" id="chalkCutButton" type="button" title="剪下" aria-label="剪下">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+                        <circle cx="6" cy="18" r="2.5"></circle>
+                        <circle cx="18" cy="18" r="2.5"></circle>
+                        <path d="M8 16l8-8"></path>
+                        <path d="M14.5 7.5L20 13"></path>
+                        <path d="M4 13l5.5-5.5"></path>
+                      </svg>
+                    </button>
+                    <button class="tray-action tray-icon" id="chalkPasteButton" type="button" title="貼上" aria-label="貼上">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+                        <path d="M9 4h6"></path>
+                        <path d="M10 2h4a1 1 0 0 1 1 1v2H9V3a1 1 0 0 1 1-1z"></path>
+                        <path d="M8 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+                        <path d="M12 10v6"></path>
+                        <path d="M9.5 13.5 12 16l2.5-2.5"></path>
+                      </svg>
+                    </button>
                     <button class="tray-action" id="chalkUploadButton" type="button">上傳圖片</button>
                     <button class="tray-action" id="chalkSaveButton" type="button">存成圖片</button>
                     <input type="file" id="chalkImageInput" accept="image/*" style="display:none">
@@ -363,6 +389,11 @@
                 <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd" />
               </svg>
             </button>
+            <button class="input-btn" id="btnChalkAttach" title="附上 Chalkboard" aria-pressed="false">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+                <path d="M5 3a2 2 0 00-2 2v7a2 2 0 002 2h3l3.4 3.06A1 1 0 0013 16.3V14h2a2 2 0 002-2V5a2 2 0 00-2-2H5zm1 3h8a1 1 0 110 2H6a1 1 0 010-2zm0 3h5a1 1 0 110 2H6a1 1 0 110-2z"/>
+              </svg>
+            </button>
             <button class="input-btn" id="btnClearChat" title="清除對話">
               <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
                 <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
@@ -475,6 +506,14 @@
             <input type="text" id="settingModelName" class="form-input" placeholder="例如: qwen3.5:4b">
             <select id="settingModelSelect" class="form-input" style="display:none;"></select>
             <div class="form-help" id="modelHelpText">雲端模型通常需要手動填入 model 名稱，本地引擎可直接從清單選擇。</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Vision 多模態模型</label>
+          <div id="visionModelContainer">
+            <input type="text" id="settingVisionModelName" class="form-input" placeholder="留空則自動挑選可看圖模型">
+            <select id="settingVisionModelSelect" class="form-input" style="display:none;"></select>
+            <div class="form-help" id="visionModelHelpText">用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。</div>
           </div>
         </div>
         <div class="provider-actions">

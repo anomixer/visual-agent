@@ -28,7 +28,7 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, '../public')));
 
 const os = require('os');
@@ -112,6 +112,45 @@ let todoList = [];
 let logs = [];
 let runningSOP = null;
 let chatHistory = []; // 儲存最近 6 則對話：[{role: 'user', content: '...'}, {role: 'assistant', content: '...'}]
+
+function buildChatHistoryForRequest(history, hasChalkboardAttachment) {
+    if (!hasChalkboardAttachment || !Array.isArray(history) || history.length === 0) {
+        return Array.isArray(history) ? history : [];
+    }
+
+    const filtered = [];
+    let skipAssistantReplyForImageTurn = false;
+
+    history.forEach(entry => {
+        const content = String(entry?.content || '');
+        if (entry?.role === 'user' && content.includes('[使用者當時附上了 Chalkboard 草圖]')) {
+            skipAssistantReplyForImageTurn = true;
+            return;
+        }
+
+        if (skipAssistantReplyForImageTurn && entry?.role === 'assistant') {
+            skipAssistantReplyForImageTurn = false;
+            return;
+        }
+
+        filtered.push(entry);
+    });
+
+    return filtered;
+}
+
+function normalizeChalkboardAttachment(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const dataUrl = typeof raw.dataUrl === 'string' ? raw.dataUrl.trim() : '';
+    const mimeType = typeof raw.mimeType === 'string' ? raw.mimeType.trim() : 'image/jpeg';
+    if (!dataUrl.startsWith('data:image/')) return null;
+    return {
+        dataUrl,
+        mimeType,
+        width: Number(raw.width) || 0,
+        height: Number(raw.height) || 0
+    };
+}
 
 /**
  * 獲取系統健康狀態 (CPU, RAM, Disk)
@@ -501,6 +540,7 @@ app.get('/api/task/:taskId/status', (req, res) => {
 // POST /api/chat — 處理對話輸入（LLM 優先，fallback 到關鍵字比對）
 app.post('/api/chat', async (req, res) => {
     const { message } = req.body;
+    const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
     if (!message) return res.json({ success: false, error: '請輸入訊息' });
 
     const sops = loadAllSOPs(SOPS_DIR);
@@ -548,6 +588,7 @@ app.post('/api/chat', async (req, res) => {
     // ── 情境 1：AI 引擎就緒 (驅動模式) ───────────────────────
     if (llmStatus.available && llmStatus.modelReady) {
         try {
+            const requestHistory = buildChatHistoryForRequest(chatHistory, Boolean(chalkboardAttachment));
             const contextNote = `
 [[當前系統環境]]
 1. 硬體簡報: ${hardwareSummary}
@@ -556,10 +597,38 @@ ${sopCatalog || '(無)'}
 3. 待辦任務清單:
 ${taskContext || '(空)'}
 4. 當前使用的 AI 模型: ${llm.getCurrentModel()}
+5. Chalkboard 草圖: ${chalkboardAttachment ? `已附上 ${chalkboardAttachment.width || '?'}x${chalkboardAttachment.height || '?'} 黑板快照，請把它視為使用者的視覺需求草稿，優先結合圖片內容理解意圖。若本輪有附圖，這張圖就是「目前正在談的圖」；除非使用者明確要求比較前後兩張圖，否則請忽略先前任何圖片內容，只回答這一張。` : '本次未附上黑板快照。'}
 `;
 
             // 2. 呼叫 LLM (附帶歷史紀錄)
-            let llmReply = await llm.chatWithLLM(message + "\n\n" + contextNote, chatHistory);
+            let llmReply;
+            const chatOptions = {};
+            if (chalkboardAttachment) {
+                chatOptions.chalkboardAttachment = chalkboardAttachment;
+                const preferredVisionModel = llm.getCurrentVisionModel();
+                if (preferredVisionModel) {
+                    chatOptions.modelOverride = preferredVisionModel;
+                } else {
+                    const currentModel = llm.getCurrentModel();
+                    if (!llm.modelSupportsVision(currentModel)) {
+                        const visionModel = await llm.getVisionCapableModel();
+                        if (visionModel) {
+                            chatOptions.modelOverride = visionModel;
+                        }
+                    }
+                }
+            }
+            try {
+                llmReply = await llm.chatWithLLM(message + "\n\n" + contextNote, requestHistory, chatOptions);
+            } catch (visionErr) {
+                if (!chalkboardAttachment) throw visionErr;
+
+                console.warn('[LLM] 黑板影像理解失敗，改以純文字重試:', visionErr.message);
+                llmReply = await llm.chatWithLLM(
+                    `${message}\n\n${contextNote}\n\n[系統補充] 使用者原本有附上 Chalkboard 草圖，但目前這個模型或 Provider 沒有成功吃下圖片。請先明確告知圖片理解失敗，再根據文字需求提供最接近的協助。`,
+                    requestHistory
+                );
+            }
 
             // 3. 解析與安全過濾
             const actionRegex = /\[ACTION:(.*?)\]/g;
@@ -622,9 +691,9 @@ ${taskContext || '(空)'}
             if (hasActionTaken) saveTasks();
 
             // 4. 更新對話紀錄
-            chatHistory.push({ role: 'user', content: message });
+            chatHistory.push({ role: 'user', content: chalkboardAttachment ? `${message}\n\n[使用者當時附上了 Chalkboard 草圖]` : message });
             const cleanReply = llmReply.replace(/\[ACTION:.*?\]/g, '').replace(/\[SUGGEST:.*?\]/g, '').trim();
-            chatHistory.push({ role: 'assistant', content: cleanReply });
+            chatHistory.push({ role: 'assistant', content: chalkboardAttachment ? `${cleanReply}\n\n[本回覆曾參考當輪 Chalkboard 草圖]` : cleanReply });
             if (chatHistory.length > 6) chatHistory = chatHistory.slice(-6);
 
             const suggestMatch = llmReply.match(/\[SUGGEST:(.*?)\]/);
@@ -764,16 +833,17 @@ app.get('/api/llm/config', (req, res) => {
         apiKey: llm.getCurrentApiKey(),
         authType: llm.getCurrentAuthType(),
         authConfig: llm.getCurrentAuthConfig(),
-        model: llm.getCurrentModel()
+        model: llm.getCurrentModel(),
+        visionModel: llm.getCurrentVisionModel()
     });
 });
 
 app.post('/api/llm/config', (req, res) => {
-    const { provider, baseUrl, apiKey, model, authConfig } = req.body;
+    const { provider, baseUrl, apiKey, model, authConfig, visionModel } = req.body;
     if (!provider || !baseUrl) {
         return res.status(400).json({ success: false, error: '缺少必要參數' });
     }
-    llm.updateProviderSettings(provider, baseUrl, apiKey, model, authConfig);
+    llm.updateProviderSettings(provider, baseUrl, apiKey, model, authConfig, visionModel);
     res.json({ success: true, message: '設定已儲存' });
 });
 
