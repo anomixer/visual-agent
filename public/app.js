@@ -64,6 +64,7 @@ const logEntries = $('#logEntries');
 const expEntries = $('#expEntries');
 const expSearchInput = $('#expSearchInput');
 const expSopFilterSelect = $('#expSopFilter');
+const btnExpsExport = $('#btnExpsExport');
 const statusVersion = $('#statusVersion');
 const chatMessages = $('#chatMessages');
 const chatInput = $('#chatInput');
@@ -2839,6 +2840,25 @@ async function loadExps() {
     }
 }
 
+function exportExps() {
+    if (!expsEntries || expsEntries.length === 0) {
+        addUILog('ℹ️ 目前沒有可匯出的 exps', 'info');
+        return;
+    }
+    const md = expsEntries.map(e => {
+        const ts = e.updatedAt ? new Date(e.updatedAt).toLocaleString('zh-TW', { hour12: false }) : '';
+        return `# ${e.title || e.fileName || '未命名'}\n> SOP: ${e.sopId || 'dynamic'} | ${ts}\n\n${e.content || ''}\n\n---`;
+    }).join('\n\n');
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aipc-exps-${new Date().toISOString().slice(0, 10)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addUILog(`✅ exps 已匯出 (${expsEntries.length} 筆)`, 'success');
+}
+
 function showExpDetail(entry) {
     modalTitle.textContent = entry.title || entry.fileName || '經驗詳情';
     const htmlContent = typeof marked !== 'undefined'
@@ -3181,6 +3201,7 @@ function setupEventListeners() {
     // Theme
     btnTheme?.addEventListener('click', cycleTheme);
     btnChalkAttach?.addEventListener('click', toggleChalkboardAttachment);
+    btnExpsExport?.addEventListener('click', exportExps);
     syncChalkAttachButton();
 
     // AI Provider 點擊打開設定

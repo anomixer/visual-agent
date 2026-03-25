@@ -1,6 +1,6 @@
-# AI PC Agent
+﻿# AI PC Agent
 
-> 本地優先、無命令列、具備感知能力的 Windows 系統管家  
+> æœ¬åœ°å„ªå…ˆã€ç„¡å‘½ä»¤åˆ—ã€å…·å‚™æ„ŸçŸ¥èƒ½åŠ›çš„ Windows ç³»çµ±ç®¡å®¶  
 > by [anomixer](https://github.com/anomixer)
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen)](https://nodejs.org/)
@@ -9,78 +9,78 @@
 
 ---
 
-## 這是什麼？
+## é€™æ˜¯ä»€éº¼ï¼Ÿ
 
-AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可以直接用中文描述需求，或從推薦清單點選項目，系統會替你建立任務、執行 SOP、驗證結果，並把完整過程顯示在 UI 與工作日誌中。
+AI PC Agent æ˜¯ä¸€å€‹è·‘åœ¨æœ¬æ©Ÿä¸Šçš„ Windows ç³»çµ±è‡ªå‹•åŒ–å·¥å…·ã€‚ä½ å¯ä»¥ç›´æŽ¥ç”¨ä¸­æ–‡æè¿°éœ€æ±‚ï¼Œæˆ–å¾žæŽ¨è–¦æ¸…å–®é»žé¸é …ç›®ï¼Œç³»çµ±æœƒæ›¿ä½ å»ºç«‹ä»»å‹™ã€åŸ·è¡Œ SOPã€é©—è­‰çµæžœï¼Œä¸¦æŠŠå®Œæ•´éŽç¨‹é¡¯ç¤ºåœ¨ UI èˆ‡å·¥ä½œæ—¥èªŒä¸­ã€‚
 
 ```text
-你說：「幫我移除 Copilot」
-它就：建立任務 -> 執行 SOP -> 修改系統設定 -> 驗證結果 -> 回報成功或失敗
+ä½ èªªï¼šã€Œå¹«æˆ‘ç§»é™¤ Copilotã€
+å®ƒå°±ï¼šå»ºç«‹ä»»å‹™ -> åŸ·è¡Œ SOP -> ä¿®æ”¹ç³»çµ±è¨­å®š -> é©—è­‰çµæžœ -> å›žå ±æˆåŠŸæˆ–å¤±æ•—
 ```
 
 ---
 
-## 功能一覽
+## åŠŸèƒ½ä¸€è¦½
 
-| 功能 | 說明 |
+| åŠŸèƒ½ | èªªæ˜Ž |
 |------|------|
-| 推薦清單 | 常用系統優化與安裝項目，支援搜尋、加入任務、立即執行 |
-| SOP 清單 | 左側可切換查看全部 SOP，支援依名稱、ID、分類搜尋與直接執行 |
-| 工作清單 | 顯示任務狀態、進度與結果，支援 JSON 匯出匯入 |
-| AI 對話 | 支援 Ollama、本機 OpenAI-compatible API 與雲端 Provider |
-| Provider 設定 | 可設定 Provider、Base URL、API Key、OAuth 2.0 與模型名稱 |
-| 安全互動 | 採用 consent-before-action，先建議再由使用者確認執行 |
-| 工作日誌 | 即時顯示 SOP 執行輸出，進度類訊息會原地更新 |
-| exps | 自動累積任務經驗摘要，支援搜尋、SOP 篩選與老司機備忘錄 |
-| Chalkboard | 中央黑板支援粉筆塗寫、局部板擦、圖形、圖片放置、文字框與 PNG 匯出 |
-| 硬體監控 | 顯示 CPU、GPU、RAM、Disk 與 NVIDIA GPU 溫度資訊 |
-| 插件系統 | 可用 `.js` 擴充系統監控能力 |
-| 自動初始化 | 首次執行可自動安裝 Ollama 與預設模型 |
-| Tauri 打包 | 可打包成獨立 Windows EXE，Node 後端以 sidecar 方式隨附 |
+| æŽ¨è–¦æ¸…å–® | å¸¸ç”¨ç³»çµ±å„ªåŒ–èˆ‡å®‰è£é …ç›®ï¼Œæ”¯æ´æœå°‹ã€åŠ å…¥ä»»å‹™ã€ç«‹å³åŸ·è¡Œ |
+| SOP æ¸…å–® | å·¦å´å¯åˆ‡æ›æŸ¥çœ‹å…¨éƒ¨ SOPï¼Œæ”¯æ´ä¾åç¨±ã€IDã€åˆ†é¡žæœå°‹èˆ‡ç›´æŽ¥åŸ·è¡Œ |
+| å·¥ä½œæ¸…å–® | é¡¯ç¤ºä»»å‹™ç‹€æ…‹ã€é€²åº¦èˆ‡çµæžœï¼Œæ”¯æ´ JSON åŒ¯å‡ºåŒ¯å…¥ |
+| AI å°è©± | æ”¯æ´ Ollamaã€æœ¬æ©Ÿ OpenAI-compatible API èˆ‡é›²ç«¯ Provider |
+| Provider è¨­å®š | å¯è¨­å®š Providerã€Base URLã€API Keyã€OAuth 2.0 èˆ‡æ¨¡åž‹åç¨± |
+| å®‰å…¨äº’å‹• | æŽ¡ç”¨ consent-before-actionï¼Œå…ˆå»ºè­°å†ç”±ä½¿ç”¨è€…ç¢ºèªåŸ·è¡Œ |
+| å·¥ä½œæ—¥èªŒ | å³æ™‚é¡¯ç¤º SOP åŸ·è¡Œè¼¸å‡ºï¼Œé€²åº¦é¡žè¨Šæ¯æœƒåŽŸåœ°æ›´æ–° |
+| exps | è‡ªå‹•ç´¯ç©ä»»å‹™ç¶“é©—æ‘˜è¦ï¼Œæ”¯æ´æœå°‹ã€SOP ç¯©é¸èˆ‡è€å¸æ©Ÿå‚™å¿˜éŒ„ |
+| Chalkboard | ä¸­å¤®é»‘æ¿æ”¯æ´ç²‰ç­†å¡—å¯«ã€å±€éƒ¨æ¿æ“¦ã€åœ–å½¢ã€åœ–ç‰‡æ”¾ç½®ã€æ–‡å­—æ¡†èˆ‡ PNG åŒ¯å‡º |
+| ç¡¬é«”ç›£æŽ§ | é¡¯ç¤º CPUã€GPUã€RAMã€Disk èˆ‡ NVIDIA GPU æº«åº¦è³‡è¨Š |
+| æ’ä»¶ç³»çµ± | å¯ç”¨ `.js` æ“´å……ç³»çµ±ç›£æŽ§èƒ½åŠ› |
+| è‡ªå‹•åˆå§‹åŒ– | é¦–æ¬¡åŸ·è¡Œå¯è‡ªå‹•å®‰è£ Ollama èˆ‡é è¨­æ¨¡åž‹ |
+| Tauri æ‰“åŒ… | å¯æ‰“åŒ…æˆç¨ç«‹ Windows EXEï¼ŒNode å¾Œç«¯ä»¥ sidecar æ–¹å¼éš¨é™„ |
 
 ---
 
-## 環境需求
+## ç’°å¢ƒéœ€æ±‚
 
-| 項目 | 需求 |
+| é …ç›® | éœ€æ±‚ |
 |------|------|
 | OS | Windows 10 / 11 |
-| Node.js | 18 以上 |
-| Ollama | 選用，若要使用本地 LLM 對話 |
-| 權限 | 部分 SOP 需要系統管理員權限，會觸發 UAC |
+| Node.js | 18 ä»¥ä¸Š |
+| Ollama | é¸ç”¨ï¼Œè‹¥è¦ä½¿ç”¨æœ¬åœ° LLM å°è©± |
+| æ¬Šé™ | éƒ¨åˆ† SOP éœ€è¦ç³»çµ±ç®¡ç†å“¡æ¬Šé™ï¼Œæœƒè§¸ç™¼ UAC |
 
-> 若只使用推薦清單與待辦管理，不一定需要先安裝 Ollama。
+> è‹¥åªä½¿ç”¨æŽ¨è–¦æ¸…å–®èˆ‡å¾…è¾¦ç®¡ç†ï¼Œä¸ä¸€å®šéœ€è¦å…ˆå®‰è£ Ollamaã€‚
 
 ---
 
-## 快速開始
+## å¿«é€Ÿé–‹å§‹
 
-### 1. 複製專案
+### 1. è¤‡è£½å°ˆæ¡ˆ
 
 ```bash
 git clone https://github.com/anomixer/aipc-agent.git
 cd aipc-agent
 ```
 
-### 2. 安裝相依套件
+### 2. å®‰è£ç›¸ä¾å¥—ä»¶
 
 ```powershell
 npm install
 ```
 
-若 PowerShell 擋下 script execution：
+è‹¥ PowerShell æ“‹ä¸‹ script executionï¼š
 
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "npm install"
 ```
 
-### 3. 啟動開發伺服器
+### 3. å•Ÿå‹•é–‹ç™¼ä¼ºæœå™¨
 
 ```powershell
 npm run start
 ```
 
-### 4. 開啟介面
+### 4. é–‹å•Ÿä»‹é¢
 
 ```text
 http://localhost:3210
@@ -88,30 +88,30 @@ http://localhost:3210
 
 ---
 
-## AI 對話與 Provider
+## AI å°è©±èˆ‡ Provider
 
-### 本機 Ollama
+### æœ¬æ©Ÿ Ollama
 
-系統可自動偵測 Ollama 是否存在，若缺少則可透過內建 SOP 自動安裝，並下載預設模型 `qwen3.5:4b`。當 UI 顯示 `AI 就緒` 時，就可以直接在右側對話區輸入需求。
+ç³»çµ±å¯è‡ªå‹•åµæ¸¬ Ollama æ˜¯å¦å­˜åœ¨ï¼Œè‹¥ç¼ºå°‘å‰‡å¯é€éŽå…§å»º SOP è‡ªå‹•å®‰è£ï¼Œä¸¦ä¸‹è¼‰é è¨­æ¨¡åž‹ `qwen3.5:4b`ã€‚ç•¶ UI é¡¯ç¤º `AI å°±ç·’` æ™‚ï¼Œå°±å¯ä»¥ç›´æŽ¥åœ¨å³å´å°è©±å€è¼¸å…¥éœ€æ±‚ã€‚
 
-### 其他 Provider
+### å…¶ä»– Provider
 
-- OpenAI、Groq、DeepSeek、Mistral、Together AI、Gemini 走 OpenAI-compatible 流程。
-- Gemini 可使用 Google 的 OpenAI-compatible 入口。
-- Anthropic Claude 使用原生認證與原生 `/v1/messages`。
-- Customer Provider 支援 API Key 與 OAuth 2.0 Client Credentials。
+- OpenAIã€Groqã€DeepSeekã€Mistralã€Together AIã€Gemini èµ° OpenAI-compatible æµç¨‹ã€‚
+- Gemini å¯ä½¿ç”¨ Google çš„ OpenAI-compatible å…¥å£ã€‚
+- Anthropic Claude ä½¿ç”¨åŽŸç”Ÿèªè­‰èˆ‡åŽŸç”Ÿ `/v1/messages`ã€‚
+- Customer Provider æ”¯æ´ API Key èˆ‡ OAuth 2.0 Client Credentialsã€‚
 
 ---
 
-## 打包為 EXE
+## æ‰“åŒ…ç‚º EXE
 
-開發者可直接執行：
+é–‹ç™¼è€…å¯ç›´æŽ¥åŸ·è¡Œï¼š
 
 ```cmd
 build.bat
 ```
 
-此腳本會安裝所需環境並建置 Tauri 桌面版。產物位於：
+æ­¤è…³æœ¬æœƒå®‰è£æ‰€éœ€ç’°å¢ƒä¸¦å»ºç½® Tauri æ¡Œé¢ç‰ˆã€‚ç”¢ç‰©ä½æ–¼ï¼š
 
 ```text
 src-tauri\target\release\bundle\nsis\
@@ -119,171 +119,172 @@ src-tauri\target\release\bundle\nsis\
 
 ---
 
-## 內建 SOP
+## å…§å»º SOP
 
-| SOP | 說明 | 需要管理員 |
+| SOP | èªªæ˜Ž | éœ€è¦ç®¡ç†å“¡ |
 |-----|------|-----------|
-| `install-ollama` | 靜默下載安裝 Ollama | 是 |
-| `pull-llm-model` | 下載預設 LLM 模型 | 否 |
-| `install-chrome` | 靜默安裝最新版 Google Chrome | 是 |
-| `remove-copilot` | 停用並移除 Windows Copilot | 是 |
-| `backup-system` | 建立 Windows 系統還原點 | 是 |
-| `install-office` | 透過 Winget 安裝 LibreOffice | 是 |
-| `install-steam` | 靜默安裝 Steam | 是 |
-| `check-drivers` | 觸發 Windows Update 與驅動掃描 | 是 |
-| `install-language-en-us` | 安裝英文語言包並保留既有語言清單 | 是 |
-| `install-language-zh-tw` | 安裝繁體中文語言包並保留既有語言清單 | 是 |
-| `install-language-zh-cn` | 安裝簡體中文語言包並保留既有語言清單 | 是 |
-| `install-language-ja` | 安裝日文語言包並保留既有語言清單 | 是 |
+| `install-ollama` | éœé»˜ä¸‹è¼‰å®‰è£ Ollama | æ˜¯ |
+| `pull-llm-model` | ä¸‹è¼‰é è¨­ LLM æ¨¡åž‹ | å¦ |
+| `install-chrome` | éœé»˜å®‰è£æœ€æ–°ç‰ˆ Google Chrome | æ˜¯ |
+| `remove-copilot` | åœç”¨ä¸¦ç§»é™¤ Windows Copilot | æ˜¯ |
+| `backup-system` | å»ºç«‹ Windows ç³»çµ±é‚„åŽŸé»ž | æ˜¯ |
+| `install-office` | é€éŽ Winget å®‰è£ LibreOffice | æ˜¯ |
+| `install-steam` | éœé»˜å®‰è£ Steam | æ˜¯ |
+| `check-drivers` | è§¸ç™¼ Windows Update èˆ‡é©…å‹•æŽƒæ | æ˜¯ |
+| `install-language-en-us` | å®‰è£è‹±æ–‡èªžè¨€åŒ…ä¸¦ä¿ç•™æ—¢æœ‰èªžè¨€æ¸…å–® | æ˜¯ |
+| `install-language-zh-tw` | å®‰è£ç¹é«”ä¸­æ–‡èªžè¨€åŒ…ä¸¦ä¿ç•™æ—¢æœ‰èªžè¨€æ¸…å–® | æ˜¯ |
+| `install-language-zh-cn` | å®‰è£ç°¡é«”ä¸­æ–‡èªžè¨€åŒ…ä¸¦ä¿ç•™æ—¢æœ‰èªžè¨€æ¸…å–® | æ˜¯ |
+| `install-language-ja` | å®‰è£æ—¥æ–‡èªžè¨€åŒ…ä¸¦ä¿ç•™æ—¢æœ‰èªžè¨€æ¸…å–® | æ˜¯ |
 
 ---
 
-## 自訂 SOP
+## è‡ªè¨‚ SOP
 
-將 `.md` 檔放進開發目錄 `sops/`，或執行時目錄 `%APPDATA%\aipc-agent\sops\`。格式範例：
+å°‡ `.md` æª”æ”¾é€²é–‹ç™¼ç›®éŒ„ `sops/`ï¼Œæˆ–åŸ·è¡Œæ™‚ç›®éŒ„ `%APPDATA%\aipc-agent\sops\`ã€‚æ ¼å¼ç¯„ä¾‹ï¼š
 
 ````markdown
-1. 基本資訊 (Metadata)
+1. åŸºæœ¬è³‡è¨Š (Metadata)
 ID: my_sop_id
-名稱: 我的自訂 SOP
-分類: 工具
-風險等級: 低
+åç¨±: æˆ‘çš„è‡ªè¨‚ SOP
+åˆ†é¡ž: å·¥å…·
+é¢¨éšªç­‰ç´š: ä½Ž
 
-2. 需求環境 (Prerequisites)
+2. éœ€æ±‚ç’°å¢ƒ (Prerequisites)
 OS: Windows 10 / 11
-權限: 一般使用者
-網路: 否
+æ¬Šé™: ä¸€èˆ¬ä½¿ç”¨è€…
+ç¶²è·¯: å¦
 
-3. 執行流程 (Execution Steps)
+3. åŸ·è¡Œæµç¨‹ (Execution Steps)
 
-第一階段：環境檢測 (Check)
-指令 (PowerShell):
+ç¬¬ä¸€éšŽæ®µï¼šç’°å¢ƒæª¢æ¸¬ (Check)
+æŒ‡ä»¤ (PowerShell):
 ```powershell
 $false
 ```
 
-第二階段：安裝 (Install)
-指令 (PowerShell):
+ç¬¬äºŒéšŽæ®µï¼šå®‰è£ (Install)
+æŒ‡ä»¤ (PowerShell):
 ```powershell
-Write-Host "正在執行..."
+Write-Host "æ­£åœ¨åŸ·è¡Œ..."
 ```
 
-第三階段：驗證 (Verify)
-指令 (PowerShell):
+ç¬¬ä¸‰éšŽæ®µï¼šé©—è­‰ (Verify)
+æŒ‡ä»¤ (PowerShell):
 ```powershell
 $true
 ```
 ````
 
-重新整理頁面後，系統會重新掃描並載入新的 SOP。
+é‡æ–°æ•´ç†é é¢å¾Œï¼Œç³»çµ±æœƒé‡æ–°æŽƒæä¸¦è¼‰å…¥æ–°çš„ SOPã€‚
 
 ---
 
-## 專案結構
+## å°ˆæ¡ˆçµæ§‹
 
 ```text
 aipc-agent/
-├── public/
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
-├── src/
-│   ├── index.js
-│   ├── llm.js
-│   ├── server.js
-│   ├── sop-executor.js
-│   ├── sop-parser.js
-│   └── system.js
-├── plugins/
-│   ├── hardware-info.js
-│   └── temperature-monitor.js
-├── skills/
-│   ├── manager.md
-│   └── ollama.md
-├── sops/
-│   ├── backup-system.md
-│   ├── check-drivers.md
-│   ├── install-chrome.md
-│   ├── install-language-en-us.md
-│   ├── install-language-ja.md
-│   ├── install-language-zh-cn.md
-│   ├── install-language-zh-tw.md
-│   ├── install-office.md
-│   ├── install-ollama.md
-│   ├── install-steam.md
-│   ├── pull-llm-model.md
-│   └── remove-copilot.md
-├── src-tauri/
-├── agents.md
-├── aipc-spec.md
-├── build.bat
-├── package.json
-└── verify-remove-copilot.ps1
+â”œâ”€â”€ public/
+â”‚   â”œâ”€â”€ index.html
+â”‚   â”œâ”€â”€ style.css
+â”‚   â””â”€â”€ app.js
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ index.js
+â”‚   â”œâ”€â”€ llm.js
+â”‚   â”œâ”€â”€ server.js
+â”‚   â”œâ”€â”€ sop-executor.js
+â”‚   â”œâ”€â”€ sop-parser.js
+â”‚   â””â”€â”€ system.js
+â”œâ”€â”€ plugins/
+â”‚   â”œâ”€â”€ hardware-info.js
+â”‚   â””â”€â”€ temperature-monitor.js
+â”œâ”€â”€ skills/
+â”‚   â”œâ”€â”€ manager.md
+â”‚   â””â”€â”€ ollama.md
+â”œâ”€â”€ sops/
+â”‚   â”œâ”€â”€ backup-system.md
+â”‚   â”œâ”€â”€ check-drivers.md
+â”‚   â”œâ”€â”€ install-chrome.md
+â”‚   â”œâ”€â”€ install-language-en-us.md
+â”‚   â”œâ”€â”€ install-language-ja.md
+â”‚   â”œâ”€â”€ install-language-zh-cn.md
+â”‚   â”œâ”€â”€ install-language-zh-tw.md
+â”‚   â”œâ”€â”€ install-office.md
+â”‚   â”œâ”€â”€ install-ollama.md
+â”‚   â”œâ”€â”€ install-steam.md
+â”‚   â”œâ”€â”€ pull-llm-model.md
+â”‚   â””â”€â”€ remove-copilot.md
+â”œâ”€â”€ src-tauri/
+â”œâ”€â”€ agents.md
+â”œâ”€â”€ aipc-spec.md
+â”œâ”€â”€ build.bat
+â”œâ”€â”€ package.json
+â””â”€â”€ verify-remove-copilot.ps1
 ```
 
 ---
 
-## 近期更新
+## è¿‘æœŸæ›´æ–°
 
 ### 2026.03.25
 
-- 工作日誌右側新增 `exps` tab，可瀏覽任務累積經驗。
-- `exps` 面板支援關鍵字搜尋、依 SOP 篩選與單筆詳閱。
-- 安裝任務結束後，會自動把 log 摘要寫入 `%APPDATA%\aipc-agent\exps\exp-yyyymmdd.md`。
+- å·¥ä½œæ—¥èªŒå³å´æ–°å¢ž `exps` tabï¼Œå¯ç€è¦½ä»»å‹™ç´¯ç©ç¶“é©—ã€‚
+- `exps` é¢æ¿æ”¯æ´é—œéµå­—æœå°‹ã€ä¾ SOP ç¯©é¸èˆ‡å–®ç­†è©³é–±ã€‚
+- å®‰è£ä»»å‹™çµæŸå¾Œï¼Œæœƒè‡ªå‹•æŠŠ log æ‘˜è¦å¯«å…¥ `%APPDATA%\aipc-agent\exps\exp-yyyymmdd.md`ã€‚
 
 ### 2026.03.24
 
-- 任務完成後，AI 對話區會回報 `success`、`failed`、`skipped`。
-- SOP 載入時會依 `id` 去重，優先使用正式檔名。
-- 內建 SOP、skill、plugin 內容更新後會同步到 `%APPDATA%\aipc-agent\`。
-- `Verify` 階段若明確輸出 `false`，會視為真正失敗。
-- 工作日誌只在使用者停在底部時自動捲動。
-- 版本號改由 `/api/meta` 從 `package.json` 讀取。
-- EXE 啟動時會先顯示 splash，再於背景啟動 Node sidecar。
-- 語系 SOP 已拆分為 `en-US`、`zh-TW`、`zh-CN`、`ja-JP` 四支。
-- 需要管理員權限的 SOP 會共用 UAC 提權執行器。
-- 右側 AI 對話欄可往左拖拉到工作區一半寬度。
-- 左側 sidebar 新增 `SOP 清單` tab，可列出所有 SOP 並支援加入任務與立即執行。
+- ä»»å‹™å®Œæˆå¾Œï¼ŒAI å°è©±å€æœƒå›žå ± `success`ã€`failed`ã€`skipped`ã€‚
+- SOP è¼‰å…¥æ™‚æœƒä¾ `id` åŽ»é‡ï¼Œå„ªå…ˆä½¿ç”¨æ­£å¼æª”åã€‚
+- å…§å»º SOPã€skillã€plugin å…§å®¹æ›´æ–°å¾ŒæœƒåŒæ­¥åˆ° `%APPDATA%\aipc-agent\`ã€‚
+- `Verify` éšŽæ®µè‹¥æ˜Žç¢ºè¼¸å‡º `false`ï¼Œæœƒè¦–ç‚ºçœŸæ­£å¤±æ•—ã€‚
+- å·¥ä½œæ—¥èªŒåªåœ¨ä½¿ç”¨è€…åœåœ¨åº•éƒ¨æ™‚è‡ªå‹•æ²å‹•ã€‚
+- ç‰ˆæœ¬è™Ÿæ”¹ç”± `/api/meta` å¾ž `package.json` è®€å–ã€‚
+- EXE å•Ÿå‹•æ™‚æœƒå…ˆé¡¯ç¤º splashï¼Œå†æ–¼èƒŒæ™¯å•Ÿå‹• Node sidecarã€‚
+- èªžç³» SOP å·²æ‹†åˆ†ç‚º `en-US`ã€`zh-TW`ã€`zh-CN`ã€`ja-JP` å››æ”¯ã€‚
+- éœ€è¦ç®¡ç†å“¡æ¬Šé™çš„ SOP æœƒå…±ç”¨ UAC ææ¬ŠåŸ·è¡Œå™¨ã€‚
+- å³å´ AI å°è©±æ¬„å¯å¾€å·¦æ‹–æ‹‰åˆ°å·¥ä½œå€ä¸€åŠå¯¬åº¦ã€‚
+- å·¦å´ sidebar æ–°å¢ž `SOP æ¸…å–®` tabï¼Œå¯åˆ—å‡ºæ‰€æœ‰ SOP ä¸¦æ”¯æ´åŠ å…¥ä»»å‹™èˆ‡ç«‹å³åŸ·è¡Œã€‚
 
 ### 2026.03.25
 
-- 中央 `Chalkboard` 改為真正可互動的黑板畫布，支援白、紅、黃、綠、藍粉筆與局部板擦。
-- 黑板改為深綠色材質風格，底部加入粉筆托盤、板擦、粗細切換、Undo、清空、上傳圖片與存成圖片。
-- 加入直線、矩形、圓形工具，支援像一般繪圖軟體那樣預覽與落筆。
-- 上傳圖片後可在黑板上拖曳放置範圍與大小。
-- 黑板啟動時會先以粉筆字顯示歡迎詞，首次互動後切換為教學提示；提示字也可被板擦擦除。
-- 歡迎畫面階段會先鎖住黑板工具列，必須先點一下黑板進入可畫模式後才解鎖。
-- `T` 文字工具升級為設定視窗，可輸入文字、選字型、選字型風格、調字級、文字顏色、對齊、粗體與斜體，再到黑板上放置、移動與縮放文字框。
-- 文字字型目前支援 `標楷體`、`微軟正黑體`、`黑體`、`細明體`、`Arial`、`Times New Roman`、`Courier New`。
-- 右側聊天列新增 `Chalkboard` 附圖按鈕，可切換是否把黑板內容一併送給 AI。
-- AI Provider 設定視窗新增 `Vision 多模態模型` 欄位，可指定圖片理解模型；留空時會自動挑選。
-- 當本輪有附圖時，AI 會優先以當前圖片理解使用者意圖，不再被上一張圖的描述污染。
-- 黑板新增選取、複製、剪下、貼上與 clipboard 支援，可把選取區當成圖片重新貼回黑板放置。
+- ä¸­å¤® `Chalkboard` æ”¹ç‚ºçœŸæ­£å¯äº’å‹•çš„é»‘æ¿ç•«å¸ƒï¼Œæ”¯æ´ç™½ã€ç´…ã€é»ƒã€ç¶ ã€è—ç²‰ç­†èˆ‡å±€éƒ¨æ¿æ“¦ã€‚
+- é»‘æ¿æ”¹ç‚ºæ·±ç¶ è‰²æè³ªé¢¨æ ¼ï¼Œåº•éƒ¨åŠ å…¥ç²‰ç­†æ‰˜ç›¤ã€æ¿æ“¦ã€ç²—ç´°åˆ‡æ›ã€Undoã€æ¸…ç©ºã€ä¸Šå‚³åœ–ç‰‡èˆ‡å­˜æˆåœ–ç‰‡ã€‚
+- åŠ å…¥ç›´ç·šã€çŸ©å½¢ã€åœ“å½¢å·¥å…·ï¼Œæ”¯æ´åƒä¸€èˆ¬ç¹ªåœ–è»Ÿé«”é‚£æ¨£é è¦½èˆ‡è½ç­†ã€‚
+- ä¸Šå‚³åœ–ç‰‡å¾Œå¯åœ¨é»‘æ¿ä¸Šæ‹–æ›³æ”¾ç½®ç¯„åœèˆ‡å¤§å°ã€‚
+- é»‘æ¿å•Ÿå‹•æ™‚æœƒå…ˆä»¥ç²‰ç­†å­—é¡¯ç¤ºæ­¡è¿Žè©žï¼Œé¦–æ¬¡äº’å‹•å¾Œåˆ‡æ›ç‚ºæ•™å­¸æç¤ºï¼›æç¤ºå­—ä¹Ÿå¯è¢«æ¿æ“¦æ“¦é™¤ã€‚
+- æ­¡è¿Žç•«é¢éšŽæ®µæœƒå…ˆéŽ–ä½é»‘æ¿å·¥å…·åˆ—ï¼Œå¿…é ˆå…ˆé»žä¸€ä¸‹é»‘æ¿é€²å…¥å¯ç•«æ¨¡å¼å¾Œæ‰è§£éŽ–ã€‚
+- `T` æ–‡å­—å·¥å…·å‡ç´šç‚ºè¨­å®šè¦–çª—ï¼Œå¯è¼¸å…¥æ–‡å­—ã€é¸å­—åž‹ã€é¸å­—åž‹é¢¨æ ¼ã€èª¿å­—ç´šã€æ–‡å­—é¡è‰²ã€å°é½Šã€ç²—é«”èˆ‡æ–œé«”ï¼Œå†åˆ°é»‘æ¿ä¸Šæ”¾ç½®ã€ç§»å‹•èˆ‡ç¸®æ”¾æ–‡å­—æ¡†ã€‚
+- æ–‡å­—å­—åž‹ç›®å‰æ”¯æ´ `æ¨™æ¥·é«”`ã€`å¾®è»Ÿæ­£é»‘é«”`ã€`é»‘é«”`ã€`ç´°æ˜Žé«”`ã€`Arial`ã€`Times New Roman`ã€`Courier New`ã€‚
+- å³å´èŠå¤©åˆ—æ–°å¢ž `Chalkboard` é™„åœ–æŒ‰éˆ•ï¼Œå¯åˆ‡æ›æ˜¯å¦æŠŠé»‘æ¿å…§å®¹ä¸€ä½µé€çµ¦ AIã€‚
+- AI Provider è¨­å®šè¦–çª—æ–°å¢ž `Vision å¤šæ¨¡æ…‹æ¨¡åž‹` æ¬„ä½ï¼Œå¯æŒ‡å®šåœ–ç‰‡ç†è§£æ¨¡åž‹ï¼›ç•™ç©ºæ™‚æœƒè‡ªå‹•æŒ‘é¸ã€‚
+- ç•¶æœ¬è¼ªæœ‰é™„åœ–æ™‚ï¼ŒAI æœƒå„ªå…ˆä»¥ç•¶å‰åœ–ç‰‡ç†è§£ä½¿ç”¨è€…æ„åœ–ï¼Œä¸å†è¢«ä¸Šä¸€å¼µåœ–çš„æè¿°æ±¡æŸ“ã€‚
+- é»‘æ¿æ–°å¢žé¸å–ã€è¤‡è£½ã€å‰ªä¸‹ã€è²¼ä¸Šèˆ‡ clipboard æ”¯æ´ï¼Œå¯æŠŠé¸å–å€ç•¶æˆåœ–ç‰‡é‡æ–°è²¼å›žé»‘æ¿æ”¾ç½®ã€‚
 
 ---
 
-## 常見問題
+## å¸¸è¦‹å•é¡Œ
 
-**Q: PowerShell 顯示 `scripts is disabled`？**
+**Q: PowerShell é¡¯ç¤º `scripts is disabled`ï¼Ÿ**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "npm install"
 powershell -ExecutionPolicy Bypass -Command "npm run start"
 ```
 
-**Q: 為什麼有些 SOP 會跳出 UAC 視窗？**  
-因為這些 SOP 需要系統管理員權限。現在 install 階段會自動走共用提權流程，若使用者取消 UAC，任務會直接失敗。
+**Q: ç‚ºä»€éº¼æœ‰äº› SOP æœƒè·³å‡º UAC è¦–çª—ï¼Ÿ**  
+å› ç‚ºé€™äº› SOP éœ€è¦ç³»çµ±ç®¡ç†å“¡æ¬Šé™ã€‚ç¾åœ¨ install éšŽæ®µæœƒè‡ªå‹•èµ°å…±ç”¨ææ¬Šæµç¨‹ï¼Œè‹¥ä½¿ç”¨è€…å–æ¶ˆ UACï¼Œä»»å‹™æœƒç›´æŽ¥å¤±æ•—ã€‚
 
-**Q: 新增 SOP 後沒有出現？**  
-確認檔案放在 `sops/` 或 `%APPDATA%\aipc-agent\sops\`，再重新整理頁面。
+**Q: æ–°å¢ž SOP å¾Œæ²’æœ‰å‡ºç¾ï¼Ÿ**  
+ç¢ºèªæª”æ¡ˆæ”¾åœ¨ `sops/` æˆ– `%APPDATA%\aipc-agent\sops\`ï¼Œå†é‡æ–°æ•´ç†é é¢ã€‚
 
-**Q: AI 指示燈是紅色或黃色？**  
-通常代表 Ollama 尚未安裝、未啟動，或模型尚未下載完成。
+**Q: AI æŒ‡ç¤ºç‡ˆæ˜¯ç´…è‰²æˆ–é»ƒè‰²ï¼Ÿ**  
+é€šå¸¸ä»£è¡¨ Ollama å°šæœªå®‰è£ã€æœªå•Ÿå‹•ï¼Œæˆ–æ¨¡åž‹å°šæœªä¸‹è¼‰å®Œæˆã€‚
 
 ---
 
-## 開發說明
+## é–‹ç™¼èªªæ˜Ž
 
-- 開發日誌請見 `agents.md`。
-- 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.03.25`。
+- é–‹ç™¼æ—¥èªŒè«‹è¦‹ `agents.md`ã€‚
+- ç”¢å“è¦æ ¼è«‹è¦‹ `aipc-spec.md`ã€‚
+- ç›®å‰å¥—ä»¶ç‰ˆæœ¬ï¼š`2026.03.25`ã€‚
+

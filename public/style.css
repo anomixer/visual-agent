@@ -1513,29 +1513,30 @@ ol {
 .exp-entries {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   padding-bottom: 8px;
 }
 
 .exps-toolbar {
   display: flex;
-  gap: 8px;
-  padding: 2px 0 10px;
+  gap: 6px;
+  padding: 2px 0 8px;
   position: sticky;
   top: 0;
   background: var(--bg-panel);
   z-index: 2;
+  align-items: center;
 }
 
 .exps-search-input,
 .exps-filter-select {
-  height: 32px;
+  height: 28px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-size: 12px;
-  padding: 0 10px;
+  font-size: 11px;
+  padding: 0 8px;
 }
 
 .exps-search-input {
@@ -1544,72 +1545,108 @@ ol {
 }
 
 .exps-filter-select {
-  width: 180px;
+  width: 130px;
   flex-shrink: 0;
+}
+
+.btn-exps-export {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: rgba(99, 102, 241, 0.1);
+  color: #818cf8;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.btn-exps-export:hover {
+  background: rgba(99, 102, 241, 0.25);
+  color: #fff;
 }
 
 .exp-card {
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-left: 3px solid var(--accent-indigo);
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.02);
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 150ms ease, transform 150ms ease, background 150ms ease;
+  transition: border-color 150ms ease, background 150ms ease;
 }
 
 .exp-card:hover {
   border-color: var(--accent-indigo);
+  border-left-color: #818cf8;
   background: rgba(99, 102, 241, 0.06);
-  transform: translateY(-1px);
 }
 
 .exp-card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .exp-card-title {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .exp-card-meta {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   flex-shrink: 0;
   text-align: right;
+  white-space: nowrap;
 }
 
 .exp-card-body {
-  padding: 10px 12px 12px;
+  padding: 6px 10px 8px;
   color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 11px;
+  line-height: 1.55;
+  /* 摘要只顯示 3 行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.exp-card:hover .exp-card-body {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
 }
 
 .exp-card-body h2,
 .exp-card-body h3 {
-  margin: 0 0 8px;
-  font-size: 12px;
+  margin: 0 0 4px;
+  font-size: 11px;
   color: var(--text-primary);
 }
 
 .exp-card-body p,
 .exp-card-body ul {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
 }
 
 .exp-card-body ul {
-  padding-left: 18px;
+  padding-left: 16px;
 }
 
 .exp-card-body li + li {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 /* ── RIGHT — Chat Column ──────────────────────────────────────── */

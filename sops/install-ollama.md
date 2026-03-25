@@ -7,7 +7,7 @@ ID: rec_install_ollama
 
 2. 需求環境 (Prerequisites)
 OS: Windows 10 / 11
-權限: 需要 Administrator (觸發 UAC)
+權限: 一般使用者
 網路: 必須 (需要下載安裝檔)
 
 3. 執行流程 (Execution Steps)

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AI PC Agent — Local Server
  * 
  * 提供 REST API 給前端 UI 使用，橋接 sop-parser 與 sop-executor。
@@ -422,8 +422,8 @@ const RECOMMEND_BASE = [
     },
     {
         id: 'rec_pull_llm_model',
-        title: '📥 下載語言模型 (Qwen3.5 0.8B)',
-        description: '下載輕量語言模型，約 1GB，完成後對話將由 AI 真正理解你的需求',
+        title: '📥 下載語言模型 (Qwen3.5 4B)',
+        description: '下載 Qwen3.5 4B 語言模型，約 2.6GB，完成後對話將由 AI 真正理解你的需求',
         category: 'AI 引擎',
         priority: 'critical',
     },

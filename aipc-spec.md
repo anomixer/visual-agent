@@ -1,4 +1,4 @@
-﻿# AI PC Agent — 實作需求規格書 (2026.03.18)
+# AI PC Agent — 實作需求規格書 (2026.03.25)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -237,3 +237,17 @@ SOPs 存放位置：
 - 當 SOP 的權限需求標記為 `Administrator`、`Admin` 或 `UAC` 時，install 階段應自動以 `RunAs` 方式提權。
 - 使用者取消 UAC 時，runtime 必須回報失敗，不可進入自動重試。
 - 語系 SOP 的安裝偵測不可假設 `Get-InstalledLanguage` 一定存在 `LanguageId` 欄位，需容忍欄位差異。
+
+## 6.9 2026.03.25 知識庫視覺進化、視窗持久化與硬體感知強固
+
+- **exps 知識庫視覺微調**：
+  - 卡片密度更高，摘要預設限制顯示 3 行，滑鼠懸停 (Hover) 時自動展開完整內容。
+  - 新增「⬇ 匯出」按鈕，支援將所有累積的經驗一次匯出為單一 Markdown 文件。
+  - 卡片左側加入深紫色狀態條，區分不同 SOP 的執行記錄。
+- **Ollama 非提權安裝**：修正 Ollama 安裝 SOP，改為預設不觸發 UAC，依賴 winget 本身的 user mode 安裝。
+- **模型資訊修正**：將 Qwen3.5 全面更新為 4B 版本，下載容量描述修正為 2.6GB。
+- **視窗持久化**：導入 \	auri-plugin-window-state\，自動記憶上次視窗大小與位置。預設首次啟動以最大化 (maximized) 呈現。
+- **硬體感知強固**：
+  - \hardware-info.js\ 優先採用 \
+vidia-smi\ 數據。
+  - 加入 PowerShell 計數器 fallback 機制，避免 \Get-Counter\ 在權限不足或 Tauri 環境下崩潰導致顯示失效。

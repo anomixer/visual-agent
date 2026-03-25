@@ -13,10 +13,11 @@
     "windows": [
       {
         "title": "AI PC Agent",
-        "width": 1024,
-        "height": 768,
+        "width": 1440,
+        "height": 900,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "maximized": true
       }
     ],
     "security": {

@@ -1,14 +1,14 @@
 1. 基本資訊 (Metadata)
 ID: rec_pull_llm_model
 
-名稱: 下載 Qwen3.5 語言模型 (0.8B)
+名稱: 下載 Qwen3.5 語言模型 (4B)
 分類: AI 引擎
 風險等級: 低
 
 2. 需求環境 (Prerequisites)
 OS: Windows 10 / 11
 權限: 一般使用者
-網路: 必須 (需要下載模型約 1GB)
+網路: 必須 (需要下載模型約 2.6GB)
 
 3. 執行流程 (Execution Steps)
 
@@ -28,7 +28,7 @@ try {
 指令 (PowerShell):
 
 ```powershell
-UI 顯示內容: 「正在下載 Qwen3.5 語言模型 (約 3.5GB)，首次下載請耐心等候...」
+UI 顯示內容: 「正在下載 Qwen3.5 語言模型 (約 2.6GB)，首次下載請耐心等候...」
 $ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
 $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
 if (-not (Test-Path $ollamaExe)) {
