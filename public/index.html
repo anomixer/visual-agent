@@ -192,11 +192,53 @@
           <div class="center-top-content">
             <div class="tab-content active" id="content-chalkboard">
               <div class="chalkboard-body">
-                <div class="chalkboard-welcome">
-                  <h2>歡迎使用 AI PC Agent</h2>
-                  <p>這裡可以快速啟動推薦工具與瀏覽器。請從左側推薦清單選擇工具，或是直接與 AI 對話。</p>
-                  <p class="warning-text">⚠️ AI Agent 很強大，但也可能犯錯，導致系統有風險，敬請仔細查證並小心下指令。</p>
-                  <div class="chalkboard-grid" id="chalkboardGrid"></div>
+                <div class="chalkboard-stage">
+                  <div class="chalkboard-surface" id="chalkboardSurface">
+                    <div class="chalkboard-heading">
+                      <span class="chalkboard-kicker">Interactive Chalkboard</span>
+                      <h2>用粉筆直接畫</h2>
+                      <p>選一支粉筆，直接在黑板上塗寫，板擦可清空畫布。可把想法畫出來給AI看。</p>
+                    </div>
+                    <canvas class="chalkboard-canvas" id="chalkboardCanvas"></canvas>
+                    <div class="chalk-placement-guide" id="chalkPlacementGuide" aria-hidden="true"></div>
+                    <div class="chalk-text-box" id="chalkTextBox" aria-hidden="true">
+                      <img class="chalk-text-box-content" id="chalkTextBoxContent" alt="">
+                      <div class="chalk-text-box-handle" data-handle="nw"></div>
+                      <div class="chalk-text-box-handle" data-handle="n"></div>
+                      <div class="chalk-text-box-handle" data-handle="ne"></div>
+                      <div class="chalk-text-box-handle" data-handle="e"></div>
+                      <div class="chalk-text-box-handle" data-handle="se"></div>
+                      <div class="chalk-text-box-handle" data-handle="s"></div>
+                      <div class="chalk-text-box-handle" data-handle="sw"></div>
+                      <div class="chalk-text-box-handle" data-handle="w"></div>
+                    </div>
+                  </div>
+                  <div class="chalkboard-tray">
+                    <button class="tray-action tray-icon danger" id="chalkClearButton" type="button" title="清空">🖌</button>
+                    <button class="tray-action tray-icon" id="chalkUndoButton" type="button" title="Undo">↶</button>
+                    <button class="chalk-tool chalk-mode eraser active" id="chalkEraser" type="button" data-tool="eraser" title="局部板擦"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-white" type="button" data-tool="chalk" data-color="#f5f1e8" title="白粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-red" type="button" data-tool="chalk" data-color="#ef6b6b" title="紅粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-yellow" type="button" data-tool="chalk" data-color="#f4dd63" title="黃粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-green" type="button" data-tool="chalk" data-color="#6bd29d" title="綠粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-blue" type="button" data-tool="chalk" data-color="#74b8ff" title="藍粉筆"></button>
+                    <div class="chalk-size-group" id="chalkSizeGroup">
+                      <button class="chalk-size active" type="button" data-size="4" title="細">S</button>
+                      <button class="chalk-size" type="button" data-size="8" title="中">M</button>
+                      <button class="chalk-size" type="button" data-size="14" title="粗">L</button>
+                    </div>
+                    <div class="chalk-tray-spacer"></div>
+                    <div class="shape-tool-group" id="shapeToolGroup">
+                      <button class="shape-tool chalk-mode" type="button" data-tool="line" title="直線">/</button>
+                      <button class="shape-tool chalk-mode" type="button" data-tool="rect" title="矩形">□</button>
+                      <button class="shape-tool chalk-mode" type="button" data-tool="circle" title="圓形">○</button>
+                      <button class="shape-tool chalk-mode" id="chalkTextButton" type="button" data-tool="text" title="文字">T</button>
+                    </div>
+                    <div class="chalk-tray-spacer"></div>
+                    <button class="tray-action" id="chalkUploadButton" type="button">上傳圖片</button>
+                    <button class="tray-action" id="chalkSaveButton" type="button">存成圖片</button>
+                    <input type="file" id="chalkImageInput" accept="image/*" style="display:none">
+                  </div>
                 </div>
               </div>
             </div>
@@ -430,6 +472,45 @@
         <div class="provider-actions">
           <button class="btn-secondary" id="btnTestProviderSettings">測試模型</button>
           <button class="btn-primary" id="btnSaveProviderSettings">儲存並刷新</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="textToolOverlay">
+    <div class="modal provider-modal text-tool-modal">
+      <div class="modal-header">
+        <h3>文字工具</h3>
+        <button class="btn-close" id="btnCloseTextToolModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>文字內容</label>
+          <textarea id="textToolContent" class="form-input text-tool-textarea" rows="4" placeholder="輸入要放上黑板的文字"></textarea>
+        </div>
+        <div class="text-tool-grid">
+          <div class="form-group">
+            <label>字型</label>
+            <select id="textToolFontFamily" class="form-input">
+              <option value="&quot;Comic Sans MS&quot;, &quot;Bradley Hand&quot;, &quot;Segoe Print&quot;, cursive">粉筆手寫</option>
+              <option value="&quot;Segoe Print&quot;, &quot;Comic Sans MS&quot;, cursive">板書感</option>
+              <option value="Georgia, &quot;Times New Roman&quot;, serif">經典襯線</option>
+              <option value="&quot;Trebuchet MS&quot;, &quot;Segoe UI&quot;, sans-serif">清晰無襯線</option>
+              <option value="&quot;Courier New&quot;, monospace">等寬打字</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>字級</label>
+            <input type="number" id="textToolFontSize" class="form-input" min="14" max="160" step="1" value="28">
+          </div>
+        </div>
+        <div class="provider-help-card">
+          <div class="provider-help-title">使用方式</div>
+          <div class="provider-help-text">按下「建立文字框」後，到黑板上點一下放出文字框，再拖曳移動或拉 8 個控制點縮放，點框外即可定稿。</div>
+        </div>
+        <div class="provider-actions">
+          <button class="btn-secondary" id="btnCancelTextTool">取消</button>
+          <button class="btn-primary" id="btnApplyTextTool">建立文字框</button>
         </div>
       </div>
     </div>

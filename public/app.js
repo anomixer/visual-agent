@@ -74,6 +74,27 @@ const modalOverlay = $('#modalOverlay');
 const modalTitle = $('#modalTitle');
 const modalBody = $('#modalBody');
 const btnCloseModal = $('#btnCloseModal');
+const chalkboardCanvas = $('#chalkboardCanvas');
+const chalkboardSurface = $('#chalkboardSurface');
+const chalkboardHeading = $('.chalkboard-heading');
+const chalkPlacementGuide = $('#chalkPlacementGuide');
+const chalkTextBox = $('#chalkTextBox');
+const chalkTextBoxContent = $('#chalkTextBoxContent');
+const chalkTools = $$('.chalk-tool');
+const chalkModeButtons = $$('.chalk-mode');
+const chalkSizeButtons = $$('.chalk-size');
+const chalkSaveButton = $('#chalkSaveButton');
+const chalkClearButton = $('#chalkClearButton');
+const chalkUndoButton = $('#chalkUndoButton');
+const chalkUploadButton = $('#chalkUploadButton');
+const chalkImageInput = $('#chalkImageInput');
+const textToolOverlay = $('#textToolOverlay');
+const btnCloseTextToolModal = $('#btnCloseTextToolModal');
+const btnCancelTextTool = $('#btnCancelTextTool');
+const btnApplyTextTool = $('#btnApplyTextTool');
+const textToolContent = $('#textToolContent');
+const textToolFontFamily = $('#textToolFontFamily');
+const textToolFontSize = $('#textToolFontSize');
 
 // Provider Settings
 const providerSettingsOverlay = $('#providerSettingsOverlay');
@@ -128,6 +149,39 @@ const llmStatus = $('#llmStatus');
 const statusLLM = $('#statusLLM');
 const statusTasks = $('#statusTasks');
 const chatModelBadge = $('#chatModelBadge');
+
+const chalkboardState = {
+    tool: 'eraser',
+    color: '#f5f1e8',
+    size: 4,
+    eraserSize: 28,
+    drawing: false,
+    hasInteracted: false,
+    hintDrawn: false,
+    ctx: null,
+    resizeFrame: null,
+    lastPoint: null,
+    cssWidth: 0,
+    cssHeight: 0,
+    dragStart: null,
+    dragSnapshot: null,
+    pendingImage: null,
+    pendingText: null,
+    pendingTextRect: null,
+    pendingTextSnapshot: null,
+    pendingTextPreviewUrl: null,
+    hoverPoint: null,
+    dragPresetEnd: null,
+    pendingShapePreview: false,
+    textManipulation: null,
+    textToolSettings: {
+        content: '',
+        fontFamily: '"Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+        fontSize: 28
+    },
+    textToolResolver: null,
+    history: []
+};
 
 const LOCAL_NOAUTH_PROVIDERS = ['Ollama', 'vLLM', 'SGLang', 'LM Studio'];
 const API_KEY_ONLY_PROVIDERS = Object.keys(PROVIDER_DEFAULTS).filter(
@@ -255,6 +309,1062 @@ function debounce(fn, delay) {
     };
 }
 
+function setupChalkboard() {
+    if (!chalkboardCanvas || !chalkboardSurface) return;
+
+    chalkboardState.ctx = chalkboardCanvas.getContext('2d');
+    resizeChalkboardCanvas();
+    syncChalkboardUI();
+
+    chalkModeButtons.forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (chalkboardState.pendingText && chalkboardState.pendingTextRect) {
+                commitPendingTextPlacement();
+            }
+            cancelPendingChalkPreview();
+            const tool = btn.dataset.tool || 'chalk';
+            if (tool === 'chalk') {
+                chalkboardState.tool = 'chalk';
+                chalkboardState.color = btn.dataset.color || '#f5f1e8';
+                chalkboardState.pendingImage = null;
+                chalkboardState.pendingText = null;
+            } else {
+                chalkboardState.tool = tool;
+                if (tool !== 'image') {
+                    chalkboardState.pendingImage = null;
+                }
+                if (tool !== 'text') {
+                    chalkboardState.pendingText = null;
+                    chalkboardState.pendingTextRect = null;
+                    chalkboardState.pendingTextSnapshot = null;
+                    chalkboardState.pendingTextPreviewUrl = null;
+                }
+                if (tool === 'text' && !(await requestPendingChalkText())) {
+                    chalkboardState.tool = 'chalk';
+                }
+            }
+            syncChalkboardUI();
+        });
+    });
+
+    chalkSizeButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const size = Number(btn.dataset.size || 4);
+            chalkboardState.size = size;
+            chalkboardState.eraserSize = Math.max(18, size * 3);
+            syncChalkboardUI();
+        });
+    });
+
+    chalkUploadButton?.addEventListener('click', () => chalkImageInput?.click());
+    chalkImageInput?.addEventListener('change', handleChalkImageUpload);
+    chalkSaveButton?.addEventListener('click', saveChalkboardImage);
+    chalkClearButton?.addEventListener('click', clearChalkboard);
+    chalkUndoButton?.addEventListener('click', undoChalkAction);
+
+    chalkboardCanvas.addEventListener('pointerdown', startChalkStroke);
+    chalkboardCanvas.addEventListener('pointermove', drawChalkStroke);
+    chalkboardCanvas.addEventListener('pointerup', endChalkStroke);
+    chalkboardCanvas.addEventListener('pointerleave', handleChalkPointerLeave);
+    chalkboardCanvas.addEventListener('pointercancel', endChalkStroke);
+    chalkTextBox?.addEventListener('pointerdown', startTextBoxManipulation);
+    chalkTextBox?.addEventListener('pointermove', moveTextBoxManipulation);
+    chalkTextBox?.addEventListener('pointerup', endTextBoxManipulation);
+    chalkTextBox?.addEventListener('pointercancel', endTextBoxManipulation);
+}
+
+function syncChalkboardUI() {
+    chalkModeButtons.forEach(btn => {
+        const tool = btn.dataset.tool;
+        const active = tool === 'chalk'
+            ? chalkboardState.tool === 'chalk' && btn.dataset.color === chalkboardState.color
+            : chalkboardState.tool === tool;
+        btn.classList.toggle('active', active);
+    });
+
+    chalkSizeButtons.forEach(btn => {
+        btn.classList.toggle('active', Number(btn.dataset.size || 0) === chalkboardState.size);
+    });
+    updateChalkboardCursor();
+}
+
+function resizeChalkboardCanvas() {
+    if (!chalkboardCanvas || !chalkboardSurface || !chalkboardState.ctx) return;
+
+    const rect = getChalkInputRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = Math.max(1, Math.round(rect.width));
+    const cssHeight = Math.max(1, Math.round(rect.height));
+    const nextWidth = Math.max(1, Math.floor(cssWidth * dpr));
+    const nextHeight = Math.max(1, Math.floor(cssHeight * dpr));
+
+    if (chalkboardCanvas.width === nextWidth && chalkboardCanvas.height === nextHeight) return;
+
+    const snapshot = document.createElement('canvas');
+    snapshot.width = chalkboardCanvas.width;
+    snapshot.height = chalkboardCanvas.height;
+    const snapshotCtx = snapshot.getContext('2d');
+    if (chalkboardCanvas.width && chalkboardCanvas.height) {
+        snapshotCtx.drawImage(chalkboardCanvas, 0, 0);
+    }
+
+    chalkboardCanvas.width = nextWidth;
+    chalkboardCanvas.height = nextHeight;
+    chalkboardState.cssWidth = cssWidth;
+    chalkboardState.cssHeight = cssHeight;
+    chalkboardState.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    chalkboardState.ctx.scale(dpr, dpr);
+    chalkboardState.ctx.lineCap = 'round';
+    chalkboardState.ctx.lineJoin = 'round';
+
+    if (!chalkboardState.hasInteracted) {
+        drawChalkboardWelcome();
+    } else if (snapshot.width && snapshot.height) {
+        chalkboardState.ctx.drawImage(snapshot, 0, 0, cssWidth, cssHeight);
+        if (chalkboardState.pendingText && chalkboardState.pendingTextRect) {
+            chalkboardState.pendingTextSnapshot = createCanvasSnapshot();
+            syncPendingTextBox();
+            return;
+        }
+        if (chalkboardState.dragStart && chalkboardState.hoverPoint && (
+            chalkboardState.pendingShapePreview ||
+            ((chalkboardState.tool === 'image' || chalkboardState.tool === 'text') && chalkboardState.drawing)
+        )) {
+            previewChalkObject(chalkboardState.hoverPoint);
+        }
+    }
+}
+
+function getChalkInputRect() {
+    if (!chalkboardSurface) {
+        return chalkboardCanvas.getBoundingClientRect();
+    }
+
+    const surfaceRect = chalkboardSurface.getBoundingClientRect();
+    const style = window.getComputedStyle(chalkboardSurface);
+    const borderLeft = parseFloat(style.borderLeftWidth || '0') || 0;
+    const borderTop = parseFloat(style.borderTopWidth || '0') || 0;
+    const borderRight = parseFloat(style.borderRightWidth || '0') || 0;
+    const borderBottom = parseFloat(style.borderBottomWidth || '0') || 0;
+
+    return {
+        left: surfaceRect.left + borderLeft,
+        top: surfaceRect.top + borderTop,
+        width: Math.max(1, surfaceRect.width - borderLeft - borderRight),
+        height: Math.max(1, surfaceRect.height - borderTop - borderBottom)
+    };
+}
+
+function getChalkPoint(event) {
+    const rect = getChalkInputRect();
+    return {
+        x: ((event.clientX - rect.left) / rect.width) * chalkboardState.cssWidth,
+        y: ((event.clientY - rect.top) / rect.height) * chalkboardState.cssHeight
+    };
+}
+
+function startChalkStroke(event) {
+    const activated = activateChalkboard();
+    if (activated) return;
+
+    const point = getChalkPoint(event);
+    const tool = chalkboardState.tool;
+
+    if (tool !== 'text' && chalkboardState.pendingText && chalkboardState.pendingTextRect) {
+        commitPendingTextPlacement();
+    }
+
+    if (tool === 'chalk' || tool === 'eraser') {
+        pushChalkHistory();
+        chalkboardState.drawing = true;
+        chalkboardState.lastPoint = point;
+        chalkboardCanvas.setPointerCapture?.(event.pointerId);
+        if (tool === 'chalk') {
+            drawChalkDot(point);
+        } else {
+            drawChalkStroke(event);
+        }
+        return;
+    }
+
+    if (tool === 'image') {
+        if (tool === 'image' && !chalkboardState.pendingImage) return;
+        const rect = tool === 'image' ? getImagePlacementRect(point) : getTextPlacementRect(point);
+        if (!rect) return;
+        chalkboardState.drawing = true;
+        chalkboardState.lastPoint = point;
+        chalkboardState.dragStart = {
+            x: rect.left,
+            y: rect.top
+        };
+        chalkboardState.dragPresetEnd = {
+            x: rect.left + rect.width,
+            y: rect.top + rect.height
+        };
+        chalkboardState.dragSnapshot = createCanvasSnapshot();
+        chalkboardState.hoverPoint = chalkboardState.dragPresetEnd;
+        hidePlacementGuide();
+        chalkboardCanvas.setPointerCapture?.(event.pointerId);
+        return;
+    }
+
+    if (tool === 'text') {
+        if (!chalkboardState.pendingText) return;
+
+        if (!chalkboardState.pendingTextRect) {
+            placePendingTextAt(point);
+            return;
+        }
+
+        commitPendingTextPlacement();
+        return;
+    }
+
+    if (!chalkboardState.dragStart) {
+        chalkboardState.dragStart = point;
+        chalkboardState.dragSnapshot = createCanvasSnapshot();
+        chalkboardState.hoverPoint = point;
+        chalkboardState.pendingShapePreview = true;
+        return;
+    }
+
+    commitChalkObject(point);
+    chalkboardState.dragStart = null;
+    chalkboardState.dragSnapshot = null;
+    chalkboardState.hoverPoint = null;
+    chalkboardState.pendingShapePreview = false;
+}
+
+function drawChalkDot(point) {
+    const ctx = chalkboardState.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.fillStyle = chalkboardState.color;
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, Math.max(1.8, chalkboardState.size * 0.45), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawChalkStroke(event) {
+    const point = getChalkPoint(event);
+    chalkboardState.hoverPoint = point;
+    const tool = chalkboardState.tool;
+    if (tool === 'text') {
+        updateChalkboardCursor();
+    }
+
+    if ((tool === 'line' || tool === 'rect' || tool === 'circle') && chalkboardState.dragStart) {
+        previewChalkObject(point);
+        return;
+    }
+
+    if (tool === 'image') {
+        if (chalkboardState.drawing && chalkboardState.dragStart) {
+            previewChalkObject(point);
+        } else {
+            updatePlacementGuide(point);
+        }
+        return;
+    }
+
+    if (tool === 'text') {
+        if (!chalkboardState.pendingTextRect) {
+            updatePlacementGuide(point);
+        }
+        return;
+    }
+
+    if (!chalkboardState.drawing || !chalkboardState.lastPoint) return;
+
+    const ctx = chalkboardState.ctx;
+    const isEraser = tool === 'eraser';
+
+    ctx.save();
+    ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = isEraser ? 'rgba(0,0,0,1)' : chalkboardState.color;
+    ctx.lineWidth = isEraser ? chalkboardState.eraserSize : chalkboardState.size;
+    ctx.globalAlpha = isEraser ? 1 : 0.88;
+    ctx.beginPath();
+    ctx.moveTo(chalkboardState.lastPoint.x, chalkboardState.lastPoint.y);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+
+    if (!isEraser) {
+        ctx.lineWidth = Math.max(1, chalkboardState.size * 0.24);
+        ctx.globalAlpha = 0.22;
+        ctx.beginPath();
+        ctx.moveTo(chalkboardState.lastPoint.x + 1.2, chalkboardState.lastPoint.y - 0.8);
+        ctx.lineTo(point.x + 1.2, point.y - 0.8);
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    chalkboardState.lastPoint = point;
+    if (!isEraser) {
+        spawnChalkDust(point);
+    }
+}
+
+function spawnChalkDust(point) {
+    const ctx = chalkboardState.ctx;
+    if (!ctx) return;
+    ctx.save();
+    ctx.fillStyle = chalkboardState.color;
+    ctx.globalAlpha = 0.14;
+    for (let i = 0; i < 2; i += 1) {
+        const offsetX = (Math.random() - 0.5) * 10;
+        const offsetY = (Math.random() - 0.5) * 10;
+        ctx.beginPath();
+        ctx.arc(point.x + offsetX, point.y + offsetY, Math.random() * 1.2 + 0.4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+function endChalkStroke(event) {
+    if (!chalkboardState.drawing) return;
+    const eventPoint = event ? getChalkPoint(event) : chalkboardState.lastPoint;
+    const point = chalkboardState.hoverPoint || chalkboardState.dragPresetEnd || eventPoint;
+    if (chalkboardState.tool === 'image' && chalkboardState.dragStart) {
+        commitChalkObject(point);
+    }
+    chalkboardState.drawing = false;
+    chalkboardState.lastPoint = null;
+    if (chalkboardState.tool === 'image') {
+        chalkboardState.dragStart = null;
+        chalkboardState.dragSnapshot = null;
+        chalkboardState.hoverPoint = null;
+        chalkboardState.dragPresetEnd = null;
+    }
+    if (chalkboardState.tool === 'text') {
+        chalkboardState.textManipulation = null;
+        syncPendingTextBox();
+    }
+    hidePlacementGuide();
+    if (event?.pointerId !== undefined) {
+        chalkboardCanvas.releasePointerCapture?.(event.pointerId);
+    }
+}
+
+function handleChalkPointerLeave(event) {
+    if (chalkboardState.drawing) {
+        endChalkStroke(event);
+        return;
+    }
+    hidePlacementGuide();
+}
+
+function startTextBoxManipulation(event) {
+    if (chalkboardState.tool !== 'text' || !chalkboardState.pendingTextRect) return;
+
+    const handle = event.target instanceof HTMLElement && event.target.dataset.handle
+        ? event.target.dataset.handle
+        : 'move';
+    const point = getChalkPoint(event);
+
+    chalkboardState.textManipulation = {
+        mode: handle === 'move' ? 'move' : 'resize',
+        handle: handle === 'move' ? null : handle,
+        originPoint: point,
+        originRect: { ...chalkboardState.pendingTextRect }
+    };
+    chalkboardState.drawing = true;
+    chalkboardState.hoverPoint = point;
+    chalkTextBox?.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+}
+
+function moveTextBoxManipulation(event) {
+    if (chalkboardState.tool !== 'text' || !chalkboardState.drawing || !chalkboardState.textManipulation) return;
+    const point = getChalkPoint(event);
+    chalkboardState.hoverPoint = point;
+    updatePendingTextRect(point);
+    event.preventDefault();
+    event.stopPropagation();
+}
+
+function endTextBoxManipulation(event) {
+    if (chalkboardState.tool !== 'text' || !chalkboardState.drawing || !chalkboardState.textManipulation) return;
+    chalkboardState.drawing = false;
+    chalkboardState.textManipulation = null;
+    syncPendingTextBox();
+    if (event?.pointerId !== undefined) {
+        chalkTextBox?.releasePointerCapture?.(event.pointerId);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+}
+
+function openTextToolModal() {
+    if (!textToolOverlay) {
+        return Promise.resolve(false);
+    }
+
+    textToolContent.value = chalkboardState.textToolSettings.content || '';
+    textToolFontFamily.value = chalkboardState.textToolSettings.fontFamily || '"Comic Sans MS", "Bradley Hand", "Segoe Print", cursive';
+    textToolFontSize.value = String(chalkboardState.textToolSettings.fontSize || 28);
+    textToolOverlay.classList.add('visible');
+    requestAnimationFrame(() => textToolContent?.focus());
+
+    return new Promise(resolve => {
+        chalkboardState.textToolResolver = resolve;
+    });
+}
+
+function closeTextToolModal(confirmed) {
+    if (!textToolOverlay) return;
+    textToolOverlay.classList.remove('visible');
+
+    const resolver = chalkboardState.textToolResolver;
+    chalkboardState.textToolResolver = null;
+    if (resolver) {
+        resolver(Boolean(confirmed));
+    }
+}
+
+function undoChalkAction() {
+    cancelPendingChalkPreview(false);
+    hidePlacementGuide();
+    hidePendingTextBox();
+    chalkboardState.pendingText = null;
+    chalkboardState.pendingTextRect = null;
+    chalkboardState.pendingTextSnapshot = null;
+    chalkboardState.pendingTextPreviewUrl = null;
+    chalkboardState.textManipulation = null;
+
+    const snapshot = chalkboardState.history.pop();
+    if (!snapshot) return;
+
+    clearChalkboardSurface();
+    chalkboardState.ctx.drawImage(snapshot, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+}
+
+function clearChalkboard() {
+    if (!chalkboardState.ctx || !chalkboardCanvas) return;
+    chalkboardState.hasInteracted = true;
+    chalkboardState.hintDrawn = false;
+    pushChalkHistory();
+    cancelPendingChalkPreview(false);
+    hidePendingTextBox();
+    chalkboardState.pendingText = null;
+    chalkboardState.pendingTextRect = null;
+    chalkboardState.pendingTextSnapshot = null;
+    chalkboardState.pendingTextPreviewUrl = null;
+    chalkboardState.textManipulation = null;
+    chalkboardState.ctx.clearRect(0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+}
+
+function saveChalkboardImage() {
+    if (!chalkboardCanvas) return;
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.href = chalkboardCanvas.toDataURL('image/png');
+    link.download = `chalkboard-${timestamp}.png`;
+    link.click();
+}
+
+function handleChalkImageUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+            cancelPendingChalkPreview();
+            chalkboardState.pendingImage = img;
+            chalkboardState.tool = 'image';
+            syncChalkboardUI();
+            updatePlacementGuide(chalkboardState.hoverPoint || {
+                x: chalkboardState.cssWidth / 2,
+                y: chalkboardState.cssHeight / 2
+            });
+        };
+        img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+}
+
+function activateChalkboard() {
+    if (chalkboardState.hasInteracted) return false;
+    chalkboardState.hasInteracted = true;
+    chalkboardState.history = [];
+    clearChalkboardSurface();
+    drawChalkboardHint();
+    return true;
+}
+
+function clearChalkboardSurface() {
+    if (!chalkboardState.ctx) return;
+    chalkboardState.ctx.clearRect(0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+}
+
+function pushChalkHistory(snapshot = null) {
+    const source = snapshot || createCanvasSnapshot();
+    if (!source) return;
+
+    const record = document.createElement('canvas');
+    record.width = source.width;
+    record.height = source.height;
+    const recordCtx = record.getContext('2d');
+    recordCtx.drawImage(source, 0, 0);
+    chalkboardState.history.push(record);
+
+    if (chalkboardState.history.length > 30) {
+        chalkboardState.history.shift();
+    }
+}
+
+function cancelPendingChalkPreview(restorePreview = true) {
+    if (restorePreview && chalkboardState.dragSnapshot && (chalkboardState.pendingShapePreview || chalkboardState.drawing)) {
+        restoreCanvasSnapshot(chalkboardState.dragSnapshot);
+    }
+    chalkboardState.drawing = false;
+    chalkboardState.lastPoint = null;
+    chalkboardState.dragStart = null;
+    chalkboardState.dragSnapshot = null;
+    chalkboardState.hoverPoint = null;
+    chalkboardState.dragPresetEnd = null;
+    chalkboardState.pendingShapePreview = false;
+    chalkboardState.textManipulation = null;
+    if (!chalkboardState.pendingTextRect) {
+        chalkboardState.pendingTextSnapshot = null;
+        chalkboardState.pendingTextPreviewUrl = null;
+    }
+    hidePlacementGuide();
+}
+
+function createCanvasSnapshot() {
+    const snapshot = document.createElement('canvas');
+    snapshot.width = chalkboardCanvas.width;
+    snapshot.height = chalkboardCanvas.height;
+    const snapshotCtx = snapshot.getContext('2d');
+    snapshotCtx.drawImage(chalkboardCanvas, 0, 0);
+    return snapshot;
+}
+
+function restoreCanvasSnapshot(snapshot) {
+    if (!snapshot || !chalkboardState.ctx) return;
+    clearChalkboardSurface();
+    chalkboardState.ctx.drawImage(snapshot, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+}
+
+function previewChalkObject(point) {
+    if (!chalkboardState.dragStart) return;
+    restoreCanvasSnapshot(chalkboardState.dragSnapshot);
+    drawChalkObject(chalkboardState.dragStart, point, true);
+}
+
+function commitChalkObject(point) {
+    if (!chalkboardState.dragStart) return;
+    pushChalkHistory(chalkboardState.dragSnapshot);
+    restoreCanvasSnapshot(chalkboardState.dragSnapshot);
+    drawChalkObject(chalkboardState.dragStart, point, false);
+}
+
+function drawChalkObject(start, end, preview) {
+    if (!start || !end || !chalkboardState.ctx) return;
+
+    const ctx = chalkboardState.ctx;
+    const left = Math.min(start.x, end.x);
+    const top = Math.min(start.y, end.y);
+    const width = Math.abs(end.x - start.x);
+    const height = Math.abs(end.y - start.y);
+
+    ctx.save();
+    ctx.strokeStyle = chalkboardState.color;
+    ctx.fillStyle = chalkboardState.color;
+    ctx.lineWidth = chalkboardState.size;
+    ctx.globalAlpha = preview ? 0.6 : 0.9;
+
+    if (chalkboardState.tool === 'line') {
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.stroke();
+    } else if (chalkboardState.tool === 'rect') {
+        ctx.strokeRect(left, top, width, height);
+    } else if (chalkboardState.tool === 'circle') {
+        ctx.beginPath();
+        ctx.ellipse(left + width / 2, top + height / 2, Math.max(width / 2, 1), Math.max(height / 2, 1), 0, 0, Math.PI * 2);
+        ctx.stroke();
+    } else if (chalkboardState.tool === 'image' && chalkboardState.pendingImage) {
+        drawPlacedImage(left, top, width, height, preview);
+        if (!preview) {
+            chalkboardState.pendingImage = null;
+            chalkboardState.tool = 'chalk';
+            syncChalkboardUI();
+        }
+    }
+
+    ctx.restore();
+}
+
+function drawPlacedImage(left, top, width, height, preview) {
+    const img = chalkboardState.pendingImage;
+    if (!img || !chalkboardState.ctx) return;
+
+    const ctx = chalkboardState.ctx;
+    const targetWidth = Math.max(width, 24);
+    const targetHeight = Math.max(height, 24);
+    ctx.globalAlpha = preview ? 0.65 : 0.96;
+    ctx.drawImage(img, left, top, targetWidth, targetHeight);
+    if (preview) {
+        ctx.strokeStyle = 'rgba(244, 239, 226, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(left, top, targetWidth, targetHeight);
+        ctx.setLineDash([]);
+    }
+}
+
+function drawPlacedText(left, top, width, height, preview) {
+    const block = chalkboardState.pendingText;
+    if (!block || !chalkboardState.ctx) return;
+
+    const targetWidth = Math.max(width, block.baseWidth);
+    const targetHeight = Math.max(height, block.baseHeight);
+    const image = block.previewCanvas;
+    if (!image) return;
+
+    const ctx = chalkboardState.ctx;
+    ctx.save();
+    ctx.globalAlpha = preview ? 0.7 : 0.96;
+    ctx.drawImage(image, left, top, targetWidth, targetHeight);
+    ctx.restore();
+}
+
+function drawChalkboardWelcome() {
+    const ctx = chalkboardState.ctx;
+    if (!ctx) return;
+
+    chalkboardState.history = [];
+    clearChalkboardSurface();
+
+    const padX = 34;
+    const titleY = 62;
+    const bodyY = 122;
+    const warnY = 206;
+    const lineWidth = Math.max(320, chalkboardState.cssWidth - padX * 2);
+
+    drawChalkText('歡迎使用 AI PC Agent', padX, titleY, {
+        font: '700 34px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+        color: '#f4efe2',
+        alpha: 0.96
+    });
+
+    drawWrappedChalkText(
+        '這裡可以快速啟動推薦工具與瀏覽器。請從左側推薦清單選擇工具，或是直接與 AI 對話。',
+        padX,
+        bodyY,
+        lineWidth,
+        28,
+        {
+            font: '400 22px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+            color: '#eef0df',
+            alpha: 0.9
+        }
+    );
+
+    drawWrappedChalkText(
+        '⚠️ AI Agent 很強大，但也可能犯錯，導致系統有風險，敬請仔細查證並小心下指令。',
+        padX,
+        warnY,
+        lineWidth,
+        28,
+        {
+            font: '700 22px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+            color: '#f4dd63',
+            alpha: 0.92
+        }
+    );
+}
+
+function drawChalkboardHint() {
+    if (chalkboardState.hintDrawn) return;
+    chalkboardState.hintDrawn = true;
+    drawChalkText('用粉筆直接畫', 34, 62, {
+        font: '700 30px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+        color: '#f4efe2',
+        alpha: 0.94
+    });
+    drawWrappedChalkText(
+        '選一支粉筆，直接在黑板上塗寫，板擦可清空畫布。可把想法畫出來給AI看。',
+        34,
+        108,
+        Math.max(280, chalkboardState.cssWidth - 68),
+        26,
+        {
+            font: '400 20px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+            color: '#eef0df',
+            alpha: 0.88
+        }
+    );
+}
+
+function drawWrappedChalkText(text, x, y, maxWidth, lineHeight, options) {
+    const ctx = chalkboardState.ctx;
+    if (!ctx) return;
+
+    ctx.save();
+    ctx.font = options.font;
+    const chars = Array.from(text);
+    let line = '';
+    let currentY = y;
+
+    chars.forEach(char => {
+        const testLine = line + char;
+        if (line && ctx.measureText(testLine).width > maxWidth) {
+            drawChalkText(line, x, currentY, options);
+            line = char;
+            currentY += lineHeight;
+        } else {
+            line = testLine;
+        }
+    });
+
+    if (line) {
+        drawChalkText(line, x, currentY, options);
+    }
+    ctx.restore();
+}
+
+async function requestPendingChalkText() {
+    const confirmed = await openTextToolModal();
+    if (!confirmed) return false;
+
+    const content = String(textToolContent?.value || '').trim();
+    if (!content) return false;
+
+    const fontFamily = textToolFontFamily?.value || '"Comic Sans MS", "Bradley Hand", "Segoe Print", cursive';
+    const fontSizeValue = Number(textToolFontSize?.value || 28);
+    const fontSize = Math.max(14, Math.min(160, Number.isFinite(fontSizeValue) ? fontSizeValue : 28));
+
+    chalkboardState.textToolSettings = {
+        content,
+        fontFamily,
+        fontSize
+    };
+
+    const lines = content
+        .split(/\r?\n/)
+        .map(line => line.trimEnd())
+        .filter(Boolean);
+
+    if (!lines.length) return false;
+    const lineHeight = Math.round(fontSize * 1.35);
+    const font = `700 ${fontSize}px ${fontFamily}`;
+    const width = measureChalkTextWidth(lines, font);
+    const height = Math.max(fontSize, lines.length * lineHeight);
+    const previewPadding = Math.max(6, Math.round(fontSize * 0.18));
+    const previewCanvas = createTextPreviewCanvas(lines, width, height, font, lineHeight, chalkboardState.color, previewPadding);
+
+    chalkboardState.pendingText = {
+        lines,
+        fontSize,
+        lineHeight,
+        textWidth: width,
+        textHeight: height,
+        baseWidth: width + (previewPadding * 2),
+        baseHeight: height + (previewPadding * 2),
+        font,
+        previewCanvas,
+        previewPadding
+    };
+    chalkboardState.pendingTextRect = null;
+    chalkboardState.pendingTextSnapshot = createCanvasSnapshot();
+    chalkboardState.pendingTextPreviewUrl = previewCanvas.toDataURL('image/png');
+    hidePendingTextBox();
+
+    updatePlacementGuide(chalkboardState.hoverPoint || {
+        x: chalkboardState.cssWidth / 2,
+        y: chalkboardState.cssHeight / 2
+    });
+    return true;
+}
+
+function createTextPreviewCanvas(lines, width, height, font, lineHeight, color, padding) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil(width + (padding * 2)));
+    canvas.height = Math.max(1, Math.ceil(height + (padding * 2)));
+    const ctx = canvas.getContext('2d');
+    ctx.font = font;
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.96;
+
+    lines.forEach((line, index) => {
+        const y = padding + (index * lineHeight);
+        ctx.fillText(line, padding, y);
+        ctx.globalAlpha = 0.18;
+        ctx.fillText(line, padding + 1.4, Math.max(0, y - 0.8));
+        ctx.globalAlpha = 0.96;
+    });
+
+    return canvas;
+}
+
+function drawChalkText(text, x, y, options) {
+    const ctx = chalkboardState.ctx;
+    if (!ctx) return;
+
+    ctx.save();
+    ctx.font = options.font;
+    ctx.textBaseline = options.baseline || 'alphabetic';
+    ctx.fillStyle = options.color;
+    ctx.globalAlpha = options.alpha ?? 0.9;
+    ctx.fillText(text, x, y);
+    ctx.globalAlpha = 0.18;
+    ctx.fillText(text, x + 1.4, y - 0.8);
+    ctx.restore();
+}
+
+function measureChalkTextWidth(lines, font) {
+    const ctx = chalkboardState.ctx;
+    if (!ctx) return 160;
+
+    ctx.save();
+    ctx.font = font;
+    const width = lines.reduce((maxWidth, line) => Math.max(maxWidth, ctx.measureText(line).width), 0);
+    ctx.restore();
+    return Math.max(48, Math.ceil(width));
+}
+
+function getImagePlacementRect(point) {
+    const img = chalkboardState.pendingImage;
+    if (!img) return null;
+
+    const naturalWidth = Math.max(1, img.naturalWidth || img.width || 1);
+    const naturalHeight = Math.max(1, img.naturalHeight || img.height || 1);
+    const maxWidth = Math.min(chalkboardState.cssWidth * 0.26, 220);
+    const minWidth = 72;
+    const guideWidth = Math.max(minWidth, Math.min(maxWidth, naturalWidth));
+    const guideHeight = Math.max(54, guideWidth * (naturalHeight / naturalWidth));
+    const boundedWidth = Math.min(guideWidth, chalkboardState.cssWidth);
+    const boundedHeight = Math.min(guideHeight, chalkboardState.cssHeight);
+    const left = Math.max(0, Math.min(point.x - boundedWidth / 2, chalkboardState.cssWidth - boundedWidth));
+    const top = Math.max(0, Math.min(point.y - boundedHeight / 2, chalkboardState.cssHeight - boundedHeight));
+
+    return {
+        left,
+        top,
+        width: boundedWidth,
+        height: boundedHeight
+    };
+}
+
+function getTextPlacementRect(point) {
+    const block = chalkboardState.pendingText;
+    if (!block) return null;
+
+    const boundedWidth = Math.min(block.baseWidth, chalkboardState.cssWidth);
+    const boundedHeight = Math.min(block.baseHeight, chalkboardState.cssHeight);
+    const left = Math.max(0, Math.min(point.x - boundedWidth / 2, chalkboardState.cssWidth - boundedWidth));
+    const top = Math.max(0, Math.min(point.y - boundedHeight / 2, chalkboardState.cssHeight - boundedHeight));
+
+    return {
+        left,
+        top,
+        width: boundedWidth,
+        height: boundedHeight
+    };
+}
+
+function placePendingTextAt(point) {
+    const rect = getTextPlacementRect(point);
+    if (!rect) return;
+    chalkboardState.pendingTextRect = rect;
+    hidePlacementGuide();
+    syncPendingTextBox();
+}
+
+function getTextBoxHit(point) {
+    const rect = chalkboardState.pendingTextRect;
+    if (!rect) return null;
+
+    const margin = 12;
+    const nearLeft = Math.abs(point.x - rect.left) <= margin;
+    const nearRight = Math.abs(point.x - (rect.left + rect.width)) <= margin;
+    const nearTop = Math.abs(point.y - rect.top) <= margin;
+    const nearBottom = Math.abs(point.y - (rect.top + rect.height)) <= margin;
+    const withinX = point.x >= rect.left && point.x <= rect.left + rect.width;
+    const withinY = point.y >= rect.top && point.y <= rect.top + rect.height;
+
+    if (nearTop && nearLeft) return 'nw';
+    if (nearTop && nearRight) return 'ne';
+    if (nearBottom && nearRight) return 'se';
+    if (nearBottom && nearLeft) return 'sw';
+    if (nearTop && withinX) return 'n';
+    if (nearBottom && withinX) return 's';
+    if (nearLeft && withinY) return 'w';
+    if (nearRight && withinY) return 'e';
+    if (withinX && withinY) return 'move';
+    return null;
+}
+
+function updatePendingTextRect(point) {
+    const interaction = chalkboardState.textManipulation;
+    const rect = interaction?.originRect;
+    if (!interaction || !rect) return;
+
+    const dx = point.x - interaction.originPoint.x;
+    const dy = point.y - interaction.originPoint.y;
+    const minWidth = Math.max(60, (chalkboardState.pendingText?.baseWidth || 60) * 0.5);
+    const minHeight = Math.max(32, (chalkboardState.pendingText?.baseHeight || 32) * 0.5);
+    let nextLeft = rect.left;
+    let nextTop = rect.top;
+    let nextWidth = rect.width;
+    let nextHeight = rect.height;
+
+    if (interaction.mode === 'move') {
+        nextLeft = rect.left + dx;
+        nextTop = rect.top + dy;
+    } else {
+        const handle = interaction.handle || 'se';
+        let right = rect.left + rect.width;
+        let bottom = rect.top + rect.height;
+
+        if (handle.includes('w')) {
+            nextLeft = Math.min(rect.left + dx, right - minWidth);
+        }
+        if (handle.includes('e')) {
+            right = Math.max(rect.left + minWidth, right + dx);
+        }
+        if (handle.includes('n')) {
+            nextTop = Math.min(rect.top + dy, bottom - minHeight);
+        }
+        if (handle.includes('s')) {
+            bottom = Math.max(rect.top + minHeight, bottom + dy);
+        }
+
+        nextWidth = right - nextLeft;
+        nextHeight = bottom - nextTop;
+    }
+
+    nextWidth = Math.max(minWidth, Math.min(nextWidth, chalkboardState.cssWidth));
+    nextHeight = Math.max(minHeight, Math.min(nextHeight, chalkboardState.cssHeight));
+    nextLeft = Math.max(0, Math.min(nextLeft, chalkboardState.cssWidth - nextWidth));
+    nextTop = Math.max(0, Math.min(nextTop, chalkboardState.cssHeight - nextHeight));
+
+    chalkboardState.pendingTextRect = {
+        left: nextLeft,
+        top: nextTop,
+        width: nextWidth,
+        height: nextHeight
+    };
+    syncPendingTextBox();
+}
+
+function syncPendingTextBox() {
+    if (!chalkTextBox || !chalkboardState.pendingText || !chalkboardState.pendingTextRect) {
+        hidePendingTextBox();
+        return;
+    }
+
+    const rect = chalkboardState.pendingTextRect;
+    chalkTextBox.style.left = `${rect.left}px`;
+    chalkTextBox.style.top = `${rect.top}px`;
+    chalkTextBox.style.width = `${rect.width}px`;
+    chalkTextBox.style.height = `${rect.height}px`;
+    chalkTextBox.classList.add('visible');
+    if (chalkboardState.pendingTextSnapshot) {
+        restoreCanvasSnapshot(chalkboardState.pendingTextSnapshot);
+    }
+    if (chalkTextBoxContent) {
+        chalkTextBoxContent.src = chalkboardState.pendingTextPreviewUrl || '';
+        chalkTextBoxContent.style.opacity = '0.96';
+    }
+}
+
+function hidePendingTextBox() {
+    chalkTextBox?.classList.remove('visible');
+    if (chalkTextBoxContent) {
+        chalkTextBoxContent.removeAttribute('src');
+    }
+}
+
+function commitPendingTextPlacement() {
+    if (!chalkboardState.pendingText || !chalkboardState.pendingTextRect) return;
+    const snapshot = chalkboardState.pendingTextSnapshot || createCanvasSnapshot();
+    pushChalkHistory(snapshot);
+    restoreCanvasSnapshot(snapshot);
+    const rect = chalkboardState.pendingTextRect;
+    drawPlacedText(rect.left, rect.top, rect.width, rect.height, false);
+    chalkboardState.pendingText = null;
+    chalkboardState.pendingTextRect = null;
+    chalkboardState.pendingTextSnapshot = null;
+    chalkboardState.pendingTextPreviewUrl = null;
+    chalkboardState.textManipulation = null;
+    hidePendingTextBox();
+    chalkboardState.tool = 'chalk';
+    syncChalkboardUI();
+}
+
+function updatePlacementGuide(point) {
+    if (!chalkPlacementGuide || !point || chalkboardState.drawing || chalkboardState.pendingTextRect) {
+        hidePlacementGuide();
+        return;
+    }
+
+    let rect = null;
+    if (chalkboardState.tool === 'image' && chalkboardState.pendingImage) {
+        rect = getImagePlacementRect(point);
+    } else if (chalkboardState.tool === 'text' && chalkboardState.pendingText) {
+        rect = getTextPlacementRect(point);
+    }
+
+    if (!rect) {
+        hidePlacementGuide();
+        return;
+    }
+
+    chalkPlacementGuide.style.left = `${rect.left}px`;
+    chalkPlacementGuide.style.top = `${rect.top}px`;
+    chalkPlacementGuide.style.width = `${rect.width}px`;
+    chalkPlacementGuide.style.height = `${rect.height}px`;
+    chalkPlacementGuide.classList.add('visible');
+}
+
+function hidePlacementGuide() {
+    chalkPlacementGuide?.classList.remove('visible');
+}
+
+function updateChalkboardCursor() {
+    if (!chalkboardCanvas) return;
+    if (chalkboardState.tool === 'image' && chalkboardState.pendingImage) {
+        chalkboardCanvas.style.cursor = 'copy';
+        return;
+    }
+    if (chalkboardState.tool === 'text' && chalkboardState.pendingText) {
+        const hit = chalkboardState.pendingTextRect && chalkboardState.hoverPoint
+            ? getTextBoxHit(chalkboardState.hoverPoint)
+            : null;
+        const cursorMap = {
+            move: 'move',
+            nw: 'nwse-resize',
+            se: 'nwse-resize',
+            ne: 'nesw-resize',
+            sw: 'nesw-resize',
+            n: 'ns-resize',
+            s: 'ns-resize',
+            e: 'ew-resize',
+            w: 'ew-resize'
+        };
+        chalkboardCanvas.style.cursor = cursorMap[hit] || 'text';
+        return;
+    }
+    hidePlacementGuide();
+    if (chalkboardState.tool === 'eraser') {
+        chalkboardCanvas.style.cursor = 'cell';
+        return;
+    }
+    chalkboardCanvas.style.cursor = 'crosshair';
+}
+
 // ════════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════════
@@ -265,6 +1375,7 @@ async function init() {
     restoreLayout();
     setupResizers();
     setupEventListeners();
+    setupChalkboard();
     setupSpeechRecognition();
 
     // 並行載入資料，不要等待啟動畫面
@@ -1568,6 +2679,11 @@ function setupEventListeners() {
             chatCol.style.width = maxChatWidth + 'px';
             saveLayout();
         }
+        if (chalkboardState.resizeFrame) cancelAnimationFrame(chalkboardState.resizeFrame);
+        chalkboardState.resizeFrame = requestAnimationFrame(() => {
+            resizeChalkboardCanvas();
+            chalkboardState.resizeFrame = null;
+        });
     });
 
     // Theme
@@ -1578,6 +2694,16 @@ function setupEventListeners() {
     chatModelBadge?.addEventListener('click', toggleModelMenu);
     btnCloseProviderModal?.addEventListener('click', () => providerSettingsOverlay.classList.remove('visible'));
     providerSettingsOverlay?.addEventListener('click', (e) => { if (e.target === providerSettingsOverlay) providerSettingsOverlay.classList.remove('visible'); });
+    btnCloseTextToolModal?.addEventListener('click', () => closeTextToolModal(false));
+    btnCancelTextTool?.addEventListener('click', () => closeTextToolModal(false));
+    btnApplyTextTool?.addEventListener('click', () => closeTextToolModal(true));
+    textToolOverlay?.addEventListener('click', (e) => { if (e.target === textToolOverlay) closeTextToolModal(false); });
+    textToolContent?.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            closeTextToolModal(true);
+        }
+    });
     btnTestProviderSettings?.addEventListener('click', testProviderSettings);
     btnSaveProviderSettings?.addEventListener('click', saveProviderSettings);
 
@@ -1633,7 +2759,10 @@ function setupEventListeners() {
 
     // Keyboard
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') modalOverlay.classList.remove('visible');
+        if (e.key === 'Escape') {
+            modalOverlay.classList.remove('visible');
+            closeTextToolModal(false);
+        }
     });
 
     // Center Tabs
@@ -1678,6 +2807,10 @@ function switchTab(tabId) {
         startHardwarePolling();
     } else {
         stopHardwarePolling();
+    }
+
+    if (tabId === 'chalkboard') {
+        requestAnimationFrame(() => resizeChalkboardCanvas());
     }
 }
 
