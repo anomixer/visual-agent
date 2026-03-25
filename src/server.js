@@ -45,21 +45,12 @@ const TASKS_FILE = path.join(aipcDir, 'tasks.json');
 const SOPS_DIR = path.join(aipcDir, 'sops');
 const SKILLS_DIR = path.join(aipcDir, 'skills');
 const PLUGINS_DIR = path.join(aipcDir, 'plugins');
-const LEGACY_EXPS_DIR = path.join(aipcDir, 'Exps');
 const EXPS_DIR = path.join(aipcDir, 'exps');
 
 if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
 if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
 if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
 if (!fs.existsSync(EXPS_DIR)) fs.mkdirSync(EXPS_DIR, { recursive: true });
-
-function getExperienceDirs() {
-    const dirs = [EXPS_DIR];
-    if (LEGACY_EXPS_DIR.toLowerCase() !== EXPS_DIR.toLowerCase() && fs.existsSync(LEGACY_EXPS_DIR)) {
-        dirs.push(LEGACY_EXPS_DIR);
-    }
-    return dirs;
-}
 
 /**
  * 同步內建的腳本與技能至 AppData
@@ -322,12 +313,13 @@ function appendTaskExperience(task, sop) {
 
 function loadExperienceContext(queryText = '', limit = 3) {
     try {
-        const files = getExperienceDirs()
-            .flatMap((dir) => fs.existsSync(dir)
-                ? fs.readdirSync(dir).filter(name => /^exp-\d{8}\.md$/i.test(name)).map(name => ({ dir, name }))
-                : [])
-            .sort((a, b) => b.name.localeCompare(a.name))
-            .slice(0, 10);
+        if (!fs.existsSync(EXPS_DIR)) return '';
+        const files = fs.readdirSync(EXPS_DIR)
+            .filter(name => /^exp-\d{8}\.md$/i.test(name))
+            .sort()
+            .reverse()
+            .slice(0, 10)
+            .map(name => ({ dir: EXPS_DIR, name }));
         if (files.length === 0) return '';
 
         const tokens = String(queryText || '')
@@ -364,16 +356,15 @@ function loadExperienceContext(queryText = '', limit = 3) {
 }
 
 function loadExperienceEntries(limit = 18) {
-    const files = getExperienceDirs()
-        .flatMap((dir) => fs.existsSync(dir)
-            ? fs.readdirSync(dir)
-                .filter(name => /^exp-\d{8}\.md$/i.test(name))
-                .map((fileName) => {
-                    const fullPath = path.join(dir, fileName);
-                    const stats = fs.statSync(fullPath);
-                    return { fileName, fullPath, updatedAt: stats.mtime.toISOString() };
-                })
-            : [])
+    if (!fs.existsSync(EXPS_DIR)) return [];
+
+    const files = fs.readdirSync(EXPS_DIR)
+        .filter(name => /^exp-\d{8}\.md$/i.test(name))
+        .map((fileName) => {
+            const fullPath = path.join(EXPS_DIR, fileName);
+            const stats = fs.statSync(fullPath);
+            return { fileName, fullPath, updatedAt: stats.mtime.toISOString() };
+        })
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
     const entries = [];

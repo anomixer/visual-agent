@@ -230,7 +230,6 @@ aipc-agent/
 - 工作日誌右側新增 `exps` tab，可瀏覽任務累積經驗。
 - `exps` 面板支援關鍵字搜尋、依 SOP 篩選與單筆詳閱。
 - 安裝任務結束後，會自動把 log 摘要寫入 `%APPDATA%\aipc-agent\exps\exp-yyyymmdd.md`。
-- 舊版 `%APPDATA%\aipc-agent\Exps\` 仍可讀取，避免既有經驗遺失。
 
 ### 2026.03.24
 
