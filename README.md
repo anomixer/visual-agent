@@ -31,6 +31,7 @@ AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可�
 | Provider 設定 | 可設定 Provider、Base URL、API Key、OAuth 2.0 與模型名稱 |
 | 安全互動 | 採用 consent-before-action，先建議再由使用者確認執行 |
 | 工作日誌 | 即時顯示 SOP 執行輸出，進度類訊息會原地更新 |
+| exps | 自動累積任務經驗摘要，支援搜尋、SOP 篩選與老司機備忘錄 |
 | Chalkboard | 中央黑板支援粉筆塗寫、局部板擦、圖形、圖片放置、文字框與 PNG 匯出 |
 | 硬體監控 | 顯示 CPU、GPU、RAM、Disk 與 NVIDIA GPU 溫度資訊 |
 | 插件系統 | 可用 `.js` 擴充系統監控能力 |
@@ -223,6 +224,13 @@ aipc-agent/
 ---
 
 ## 近期更新
+
+### 2026.03.25
+
+- 工作日誌右側新增 `exps` tab，可瀏覽任務累積經驗。
+- `exps` 面板支援關鍵字搜尋、依 SOP 篩選與單筆詳閱。
+- 安裝任務結束後，會自動把 log 摘要寫入 `%APPDATA%\aipc-agent\exps\exp-yyyymmdd.md`。
+- 舊版 `%APPDATA%\aipc-agent\Exps\` 仍可讀取，避免既有經驗遺失。
 
 ### 2026.03.24
 

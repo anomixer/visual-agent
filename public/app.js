@@ -31,7 +31,11 @@ let recSearchQuery = '';
 let hardwareInterval = null;
 let knownTaskStatuses = new Map();
 let activeSidebarTab = 'recommend';
+let activeBottomTab = 'logs';
 let isChalkboardAttachmentEnabled = localStorage.getItem('chat_attach_chalkboard') === 'true';
+let expsEntries = [];
+let expSearchQuery = '';
+let expSopFilter = '';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -50,12 +54,16 @@ const centerCol = document.querySelector('.center-col');
 const chatCol = document.querySelector('.chat-col');
 const logPanel = $('#logPanel');
 const logBody = $('#logBody');
+const expsBody = $('#expsBody');
 const todoContainer = $('#todoListContainer');
 const todoEmpty = $('#todoEmpty');
 const todoCount = $('#todoCount');
 const recCount = $('#recCount');
 const sopCount = $('#sopCount');
 const logEntries = $('#logEntries');
+const expEntries = $('#expEntries');
+const expSearchInput = $('#expSearchInput');
+const expSopFilterSelect = $('#expSopFilter');
 const statusVersion = $('#statusVersion');
 const chatMessages = $('#chatMessages');
 const chatInput = $('#chatInput');
@@ -1757,7 +1765,7 @@ async function init() {
     setupSpeechRecognition();
 
     // 並行載入資料，不要等待啟動畫面
-    await Promise.all([loadTodo(), loadRecommend(), loadSops()]);
+    await Promise.all([loadTodo(), loadRecommend(), loadSops(), loadExps()]);
     
     // 硬體監控改為「顯示時才執行」，避免啟動延遲
     if (activeTab === 'hardware') {
@@ -1858,6 +1866,7 @@ function startPolling() {
 
         await loadTodo();
         pollLogs();
+        loadExps();
         checkLLMStatus();
     }, 2000);
 }
@@ -2637,6 +2646,7 @@ function removeThinking(id) { document.getElementById(id)?.remove(); }
 
 function isLogPinnedToBottom() {
     const threshold = 24;
+    if (activeBottomTab !== 'logs') return false;
     return logBody.scrollTop + logBody.clientHeight >= logBody.scrollHeight - threshold;
 }
 
@@ -2750,6 +2760,109 @@ function expandLog() {
         logPanel.classList.remove('collapsed');
         if (btnToggleLog) btnToggleLog.textContent = '收起 ▼';
     }
+}
+
+function switchBottomTab(tabId) {
+    activeBottomTab = tabId === 'exps' ? 'exps' : 'logs';
+    $$('.tab-row .tab[data-bottom-tab]').forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.bottomTab === activeBottomTab);
+    });
+    logBody?.classList.toggle('active', activeBottomTab === 'logs');
+    expsBody?.classList.toggle('active', activeBottomTab === 'exps');
+}
+
+function renderExps() {
+    if (!expEntries) return;
+    expEntries.innerHTML = '';
+
+    const filtered = (Array.isArray(expsEntries) ? expsEntries : []).filter((entry) => {
+        const text = `${entry.title || ''} ${entry.content || ''} ${entry.sopId || ''}`.toLowerCase();
+        const matchSearch = !expSearchQuery || text.includes(expSearchQuery);
+        const matchSop = !expSopFilter || (entry.sopId || '') === expSopFilter;
+        return matchSearch && matchSop;
+    });
+
+    if (expSopFilterSelect) {
+        const sopIds = [...new Set((expsEntries || []).map((entry) => entry.sopId).filter(Boolean))].sort();
+        expSopFilterSelect.innerHTML = '';
+        const allOption = document.createElement('option');
+        allOption.value = '';
+        allOption.textContent = '全部 SOP';
+        expSopFilterSelect.appendChild(allOption);
+        sopIds.forEach((sopId) => {
+            const option = document.createElement('option');
+            option.value = sopId;
+            option.textContent = sopId;
+            expSopFilterSelect.appendChild(option);
+        });
+        if (!sopIds.includes(expSopFilter)) {
+            expSopFilter = '';
+        }
+        expSopFilterSelect.value = expSopFilter;
+    }
+
+    if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'log-empty';
+        empty.textContent = expsEntries.length ? '找不到符合條件的經驗。' : '尚未累積安裝經驗...';
+        expEntries.appendChild(empty);
+        return;
+    }
+
+    filtered.forEach((entry) => {
+        const card = document.createElement('article');
+        card.className = 'exp-card';
+        const htmlContent = typeof marked !== 'undefined'
+            ? marked.parse(entry.content || '')
+            : escapeHtml(entry.content || '').replace(/\n/g, '<br>');
+        const updatedAt = entry.updatedAt
+            ? new Date(entry.updatedAt).toLocaleString('zh-TW', { hour12: false })
+            : '';
+
+        card.innerHTML = `
+            <div class="exp-card-header">
+              <div class="exp-card-title">${escapeHtml(entry.title || entry.fileName || '未命名經驗')}</div>
+              <div class="exp-card-meta">${escapeHtml(entry.sopId || 'dynamic')}<br>${escapeHtml(updatedAt)}</div>
+            </div>
+            <div class="exp-card-body">${htmlContent}</div>
+        `;
+        card.addEventListener('click', () => showExpDetail(entry));
+        expEntries.appendChild(card);
+    });
+}
+
+async function loadExps() {
+    const data = await api('/api/exps');
+    if (data.success) {
+        expsEntries = Array.isArray(data.entries) ? data.entries : [];
+        renderExps();
+    }
+}
+
+function showExpDetail(entry) {
+    modalTitle.textContent = entry.title || entry.fileName || '經驗詳情';
+    const htmlContent = typeof marked !== 'undefined'
+        ? marked.parse(entry.content || '')
+        : escapeHtml(entry.content || '').replace(/\n/g, '<br>');
+    const updatedAt = entry.updatedAt
+        ? new Date(entry.updatedAt).toLocaleString('zh-TW', { hour12: false })
+        : '';
+    modalBody.innerHTML = `
+        <div class="task-detail-row">
+          <span class="task-detail-label">SOP</span>
+          <span class="task-detail-value">${escapeHtml(entry.sopId || 'dynamic')}</span>
+        </div>
+        <div class="task-detail-row">
+          <span class="task-detail-label">來源</span>
+          <span class="task-detail-value">${escapeHtml(entry.fileName || '')}</span>
+        </div>
+        <div class="task-detail-row">
+          <span class="task-detail-label">更新時間</span>
+          <span class="task-detail-value">${escapeHtml(updatedAt)}</span>
+        </div>
+        <div style="margin-top:12px" class="exp-card-body">${htmlContent}</div>
+    `;
+    modalOverlay.classList.add('visible');
 }
 
 // ════════════════════════════════════════════════════════
@@ -3133,6 +3246,17 @@ function setupEventListeners() {
 
     // Toggle log
     btnToggleLog?.addEventListener('click', toggleLog);
+    $$('.tab-row .tab[data-bottom-tab]').forEach((tab) => {
+        tab.addEventListener('click', () => switchBottomTab(tab.dataset.bottomTab));
+    });
+    expSearchInput?.addEventListener('input', (e) => {
+        expSearchQuery = String(e.target.value || '').trim().toLowerCase();
+        renderExps();
+    });
+    expSopFilterSelect?.addEventListener('change', (e) => {
+        expSopFilter = e.target.value || '';
+        renderExps();
+    });
 
     // Modal close
     btnCloseModal?.addEventListener('click', () => modalOverlay.classList.remove('visible'));
@@ -3166,6 +3290,7 @@ function setupEventListeners() {
 
     // Menu Bar
     $('#menuView')?.addEventListener('click', toggleViewMenu);
+    switchBottomTab(activeBottomTab);
 }
 
 // ── Tab Management ─────────────────────────────────────

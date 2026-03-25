@@ -1410,11 +1410,15 @@ ol {
 }
 
 .tab {
+  appearance: none;
+  background: transparent;
+  border: none;
   padding: 0 16px;
   height: 35px;
   display: flex;
   align-items: center;
   font-size: 12px;
+  font-family: inherit;
   color: var(--text-secondary);
   border-bottom: 2px solid transparent;
   cursor: pointer;
@@ -1427,11 +1431,16 @@ ol {
 }
 
 .log-body {
+  display: none;
   flex: 1;
   padding: 6px 12px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #424242 transparent;
+}
+
+.log-body.active {
+  display: block;
 }
 
 .log-entries {
@@ -1499,6 +1508,108 @@ ol {
   font-size: 11px;
   font-family: var(--font-mono);
   padding: 8px 6px;
+}
+
+.exp-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.exps-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0 10px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  z-index: 2;
+}
+
+.exps-search-input,
+.exps-filter-select {
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.exps-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.exps-filter-select {
+  width: 180px;
+  flex-shrink: 0;
+}
+
+.exp-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 150ms ease, transform 150ms ease, background 150ms ease;
+}
+
+.exp-card:hover {
+  border-color: var(--accent-indigo);
+  background: rgba(99, 102, 241, 0.06);
+  transform: translateY(-1px);
+}
+
+.exp-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.exp-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.exp-card-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.exp-card-body {
+  padding: 10px 12px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.exp-card-body h2,
+.exp-card-body h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.exp-card-body p,
+.exp-card-body ul {
+  margin: 0 0 8px;
+}
+
+.exp-card-body ul {
+  padding-left: 18px;
+}
+
+.exp-card-body li + li {
+  margin-top: 4px;
 }
 
 /* ── RIGHT — Chat Column ──────────────────────────────────────── */

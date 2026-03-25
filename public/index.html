@@ -361,13 +361,25 @@
         <div class="center-bottom" id="logPanel">
           <div class="panel-titlebar log-titlebar" id="logToggle">
             <div class="tab-row">
-              <span class="tab active">📝 工作日誌</span>
+              <button class="tab active" type="button" data-bottom-tab="logs">📝 工作日誌</button>
+              <button class="tab" type="button" data-bottom-tab="exps">🧠 exps</button>
             </div>
             <button class="panel-btn" id="btnToggleLog">收起 ▼</button>
           </div>
-          <div class="log-body" id="logBody">
+          <div class="log-body active" id="logBody">
             <div class="log-entries" id="logEntries">
               <div class="log-empty">等待任務執行...</div>
+            </div>
+          </div>
+          <div class="log-body" id="expsBody">
+            <div class="exps-toolbar">
+              <input type="text" id="expSearchInput" class="exps-search-input" placeholder="搜尋經驗、關鍵字、建議...">
+              <select id="expSopFilter" class="exps-filter-select">
+                <option value="">全部 SOP</option>
+              </select>
+            </div>
+            <div class="exp-entries" id="expEntries">
+              <div class="log-empty">尚未累積安裝經驗...</div>
             </div>
           </div>
         </div>

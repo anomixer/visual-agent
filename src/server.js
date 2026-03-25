@@ -45,10 +45,21 @@ const TASKS_FILE = path.join(aipcDir, 'tasks.json');
 const SOPS_DIR = path.join(aipcDir, 'sops');
 const SKILLS_DIR = path.join(aipcDir, 'skills');
 const PLUGINS_DIR = path.join(aipcDir, 'plugins');
+const LEGACY_EXPS_DIR = path.join(aipcDir, 'Exps');
+const EXPS_DIR = path.join(aipcDir, 'exps');
 
 if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
 if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
 if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+if (!fs.existsSync(EXPS_DIR)) fs.mkdirSync(EXPS_DIR, { recursive: true });
+
+function getExperienceDirs() {
+    const dirs = [EXPS_DIR];
+    if (LEGACY_EXPS_DIR.toLowerCase() !== EXPS_DIR.toLowerCase() && fs.existsSync(LEGACY_EXPS_DIR)) {
+        dirs.push(LEGACY_EXPS_DIR);
+    }
+    return dirs;
+}
 
 /**
  * 同步內建的腳本與技能至 AppData
@@ -150,6 +161,242 @@ function normalizeChalkboardAttachment(raw) {
         width: Number(raw.width) || 0,
         height: Number(raw.height) || 0
     };
+}
+
+function formatDateStamp(date = new Date()) {
+    return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0')
+    ].join('');
+}
+
+function escapeMarkdown(text = '') {
+    return String(text)
+        .replace(/\r/g, '')
+        .replace(/\n/g, ' ')
+        .replace(/\|/g, '\\|')
+        .trim();
+}
+
+function getTaskDurationText(task) {
+    if (!task?.createdAt || !task?.completedAt) return 'N/A';
+    const start = new Date(task.createdAt).getTime();
+    const end = new Date(task.completedAt).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 'N/A';
+    const seconds = Math.max(1, Math.round((end - start) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainSeconds = seconds % 60;
+    return remainSeconds ? `${minutes}m ${remainSeconds}s` : `${minutes}m`;
+}
+
+function pickExperienceHighlights(task) {
+    const sourceLogs = Array.isArray(task?.logs) ? task.logs : [];
+    const interesting = [];
+    const seen = new Set();
+
+    sourceLogs.forEach(log => {
+        const level = String(log?.level || '').toLowerCase();
+        const message = escapeMarkdown(log?.message || '');
+        if (!message) return;
+        const isInterestingLevel = ['error', 'warn', 'success', 'ui'].includes(level);
+        const hasSignalWord = /(失敗|錯誤|成功|完成|略過|跳過|uac|權限|denied|timeout|下載|安裝|verify|驗證|修復|retry|重試|already|exists)/i.test(message);
+        if (!isInterestingLevel && !hasSignalWord) return;
+        const dedupeKey = `${level}:${message}`;
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+        interesting.push(message);
+    });
+
+    return interesting.slice(-6);
+}
+
+function buildExperienceAdvice(task, highlights) {
+    const text = highlights.join(' \n').toLowerCase();
+    if (task.status === 'success') {
+        if (/uac|admin|權限|denied/.test(text)) {
+            return '下次執行前先提醒使用者準備管理員權限，避免流程中途被 UAC 擋住。';
+        }
+        if (/download|下載|network|timeout|連線/.test(text)) {
+            return '下次若要重跑，先確認網路與下載來源可用，再開始安裝流程。';
+        }
+        return '這支 SOP 本次已成功完成，可優先沿用同流程；若環境相近，通常不需要改動步驟。';
+    }
+    if (task.status === 'skipped') {
+        return '目標看起來原本就已存在；下次可先跑 check，避免重複安裝或多餘操作。';
+    }
+    if (/uac|cancelled by user|canceled by user|權限|denied/.test(text)) {
+        return '這次失敗與權限或 UAC 有關；下次應先向使用者說明需要系統管理員授權。';
+    }
+    if (/download|下載|timeout|network|連線/.test(text)) {
+        return '這次失敗可能與網路或下載階段有關；下次先檢查連線、來源站點與防火牆。';
+    }
+    if (/verify|驗證/.test(text)) {
+        return '安裝流程可能跑完了，但驗證沒有通過；下次要優先檢查最後的 verify 條件是否適合當前機器。';
+    }
+    return '下次執行同類任務前，先讀這次失敗重點並向使用者說明風險，必要時調整 SOP 或先做前置檢查。';
+}
+
+function buildExperienceMarkdown(task, sop) {
+    const completedAt = task?.completedAt ? new Date(task.completedAt) : new Date();
+    const highlights = pickExperienceHighlights(task);
+    const advice = buildExperienceAdvice(task, highlights);
+    const summary = task.status === 'success'
+        ? '本次任務成功完成，可作為後續相同安裝/設定流程的參考樣板。'
+        : task.status === 'skipped'
+            ? '本次任務被判定為已存在或不需重做，可作為避免重複執行的經驗。'
+            : '本次任務未成功完成，需記錄失敗原因與踩雷點，避免下次重蹈覆轍。';
+
+    const lines = [
+        `## ${completedAt.toISOString()} - ${escapeMarkdown(task.title || sop?.name || task.id)}`,
+        '',
+        `- Task ID: \`${escapeMarkdown(task.id || '')}\``,
+        `- SOP ID: \`${escapeMarkdown(task.skillId || sop?.id || 'dynamic')}\``,
+        `- Status: \`${escapeMarkdown(task.status || 'unknown')}\``,
+        `- Duration: ${getTaskDurationText(task)}`,
+        `- Summary: ${summary}`,
+        `- Advice: ${advice}`,
+        ''
+    ];
+
+    if (highlights.length > 0) {
+        lines.push('### Highlights', '');
+        highlights.forEach(item => lines.push(`- ${item}`));
+        lines.push('');
+    }
+
+    return lines.join('\n');
+}
+
+function buildExperienceAIPrompt(task, sop) {
+    const highlights = pickExperienceHighlights(task);
+    return [
+        'è«‹æŠŠä¸‹é¢é€™æ¬¡ Windows å®‰è£æˆ–è¨­å®šä»»å‹™çš„ç´€éŒ„ï¼Œæ•´ç†æˆã€Œè€å¸æ©Ÿå‚™å¿˜éŒ„ã€ã€‚',
+        'è¦å‰‡ï¼š',
+        '1. ä¸€å¾‹ä½¿ç”¨ç¹é«”ä¸­æ–‡ã€‚',
+        '2. è¼¸å‡º 3 åˆ° 5 å€‹ flat bulletsã€‚',
+        '3. æ¯é»žéƒ½è¦æ˜¯å¯æ“ä½œçš„ç¶“é©—ï¼Œä¸è¦ç©ºè©±ã€‚',
+        '4. å„ªå…ˆå¯«æœƒè¸©é›·çš„åœ°æ–¹ã€�æˆåŠŸæ¢ä»¶ã€�ä¸‹æ¬¡å»ºè­°é †åºã€‚',
+        '5. ä¸è¦é‡è¤‡æè¿°ä»»å‹™æ¨™é¡Œã€‚',
+        '',
+        `Task: ${task.title || sop?.name || task.id}`,
+        `SOP ID: ${task.skillId || sop?.id || 'dynamic'}`,
+        `Status: ${task.status || 'unknown'}`,
+        `Duration: ${getTaskDurationText(task)}`,
+        'Highlights:',
+        ...(highlights.length > 0 ? highlights.map(item => `- ${item}`) : ['- (no notable logs)'])
+    ].join('\n');
+}
+
+async function enrichTaskExperienceWithAI(task, sop, expPath) {
+    try {
+        const llmStatus = await llm.checkOllamaStatus();
+        if (!llmStatus.available || !llmStatus.modelReady) return;
+
+        const aiReply = await llm.chatWithLLM(buildExperienceAIPrompt(task, sop), []);
+        const cleaned = String(aiReply || '').trim();
+        if (!cleaned) return;
+
+        fs.appendFileSync(expPath, `### Veteran Notes\n${cleaned}\n\n`, 'utf8');
+    } catch (err) {
+        console.warn('[EXP] AI è€å¸æ©Ÿæ‘˜è¦ç”Ÿæˆå¤±æ•—:', err.message);
+        fileLog(`EXP veteran summary failed: ${err.message}`);
+    }
+}
+
+function appendTaskExperience(task, sop) {
+    try {
+        const stamp = formatDateStamp(task?.completedAt ? new Date(task.completedAt) : new Date());
+        const expPath = path.join(EXPS_DIR, `exp-${stamp}.md`);
+        if (!fs.existsSync(expPath)) {
+            fs.writeFileSync(expPath, `# AI PC Agent Experience Log - ${stamp}\n\n`, 'utf8');
+        }
+        fs.appendFileSync(expPath, `${buildExperienceMarkdown(task, sop)}\n`, 'utf8');
+        enrichTaskExperienceWithAI(task, sop, expPath);
+    } catch (err) {
+        console.error('[EXP] 寫入經驗摘要失敗:', err.message);
+        fileLog(`EXP write failed: ${err.message}`);
+    }
+}
+
+function loadExperienceContext(queryText = '', limit = 3) {
+    try {
+        const files = getExperienceDirs()
+            .flatMap((dir) => fs.existsSync(dir)
+                ? fs.readdirSync(dir).filter(name => /^exp-\d{8}\.md$/i.test(name)).map(name => ({ dir, name }))
+                : [])
+            .sort((a, b) => b.name.localeCompare(a.name))
+            .slice(0, 10);
+        if (files.length === 0) return '';
+
+        const tokens = String(queryText || '')
+            .toLowerCase()
+            .split(/[\s,.;:!?，。；：、「」『』（）()【】\-\_\/\\]+/)
+            .filter(token => token.length >= 2);
+
+        const sections = [];
+        files.forEach(file => {
+            const fullText = fs.readFileSync(path.join(file.dir, file.name), 'utf8');
+            fullText.split(/\n(?=## )/).forEach(section => {
+                const trimmed = section.trim();
+                if (trimmed.startsWith('## ')) sections.push(trimmed);
+            });
+        });
+
+        const scored = sections.map(section => {
+            const lower = section.toLowerCase();
+            const score = tokens.reduce((sum, token) => sum + (lower.includes(token) ? 1 : 0), 0);
+            return { section, score };
+        });
+
+        const selected = scored
+            .sort((a, b) => b.score - a.score)
+            .filter((item, index) => item.score > 0 || index < limit)
+            .slice(0, limit)
+            .map(item => item.section.length > 900 ? `${item.section.slice(0, 900)}...` : item.section);
+
+        return selected.join('\n\n');
+    } catch (err) {
+        console.error('[EXP] 載入經驗摘要失敗:', err.message);
+        return '';
+    }
+}
+
+function loadExperienceEntries(limit = 18) {
+    const files = getExperienceDirs()
+        .flatMap((dir) => fs.existsSync(dir)
+            ? fs.readdirSync(dir)
+                .filter(name => /^exp-\d{8}\.md$/i.test(name))
+                .map((fileName) => {
+                    const fullPath = path.join(dir, fileName);
+                    const stats = fs.statSync(fullPath);
+                    return { fileName, fullPath, updatedAt: stats.mtime.toISOString() };
+                })
+            : [])
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    const entries = [];
+    files.forEach((file) => {
+        const content = fs.readFileSync(file.fullPath, 'utf8');
+        const sections = content.split(/\n(?=## )/).map(section => section.trim()).filter(Boolean);
+        sections.forEach((section) => {
+            if (!section.startsWith('## ')) return;
+            const lines = section.split('\n');
+            const title = lines[0].replace(/^##\s*/, '').trim();
+            const body = lines.slice(1).join('\n').trim();
+            const sopMatch = body.match(/- SOP ID:\s*`([^`]+)`/i);
+            entries.push({
+                fileName: file.fileName,
+                updatedAt: file.updatedAt,
+                title,
+                content: body,
+                sopId: sopMatch ? sopMatch[1] : ''
+            });
+        });
+    });
+
+    return entries.slice(0, limit);
 }
 
 /**
@@ -284,6 +531,14 @@ app.get('/api/sops', (req, res) => {
 // GET /api/todo — 取得 To-Do List
 app.get('/api/todo', (req, res) => {
     res.json({ success: true, todoList });
+});
+
+app.get('/api/exps', (req, res) => {
+    try {
+        res.json({ success: true, entries: loadExperienceEntries() });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // POST /api/todo — 新增任務到 To-Do List
@@ -517,11 +772,14 @@ app.post('/api/execute/:taskId', async (req, res) => {
             fileLog(`AI Task Completed: ${sop.id || 'dynamic'}, invalidating cache.`);
             llm.invalidateCache();
         }
+        appendTaskExperience(task, sop);
     } catch (err) {
         task.status = 'failed';
+        task.completedAt = new Date().toISOString();
         const errLog = { level: 'error', message: `任務執行崩潰: ${err.message}`, timestamp: new Date().toISOString() };
         task.logs.push(errLog);
         logs.push(errLog);
+        appendTaskExperience(task, sop);
     } finally {
         runningSOP = null;
         saveTasks();
@@ -549,6 +807,7 @@ app.post('/api/chat', async (req, res) => {
     // 1. 快速蒐集背景資訊
     const sopCatalog = sops.map(s => `- ID: ${s.id}, 名稱: ${s.name}`).join('\n');
     const taskContext = todoList.map(t => `- ID: ${t.id}, 標題: ${t.title}, 狀態: ${t.status}`).join('\n');
+    const experienceContext = loadExperienceContext(message, 3);
     let systemHealth = null;
     try {
         systemHealth = await getSystemHealth();
@@ -619,13 +878,17 @@ ${taskContext || '(空)'}
                 }
             }
             try {
-                llmReply = await llm.chatWithLLM(message + "\n\n" + contextNote, requestHistory, chatOptions);
+                llmReply = await llm.chatWithLLM(
+                    message + "\n\n" + contextNote + "\n\n[[exps 經驗庫]]\n" + (experienceContext || '(目前尚無可參考經驗)'),
+                    requestHistory,
+                    chatOptions
+                );
             } catch (visionErr) {
                 if (!chalkboardAttachment) throw visionErr;
 
                 console.warn('[LLM] 黑板影像理解失敗，改以純文字重試:', visionErr.message);
                 llmReply = await llm.chatWithLLM(
-                    `${message}\n\n${contextNote}\n\n[系統補充] 使用者原本有附上 Chalkboard 草圖，但目前這個模型或 Provider 沒有成功吃下圖片。請先明確告知圖片理解失敗，再根據文字需求提供最接近的協助。`,
+                    `${message}\n\n${contextNote}\n\n[[exps 經驗庫]]\n${experienceContext || '(目前尚無可參考經驗)'}\n\n[系統補充] 使用者原本有附上 Chalkboard 草圖，但目前這個模型或 Provider 沒有成功吃下圖片。請先明確告知圖片理解失敗，再根據文字需求提供最接近的協助。`,
                     requestHistory
                 );
             }
