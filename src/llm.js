@@ -701,6 +701,9 @@ async function chatWithLLM(userMessage, history = [], options = {}) {
         });
         if (!res.ok) {
             const errText = await res.text();
+            if (res.status === 401) {
+                throw new Error(`AI 引擎身份驗證失敗 (401)。請點擊上方狀態列進入設定，並確認您是否正確填寫了 ${provider} 的 API Key。`);
+            }
             throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
         }
         const data = await res.json();
@@ -778,6 +781,9 @@ async function chatWithLLM(userMessage, history = [], options = {}) {
 
     if (!res.ok) {
         const errText = await res.text();
+        if (res.status === 401) {
+            throw new Error(`AI 引擎身份驗證失敗 (401)。請點擊上方狀態列進入設定，並確認您是否正確填寫了 ${provider} 的 API Key。`);
+        }
         throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
     }
 
@@ -859,6 +865,9 @@ async function testProviderConnection({ provider, baseUrl, authConfig, model }) 
 
     if (!res.ok) {
         const errText = await res.text();
+        if (res.status === 401) {
+            throw new Error(`AI 引擎身份驗證失敗 (401)。請確認您是否為 ${provider} 提供了正確的 API Key。`);
+        }
         throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
     }
 
