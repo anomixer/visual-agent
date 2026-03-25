@@ -1,4 +1,4 @@
-﻿# AI PC Agent 開發日誌
+# AI PC Agent 開發日誌
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
@@ -52,7 +52,7 @@
 ## 📌 2026.03.06 — 穩定性與 UI 體感優化
 
 ### 啟動啟始畫面 (Splash Screen)
-- 導入 `splash-overlay`：解決冷啟動時後台 Server 尚未就緒導致的畫面空白
+- 導入 `splash-overlay`：解決 cold 啟動時後台 Server 尚未就緒導致的畫面空白
 - 智能訊息：首次執行顯示「首次執行本程式，正設定環境中，請稍候...」，再次執行顯示「啟動後端伺服器中，請稍候...」
 - 自動偵測：當前端成功抓取到 3210 Port 的資料後，遮罩自動優雅淡出
 - 實作位置：`public/app.js` 的 `checkFirstRun()` 與 `hideSplash()` 函數，使用 `localStorage` 標記首次執行
@@ -151,7 +151,7 @@
 - **UI 相容性**：修正了灰色樣式（Opacity 0.5）的視覺呈現。
 
 ### 對話系統與邏輯強化
-- **新增「清除對話」功能**：對話框右側加入清除按鈕，支援二次確認彈窗，提升操作靈活性。
+- **新增「清除對話」功能**：對話框對右側加入清除按鈕，支援二次確認彈窗，提升操作靈活性。
 - **任務刪除邏輯改進**：強化了 AI 對「刪除、移除、移掉」等意圖的辨識，避免誤判為新增。
 - **崩潰防治 (Safe Guard)**：修復了一個在搜尋不到任務 ID 時會導致後端崩潰的 `TypeError` (Cannot read property 'title' of undefined)。
 
@@ -279,7 +279,7 @@
 - 後續執行顯示：`啟動後端伺服器中，請稍候...`
 
 ### 任務匯出
-- EXE 模式下的任務匯出改為優先使用 `/api/todo/export-file` 的原生 Windows 另存新檔流程。
+- EXE 模式下的任務匯出改為優先使用 `/api/todo/export-file` 的原生 Windows 另存新檔流程.
 - 瀏覽器型 blob 下載僅作為 fallback。
 
 ## 2026.03.24 - 硬體上下文與語系 SOP 拆分
@@ -344,12 +344,6 @@
 - AI Provider 設定視窗新增 `Vision 多模態模型` 欄位，可由使用者明確指定圖片理解模型。
 - 當本輪有附圖時，會忽略先前附圖回合的歷史描述，避免第二張圖被上一張圖的內容污染。
 
-### exps 經驗庫
-- 底部工作區新增 `exps` tab，專門瀏覽任務 log 摘要與老司機備忘錄。
-- 任務結束後會將 log 內容整理成 `exp-yyyymmdd.md`，寫入 `%APPDATA%\aipc-agent\exps\`。
-- `exps` 面板支援關鍵字搜尋、依 SOP 篩選、點擊查看完整摘要。
-- AI 對話會把相關 `exps` 經驗庫注入 prompt，讓後續安裝流程能參考先前成功/失敗經驗。
-
 ## 📌 2026.03.25 — 知識庫視覺進化、視窗持久化與硬體感知強固
 
 ### exps 知識庫視覺進化
@@ -358,14 +352,13 @@
 - **資訊層級**：卡片左側加入深紫色狀態條，區分不同 SOP 的執行記錄，並優化了時間與標題的對齊方式。
 
 ### 軟體安裝與 SOP 穩健化
-- **Ollama 非提權安裝**：修正 Ollama 安裝 SOP，改為預設不觸發 UAC。\winget install\ 在 User 模式下即可完成，減少不必要的權限彈窗困擾。
-- **模型資訊修正**：修正 \pull-llm-model\ SOP 與推薦清單中的 hardcoded 字串，將 Qwen3.5 全面更新為 \4B\ 版本，並修正下載容量描述為更精確的 \2.6GB\。
+- **Ollama 非提權安裝**：修正 Ollama 安裝 SOP，改為預設不觸發 UAC。`winget install` 在 User 模式下即可完成，減少不必要的權限彈窗困擾。
+- **模型資訊修正**：修正 `pull-llm-model` SOP 與推薦清單中的 hardcoded 字串，將 Qwen3.5 全面更新為 `4B` 版本，並修正下載容量描述為更精確的 `2.6GB`。
 
 ### Tauri 桌面體驗優化
-- **視窗持久化**：導入 \	auri-plugin-window-state\。現在程式會記住您上次關閉時的視窗大小與位置，下次開啟時自動還原，省去重新拉動的麻煩。
+- **視窗持久化**：導入 `tauri-plugin-window-state`。現在程式會記住您上次關閉時的視窗大小與位置，下次開啟時自動還原，省去重新拉動的麻煩。
 - **啟動最大化**：預設在首次啟動時以最大化視窗呈現，提供更寬廣的畫布與操作維度。
 
 ### 硬體感知強固
-- **GPU 數據精準化**：優化 \hardware-info.js\ 插件。優先採用 \
-vidia-smi\ 獲取的結構化負載資訊。
-- **PowerShell 相容性補強**：針對 Tauri 打包環境下 \Get-Counter\ 可能權限不足的問題，加入 \catch\ 降級機制 (fallback)，確保 GPU 儀表板不再因為系統計數器問題而顯示錯誤或卡死。
+- **GPU 數據精準化**：優化 `hardware-info.js` 插件。優先採用 `nvidia-smi` 獲取的結構化負載資訊。
+- **PowerShell 相容性補強**：針對 Tauri 打包環境下 `Get-Counter` 可能權限不足的問題，加入 `catch` 降級機制 (fallback)，確保 GPU 儀表板不再因為系統計數器問題而顯示錯誤或卡死。

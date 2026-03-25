@@ -95,7 +95,7 @@ browser ──── public/index.html
              sops/*.md        (SOP 腳本庫)
              %APPDATA%\aipc-agent\  (tasks.json, sops/, plugins/)
 ```
-- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\aipc-agent\plugins\` 目錄，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
+- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\aipc-agent\plugins\` 目慶，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
 
 ---
 
@@ -182,11 +182,7 @@ SOPs 存放位置：
 
 ---
 
-> 📝 這是一支不需要黑綠色文字終端，便能聰明幫你管理系統操作的助手。
-
----
-
-## 6. 2026.03.24 AI Provider 與 SOP 穩定性
+## 6. 2026.03.24 AI Provider 與 SOP 穩定性修正
 
 ### 6.1 Provider 模型
 - OpenAI-compatible provider 使用 Bearer 認證與 `/chat/completions`。
@@ -246,8 +242,7 @@ SOPs 存放位置：
   - 卡片左側加入深紫色狀態條，區分不同 SOP 的執行記錄。
 - **Ollama 非提權安裝**：修正 Ollama 安裝 SOP，改為預設不觸發 UAC，依賴 winget 本身的 user mode 安裝。
 - **模型資訊修正**：將 Qwen3.5 全面更新為 4B 版本，下載容量描述修正為 2.6GB。
-- **視窗持久化**：導入 \	auri-plugin-window-state\，自動記憶上次視窗大小與位置。預設首次啟動以最大化 (maximized) 呈現。
+- **視窗持久化**：導入 `tauri-plugin-window-state`，自動記憶上次視窗大小與位置。預設首次啟動以最大化 (maximized) 呈現。
 - **硬體感知強固**：
-  - \hardware-info.js\ 優先採用 \
-vidia-smi\ 數據。
-  - 加入 PowerShell 計數器 fallback 機制，避免 \Get-Counter\ 在權限不足或 Tauri 環境下崩潰導致顯示失效。
+  - `hardware-info.js` 優先採用 `nvidia-smi` 數據。
+  - 加入 PowerShell 計數器 fallback 機制，避免 `Get-Counter` 在權限不足或 Tauri 環境下崩潰導致顯示失效。
