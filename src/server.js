@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AI PC Agent — Local Server
  * 
  * 提供 REST API 給前端 UI 使用，橋接 sop-parser 與 sop-executor。
@@ -628,6 +628,49 @@ app.post('/api/todo/export-file', (req, res) => {
         };
 
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+        res.json({ success: true, filePath, fileName: path.basename(filePath) });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// POST /api/chalkboard/export-file — 匯出 Chalkboard 圖片 (跳出另存新檔對話框)
+app.post('/api/chalkboard/export-file', (req, res) => {
+    try {
+        const { imageBase64 } = req.body;
+        if (!imageBase64) {
+            return res.status(400).json({ success: false, error: 'No image data provided' });
+        }
+
+        const defaultName = `chalkboard-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+
+        const psScript = `
+        Add-Type -AssemblyName System.Windows.Forms
+        $dlg = New-Object System.Windows.Forms.SaveFileDialog
+        $dlg.Filter = 'PNG 圖片 (*.png)|*.png|所有檔案 (*.*)|*.*'
+        $dlg.FileName = '${defaultName}'
+        $dlg.Title = '匯出黑板圖片'
+        $dlg.InitialDirectory = [Environment]::GetFolderPath('MyPictures')
+        $res = $dlg.ShowDialog()
+        if ($res -eq [System.Windows.Forms.DialogResult]::OK) { 
+            Write-Output $dlg.FileName 
+        }
+        `;
+
+        const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -Command "${psScript.replace(/\n/g, ';')}"`, {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            windowsHide: true,
+        }).trim();
+
+        if (!output) {
+            return res.json({ success: false, error: 'User cancelled', cancelled: true });
+        }
+
+        const filePath = output;
+        const base64Data = imageBase64.replace(/^data:image\/png;base64,/, "");
+        
+        fs.writeFileSync(filePath, base64Data, 'base64');
         res.json({ success: true, filePath, fileName: path.basename(filePath) });
     } catch (err) {
         res.json({ success: false, error: err.message });

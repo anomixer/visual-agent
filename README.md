@@ -239,6 +239,9 @@ aipc-agent/
   - Ollama 安裝 SOP 改為非提權 (User mode) 流程。
   - 修正 Qwen3.5 模型名稱 (4B) 與下載大小 (2.6GB) 描述。
   - 強固 GPU 監控邏輯，優先採用 nvidia-smi 並提供計數器 fallback，解決 Tauri packaged 環境下顯示失效問題。
+- **封裝環境的指令與體驗修正 (Tauri EXE)**：
+  - 修正 Tauri EXE 環境下 `hardware-info.js` 因雙引號干擾導致的指令錯誤，恢復磁碟與 GPU 狀態監控。
+  - 新增 `/api/chalkboard/export-file` API 端點與 PowerShell `SaveFileDialog` 實作，修復黑板畫布在封裝模式下無法原生匯出 PNG 的問題。
 - **Chalkboard 畫布互動與多模態**：
   - 中央 `Chalkboard` 改為真正可互動的黑板畫布，支援白、紅、黃、綠、藍粉筆與局部板擦。
   - 黑板改為深綠色材質風格，底部加入粉筆托盤、板擦、粗細切換、Undo、清空、上傳圖片與存成圖片。

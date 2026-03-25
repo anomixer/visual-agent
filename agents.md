@@ -362,3 +362,7 @@
 ### 硬體感知強固
 - **GPU 數據精準化**：優化 `hardware-info.js` 插件。優先採用 `nvidia-smi` 獲取的結構化負載資訊。
 - **PowerShell 相容性補強**：針對 Tauri 打包環境下 `Get-Counter` 可能權限不足的問題，加入 `catch` 降級機制 (fallback)，確保 GPU 儀表板不再因為系統計數器問題而顯示錯誤或卡死。
+
+### 封裝環境的指令與體驗修正 (Tauri EXE)
+- **硬體偵測的引號跳脫**：修正 `hardware-info.js` 中傳遞給 PowerShell 執行指令時的雙引號干擾問題（改以單引號封裝 `DriveType=3`），解決打包後因指令解析錯誤導致磁碟與 GPU 狀態監控全盤失效的問題。
+- **原生匯出圖片 API**：為了解決 Tauri EXE 容器內無法透過 `data:image` 超連結觸發原生瀏覽器下載的問題，於後端新增 `/api/chalkboard/export-file` 端點。此端點利用 PowerShell 的 `SaveFileDialog` 呼叫原生 Windows「另存新檔」視窗，確保黑板截圖能穩定儲存為 PNG。

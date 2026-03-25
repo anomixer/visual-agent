@@ -1113,11 +1113,23 @@ function clearChalkboard() {
 
 function saveChalkboardImage() {
     if (!chalkboardCanvas) return;
-    const link = document.createElement('a');
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    link.href = chalkboardCanvas.toDataURL('image/png');
-    link.download = `chalkboard-${timestamp}.png`;
-    link.click();
+    
+    const base64Image = chalkboardCanvas.toDataURL('image/png');
+    api('/api/chalkboard/export-file', { method: 'POST', body: { imageBase64: base64Image } }).then((data) => {
+        if (data.success) {
+            addUILog(`✅ 黑板圖片已匯出：${data.fileName || data.filePath}`, 'success');
+        } else if (data.cancelled) {
+            addUILog('ℹ️ 已取消匯出黑板圖片', 'info');
+        } else {
+            // fallback: 若原生另存失敗，仍嘗試瀏覽器下載
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            link.href = base64Image;
+            link.download = `chalkboard-${timestamp}.png`;
+            link.click();
+            addUILog(`⚠️ 原生匯出圖片失敗，已改用瀏覽器下載：${data.error || 'Unknown error'}`, 'warn');
+        }
+    });
 }
 
 function handleChalkImageUpload(event) {

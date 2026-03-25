@@ -246,3 +246,8 @@ SOPs 存放位置：
 - **硬體感知強固**：
   - `hardware-info.js` 優先採用 `nvidia-smi` 數據。
   - 加入 PowerShell 計數器 fallback 機制，避免 `Get-Counter` 在權限不足或 Tauri 環境下崩潰導致顯示失效。
+
+## 6.10 2026.03.25 Tauri EXE 封裝體驗與指令除錯
+
+- **硬體偵測引號跳脫**：修正了 Tauri 打包環境下 PowerShell 指令字串因雙引號干擾 (`"DriveType=3"`) 導致的執行錯誤，確保磁碟狀態與 GPU 負載能正常回傳。
+- **原生匯出圖片 API**：新增 `/api/chalkboard/export-file` 端點，以 PowerShell 呼叫 `SaveFileDialog` 來實作「另存新檔」，徹底解決 Tauri EXE 中無法透過 Data URI 與虛擬連結下載圖片的限制。

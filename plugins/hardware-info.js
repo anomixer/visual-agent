@@ -17,7 +17,7 @@ module.exports = async function(health) {
     const psBasic = `
         $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 LoadPercentage;
         $disk = Get-PhysicalDisk | Select-Object DeviceID, FriendlyName, MediaType, HealthStatus, OperationalStatus;
-        $logicalDisk = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID, VolumeName, Size, FreeSpace;
+        $logicalDisk = Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, Size, FreeSpace;
         $gpu = Get-CimInstance Win32_VideoController | Select-Object -First 1 Name;
         $smart = Get-WmiObject -namespace root\\wmi -class MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue;
         @{
