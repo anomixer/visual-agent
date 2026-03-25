@@ -1077,6 +1077,11 @@ ol {
   font-size: 16px;
 }
 
+.tray-action.tray-icon svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
 .tray-action:hover {
   background: rgba(255, 248, 235, 0.22);
 }
@@ -2066,8 +2071,43 @@ select.form-input {
 
 .text-tool-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+}
+
+.text-tool-grid-compact {
+  grid-template-columns: 120px;
+}
+
+.text-tool-color {
+  min-height: 40px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.text-tool-toggle-row {
+  display: flex;
+  gap: 10px;
+  margin: 4px 0 18px;
+  flex-wrap: wrap;
+}
+
+.text-tool-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.text-tool-toggle input {
+  margin: 0;
 }
 
 .btn-secondary {

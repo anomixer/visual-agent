@@ -94,7 +94,12 @@ const btnCancelTextTool = $('#btnCancelTextTool');
 const btnApplyTextTool = $('#btnApplyTextTool');
 const textToolContent = $('#textToolContent');
 const textToolFontFamily = $('#textToolFontFamily');
+const textToolFontStyle = $('#textToolFontStyle');
 const textToolFontSize = $('#textToolFontSize');
+const textToolColor = $('#textToolColor');
+const textToolAlign = $('#textToolAlign');
+const textToolBold = $('#textToolBold');
+const textToolItalic = $('#textToolItalic');
 
 // Provider Settings
 const providerSettingsOverlay = $('#providerSettingsOverlay');
@@ -176,8 +181,13 @@ const chalkboardState = {
     textManipulation: null,
     textToolSettings: {
         content: '',
-        fontFamily: '"Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
-        fontSize: 28
+        fontFamily: '"DFKai-SB", "BiauKai", serif',
+        fontStyle: 'chalk',
+        fontSize: 28,
+        color: '#f5f1e8',
+        align: 'left',
+        bold: true,
+        italic: false
     },
     textToolResolver: null,
     history: []
@@ -704,8 +714,21 @@ function openTextToolModal() {
     }
 
     textToolContent.value = chalkboardState.textToolSettings.content || '';
-    textToolFontFamily.value = chalkboardState.textToolSettings.fontFamily || '"Comic Sans MS", "Bradley Hand", "Segoe Print", cursive';
+    textToolFontFamily.value = chalkboardState.textToolSettings.fontFamily || '"DFKai-SB", "BiauKai", serif';
+    textToolFontStyle.value = chalkboardState.textToolSettings.fontStyle || 'chalk';
     textToolFontSize.value = String(chalkboardState.textToolSettings.fontSize || 28);
+    if (textToolColor) {
+        textToolColor.value = chalkboardState.textToolSettings.color || '#f5f1e8';
+    }
+    if (textToolAlign) {
+        textToolAlign.value = chalkboardState.textToolSettings.align || 'left';
+    }
+    if (textToolBold) {
+        textToolBold.checked = chalkboardState.textToolSettings.bold !== false;
+    }
+    if (textToolItalic) {
+        textToolItalic.checked = Boolean(chalkboardState.textToolSettings.italic);
+    }
     textToolOverlay.classList.add('visible');
     requestAnimationFrame(() => textToolContent?.focus());
 
@@ -723,6 +746,22 @@ function closeTextToolModal(confirmed) {
     if (resolver) {
         resolver(Boolean(confirmed));
     }
+}
+
+function getTextStyleFallback(fontStyle) {
+    const styleMap = {
+        chalk: '"Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+        board: '"Segoe Print", "Comic Sans MS", cursive',
+        clean: '"Segoe UI", "Trebuchet MS", sans-serif',
+        serif: 'Georgia, "Times New Roman", serif',
+        mono: '"Courier New", monospace'
+    };
+    return styleMap[fontStyle] || styleMap.chalk;
+}
+
+function buildTextFontFamily(baseFamily, fontStyle) {
+    const fallback = getTextStyleFallback(fontStyle);
+    return `${baseFamily}, ${fallback}`;
 }
 
 function undoChalkAction() {
@@ -1040,14 +1079,27 @@ async function requestPendingChalkText() {
     const content = String(textToolContent?.value || '').trim();
     if (!content) return false;
 
-    const fontFamily = textToolFontFamily?.value || '"Comic Sans MS", "Bradley Hand", "Segoe Print", cursive';
+    const baseFontFamily = textToolFontFamily?.value || '"DFKai-SB", "BiauKai", serif';
+    const fontStyle = textToolFontStyle?.value || 'chalk';
+    const fontFamily = buildTextFontFamily(baseFontFamily, fontStyle);
     const fontSizeValue = Number(textToolFontSize?.value || 28);
     const fontSize = Math.max(14, Math.min(160, Number.isFinite(fontSizeValue) ? fontSizeValue : 28));
+    const color = textToolColor?.value || '#f5f1e8';
+    const align = textToolAlign?.value || 'left';
+    const bold = textToolBold?.checked !== false;
+    const italic = Boolean(textToolItalic?.checked);
+    const fontWeight = bold ? '700' : '400';
+    const fontVariant = italic ? 'italic' : 'normal';
 
     chalkboardState.textToolSettings = {
         content,
-        fontFamily,
-        fontSize
+        fontFamily: baseFontFamily,
+        fontStyle,
+        fontSize,
+        color,
+        align,
+        bold,
+        italic
     };
 
     const lines = content
@@ -1057,11 +1109,11 @@ async function requestPendingChalkText() {
 
     if (!lines.length) return false;
     const lineHeight = Math.round(fontSize * 1.35);
-    const font = `700 ${fontSize}px ${fontFamily}`;
+    const font = `${fontVariant} ${fontWeight} ${fontSize}px ${fontFamily}`;
     const width = measureChalkTextWidth(lines, font);
     const height = Math.max(fontSize, lines.length * lineHeight);
     const previewPadding = Math.max(6, Math.round(fontSize * 0.18));
-    const previewCanvas = createTextPreviewCanvas(lines, width, height, font, lineHeight, chalkboardState.color, previewPadding);
+    const previewCanvas = createTextPreviewCanvas(lines, width, height, font, lineHeight, color, previewPadding, align);
 
     chalkboardState.pendingText = {
         lines,
@@ -1072,6 +1124,10 @@ async function requestPendingChalkText() {
         baseWidth: width + (previewPadding * 2),
         baseHeight: height + (previewPadding * 2),
         font,
+        color,
+        align,
+        bold,
+        italic,
         previewCanvas,
         previewPadding
     };
@@ -1087,7 +1143,7 @@ async function requestPendingChalkText() {
     return true;
 }
 
-function createTextPreviewCanvas(lines, width, height, font, lineHeight, color, padding) {
+function createTextPreviewCanvas(lines, width, height, font, lineHeight, color, padding, align = 'left') {
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.ceil(width + (padding * 2)));
     canvas.height = Math.max(1, Math.ceil(height + (padding * 2)));
@@ -1099,9 +1155,16 @@ function createTextPreviewCanvas(lines, width, height, font, lineHeight, color, 
 
     lines.forEach((line, index) => {
         const y = padding + (index * lineHeight);
-        ctx.fillText(line, padding, y);
+        const lineWidth = ctx.measureText(line).width;
+        let x = padding;
+        if (align === 'center') {
+            x = padding + Math.max(0, (width - lineWidth) / 2);
+        } else if (align === 'right') {
+            x = padding + Math.max(0, width - lineWidth);
+        }
+        ctx.fillText(line, x, y);
         ctx.globalAlpha = 0.18;
-        ctx.fillText(line, padding + 1.4, Math.max(0, y - 0.8));
+        ctx.fillText(line, x + 1.4, Math.max(0, y - 0.8));
         ctx.globalAlpha = 0.96;
     });
 

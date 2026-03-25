@@ -214,7 +214,15 @@
                     </div>
                   </div>
                   <div class="chalkboard-tray">
-                    <button class="tray-action tray-icon danger" id="chalkClearButton" type="button" title="清空">🖌</button>
+                    <button class="tray-action tray-icon danger" id="chalkClearButton" type="button" title="清空" aria-label="清空">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+                        <path d="M4 7h16"></path>
+                        <path d="M9 4h6"></path>
+                        <path d="M6 7l1 12h10l1-12"></path>
+                        <path d="M10 10v6"></path>
+                        <path d="M14 10v6"></path>
+                      </svg>
+                    </button>
                     <button class="tray-action tray-icon" id="chalkUndoButton" type="button" title="Undo">↶</button>
                     <button class="chalk-tool chalk-mode eraser active" id="chalkEraser" type="button" data-tool="eraser" title="局部板擦"></button>
                     <button class="chalk-tool chalk-mode chalk-stick chalk-white" type="button" data-tool="chalk" data-color="#f5f1e8" title="白粉筆"></button>
@@ -492,17 +500,49 @@
           <div class="form-group">
             <label>字型</label>
             <select id="textToolFontFamily" class="form-input">
-              <option value="&quot;Comic Sans MS&quot;, &quot;Bradley Hand&quot;, &quot;Segoe Print&quot;, cursive">粉筆手寫</option>
-              <option value="&quot;Segoe Print&quot;, &quot;Comic Sans MS&quot;, cursive">板書感</option>
-              <option value="Georgia, &quot;Times New Roman&quot;, serif">經典襯線</option>
-              <option value="&quot;Trebuchet MS&quot;, &quot;Segoe UI&quot;, sans-serif">清晰無襯線</option>
-              <option value="&quot;Courier New&quot;, monospace">等寬打字</option>
+              <option value="&quot;DFKai-SB&quot;, &quot;BiauKai&quot;, serif">標楷體</option>
+              <option value="&quot;Microsoft JhengHei&quot;, &quot;PingFang TC&quot;, sans-serif">微軟正黑體</option>
+              <option value="&quot;Microsoft YaHei&quot;, &quot;SimHei&quot;, sans-serif">黑體</option>
+              <option value="&quot;PMingLiU&quot;, &quot;MingLiU&quot;, serif">細明體</option>
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="&quot;Times New Roman&quot;, Georgia, serif">Times New Roman</option>
+              <option value="&quot;Courier New&quot;, monospace">Courier New</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>字型風格</label>
+            <select id="textToolFontStyle" class="form-input">
+              <option value="chalk">粉筆手寫</option>
+              <option value="board">板書感</option>
+              <option value="clean">清晰無襯線</option>
+              <option value="serif">經典襯線</option>
+              <option value="mono">等寬打字</option>
+            </select>
+          </div>
+        </div>
+        <div class="text-tool-grid text-tool-grid-compact">
           <div class="form-group">
             <label>字級</label>
             <input type="number" id="textToolFontSize" class="form-input" min="14" max="160" step="1" value="28">
           </div>
+        </div>
+        <div class="text-tool-grid">
+          <div class="form-group">
+            <label>文字顏色</label>
+            <input type="color" id="textToolColor" class="form-input text-tool-color" value="#f5f1e8">
+          </div>
+          <div class="form-group">
+            <label>對齊方式</label>
+            <select id="textToolAlign" class="form-input">
+              <option value="left">靠左</option>
+              <option value="center">置中</option>
+              <option value="right">靠右</option>
+            </select>
+          </div>
+        </div>
+        <div class="text-tool-toggle-row">
+          <label class="text-tool-toggle"><input type="checkbox" id="textToolBold" checked> 粗體</label>
+          <label class="text-tool-toggle"><input type="checkbox" id="textToolItalic"> 斜體</label>
         </div>
         <div class="provider-help-card">
           <div class="provider-help-title">使用方式</div>
