@@ -366,3 +366,52 @@
 ### 封裝環境的指令與體驗修正 (Tauri EXE)
 - **硬體偵測的引號跳脫**：修正 `hardware-info.js` 中傳遞給 PowerShell 執行指令時的雙引號干擾問題（改以單引號封裝 `DriveType=3`），解決打包後因指令解析錯誤導致磁碟與 GPU 狀態監控全盤失效的問題。
 - **原生匯出圖片 API**：為了解決 Tauri EXE 容器內無法透過 `data:image` 超連結觸發原生瀏覽器下載的問題，於後端新增 `/api/chalkboard/export-file` 端點。此端點利用 PowerShell 的 `SaveFileDialog` 呼叫原生 Windows「另存新檔」視窗，確保黑板截圖能穩定儲存為 PNG。
+
+## 2026.03.26 - winget 商店推薦、格式規格與雙向 SOP 補強
+
+### winget 商店推薦與 SOP 生成
+- 新增 `skills/winget-store.md`，讓 AI 在現有 SOP 不足時可先查詢 winget 商店候選軟體，再回推薦名稱。
+- `/api/chat` 現在支援從 winget 商店直接回推薦結果，並可依使用者指定套件自動產生對應 SOP。
+- `CREATE_WINGET_SOP` 完成後，前端會自動刷新左側 `SOP 清單`，不需要手動重整頁面才看得到新檔案。
+
+### winget 產生 SOP 品質補強
+- `winget-store` 生成的 SOP 模板不再只憑 `winget install/uninstall` exit code 判斷成功與否。
+- 新模板會在安裝與解除安裝後輪詢 `winget list` 的實際狀態，再決定是否成功，降低互動式安裝器或非零回傳碼造成的誤判。
+- 模板改採 ASCII 標題，避免終端編碼污染新產生的 SOP 結構。
+
+### 安裝 / 解除安裝 SOP 補強
+- `install-office.md` 的解除安裝流程比照 Steam 補上真實狀態輪詢，不再因 `winget uninstall` 回傳 `1` 就直接誤判失敗。
+- 卸載型任務標題、工作清單與 AI 回覆改口一致，不再出現「解除安裝任務卻顯示安裝標題」的混亂狀況。
+- 卸載後的驗證共用 executor 規則，現在會把 `check = false` 視為目標已成功移除。
+
+### exps 經驗庫
+- `exps` 寫入、顯示與注入 AI prompt 前都會先做敏感資訊遮罩，避免把 API Key、密碼、CD Key、Token 與本機路徑直接存入經驗庫。
+- `exps` 詳細視窗改為顯示完整內容，不再被三行摘要樣式截斷。
+- `exps` 匯出改走原生 Windows 另存新檔流程，提升 Tauri / EXE 環境穩定性。
+
+### 檔案格式規格
+- `sops/*.md` 第一行固定為 `# AI PC Agent SOP File v1`
+- `exps/exp-yyyymmdd.md` 第一行固定為 `# AI PC Agent Experience Log - yyyymmdd`
+- `skills/*.md` 第一行固定為 `# AI PC Agent Skill File v1`
+- `plugins/*.js` 第一行固定為 `// AI PC Agent Plugin File v1`
+
+## 📌 2026.03.26 — 雙向 SOP、卸載驗證與 Tauri 啟動修正
+
+### 雙向 SOP 與動作感知卡片
+- 安裝類 SOP 現在正式支援 `install / uninstall` 雙向動作。
+- 推薦清單與 SOP 清單會先檢查目前系統狀態；若目標已安裝且 SOP 支援移除，卡片會自動改成「解除安裝」。
+- 中央工作清單、任務詳情、AI 對話提示與完成訊息，現在都會依 `action` 顯示正確文案，不再把卸載流程誤寫成安裝。
+
+### 卸載驗證框架修正
+- 修正 `sop-executor.js` 在卸載後沿用 `check` 驗證時，誤把 `false` 當成 verify 失敗的邏輯錯誤。
+- 現在對卸載 SOP 而言，`check = false` 會被正確解讀為「目標已不存在」，可共用於所有解除安裝流程。
+- 這次修正讓 Steam 卸載不再在實際成功後被錯誤標記成 `failed`。
+
+### SOP 偵測與移除穩健化
+- Chrome SOP 的 `Check / Verify` 改為讀取執行檔版本資訊，不再執行 `chrome.exe --version`，避免 Tauri 啟動或狀態掃描時誤彈出 Chrome 視窗。
+- Steam SOP 的安裝與移除判定改為檢查實際安裝路徑與精準的 `DisplayName = Steam` 卸載項，並等待互動式 uninstall wizard 完成後再判定。
+- 語系 SOP 新增移除保護：若目標語言是 Windows 原始安裝語言，或移除後會讓系統只剩唯一語言，則直接阻擋解除安裝。
+
+### Tauri / PowerShell 細節修正
+- 提權 PowerShell 在 UAC 同意後，改用較低干擾的 minimized 視窗執行。
+- 深色模式下的下拉選單與 `全部 SOP` 篩選器，補上明確的深底淺字樣式，避免選單文字難以辨識。
