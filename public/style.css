@@ -1079,9 +1079,12 @@ ol {
   box-shadow: inset 0 0 0 1px rgba(255, 244, 225, 0.22);
 }
 
-.chalk-tray-spacer {
-  flex: 1;
-  min-width: 8px;
+.chalk-tray-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 4px;
+  flex-shrink: 0;
 }
 
 .tray-action {
@@ -1153,7 +1156,7 @@ ol {
     overflow-x: auto;
   }
 
-  .chalk-tray-spacer {
+  .chalk-tray-divider {
     display: none;
   }
 

@@ -1,5 +1,5 @@
 /**
- * AI PC Agent — Frontend Application (VS Code Layout)
+ * AI PC Agent � Frontend Application (VS Code Layout)
  *
  * 功能：
  *  - 三欄可拖拉 resize（sidebar / center / chat / log）
@@ -36,6 +36,7 @@ let isChalkboardAttachmentEnabled = localStorage.getItem('chat_attach_chalkboard
 let expsEntries = [];
 let expSearchQuery = '';
 let expSopFilter = '';
+let currentLocale = localStorage.getItem('ui_locale') || 'zh-TW';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -66,6 +67,7 @@ const expSearchInput = $('#expSearchInput');
 const expSopFilterSelect = $('#expSopFilter');
 const btnExpsExport = $('#btnExpsExport');
 const statusVersion = $('#statusVersion');
+const btnLang = $('#btnLang');
 const chatMessages = $('#chatMessages');
 const chatInput = $('#chatInput');
 const btnSend = $('#btnSend');
@@ -166,6 +168,344 @@ const PROVIDER_DEFAULTS = {
     'LM Studio': 'http://127.0.0.1:1234/v1',
     'Customer Provider': 'http://127.0.0.1:11434/v1'
 };
+
+const I18N = {
+    'zh-TW': {
+        localeLabel: '繁體中文',
+        splash: {
+            firstRun: '首次執行本程式，正設定環境中，請稍候...',
+            starting: '啟動後端伺服器中，請稍候...',
+        },
+        titlebar: {
+            file: '檔案',
+            view: '檢視',
+            help: '說明',
+            aiReady: 'AI 就緒',
+            modelNotReady: '模型未就緒',
+            engineNotReady: 'AI 引擎未就緒',
+            aiSettings: '設定 AI 引擎',
+            toggleSidebar: '切換側邊欄 (Ctrl+B)',
+            toggleLog: '切換工作日誌 (Ctrl+J)',
+            toggleChat: '切換 AI 對話 (Ctrl+Alt+B)',
+        },
+        footer: {
+            tasks: '{count} 個任務',
+            switchTo: '切換成 English',
+        },
+        tabs: {
+            recommend: '💡 推薦清單',
+            sops: '📚 SOP 清單',
+            hardware: '硬體狀態',
+            todolist: '工作清單',
+            logs: '📝 工作日誌',
+            exps: '🧠 exps',
+            aiChat: '💬 AI 對話',
+            chalkboard: 'Chalkboard',
+        },
+        chalkboardWelcome: {
+            title: '歡迎使用 AI PC Agent',
+            body: '這裡可以快速啟動推薦工具與瀏覽器。請從左側推薦清單選擇工具，或是直接與 AI 對話。',
+            warn: '⚠️ AI Agent 很強大，但也可能犯錯，導致系統有風險，敬請仔細查證並小心下指令。',
+            hintTitle: '用粉筆直接畫',
+            hintBody: '選一支粉筆，直接在黑板上塗寫，板擦可清空畫布。也可把想法畫出來給 AI 看。',
+        },
+        ui: {
+            opened: '（已開啟）',
+        },
+        chat: {
+            clear: '清除對話',
+            mic: '語音輸入',
+            attachChalkboard: '附上 Chalkboard',
+            hint: 'Enter 送出 · Shift+Enter 換行',
+            modelBadge: 'AI 模型',
+            switchModel: '切換模型',
+            placeholder: '告訴我你需要什麼... 例如「幫我移除 Copilot」',
+            send: '送出',
+        },
+        settings: {
+            title: 'AI 引擎設定',
+            provider: 'AI Provider',
+            helpTitle: '快速設定',
+            helpText: '選擇 AI 引擎後，系統會提示你需要 API Key、模型名稱，或本地服務網址。',
+            baseUrl: '連線網址 (Base URL)',
+            baseUrlPlaceholder: '例如: http://localhost:11434/v1',
+            authType: '認證方式',
+            authNone: '無認證',
+            authApiKey: 'API Key',
+            authOAuth: 'OAuth 2.0 Client Credentials',
+            apiKey: 'API Key',
+            apiKeyPlaceholder: 'Bearer Token / API Key',
+            modelName: '模型名稱 (Model Name)',
+            modelNamePlaceholder: '例如: qwen3.5:4b',
+            visionModel: 'Vision 多模態模型',
+            visionModelPlaceholder: '留空則自動挑選可看圖模型',
+            refresh: '🔄 刷新清單',
+            modelHelp: '雲端模型通常需要手動填入 model 名稱，本地引擎可直接從清單選擇。',
+            visionHelp: '用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。',
+            test: '測試模型',
+            textToolTitle: '文字工具',
+            save: '儲存並刷新',
+        },
+        status: {
+            llmReady: '🟢 AI 就緒',
+            modelNotReady: '🟡 模型未就緒',
+            engineNotReady: '🔴 AI 未就緒',
+        },
+        buttons: {
+            collapse: '收起 ▼',
+            execute: '執行',
+            delete: '刪除',
+        },
+        task: {
+            general: '一般',
+            unnamedItem: '未命名項目',
+            addActionTask: '加入{action}清單',
+            runActionNow: '立即{action}',
+        },
+        sidebar: {
+            recommendLoading: '推薦清單載入中...',
+            recommendEmpty: '找不到相符的項目',
+            sopLoading: 'SOP 清單載入中...',
+            sopEmpty: '找不到相符的 SOP',
+            installedHeader: '── 已就緒 / 已安裝 ──',
+            recommendPlaceholder: '搜尋推薦項目...',
+            sopPlaceholder: '搜尋 SOP 名稱、ID 或分類...',
+            readyBadge: '✅ 已安裝',
+            uninstallBadge: '🗑 可解除安裝',
+            actionable: '⚡ 可{action} (SOP)',
+            actionableShort: '⚡ 可{action}',
+            normalPermission: '一般權限',
+            risk: '風險 {value}',
+            unknownRisk: '未標示',
+            otherCategory: '其他',
+        },
+        actions: {
+            install: '安裝',
+            uninstall: '解除安裝',
+            installTitle: '安裝 {title}',
+            uninstallTitle: '解除安裝 {title}',
+        },
+        categories: {
+            'AI Engine': 'AI 引擎',
+            Productivity: '工作效率',
+            Browser: '瀏覽器',
+            Entertainment: '娛樂',
+            'Data Protection': '資料保護',
+            'System Cleanup': '系統清理',
+            'System Optimization': '系統優化',
+            'System Settings / Language': '系統設定 / 語言',
+        },
+        risks: {
+            Low: '低',
+            Medium: '中',
+            High: '高',
+        },
+        statuses: {
+            pending: '待執行',
+            running: '執行中',
+            success: '已完成',
+            skipped: '已跳過',
+            failed: '失敗',
+        },
+        sopUi: {
+            rec_install_ollama: { title: '安裝 Ollama 本地 AI 引擎', description: '下載並安裝 Ollama，讓 AI PC Agent 具備本地語意理解能力', category: 'AI 引擎' },
+            rec_pull_llm_model: { title: '下載語言模型 (Qwen3.5 4B)', description: '下載 Qwen3.5 4B 語言模型，約 2.6GB，完成後即可開始本地對話', category: 'AI 引擎' },
+            rec_driver_check: { title: '檢查並安裝驅動程式', description: '掃描硬體裝置並確認驅動程式是否為最新版本', category: '系統優化' },
+            rec_remove_copilot: { title: '移除 Windows Copilot', description: '停用並移除 Windows 內建的 Copilot 功能', category: '系統清理' },
+            rec_install_chrome: { title: '安裝 Google Chrome', description: '下載並安裝 Chrome 瀏覽器，設為預設瀏覽器', category: '瀏覽器' },
+            rec_backup: { title: '建立系統還原點', description: '建立系統還原點，保護重要系統狀態', category: '資料保護' },
+            rec_office: { title: '安裝 LibreOffice', description: '安裝免費開源辦公套件，支援 Microsoft Office 格式', category: '工作效率' },
+            rec_steam: { title: '安裝 Steam', description: '安裝 Steam 遊戲平台，擴充你的遊戲庫', category: '娛樂' },
+            sys_lang_en_us: { title: '安裝英文語言包與輸入法', category: '系統設定 / 語言' },
+            sys_lang_ja_jp: { title: '安裝日文語言包與輸入法', category: '系統設定 / 語言' },
+            sys_lang_zh_cn: { title: '安裝簡體中文語言包與輸入法', category: '系統設定 / 語言' },
+            sys_lang_zh_tw: { title: '安裝繁體中文語言包與輸入法', category: '系統設定 / 語言' },
+        }
+    },
+    'en-US': {
+        localeLabel: 'English',
+        splash: {
+            firstRun: 'First launch. Preparing the environment, please wait...',
+            starting: 'Starting backend server, please wait...',
+        },
+        titlebar: {
+            file: 'File',
+            view: 'View',
+            help: 'Help',
+            aiReady: 'AI Ready',
+            modelNotReady: 'Model Not Ready',
+            engineNotReady: 'AI Engine Not Ready',
+            aiSettings: 'Configure AI Engine',
+            toggleSidebar: 'Toggle Sidebar (Ctrl+B)',
+            toggleLog: 'Toggle Work Log (Ctrl+J)',
+            toggleChat: 'Toggle AI Chat (Ctrl+Alt+B)',
+        },
+        footer: {
+            tasks: '{count} tasks',
+            switchTo: 'Switch to 繁體中文',
+        },
+        tabs: {
+            recommend: '💡 Recommended',
+            sops: '📚 SOPs',
+            hardware: 'Hardware',
+            todolist: 'Tasks',
+            logs: '📝 Work Log',
+            exps: '🧠 exps',
+            aiChat: '💬 AI Chat',
+            chalkboard: 'Chalkboard',
+        },
+        chalkboardWelcome: {
+            title: 'Welcome to AI PC Agent',
+            body: 'Launch recommended tools and browse quickly. Select tools from the sidebar or start a conversation with AI.',
+            warn: '⚠️ AI is powerful but may make mistakes. Please verify and issue commands carefully.',
+            hintTitle: 'Chalkboard Interactive',
+            hintBody: 'Pick a chalk and start writing. Use the eraser to clear the board. Share your drawings with AI.',
+        },
+        ui: {
+            opened: ' (Opened)',
+        },
+        chat: {
+            clear: 'Clear Chat',
+            mic: 'Voice Input',
+            attachChalkboard: 'Attach Chalkboard',
+            hint: 'Enter to send · Shift+Enter for newline',
+            modelBadge: 'AI Model',
+            switchModel: 'Switch Model',
+            placeholder: 'Tell me what you need... e.g., "help me remove Copilot"',
+            send: 'Send',
+        },
+        settings: {
+            title: 'AI Engine Settings',
+            provider: 'AI Provider',
+            helpTitle: 'Quick Setup',
+            helpText: 'After choosing a provider, the system will prompt for API Key, Model Name, or Local URL.',
+            baseUrl: 'Base URL',
+            baseUrlPlaceholder: 'e.g., http://localhost:11434/v1',
+            authType: 'Authentication',
+            authNone: 'No Auth',
+            authApiKey: 'API Key',
+            authOAuth: 'OAuth 2.0 Client Credentials',
+            apiKey: 'API Key',
+            apiKeyPlaceholder: 'Bearer Token / API Key',
+            modelName: 'Model Name',
+            modelNamePlaceholder: 'e.g., qwen3.5:4b',
+            visionModel: 'Vision Model',
+            visionModelPlaceholder: 'Leave empty for auto-selection',
+            refresh: '🔄 Refresh',
+            modelHelp: 'Cloud models usually need a manual name. Local models can be picked from the list.',
+            visionHelp: 'Used for reading Chalkboard sketches and multi-modal content. Leave empty for auto-selection.',
+            test: 'Test Model',
+            textToolTitle: 'Text Tool',
+            save: 'Save & Refresh',
+        },
+        status: {
+            llmReady: '🟢 AI Ready',
+            modelNotReady: '🟡 Model Not Ready',
+            engineNotReady: '🔴 AI Not Ready',
+        },
+        buttons: {
+            collapse: 'Collapse ▼',
+            execute: 'Run',
+            delete: 'Delete',
+        },
+        task: {
+            general: 'General',
+            unnamedItem: 'Untitled Item',
+            addActionTask: 'Add {action} task',
+            runActionNow: '{action} now',
+        },
+        sidebar: {
+            recommendLoading: 'Loading recommendations...',
+            recommendEmpty: 'No matching items found',
+            sopLoading: 'Loading SOP list...',
+            sopEmpty: 'No matching SOP found',
+            installedHeader: '-- Ready / Installed --',
+            recommendPlaceholder: 'Search recommendations...',
+            sopPlaceholder: 'Search SOP name, ID, or category...',
+            readyBadge: '✅ Installed',
+            uninstallBadge: '🗑 Uninstall available',
+            actionable: '⚡ {action} available (SOP)',
+            actionableShort: '⚡ {action} available',
+            normalPermission: 'Standard User',
+            risk: 'Risk {value}',
+            unknownRisk: 'Unspecified',
+            otherCategory: 'Other',
+        },
+        actions: {
+            install: 'Install',
+            uninstall: 'Uninstall',
+            installTitle: 'Install {title}',
+            uninstallTitle: 'Uninstall {title}',
+        },
+        categories: {
+            'AI Engine': 'AI Engine',
+            Productivity: 'Productivity',
+            Browser: 'Browser',
+            Entertainment: 'Entertainment',
+            'Data Protection': 'Data Protection',
+            'System Cleanup': 'System Cleanup',
+            'System Optimization': 'System Optimization',
+            'System Settings / Language': 'System Settings / Language',
+            'AI 引擎': 'AI Engine',
+            '工作效率': 'Productivity',
+            '瀏覽器': 'Browser',
+            '娛樂': 'Entertainment',
+            '資料保護': 'Data Protection',
+            '系統清理': 'System Cleanup',
+            '系統優化': 'System Optimization',
+            '系統設定 / 語言': 'System Settings / Language',
+        },
+        risks: {
+            Low: 'Low',
+            Medium: 'Medium',
+            High: 'High',
+            '低': 'Low',
+            '中': 'Medium',
+            '高': 'High',
+        },
+        statuses: {
+            pending: 'Pending',
+            running: 'Running',
+            success: 'Completed',
+            skipped: 'Skipped',
+            failed: 'Failed',
+        },
+        sopUi: {
+            rec_install_ollama: { title: 'Install Ollama Local AI Engine', description: 'Install Ollama to give AI PC Agent local language understanding.', category: 'AI Engine' },
+            rec_pull_llm_model: { title: 'Download Language Model (Qwen3.5 4B)', description: 'Download the Qwen3.5 4B model, about 2.6 GB, for local chat.', category: 'AI Engine' },
+            rec_driver_check: { title: 'Scan and Install Drivers', description: 'Check hardware devices and update missing or outdated drivers.', category: 'System Optimization' },
+            rec_remove_copilot: { title: 'Remove Windows Copilot', description: 'Disable and remove the built-in Windows Copilot feature.', category: 'System Cleanup' },
+            rec_install_chrome: { title: 'Install Google Chrome', description: 'Install Chrome and set it as the default browser.', category: 'Browser' },
+            rec_backup: { title: 'Create a Restore Point', description: 'Create a Windows restore point before major system changes.', category: 'Data Protection' },
+            rec_office: { title: 'Install LibreOffice', description: 'Install the free office suite with Microsoft Office compatibility.', category: 'Productivity' },
+            rec_steam: { title: 'Install Steam', description: 'Install Steam and expand your game library.', category: 'Entertainment' },
+            sys_lang_en_us: { title: 'Install English Language Pack and Input Method', category: 'System Settings / Language' },
+            sys_lang_ja_jp: { title: 'Install Japanese Language Pack and Input Method', category: 'System Settings / Language' },
+            sys_lang_zh_cn: { title: 'Install Simplified Chinese Language Pack and Input Method', category: 'System Settings / Language' },
+            sys_lang_zh_tw: { title: 'Install Traditional Chinese Language Pack and Input Method', category: 'System Settings / Language' },
+        }
+    }
+};
+
+function getLocalePack() {
+    return I18N[currentLocale] || I18N['zh-TW'];
+}
+
+function formatI18n(template, vars = {}) {
+    return String(template || '').replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
+}
+
+function t(path, vars = {}) {
+    const parts = path.split('.');
+    let value = getLocalePack();
+    for (const part of parts) {
+        value = value?.[part];
+    }
+    if (typeof value === 'string') {
+        return formatI18n(value, vars);
+    }
+    return value;
+}
 const llmDot = $('#llmDot');
 const llmLabel = $('#llmLabel');
 const llmStatus = $('#llmStatus');
@@ -1320,14 +1660,14 @@ function drawChalkboardWelcome() {
     const warnY = 206;
     const lineWidth = Math.max(320, chalkboardState.cssWidth - padX * 2);
 
-    drawChalkText('歡迎使用 AI PC Agent', padX, titleY, {
+    drawChalkText(t('chalkboardWelcome.title'), padX, titleY, {
         font: '700 34px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
         color: '#f4efe2',
         alpha: 0.96
     });
 
     drawWrappedChalkText(
-        '這裡可以快速啟動推薦工具與瀏覽器。請從左側推薦清單選擇工具，或是直接與 AI 對話。',
+        t('chalkboardWelcome.body'),
         padX,
         bodyY,
         lineWidth,
@@ -1340,7 +1680,7 @@ function drawChalkboardWelcome() {
     );
 
     drawWrappedChalkText(
-        '⚠️ AI Agent 很強大，但也可能犯錯，導致系統有風險，敬請仔細查證並小心下指令。',
+        t('chalkboardWelcome.warn'),
         padX,
         warnY,
         lineWidth,
@@ -1357,13 +1697,13 @@ function drawChalkboardHint() {
     if (chalkboardState.hintDrawn) return;
     chalkboardState.hintDrawn = true;
     markChalkboardUserContent(false);
-    drawChalkText('用粉筆直接畫', 34, 62, {
+    drawChalkText(t('chalkboardWelcome.hintTitle'), 34, 62, {
         font: '700 30px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
         color: '#f4efe2',
         alpha: 0.94
     });
     drawWrappedChalkText(
-        '選一支粉筆，直接在黑板上塗寫，板擦可清空畫布。可把想法畫出來給AI看。',
+        t('chalkboardWelcome.hintBody'),
         34,
         108,
         Math.max(280, chalkboardState.cssWidth - 68),
@@ -1769,6 +2109,7 @@ function updateChalkboardCursor() {
 // ════════════════════════════════════════════════════════
 async function init() {
     loadAppMeta();
+    updateLocaleUI();
     checkFirstRun();
     applyTheme(localStorage.getItem('theme') || 'dark');
     restoreLayout();
@@ -1815,9 +2156,9 @@ function checkFirstRun() {
     console.log('[Init] hasRun flag:', hasRun);
 
     if (!hasRun) {
-        splashText.innerText = '首次執行本程式，正設定環境中，請稍候...';
+        splashText.innerText = t('splash.firstRun');
     } else {
-        splashText.innerText = '啟動後端伺服器中，請稍候...';
+        splashText.innerText = t('splash.starting');
     }
 }
 
@@ -2012,7 +2353,7 @@ async function bootstrapModel() {
     if (task && task.status === 'pending') {
         const isRunning = todoList.some(t => t.status === 'running');
         if (!isRunning) {
-            appendChatBubble('ai', '🟡 Ollama 已就緒！正自動為您下載 qwen3.5 語言模型，模型約 1GB 請稍候...');
+            appendChatBubble('ai', '🟡 Ollama 已就緒，正在自動為您下載 qwen3.5 語言模型，請稍候...');
             addUILog(`▶ 自動執行：${task.title}`, 'info');
             executeTask(task.id);
         }
@@ -2039,12 +2380,12 @@ async function checkLLMStatus() {
             // Case 2: Ollama 好了，但模型沒好
             // await bootstrapModel(); // [2026.03.17] 暫時停用自動模型下載
         } else {
-            // Case 3: 全都好了 — 顯示初始訊息和徽章
+            // Case 3: 全都好了 � 顯示初始訊息和徽章
             if (!window._llmWelcomed) {
                 // 顯示初始訊息
                 appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以輸入文字、用嘴巴說，或是畫圖，來告訴我你需要安裝什麼軟體，或是調整系統設定喔！');
                 const versionStr = data.version ? ` (v${data.version})` : '';
-                appendChatBubble('ai', `🧠 AI 引擎就緒！${data.provider || 'Ollama'}${versionStr} 模型 ${data.modelName || '預設'} 已載入，可以直接用中文告訴我你需要什麼 🚀`);
+                appendChatBubble('ai', `🧠 AI 引擎就緒！${data.provider || 'Ollama'}${versionStr} 模型 ${data.modelName || '預設'} 已載入，可以直接用中文告訴我你需要什麼。`);
                 addUILog(`🧠 AI 引擎就緒${versionStr}：${data.modelName || '已載入'}`, 'success');
                 window._llmWelcomed = true;
             }
@@ -2088,17 +2429,12 @@ function updateLLMIndicator(status) {
 
     if (status.available && status.modelReady) {
         llmDot.style.cssText = 'background:#4ec9b0;box-shadow:0 0 6px rgba(78,201,176,0.7)';
-        llmLabel.textContent = 'AI 就緒';
-        if (statusLLM) statusLLM.textContent = '🟢 AI 就緒';
     } else if (status.available) {
         llmDot.style.cssText = 'background:#dcdcaa;box-shadow:0 0 6px rgba(220,220,170,0.6)';
-        llmLabel.textContent = '模型未就緒';
-        if (statusLLM) statusLLM.textContent = '🟡 模型未就緒';
     } else {
         llmDot.style.cssText = 'background:#f44747;box-shadow:0 0 6px rgba(244,71,71,0.5)';
-        llmLabel.textContent = 'AI 引擎未就緒';
-        if (statusLLM) statusLLM.textContent = '🔴 AI 引擎未就緒';
     }
+    updateLLMStatusText(status);
 
     if (shouldRender) {
         renderSidebarTab();
@@ -2184,16 +2520,41 @@ async function toggleModelMenu() {
 }
 
 // ════════════════════════════════════════════════════════
-//  RENDER — RECOMMEND LIST (sidebar)
+//  RENDER � RECOMMEND LIST (sidebar)
 // ════════════════════════════════════════════════════════
+function localizeCategory(category) {
+    return t(`categories.${category}`) || category || t('sidebar.otherCategory');
+}
+
+function localizeRiskLevel(riskLevel) {
+    return t(`risks.${riskLevel}`) || riskLevel || t('sidebar.unknownRisk');
+}
+
+function localizeStatus(status) {
+    return t(`statuses.${status}`) || status;
+}
+
+function getLocalizedItem(item) {
+    const preset = getLocalePack().sopUi?.[item?.id] || getLocalePack().sopUi?.[item?.skillId] || {};
+    return {
+        ...item,
+        title: preset.title || item?.title || item?.name || item?.id || t('task.unnamedItem'),
+        name: preset.title || item?.name || item?.title || item?.id || t('task.unnamedItem'),
+        description: preset.description || item?.description || '',
+        category: preset.category || localizeCategory(item?.category),
+        riskLevel: localizeRiskLevel(item?.riskLevel),
+    };
+}
+
 function renderRecommendList() {
     recommendListContainer.innerHTML = '';
     if (!recommendList.length) {
-        recommendListContainer.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:11px;">推薦清單載入中...</div>';
+        recommendListContainer.innerHTML = `<div style="padding:16px;color:var(--text-muted);font-size:11px;">${t('sidebar.recommendLoading')}</div>`;
         return;
     }
 
-    const filtered = recommendList.filter(item => {
+    const localizedList = recommendList.map(getLocalizedItem);
+    const filtered = localizedList.filter((item) => {
         if (!recSearchQuery) return true;
         const searchStr = `${item.title} ${item.description} ${item.category}`.toLowerCase();
         return searchStr.includes(recSearchQuery);
@@ -2203,7 +2564,7 @@ function renderRecommendList() {
     if (filtered.length === 0) {
         const empty = document.createElement('div');
         empty.style.cssText = 'padding:16px;color:var(--text-muted);font-size:11px;text-align:center;';
-        empty.textContent = '找不到相符的項目 🔍';
+        empty.textContent = t('sidebar.recommendEmpty');
         recommendListContainer.appendChild(empty);
         return;
     }
@@ -2215,13 +2576,12 @@ function renderRecommendList() {
         return Boolean(item.installed);
     };
 
-    const pending = filtered.filter(item => !getInstalledState(item));
-    const installed = filtered.filter(item => getInstalledState(item));
-
-    // 1. Render Pending items by category
+    const pending = filtered.filter((item) => !getInstalledState(item));
+    const installed = filtered.filter((item) => getInstalledState(item));
     const pendingGroups = {};
-    pending.forEach(item => {
-        const cat = item.category || '其他';
+
+    pending.forEach((item) => {
+        const cat = item.category || t('sidebar.otherCategory');
         if (!pendingGroups[cat]) pendingGroups[cat] = [];
         pendingGroups[cat].push(item);
     });
@@ -2233,78 +2593,84 @@ function renderRecommendList() {
         header.textContent = cat;
         recommendListContainer.appendChild(header);
 
-        items.forEach(item => {
+        items.forEach((item) => {
             recommendListContainer.appendChild(createRecommendCard({ ...item, installed: false }));
         });
     });
 
-    // 2. Render Installed items at the absolute bottom
     if (installed.length > 0) {
         const header = document.createElement('div');
         header.className = 'sidebar-section-header';
         header.style.cssText = 'padding:20px 10px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent-green);opacity:0.8;';
-        header.textContent = '── 已就緒 / 已安裝 ──';
+        header.textContent = t('sidebar.installedHeader');
         recommendListContainer.appendChild(header);
 
-        installed.forEach(item => {
+        installed.forEach((item) => {
             recommendListContainer.appendChild(createRecommendCard({ ...item, installed: true }));
         });
     }
 }
 
 function getActionLabel(action) {
-    return action === 'uninstall' ? '解除安裝' : '安裝';
+    return action === 'uninstall' ? t('actions.uninstall') : t('actions.install');
 }
 
 function getActionTitle(title, action) {
-    if (action !== 'uninstall') return title;
-    return `解除安裝 ${String(title || '')
-        .replace(/^[^\p{L}\p{N}]+/u, '')
-        .replace(/^安裝\s*/u, '')
-        .replace(/^下載\s*/u, '')}`;
+    if (!title) return t('task.unnamedItem');
+    const normalizedAction = action === 'uninstall' ? 'uninstall' : 'install';
+    
+    // 提取主體：移掉開頭的表情符號與常見動詞
+    let subject = String(title)
+        .replace(/^[^\p{L}\p{N}]+/u, '') // 移掉開頭符號/表情
+        .replace(/^(安裝|下載|建立|解除安裝|移除|清理|優化|檢測|設定|Install|Download|Create|Uninstall|Remove|Setup|Set up|Set|Get|Pull|Check|Add|Add-AppxPackage)\s*/iu, '')
+        .trim();
+
+    // 如果主體為空（例如標題本來就只有一個動詞），就退回到原始標題
+    if (!subject) return title;
+
+    return t(`actions.${normalizedAction}Title`, { title: subject });
 }
 
 function createRecommendCard(item) {
-    const isInstalled = Boolean(item.installed);
-    const action = isInstalled && item.supportsUninstall ? 'uninstall' : 'install';
+    const localized = getLocalizedItem(item);
+    const isInstalled = Boolean(localized.installed);
+    const action = isInstalled && localized.supportsUninstall ? 'uninstall' : 'install';
     const actionLabel = getActionLabel(action);
-    const isActionable = Boolean(item.skillId) && (!isInstalled || item.supportsUninstall);
+    const isActionable = Boolean(localized.skillId) && (!isInstalled || localized.supportsUninstall);
     const card = document.createElement('div');
-    card.className = `recommend-card ${isInstalled && !item.supportsUninstall ? 'installed' : ''}`;
-    if (isInstalled && !item.supportsUninstall) card.style.opacity = '0.5';
+    card.className = `recommend-card ${isInstalled && !localized.supportsUninstall ? 'installed' : ''}`;
+    if (isInstalled && !localized.supportsUninstall) card.style.opacity = '0.5';
 
     card.innerHTML = `
         <div class="recommend-card-top">
           <div class="recommend-title">
-              ${getActionTitle(item.title, action)}
+              ${getActionTitle(localized.title, action)}
               ${isInstalled
-                ? `<span style="font-size:10px; color:${item.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${item.supportsUninstall ? '🗑 可解除安裝' : '✅ 已安裝'}</span>`
+                ? `<span style="font-size:10px; color:${localized.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${localized.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge')}</span>`
                 : ''}
           </div>
           ${isActionable ? `
-              ${item.skillId ? `<div class="recommend-btn-group">
-                <button class="btn-add-todo" title="加入${actionLabel}清單">＋</button>
-                <button class="btn-run-now" title="立即${actionLabel}">▶</button>
-              </div>` : `<div class="recommend-btn-group">
-                <button class="btn-add-todo" title="加入清單">＋</button>
-              </div>`}
+              <div class="recommend-btn-group">
+                <button class="btn-add-todo" title="${t('task.addActionTask', { action: actionLabel })}">＋</button>
+                <button class="btn-run-now" title="${t('task.runActionNow', { action: actionLabel })}">▶</button>
+              </div>
           ` : ''}
         </div>
-        <div class="recommend-desc">${item.description || ''}</div>
+        <div class="recommend-desc">${localized.description || ''}</div>
         <div class="recommend-meta">
-          <span class="recommend-category">${item.category}</span>
-          ${isActionable ? `<span class="recommend-skill-badge">⚡ 可${actionLabel} (SOP)</span>` : ''}
+          <span class="recommend-category">${localized.category}</span>
+          ${isActionable ? `<span class="recommend-skill-badge">${t('sidebar.actionable', { action: actionLabel })}</span>` : ''}
         </div>
     `;
 
     if (isActionable) {
         card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            addRecommendToTodo({ ...item, recommendedAction: action });
+            addRecommendToTodo({ ...localized, recommendedAction: action });
         });
         card.querySelector('.btn-run-now')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            addAndExecuteRecommend({ ...item, recommendedAction: action });
+            addAndExecuteRecommend({ ...localized, recommendedAction: action });
         });
     }
     return card;
@@ -2324,8 +2690,8 @@ function syncSidebarTabUI() {
     sopListContainer?.classList.toggle('active', activeSidebarTab === 'sops');
     if (recSearchInput) {
         recSearchInput.placeholder = activeSidebarTab === 'recommend'
-            ? '搜尋推薦項目...'
-            : '搜尋 SOP 名稱、ID 或分類...';
+            ? t('sidebar.recommendPlaceholder')
+            : t('sidebar.sopPlaceholder');
     }
 }
 
@@ -2335,11 +2701,12 @@ function renderSopList() {
     if (sopCount) sopCount.textContent = String(sopsList.length);
 
     if (!sopsList.length) {
-        sopListContainer.innerHTML = '<div class="sidebar-empty">SOP 清單載入中...</div>';
+        sopListContainer.innerHTML = `<div class="sidebar-empty">${t('sidebar.sopLoading')}</div>`;
         return;
     }
 
-    const filtered = sopsList.filter(sop => {
+    const localizedSops = sopsList.map(getLocalizedItem);
+    const filtered = localizedSops.filter((sop) => {
         if (!recSearchQuery) return true;
         const searchStr = `${sop.name || ''} ${sop.id || ''} ${sop.category || ''}`.toLowerCase();
         return searchStr.includes(recSearchQuery);
@@ -2348,20 +2715,20 @@ function renderSopList() {
     if (sopCount) sopCount.textContent = String(filtered.length);
 
     if (!filtered.length) {
-        sopListContainer.appendChild(createSidebarEmptyState('找不到相符的 SOP'));
+        sopListContainer.appendChild(createSidebarEmptyState(t('sidebar.sopEmpty')));
         return;
     }
 
     const groups = {};
-    filtered.forEach(sop => {
-        const cat = sop.category || '其他';
+    filtered.forEach((sop) => {
+        const cat = sop.category || t('sidebar.otherCategory');
         if (!groups[cat]) groups[cat] = [];
         groups[cat].push(sop);
     });
 
     Object.entries(groups).forEach(([cat, items]) => {
         sopListContainer.appendChild(createSidebarSectionHeader(cat));
-        items.forEach(sop => {
+        items.forEach((sop) => {
             sopListContainer.appendChild(createSopCard(sop));
         });
     });
@@ -2385,25 +2752,25 @@ function createSopCard(sop) {
     const card = document.createElement('div');
     card.className = 'recommend-card sop-card';
     const requiresAdmin = /administrator|admin|uac/i.test(sop?.prerequisites?.permissions || '');
-    const riskLabel = sop.riskLevel || '未標示';
+    const riskLabel = sop.riskLevel || t('sidebar.unknownRisk');
     const action = sop.installed && sop.supportsUninstall ? 'uninstall' : 'install';
     const actionLabel = getActionLabel(action);
     const isActionable = !sop.installed || sop.supportsUninstall;
 
     card.innerHTML = `
         <div class="recommend-card-top">
-          <div class="recommend-title">${getActionTitle(sop.name || sop.id, action)}${sop.installed ? `<span style="font-size:10px; color:${sop.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${sop.supportsUninstall ? '🗑 可解除安裝' : '✅ 已安裝'}</span>` : ''}</div>
+          <div class="recommend-title">${getActionTitle(sop.name || sop.id, action)}${sop.installed ? `<span style="font-size:10px; color:${sop.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${sop.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge')}</span>` : ''}</div>
           ${isActionable ? `<div class="recommend-btn-group sop-btn-group">
-            <button class="btn-add-todo" title="加入${actionLabel}清單">＋</button>
-            <button class="btn-run-now" title="立即${actionLabel}">▶</button>
+            <button class="btn-add-todo" title="${t('task.addActionTask', { action: actionLabel })}">＋</button>
+            <button class="btn-run-now" title="${t('task.runActionNow', { action: actionLabel })}">▶</button>
           </div>` : ''}
         </div>
         <div class="recommend-desc sop-id">${sop.id || ''}</div>
         <div class="recommend-meta">
-          <span class="recommend-category">${sop.category || '其他'}</span>
-          <span class="recommend-skill-badge">${requiresAdmin ? 'UAC / Admin' : '一般權限'}</span>
-          <span class="recommend-skill-badge">風險 ${riskLabel}</span>
-          ${isActionable ? `<span class="recommend-skill-badge">⚡ 可${actionLabel}</span>` : ''}
+          <span class="recommend-category">${sop.category || t('sidebar.otherCategory')}</span>
+          <span class="recommend-skill-badge">${requiresAdmin ? 'UAC / Admin' : t('sidebar.normalPermission')}</span>
+          <span class="recommend-skill-badge">${t('sidebar.risk', { value: riskLabel })}</span>
+          ${isActionable ? `<span class="recommend-skill-badge">${t('sidebar.actionableShort', { action: actionLabel })}</span>` : ''}
         </div>
     `;
 
@@ -2420,20 +2787,149 @@ function createSopCard(sop) {
     return card;
 }
 
-// ════════════════════════════════════════════════════════
-//  RENDER — TODO LIST (center top)
-// ════════════════════════════════════════════════════════
-const STATUS_LABELS = {
-    pending: '待執行', running: '執行中',
-    success: '已完成', skipped: '已跳過', failed: '失敗',
-};
+function updateLocaleUI() {
+    document.documentElement.lang = currentLocale;
+    if (btnLang) {
+        btnLang.textContent = t('localeLabel');
+        btnLang.title = t('footer.switchTo');
+    }
+    const splashText = document.getElementById('splashText');
+    if (splashText && !document.getElementById('splashOverlay')?.classList.contains('hidden')) {
+        splashText.textContent = localStorage.getItem('aipc_has_run') ? t('splash.starting') : t('splash.firstRun');
+    }
+    const menuFile = document.getElementById('menuFile');
+    const menuView = document.getElementById('menuView');
+    const menuHelp = document.getElementById('menuHelp');
+    if (menuFile) menuFile.textContent = t('titlebar.file');
+    if (menuView) menuView.textContent = t('titlebar.view');
+    if (menuHelp) menuHelp.textContent = t('titlebar.help');
+    const llmTitle = document.getElementById('llmStatus');
+    if (llmTitle) llmTitle.title = t('titlebar.aiSettings');
+    if (btnToggleSidebar) btnToggleSidebar.title = t('titlebar.toggleSidebar');
+    if (btnTogglePanel) btnTogglePanel.title = t('titlebar.toggleLog');
+    if (btnToggleChat) btnToggleChat.title = t('titlebar.toggleChat');
+    const sidebarTabRecommend = document.querySelector('.sidebar-tab[data-sidebar-tab="recommend"] span');
+    const sidebarTabSops = document.querySelector('.sidebar-tab[data-sidebar-tab="sops"] span');
+    if (sidebarTabRecommend) sidebarTabRecommend.textContent = t('tabs.recommend');
+    if (sidebarTabSops) sidebarTabSops.textContent = t('tabs.sops');
+    const tabHardware = document.querySelector('#tab-hardware .tab-title');
+    const tabTodo = document.querySelector('#tab-todolist .tab-title');
+    if (tabHardware) tabHardware.textContent = t('tabs.hardware');
+    if (tabTodo) tabTodo.textContent = t('tabs.todolist');
+    const logTab = document.querySelector('[data-bottom-tab="logs"]');
+    const expsTab = document.querySelector('[data-bottom-tab="exps"]');
+    if (logTab) logTab.textContent = t('tabs.logs');
+    if (expsTab) expsTab.textContent = t('tabs.exps');
+    const panelTitle = document.querySelector('.chat-history .panel-title');
+    if (panelTitle) panelTitle.textContent = t('tabs.aiChat');
+    if (chatModelBadge) {
+        if (!chatModelBadge.textContent || chatModelBadge.textContent === 'AI 模型' || chatModelBadge.textContent === 'AI Model') {
+            chatModelBadge.textContent = t('chat.modelBadge');
+        }
+        chatModelBadge.title = t('chat.switchModel');
+    }
+    if (btnMic) btnMic.title = t('chat.mic');
+    if (btnChalkAttach) btnChalkAttach.title = t('chat.attachChalkboard');
+    if (btnClearChat) btnClearChat.title = t('chat.clear');
 
+    // Chat Input Area
+    if (chatInput) chatInput.placeholder = t('chat.placeholder');
+    if (btnSend) btnSend.title = t('chat.send');
+    const inputHint = document.querySelector('.input-hint');
+    if (inputHint) inputHint.textContent = t('chat.hint');
+
+    // AI Settings Modal
+    const settingsTitle = document.querySelector('.provider-modal .modal-header h3');
+    if (settingsTitle) settingsTitle.textContent = t('settings.title');
+    
+    const labels = document.querySelectorAll('.provider-modal .form-group label');
+    if (labels.length > 0) {
+        labels.forEach(l => {
+            const txt = l.firstChild?.textContent?.trim();
+            if (txt === 'AI Provider') l.firstChild.textContent = t('settings.provider');
+            if (txt === '連線網址 (Base URL)' || txt === 'Base URL') l.firstChild.textContent = t('settings.baseUrl');
+            if (txt === '認證方式' || txt === 'Authentication') l.firstChild.textContent = t('settings.authType');
+            if (txt === 'API Key') l.firstChild.textContent = t('settings.apiKey');
+            if (txt === 'Token URL') l.firstChild.textContent = 'Token URL';
+            if (txt === 'Client ID') l.firstChild.textContent = 'Client ID';
+            if (txt === 'Client Secret') l.firstChild.textContent = 'Client Secret';
+            if (txt === 'Scope') l.firstChild.textContent = 'Scope';
+            if (txt === 'Audience / Resource (選填)' || txt === 'Audience / Resource (Optional)') l.firstChild.textContent = 'Audience / Resource' + (currentLocale === 'zh-TW' ? ' (選填)' : ' (Optional)');
+            if (txt === 'Vision 多模態模型' || txt === 'Vision Model') l.firstChild.textContent = t('settings.visionModel');
+        });
+    }
+
+    const modelNameLabel = document.querySelector('label[style*="display:flex"] span');
+    if (modelNameLabel) modelNameLabel.textContent = t('settings.modelName');
+    
+    if (btnRefreshModels) btnRefreshModels.textContent = t('settings.refresh');
+    if (settingBaseUrl) settingBaseUrl.placeholder = t('settings.baseUrlPlaceholder');
+    if (settingApiKey2) settingApiKey2.placeholder = t('settings.apiKeyPlaceholder');
+    if (settingModelName) settingModelName.placeholder = t('settings.modelNamePlaceholder');
+    if (settingVisionModelName) settingVisionModelName.placeholder = t('settings.visionModelPlaceholder');
+    
+    if (providerHelpTitle && providerHelpTitle.id === 'providerHelpTitle') providerHelpTitle.textContent = t('settings.helpTitle');
+    if (providerHelpText && providerHelpText.id === 'providerHelpText') providerHelpText.textContent = t('settings.helpText');
+    const mHelp = document.getElementById('modelHelpText');
+    if (mHelp) mHelp.textContent = t('settings.modelHelp');
+    const vHelp = document.getElementById('visionModelHelpText');
+    if (vHelp) vHelp.textContent = t('settings.visionHelp');
+
+    if (btnTestProviderSettings) btnTestProviderSettings.textContent = t('settings.test');
+    if (btnSaveProviderSettings) btnSaveProviderSettings.textContent = t('settings.save');
+    
+    // Auth Type Options
+    const authOptions = document.querySelectorAll('#settingAuthType option');
+    if (authOptions.length >= 3) {
+        authOptions[0].textContent = t('settings.authNone');
+        authOptions[1].textContent = t('settings.authApiKey');
+        authOptions[2].textContent = t('settings.authOAuth');
+    }
+    
+    // Text Tool Modal
+    const textToolTitle = document.querySelector('.text-tool-modal h3');
+    if (textToolTitle) textToolTitle.textContent = t('settings.textToolTitle');
+    if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
+    if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
+    updateLLMStatusText(window.__lastLLMStatus);
+    renderSidebarTab();
+    renderTodoList();
+}
+
+function setLocale(locale) {
+    currentLocale = locale === 'en-US' ? 'en-US' : 'zh-TW';
+    localStorage.setItem('ui_locale', currentLocale);
+    updateLocaleUI();
+}
+
+function toggleLocale() {
+    setLocale(currentLocale === 'zh-TW' ? 'en-US' : 'zh-TW');
+}
+
+function updateLLMStatusText(status = {}) {
+    if (!llmDot || !llmLabel) return;
+    window.__lastLLMStatus = status || {};
+    if (status.available && status.modelReady) {
+        llmLabel.textContent = t('titlebar.aiReady');
+        if (statusLLM) statusLLM.textContent = `🟢 ${t('titlebar.aiReady')}`;
+    } else if (status.available) {
+        llmLabel.textContent = t('titlebar.modelNotReady');
+        if (statusLLM) statusLLM.textContent = `🟡 ${t('titlebar.modelNotReady')}`;
+    } else {
+        llmLabel.textContent = t('titlebar.engineNotReady');
+        if (statusLLM) statusLLM.textContent = `🔴 ${t('titlebar.engineNotReady')}`;
+    }
+}
+
+// ════════════════════════════════════════════════════════
+//  RENDER � TODO LIST (center top)
+// ════════════════════════════════════════════════════════
 function renderTodoList() {
     const pending = todoList.filter(t => t.status !== 'success' && t.status !== 'failed' && t.status !== 'skipped');
     const done = todoList.filter(t => t.status === 'success' || t.status === 'failed' || t.status === 'skipped');
 
     todoCount.textContent = todoList.length;
-    if (statusTasks) statusTasks.textContent = `${todoList.length} 個任務`;
+    if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
 
     if (!todoList.length) {
         todoContainer.innerHTML = '';
@@ -2463,14 +2959,14 @@ function renderTaskCard(task) {
           <span class="task-title">${task.title}</span>
           <div class="task-actions">
             ${spinner}
-            ${task.skillId && task.status === 'pending' ? `<button class="btn-task run" title="執行" data-id="${task.id}">▶</button>` : ''}
-            ${task.status !== 'running' ? `<button class="btn-task delete" title="刪除" data-id="${task.id}">✕</button>` : ''}
+            ${task.skillId && task.status === 'pending' ? `<button class="btn-task run" title="${t('buttons.execute')}" data-id="${task.id}">▶</button>` : ''}
+            ${task.status !== 'running' ? `<button class="btn-task delete" title="${t('buttons.delete')}" data-id="${task.id}">✕</button>` : ''}
           </div>
         </div>
         <div class="task-meta">
-          <span class="task-category">${task.category || '一般'}</span>
+          <span class="task-category">${task.category || t('task.general')}</span>
           <span class="task-category">${getActionLabel(task.action || 'install')}</span>
-          <span class="task-status" data-status="${task.status}">${STATUS_LABELS[task.status] || task.status}</span>
+          <span class="task-status" data-status="${task.status}">${localizeStatus(task.status)}</span>
         </div>
         <div class="task-progress">
           <div class="task-progress-bar ${progressBarClass}" style="width:${progress}%"></div>
@@ -2488,24 +2984,26 @@ function renderTaskCard(task) {
 //  TASK ACTIONS
 // ════════════════════════════════════════════════════════
 async function addRecommendToTodo(item) {
-    const action = item.recommendedAction || 'install';
+    const localized = getLocalizedItem(item);
+    const action = localized.recommendedAction || 'install';
     const data = await api('/api/todo', {
         method: 'POST',
-        body: { title: item.title, description: item.description, category: item.category, skillId: item.id, action },
+        body: { title: localized.title, description: localized.description, category: localized.category, skillId: localized.id, action },
     });
     if (data.success) { 
         todoList = data.todoList; 
         renderTodoList(); 
-        addUILog(`＋ 已加入${getActionLabel(action)}：${getActionTitle(item.title, action)}`, 'info'); 
+        addUILog(`＋ 已加入${getActionLabel(action)}：${getActionTitle(localized.title, action)}`, 'info'); 
         openTab('todolist');
     }
 }
 
 async function addAndExecuteRecommend(item) {
-    const action = item.recommendedAction || 'install';
+    const localized = getLocalizedItem(item);
+    const action = localized.recommendedAction || 'install';
     const data = await api('/api/todo', {
         method: 'POST',
-        body: { title: item.title, description: item.description, category: item.category, skillId: item.id, action },
+        body: { title: localized.title, description: localized.description, category: localized.category, skillId: localized.id, action },
     });
     if (data.success) {
         todoList = data.todoList;
@@ -2513,8 +3011,8 @@ async function addAndExecuteRecommend(item) {
         openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
-            addUILog(`▶ 開始${getActionLabel(action)}：${getActionTitle(item.title, action)}`, 'info');
-            appendChatBubble('ai', `🚀 正在啟動「${getActionTitle(item.title, action)}」流程...`);
+            addUILog(`▶ 開始${getActionLabel(action)}：${getActionTitle(localized.title, action)}`, 'info');
+            appendChatBubble('ai', `🚀 正在啟動「${getActionTitle(localized.title, action)}」流程...`);
             expandLog();
             await executeTask(newTask.id);
         }
@@ -2569,7 +3067,7 @@ async function sendChat() {
     try {
         const data = await api('/api/chat', { 
             method: 'POST', 
-            body: { message: msg, chalkboard: chalkboardAttachment },
+            body: { message: msg, chalkboard: chalkboardAttachment, locale: currentLocale },
             signal: chatAbortController.signal
         });
 
@@ -2592,7 +3090,7 @@ async function sendChat() {
                 executeTask(data.executeTaskId);
             }
         } else {
-            appendChatBubble('ai', '抱歉，出現了點問題，請再試一次。');
+            appendChatBubble('ai', '抱歉，出現了一點問題，請再試一次。');
         }
     } catch (err) {
         removeThinking(thinkId);
@@ -2774,34 +3272,36 @@ function addLogEntry(logItem) {
 }
 
 async function addSopToTodo(sop) {
-    const action = sop.recommendedAction || 'install';
+    const localized = getLocalizedItem(sop);
+    const action = localized.recommendedAction || 'install';
     const data = await api('/api/todo', {
         method: 'POST',
         body: {
-            title: sop.name || sop.id,
-            description: sop.id || '',
-            category: sop.category || 'SOP',
-            skillId: sop.id,
+            title: localized.name || localized.id,
+            description: localized.id || '',
+            category: localized.category || 'SOP',
+            skillId: localized.id,
             action
         },
     });
     if (data.success) {
         todoList = data.todoList;
         renderTodoList();
-        addUILog(`＋ 已加入${getActionLabel(action)} SOP：${sop.name || sop.id}`, 'info');
+        addUILog(`＋ 已加入${getActionLabel(action)} SOP：${localized.name || localized.id}`, 'info');
         openTab('todolist');
     }
 }
 
 async function addAndExecuteSop(sop) {
-    const action = sop.recommendedAction || 'install';
+    const localized = getLocalizedItem(sop);
+    const action = localized.recommendedAction || 'install';
     const data = await api('/api/todo', {
         method: 'POST',
         body: {
-            title: sop.name || sop.id,
-            description: sop.id || '',
-            category: sop.category || 'SOP',
-            skillId: sop.id,
+            title: localized.name || localized.id,
+            description: localized.id || '',
+            category: localized.category || 'SOP',
+            skillId: localized.id,
             action
         },
     });
@@ -2811,8 +3311,8 @@ async function addAndExecuteSop(sop) {
         openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
-            addUILog(`▶ 開始${getActionLabel(action)} SOP：${sop.name || sop.id}`, 'info');
-            appendChatBubble('ai', `🚀 正在啟動「${sop.name || sop.id}」的${getActionLabel(action)}流程...`);
+            addUILog(`▶ 開始${getActionLabel(action)} SOP：${localized.name || localized.id}`, 'info');
+            appendChatBubble('ai', `🚀 正在啟動「${localized.name || localized.id}」的${getActionLabel(action)}流程...`);
             expandLog();
             await executeTask(newTask.id);
         }
@@ -2976,11 +3476,11 @@ function showTaskModal(task) {
     modalBody.innerHTML = `
         <div class="task-detail-row">
           <span class="task-detail-label">狀態</span>
-          <span class="task-detail-value task-status" data-status="${task.status}">${STATUS_LABELS[task.status] || task.status}</span>
+          <span class="task-detail-value task-status" data-status="${task.status}">${localizeStatus(task.status)}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">分類</span>
-          <span class="task-detail-value">${task.category || '—'}</span>
+          <span class="task-detail-value">${task.category || '�'}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">動作</span>
@@ -2992,7 +3492,7 @@ function showTaskModal(task) {
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">建立時間</span>
-          <span class="task-detail-value">${task.createdAt ? new Date(task.createdAt).toLocaleString('zh-TW') : '—'}</span>
+          <span class="task-detail-value">${task.createdAt ? new Date(task.createdAt).toLocaleString('zh-TW') : '�'}</span>
         </div>
         ${task.logs?.length ? `
           <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;">執行記錄</div>
@@ -3043,7 +3543,7 @@ function exportTasks() {
     api('/api/todo/export-file', { method: 'POST' }).then((data) => {
         if (data.success) {
             addUILog(`✅ 任務清單已匯出：${data.fileName || data.filePath}`, 'success');
-            appendChatBubble('ai', `✅ 任務清單已匯出成功。`);
+            appendChatBubble('ai', '✅ 任務清單已匯出成功。');
             return;
         }
 
@@ -3258,6 +3758,7 @@ function setupEventListeners() {
 
     // Clear Chat
     btnClearChat?.addEventListener('click', clearChatMessages);
+    btnLang?.addEventListener('click', toggleLocale);
 
     // Sidebar Search
     recSearchInput?.addEventListener('input', (e) => {
@@ -3462,9 +3963,9 @@ function toggleViewMenu(e) {
     menu.className = 'view-dropdown menu-dropdown';
     
     const items = [
-        { id: 'chalkboard', label: '🎨 Chalkboard', icon: '🎨' },
-        { id: 'hardware', label: '🌡️ 硬體狀態', icon: '🌡️' },
-        { id: 'todolist', label: '📋 工作清單', icon: '📋' }
+        { id: 'chalkboard', label: t('tabs.chalkboard'), icon: '🎨' },
+        { id: 'hardware', label: t('tabs.hardware'), icon: '🌡️' },
+        { id: 'todolist', label: t('tabs.todolist'), icon: '📋' }
     ];
 
     items.forEach(item => {
@@ -3472,8 +3973,8 @@ function toggleViewMenu(e) {
         div.className = 'menu-dropdown-item';
         const isOpen = openTabs.includes(item.id);
         div.innerHTML = `
-            <span>${item.label}</span>
-            <span style="font-size:10px; opacity:0.6">${isOpen ? '（已開啟）' : ''}</span>
+            <span>${item.icon} ${item.label}</span>
+            <span style="font-size:10px; opacity:0.6">${isOpen ? t('ui.opened') : ''}</span>
         `;
         div.onclick = () => {
             openTab(item.id);
@@ -3759,12 +4260,12 @@ async function updateHardwareStatus() {
             // CPU
             setGauge('cpu', h.cpu.load);
             if ($('#hw-cpu-model')) $('#hw-cpu-model').textContent = h.cpu.model;
-            if ($('#hw-cpu-temp')) $('#hw-cpu-temp').textContent = h.cpu.temp ? `${h.cpu.temp}°C` : '';
+            if ($('#hw-cpu-temp')) $('#hw-cpu-temp').textContent = h.cpu.temp ? `${h.cpu.temp}�C` : '';
 
             // GPU
             setGauge('gpu', h.gpu.load);
             if ($('#hw-gpu-name')) $('#hw-gpu-name').textContent = h.gpu.name || 'N/A';
-            if ($('#hw-gpu-temp')) $('#hw-gpu-temp').textContent = h.gpu.temp ? `${h.gpu.temp}°C` : '';
+            if ($('#hw-gpu-temp')) $('#hw-gpu-temp').textContent = h.gpu.temp ? `${h.gpu.temp}�C` : '';
 
             // RAM
             setGauge('ram', h.ram.usage);
@@ -3826,3 +4327,4 @@ document.addEventListener('keydown', (e) => {
         toggleChat();
     }
 });
+

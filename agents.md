@@ -232,14 +232,6 @@
 
 ---
 
-- [ ] SOP 線上商城，動態下載更新
-- [ ] 更多 SOPs：防毒掃描、軟體移除
-
----
-> 📝 這是一支不需要黑綠色文字終端，便能聰明幫你管理系統操作的助手。
-
----
-
 ## 2026.03.24 - AI Provider 與 SOP 穩定性修正
 
 ### AI Provider
@@ -367,6 +359,29 @@
 - **硬體偵測的引號跳脫**：修正 `hardware-info.js` 中傳遞給 PowerShell 執行指令時的雙引號干擾問題（改以單引號封裝 `DriveType=3`），解決打包後因指令解析錯誤導致磁碟與 GPU 狀態監控全盤失效的問題。
 - **原生匯出圖片 API**：為了解決 Tauri EXE 容器內無法透過 `data:image` 超連結觸發原生瀏覽器下載的問題，於後端新增 `/api/chalkboard/export-file` 端點。此端點利用 PowerShell 的 `SaveFileDialog` 呼叫原生 Windows「另存新檔」視窗，確保黑板截圖能穩定儲存為 PNG。
 
+## 📌 2026.03.26 — 國際化、黑板優化與 AI 語系感知
+
+### 🌍 全方位國際化 (Internationalization / I18N)
+- **UI 全面中英切換**：新增 `I18N` 資源表，涵蓋 AI 對話區、AI 引擎設定 Modal、狀態列與黑板提示詞。
+- **設定視窗 (Settings Modal) 深度翻譯**：包括所有 Provider 說明、認證方式選項、以及 Vision 模型佔位符，確保英文模式下無殘留中文。
+- **黑板粉筆互動字體**：黑板啟動時的歡迎詞與互動提示字，現在會根據介面語系自動切換（Welcome to AI PC Agent / 互動提示）。
+
+### 🧠 LLM 語系意識 (Locale-Aware AI)
+- **雙語 System Prompt**：後端 `llm.js` 內建中英雙語系統提示詞。
+- **語系同步發送**：前端 `/api/chat` 會主動傳遞 `locale` 給後端，確保 AI 在英文模式下會以英文思考、回覆並提供 Suggestion。
+- **動態 Prompt 注入**：系統提示詞會根據語系精確規範 AI 的回應風格與語言一致性。
+
+### 🎨 黑板與 UI 視覺優化
+- **工具托盤分隔線 (Dividers)**：黑板下方工具列加入垂直分隔線，將「顏色/粗細」、「圖形工具」、「編輯操作」進行分組，提升視覺層次。
+- **對話區與設定視窗微調**：修飾了英文模式下的標籤溢出與寬度適應問題，確保 UI 佈局在不同語系下皆呈現 premium 感。
+
+### 🚀 多來源軟體推薦與動態 SOP 生成
+- **Store & Release 搜查能力**：AI 除了 `winget` 之外，現在具備 `microsoft-store` 與 `github-releases` 的感知能力。
+- **自動化 SOP 建置**：支援 `CREATE_WINGET_SOP`、`CREATE_MSSTORE_SOP` 與 `CREATE_GITHUB_RELEASE_SOP` 動作，AI 能根據外部店面資訊現場「手寫」出功能完備的 SOP。
+- **智慧檢查 (Smart Check/Verify)**：強化安裝前後的狀態確認，優先讀取系統計數器與路徑版本，提升 SOP 執行的穩健性。
+
+---
+
 ## 2026.03.26 - winget 商店推薦、格式規格與雙向 SOP 補強
 
 ### winget 商店推薦與 SOP 生成
@@ -425,7 +440,7 @@
 
 ### SOP 偵測與移除穩健化
 - Chrome SOP 的 `Check / Verify` 改為讀取執行檔版本資訊，不再執行 `chrome.exe --version`，避免 Tauri 啟動或狀態掃描時誤彈出 Chrome 視窗。
-- Steam SOP 的安裝與移除判定改為檢查實際安裝路徑與精準的 `DisplayName = Steam` 卸載項，並等待互動式 uninstall wizard 完成後再判定。
+- Steam SOP 的安裝與移除判定改為檢查實際安裝路徑與精準的 `DisplayName = Steam` 卸載項，並等待互動式 uninstall wizard 完成後再判定結果。
 - 語系 SOP 新增移除保護：若目標語言是 Windows 原始安裝語言，或移除後會讓系統只剩唯一語言，則直接阻擋解除安裝。
 
 ### Tauri / PowerShell 細節修正
@@ -444,3 +459,6 @@
 - Converted `skills/*.md` and `plugins/*.js` headers and core descriptions to English for future internationalization work.
 - Standardized `exps` markdown generation to English-oriented content and kept the header format `# AI PC Agent Experience Log - yyyymmdd`.
 - Rewrote `sop-parser.js` comments in English while preserving bilingual parsing compatibility for legacy Chinese SOP fields.
+
+---
+> 📝 今天的進化讓 Agent 從「聽令行事」升級為「具備多語雙向心智、能自主跨平台查資料並自編手冊」的資深管家。

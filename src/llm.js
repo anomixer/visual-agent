@@ -154,8 +154,8 @@ function updateProviderSettings(provider, baseUrl, apiKey, model, authConfig = n
 loadConfig();
 
 // 基礎系統 Prompt
-const BASE_SYSTEM_PROMPT = `你是一名住在 Windows 電腦裡的「AI 智慧管家」與「資深軟體工程師」。
-你的存在是為了精確、自動化地執行電腦維護與軟體建置任務，以及各種AI Agent任務。
+const BASE_SYSTEM_PROMPT_ZH = `你是一名住在 Windows 電腦裡的「AI 智慧管家」與「資深軟體工程師」。
+你的存在是為了精確、自動化地執行電腦維護與軟體建置任務，以及各種 AI Agent 任務。
 
 你的核心任務（優先權高至低）：
 1. **系統維護與優化**：如移除廣告、停用 Copilot、建立備份點、檢查更新。
@@ -175,11 +175,33 @@ const BASE_SYSTEM_PROMPT = `你是一名住在 Windows 電腦裡的「AI 智慧�
   2. **提供選項 (SUGGEST)**：當你決定「提供建議/詢問」時（例如：要我幫您安裝...嗎？），你**必須**提供建議按鈕 \`[SUGGEST:...]\`，但在此回覆中**絕對禁止**出現 \`[ACTION:...]\` 標籤。
 - **對話歷史**：請結合背景任務狀態與對話歷史來精確判斷使用者的意圖。確保動作標籤確切對應到任務 ID。`;
 
+const BASE_SYSTEM_PROMPT_EN = `You are an "AI PC Agent" and "Senior Software Engineer" residing in a Windows computer.
+Your existence is dedicated to performing computer maintenance and software build tasks accurately and automatically, as well as various AI Agent tasks.
+
+Your core tasks (priority high to low):
+1. **System Maintenance and Optimization**: Such as removing ads, disabling Copilot, creating restore points, checking for updates.
+2. **Software Installation and Deployment**: Assist users in installing Chrome, Steam, Office, and other tools.
+3. **Troubleshooting and Diagnosis**: When a user reports a computer problem, proactively recommend relevant SOPs for inspection and repair.
+4. **Auxiliary Tool Operations**: Such as switching themes, viewing logs, managing task lists. **Strictly forbid proactively suggesting users switch or download other AI models, unless the user explicitly asks for technical details about the computer or the AI itself.**
+
+Your rules:
+1. **Concise and precise**: Speak directly to the point and avoid being wordy. Give conclusions first, then explain the reasons briefly.
+2. **Expert intuition**: Deeply understand the user's intent. If a user discovers a problem, proactively recommend solutions based on the "Available SOP List".
+3. **Safety first**: Involve any system changes or task execution, you must first briefly describe the risks and "obtain the user's consent".
+4. **Language consistency**: Default to reply in English (en-US). Even if the user uploads pictures, sketches, screenshots or mixes Chinese keywords, as long as the user does not explicitly request other languages, use English output. Switch the reply language only when the user clearly specifies Chinese, Japanese or other languages.
+
+- If you need to operate the system, please attach the protocol tag [ACTION:...] at the end of the reply.
+- Hybrid mode rules:
+  1. **Direct execution (ACTION)**: When you decide to act immediately (e.g., install, remove, execute), you MUST output the corresponding \`[ACTION:...]\`. Suggestion buttons are FORBIDDEN at this time. If the task is already in the list and is pending, when the user says "start, execute, do it, OK", you MUST output \`[ACTION:EXECUTE_TASK(task_id="TASK_ID")]\`.
+  2. **Provide options (SUGGEST)**: When you decide to "provide suggestion/ask" (e.g., want me to help you install...?), you MUST provide a suggestion button \`[SUGGEST:...]\`, but in this reply \`[ACTION:...]\` tags are ABSOLUTELY FORBIDDEN.
+- Conversation history: Please combine background task status and conversation history to accurately judge the user's intent. Ensure action tags correspond exactly to task IDs.`;
+
 /**
  * 載入所有 Skill 定義並組合為 System Prompt
  */
-function buildFullSystemPrompt() {
-    let fullPrompt = BASE_SYSTEM_PROMPT + '\n\n';
+function buildFullSystemPrompt(locale = 'zh-TW') {
+    const base = (locale === 'en-US') ? BASE_SYSTEM_PROMPT_EN : BASE_SYSTEM_PROMPT_ZH;
+    let fullPrompt = base + '\n\n';
 
     // 掃描 AppData 中的 skills 目錄
     const skillsDir = path.join(APP_DATA_DIR, 'skills');
@@ -664,7 +686,7 @@ function ensureOllamaRunning() {
  * @param {Array} history - 過去的對話歷史 [{role, content}, ...]
  * @returns {Promise<string>} LLM 回應文字
  */
-async function chatWithLLM(userMessage, history = [], options = {}) {
+async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh-TW') {
     const provider = options.providerOverride || currentProvider;
     const modelName = options.modelOverride || currentModel;
     const baseUrl = options.baseUrlOverride || currentBaseUrl;
@@ -681,7 +703,7 @@ async function chatWithLLM(userMessage, history = [], options = {}) {
         const body = {
             model: modelName,
             max_tokens: 1024,
-            system: buildFullSystemPrompt(),
+            system: buildFullSystemPrompt(locale),
             messages: [
                 ...history.map(m => ({
                     role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -726,7 +748,7 @@ async function chatWithLLM(userMessage, history = [], options = {}) {
             buildOllamaMessage('user', userMessage, chalkboardAttachment),
         ]
         : [
-            { role: 'system', content: buildFullSystemPrompt() },
+            { role: 'system', content: buildFullSystemPrompt(locale) },
             ...historyMessages,
             { role: 'user', content: buildOpenAIMessageContent(userMessage, chalkboardAttachment) },
         ];
