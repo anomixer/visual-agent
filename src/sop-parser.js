@@ -33,6 +33,7 @@ function parseSOPFile(filePath) {
         steps: {
             check: { commands: [], expectedResult: null, uiMessage: null },
             install: { commands: [], expectedResult: null, uiMessage: null },
+            uninstall: { commands: [], expectedResult: null, uiMessage: null },
             verify: { commands: [], expectedResult: null, uiMessage: null },
         },
         errorHandling: [],
@@ -120,6 +121,10 @@ function parseSOPFile(filePath) {
         if (currentSection === 'steps') {
             if (/第.*階段.*環境檢測|^##*\s*.*check/i.test(trimmed)) {
                 currentPhase = 'check';
+                continue;
+            }
+            if (/第.*階段.*解除安裝|第.*階段.*移除|^##*\s*.*uninstall|^##*\s*.*remove/i.test(trimmed)) {
+                currentPhase = 'uninstall';
                 continue;
             }
             if (/第.*階段.*安裝|^##*\s*.*install/i.test(trimmed)) {

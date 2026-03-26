@@ -1869,6 +1869,16 @@ async function loadSops() {
     }
 }
 
+let sidebarRefreshTimer = null;
+function refreshSidebarDataSoon() {
+    if (sidebarRefreshTimer) clearTimeout(sidebarRefreshTimer);
+    sidebarRefreshTimer = setTimeout(() => {
+        sidebarRefreshTimer = null;
+        loadRecommend();
+        loadSops();
+    }, 250);
+}
+
 function startPolling() {
     if (pollingInterval) clearInterval(pollingInterval);
     pollingInterval = setInterval(async () => {
@@ -1889,11 +1899,14 @@ function syncKnownTaskStatuses(tasks) {
 }
 
 function buildTaskCompletionMessage(task) {
+    const actionLabel = getActionLabel(task.action || 'install');
     if (task.status === 'success') {
-        return `✅「${task.title}」已安裝/執行完成。`;
+        return `✅「${task.title}」已${actionLabel === '解除安裝' ? '解除安裝' : '安裝 / 執行'}完成。`;
     }
     if (task.status === 'skipped') {
-        return `ℹ️「${task.title}」已經存在，所以我幫你跳過了。`;
+        return actionLabel === '解除安裝'
+            ? `ℹ️「${task.title}」對應的項目目前已不在系統中，所以我幫你跳過了。`
+            : `ℹ️「${task.title}」已經存在，所以我幫你跳過了。`;
     }
     if (task.status === 'failed') {
         return `❌「${task.title}」執行失敗。你可以看一下下方工作日誌，我再幫你排除。`;
@@ -1919,6 +1932,10 @@ function announceTaskStatusChanges(previousTasks, nextTasks) {
         const message = buildTaskCompletionMessage(task);
         if (message) {
             appendChatBubble('ai', message);
+        }
+
+        if (task.skillId) {
+            refreshSidebarDataSoon();
         }
     });
 }
@@ -2183,8 +2200,6 @@ function renderRecommendList() {
     });
 
     recCount.textContent = filtered.length;
-    window._installedStatus = window._installedStatus || {};
-
     if (filtered.length === 0) {
         const empty = document.createElement('div');
         empty.style.cssText = 'padding:16px;color:var(--text-muted);font-size:11px;text-align:center;';
@@ -2193,8 +2208,15 @@ function renderRecommendList() {
         return;
     }
 
-    const pending = filtered.filter(item => !window._installedStatus[item.id]);
-    const installed = filtered.filter(item => window._installedStatus[item.id]);
+    const getInstalledState = (item) => {
+        if (window._installedStatus && Object.prototype.hasOwnProperty.call(window._installedStatus, item.id)) {
+            return Boolean(window._installedStatus[item.id]);
+        }
+        return Boolean(item.installed);
+    };
+
+    const pending = filtered.filter(item => !getInstalledState(item));
+    const installed = filtered.filter(item => getInstalledState(item));
 
     // 1. Render Pending items by category
     const pendingGroups = {};
@@ -2212,7 +2234,7 @@ function renderRecommendList() {
         recommendListContainer.appendChild(header);
 
         items.forEach(item => {
-            recommendListContainer.appendChild(createRecommendCard(item, false));
+            recommendListContainer.appendChild(createRecommendCard({ ...item, installed: false }));
         });
     });
 
@@ -2225,26 +2247,44 @@ function renderRecommendList() {
         recommendListContainer.appendChild(header);
 
         installed.forEach(item => {
-            recommendListContainer.appendChild(createRecommendCard(item, true));
+            recommendListContainer.appendChild(createRecommendCard({ ...item, installed: true }));
         });
     }
 }
 
-function createRecommendCard(item, isInstalled) {
+function getActionLabel(action) {
+    return action === 'uninstall' ? '解除安裝' : '安裝';
+}
+
+function getActionTitle(title, action) {
+    if (action !== 'uninstall') return title;
+    return `解除安裝 ${String(title || '')
+        .replace(/^[^\p{L}\p{N}]+/u, '')
+        .replace(/^安裝\s*/u, '')
+        .replace(/^下載\s*/u, '')}`;
+}
+
+function createRecommendCard(item) {
+    const isInstalled = Boolean(item.installed);
+    const action = isInstalled && item.supportsUninstall ? 'uninstall' : 'install';
+    const actionLabel = getActionLabel(action);
+    const isActionable = Boolean(item.skillId) && (!isInstalled || item.supportsUninstall);
     const card = document.createElement('div');
-    card.className = `recommend-card ${isInstalled ? 'installed' : ''}`;
-    if (isInstalled) card.style.opacity = '0.5';
+    card.className = `recommend-card ${isInstalled && !item.supportsUninstall ? 'installed' : ''}`;
+    if (isInstalled && !item.supportsUninstall) card.style.opacity = '0.5';
 
     card.innerHTML = `
         <div class="recommend-card-top">
           <div class="recommend-title">
-              ${item.title}
-              ${isInstalled ? '<span style="font-size:10px; color:#4ec9b0; margin-left:6px; font-weight:normal;">✅ 已安裝</span>' : ''}
+              ${getActionTitle(item.title, action)}
+              ${isInstalled
+                ? `<span style="font-size:10px; color:${item.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${item.supportsUninstall ? '🗑 可解除安裝' : '✅ 已安裝'}</span>`
+                : ''}
           </div>
-          ${!isInstalled ? `
+          ${isActionable ? `
               ${item.skillId ? `<div class="recommend-btn-group">
-                <button class="btn-add-todo" title="加入清單">＋</button>
-                <button class="btn-run-now" title="立即執行">▶</button>
+                <button class="btn-add-todo" title="加入${actionLabel}清單">＋</button>
+                <button class="btn-run-now" title="立即${actionLabel}">▶</button>
               </div>` : `<div class="recommend-btn-group">
                 <button class="btn-add-todo" title="加入清單">＋</button>
               </div>`}
@@ -2253,18 +2293,18 @@ function createRecommendCard(item, isInstalled) {
         <div class="recommend-desc">${item.description || ''}</div>
         <div class="recommend-meta">
           <span class="recommend-category">${item.category}</span>
-          ${item.skillId && !isInstalled ? '<span class="recommend-skill-badge">⚡ 可自動執行 (SOP)</span>' : ''}
+          ${isActionable ? `<span class="recommend-skill-badge">⚡ 可${actionLabel} (SOP)</span>` : ''}
         </div>
     `;
 
-    if (!isInstalled) {
+    if (isActionable) {
         card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            addRecommendToTodo(item);
+            addRecommendToTodo({ ...item, recommendedAction: action });
         });
         card.querySelector('.btn-run-now')?.addEventListener('click', (e) => {
             e.stopPropagation();
-            addAndExecuteRecommend(item);
+            addAndExecuteRecommend({ ...item, recommendedAction: action });
         });
     }
     return card;
@@ -2346,31 +2386,37 @@ function createSopCard(sop) {
     card.className = 'recommend-card sop-card';
     const requiresAdmin = /administrator|admin|uac/i.test(sop?.prerequisites?.permissions || '');
     const riskLabel = sop.riskLevel || '未標示';
+    const action = sop.installed && sop.supportsUninstall ? 'uninstall' : 'install';
+    const actionLabel = getActionLabel(action);
+    const isActionable = !sop.installed || sop.supportsUninstall;
 
     card.innerHTML = `
         <div class="recommend-card-top">
-          <div class="recommend-title">${sop.name || sop.id}</div>
-          <div class="recommend-btn-group sop-btn-group">
-            <button class="btn-add-todo" title="加入清單">＋</button>
-            <button class="btn-run-now" title="立即執行">▶</button>
-          </div>
+          <div class="recommend-title">${getActionTitle(sop.name || sop.id, action)}${sop.installed ? `<span style="font-size:10px; color:${sop.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${sop.supportsUninstall ? '🗑 可解除安裝' : '✅ 已安裝'}</span>` : ''}</div>
+          ${isActionable ? `<div class="recommend-btn-group sop-btn-group">
+            <button class="btn-add-todo" title="加入${actionLabel}清單">＋</button>
+            <button class="btn-run-now" title="立即${actionLabel}">▶</button>
+          </div>` : ''}
         </div>
         <div class="recommend-desc sop-id">${sop.id || ''}</div>
         <div class="recommend-meta">
           <span class="recommend-category">${sop.category || '其他'}</span>
           <span class="recommend-skill-badge">${requiresAdmin ? 'UAC / Admin' : '一般權限'}</span>
           <span class="recommend-skill-badge">風險 ${riskLabel}</span>
+          ${isActionable ? `<span class="recommend-skill-badge">⚡ 可${actionLabel}</span>` : ''}
         </div>
     `;
 
-    card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        addSopToTodo(sop);
-    });
-    card.querySelector('.btn-run-now')?.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await addAndExecuteSop(sop);
-    });
+    if (isActionable) {
+        card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            addSopToTodo({ ...sop, recommendedAction: action });
+        });
+        card.querySelector('.btn-run-now')?.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await addAndExecuteSop({ ...sop, recommendedAction: action });
+        });
+    }
     return card;
 }
 
@@ -2423,6 +2469,7 @@ function renderTaskCard(task) {
         </div>
         <div class="task-meta">
           <span class="task-category">${task.category || '一般'}</span>
+          <span class="task-category">${getActionLabel(task.action || 'install')}</span>
           <span class="task-status" data-status="${task.status}">${STATUS_LABELS[task.status] || task.status}</span>
         </div>
         <div class="task-progress">
@@ -2441,22 +2488,24 @@ function renderTaskCard(task) {
 //  TASK ACTIONS
 // ════════════════════════════════════════════════════════
 async function addRecommendToTodo(item) {
+    const action = item.recommendedAction || 'install';
     const data = await api('/api/todo', {
         method: 'POST',
-        body: { title: item.title, description: item.description, category: item.category, skillId: item.id },
+        body: { title: item.title, description: item.description, category: item.category, skillId: item.id, action },
     });
     if (data.success) { 
         todoList = data.todoList; 
         renderTodoList(); 
-        addUILog(`＋ 已加入：${item.title}`, 'info'); 
+        addUILog(`＋ 已加入${getActionLabel(action)}：${getActionTitle(item.title, action)}`, 'info'); 
         openTab('todolist');
     }
 }
 
 async function addAndExecuteRecommend(item) {
+    const action = item.recommendedAction || 'install';
     const data = await api('/api/todo', {
         method: 'POST',
-        body: { title: item.title, description: item.description, category: item.category, skillId: item.id },
+        body: { title: item.title, description: item.description, category: item.category, skillId: item.id, action },
     });
     if (data.success) {
         todoList = data.todoList;
@@ -2464,8 +2513,8 @@ async function addAndExecuteRecommend(item) {
         openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
-            addUILog(`▶ 開始執行：${item.title}`, 'info');
-            appendChatBubble('ai', `🚀 正在啟動「${item.title}」...`);
+            addUILog(`▶ 開始${getActionLabel(action)}：${getActionTitle(item.title, action)}`, 'info');
+            appendChatBubble('ai', `🚀 正在啟動「${getActionTitle(item.title, action)}」流程...`);
             expandLog();
             await executeTask(newTask.id);
         }
@@ -2722,31 +2771,35 @@ function addLogEntry(logItem) {
 }
 
 async function addSopToTodo(sop) {
+    const action = sop.recommendedAction || 'install';
     const data = await api('/api/todo', {
         method: 'POST',
         body: {
             title: sop.name || sop.id,
             description: sop.id || '',
             category: sop.category || 'SOP',
-            skillId: sop.id
+            skillId: sop.id,
+            action
         },
     });
     if (data.success) {
         todoList = data.todoList;
         renderTodoList();
-        addUILog(`＋ 已加入 SOP：${sop.name || sop.id}`, 'info');
+        addUILog(`＋ 已加入${getActionLabel(action)} SOP：${sop.name || sop.id}`, 'info');
         openTab('todolist');
     }
 }
 
 async function addAndExecuteSop(sop) {
+    const action = sop.recommendedAction || 'install';
     const data = await api('/api/todo', {
         method: 'POST',
         body: {
             title: sop.name || sop.id,
             description: sop.id || '',
             category: sop.category || 'SOP',
-            skillId: sop.id
+            skillId: sop.id,
+            action
         },
     });
     if (data.success) {
@@ -2755,8 +2808,8 @@ async function addAndExecuteSop(sop) {
         openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
-            addUILog(`▶ 開始執行 SOP：${sop.name || sop.id}`, 'info');
-            appendChatBubble('ai', `🚀 正在啟動「${sop.name || sop.id}」...`);
+            addUILog(`▶ 開始${getActionLabel(action)} SOP：${sop.name || sop.id}`, 'info');
+            appendChatBubble('ai', `🚀 正在啟動「${sop.name || sop.id}」的${getActionLabel(action)}流程...`);
             expandLog();
             await executeTask(newTask.id);
         }
@@ -2861,14 +2914,29 @@ function exportExps() {
         const ts = e.updatedAt ? new Date(e.updatedAt).toLocaleString('zh-TW', { hour12: false }) : '';
         return `# ${e.title || e.fileName || '未命名'}\n> SOP: ${e.sopId || 'dynamic'} | ${ts}\n\n${e.content || ''}\n\n---`;
     }).join('\n\n');
-    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `aipc-exps-${new Date().toISOString().slice(0, 10)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-    addUILog(`✅ exps 已匯出 (${expsEntries.length} 筆)`, 'success');
+    api('/api/exps/export-file', {
+        method: 'POST',
+        body: { markdown: md }
+    }).then((data) => {
+        if (data.success) {
+            addUILog(`✅ exps 已匯出：${data.fileName || data.filePath}`, 'success');
+            return;
+        }
+
+        if (data.cancelled) {
+            addUILog('ℹ️ 已取消匯出 exps', 'info');
+            return;
+        }
+
+        const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `aipc-exps-${new Date().toISOString().slice(0, 10)}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+        addUILog(`⚠️ 原生匯出 exps 失敗，已改用瀏覽器下載：${data.error || 'Unknown error'}`, 'warn');
+    });
 }
 
 function showExpDetail(entry) {
@@ -2892,7 +2960,7 @@ function showExpDetail(entry) {
           <span class="task-detail-label">更新時間</span>
           <span class="task-detail-value">${escapeHtml(updatedAt)}</span>
         </div>
-        <div style="margin-top:12px" class="exp-card-body">${htmlContent}</div>
+        <div style="margin-top:12px" class="exp-detail-content">${htmlContent}</div>
     `;
     modalOverlay.classList.add('visible');
 }
@@ -2910,6 +2978,10 @@ function showTaskModal(task) {
         <div class="task-detail-row">
           <span class="task-detail-label">分類</span>
           <span class="task-detail-value">${task.category || '—'}</span>
+        </div>
+        <div class="task-detail-row">
+          <span class="task-detail-label">動作</span>
+          <span class="task-detail-value">${getActionLabel(task.action || 'install')}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">SOP ID</span>

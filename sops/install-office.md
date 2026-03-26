@@ -69,6 +69,25 @@ Write-Host "LibreOffice 已安裝: $officeExe"
 $true
 ```
 
+第四階段：解除安裝 (Uninstall)
+指令 (PowerShell):
+
+```powershell
+Write-Host "正在透過 winget 解除安裝 LibreOffice，請稍候..."
+
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget 未安裝或不在 PATH 中，請先安裝 App Installer"
+}
+
+& winget uninstall --id TheDocumentFoundation.LibreOffice --silent --accept-source-agreements
+
+if ($LASTEXITCODE -ne 0) {
+    throw "winget 解除安裝失敗，錯誤代碼: $LASTEXITCODE"
+}
+
+Write-Host "LibreOffice 已送出解除安裝。"
+```
+
 4. 自動排錯邏輯 (Error Handling)
 
 錯誤代碼 / 訊息,可能原因,AI 自動修復行動

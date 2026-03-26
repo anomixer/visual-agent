@@ -114,6 +114,8 @@ let todoList = [];
 let logs = [];
 let runningSOP = null;
 let chatHistory = []; // 儲存最近 6 則對話：[{role: 'user', content: '...'}, {role: 'assistant', content: '...'}]
+const sopStateCache = new Map();
+const SOP_STATE_TTL_MS = 30000;
 
 function buildChatHistoryForRequest(history, hasChalkboardAttachment) {
     if (!hasChalkboardAttachment || !Array.isArray(history) || history.length === 0) {
@@ -390,6 +392,67 @@ function loadExperienceEntries(limit = 18) {
     return entries.slice(0, limit);
 }
 
+function buildTaskTitle(sop, action = 'install') {
+    if (!sop) return '未命名任務';
+    if (action === 'uninstall') {
+        const normalizedName = String(sop.name || sop.id || '')
+            .replace(/^[^\p{L}\p{N}]+/u, '')
+            .replace(/^安裝\s*/u, '')
+            .replace(/^下載\s*/u, '');
+        return `🗑️ 解除安裝 ${normalizedName}`;
+    }
+    return `📦 ${sop.name}`;
+}
+
+async function evaluateSOPInstalledState(sop, options = {}) {
+    const forceRefresh = Boolean(options.forceRefresh);
+    const cached = sopStateCache.get(sop.id);
+    const now = Date.now();
+    if (!forceRefresh && cached && (now - cached.checkedAt) < SOP_STATE_TTL_MS) {
+        return cached.state;
+    }
+
+    let installed = false;
+    let available = Boolean(sop?.steps?.check?.commands?.length);
+
+    try {
+        if (sop.id === 'rec_install_ollama') {
+            const status = await llm.checkOllamaStatus();
+            installed = Boolean(status.available);
+        } else if (sop.id === 'rec_pull_llm_model') {
+            const status = await llm.checkOllamaStatus();
+            installed = Boolean(status.modelReady);
+        } else if (available) {
+            const executor = new SOPExecutor({ timeoutMs: 20000 });
+            const checkResult = await executor.runPhaseCommands(sop.steps.check.commands, 'check');
+            const lastOutput = checkResult.outputs?.[checkResult.outputs.length - 1];
+            installed = Boolean(checkResult.success && lastOutput && executor.isCheckSatisfied(lastOutput.stdout));
+        }
+    } catch {
+        installed = false;
+    }
+
+    const state = {
+        installed,
+        supportsUninstall: Boolean(sop?.steps?.uninstall?.commands?.length),
+        recommendedAction: installed && sop?.steps?.uninstall?.commands?.length ? 'uninstall' : 'install',
+    };
+
+    sopStateCache.set(sop.id, { checkedAt: now, state });
+    return state;
+}
+
+async function annotateSOPRuntimeState(sops, options = {}) {
+    const annotated = await Promise.all(sops.map(async (sop) => {
+        const state = await evaluateSOPInstalledState(sop, options);
+        return {
+            ...sop,
+            ...state,
+        };
+    }));
+    return annotated;
+}
+
 /**
  * 獲取系統健康狀態 (CPU, RAM, Disk)
  */
@@ -472,21 +535,40 @@ const RECOMMEND_BASE = [
 ];
 
 // 建立推薦清單，標記哪些有對應 skill
-function buildRecommendList() {
+async function buildRecommendList() {
     try {
-        const skills = loadAllSOPs(SKILLS_DIR);
-        const skillIds = new Set(skills.map(s => s.id));
-        return RECOMMEND_BASE.map(item => ({
+        const sops = loadAllSOPs(SOPS_DIR);
+        const sopIds = new Set(sops.map(s => s.id));
+        const baseItems = RECOMMEND_BASE.map(item => ({
             ...item,
-            skillId: skillIds.has(item.id) ? item.id : null,
+            skillId: sopIds.has(item.id) ? item.id : null,
+        }));
+        return await Promise.all(baseItems.map(async (item) => {
+            if (!item.skillId) {
+                return {
+                    ...item,
+                    installed: false,
+                    supportsUninstall: false,
+                    recommendedAction: 'install',
+                };
+            }
+            const sop = sops.find((entry) => entry.id === item.skillId);
+            const state = await evaluateSOPInstalledState(sop);
+            return { ...item, ...state };
         }));
     } catch {
-        return RECOMMEND_BASE.map(item => ({ ...item, skillId: null }));
+        return RECOMMEND_BASE.map(item => ({
+            ...item,
+            skillId: null,
+            installed: false,
+            supportsUninstall: false,
+            recommendedAction: 'install',
+        }));
     }
 }
 
-function getRecommendList() {
-    return buildRecommendList();
+async function getRecommendList() {
+    return await buildRecommendList();
 }
 
 // Load saved tasks on startup
@@ -510,9 +592,9 @@ loadTasks();
 // ── API Routes ──────────────────────────────────────────────────────
 
 // GET /api/sops — 列出所有 SOP
-app.get('/api/sops', (req, res) => {
+app.get('/api/sops', async (req, res) => {
     try {
-        const sops = loadAllSOPs(SOPS_DIR);
+        const sops = await annotateSOPRuntimeState(loadAllSOPs(SOPS_DIR));
         res.json({ success: true, sops });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -533,16 +615,25 @@ app.get('/api/exps', (req, res) => {
 });
 
 // POST /api/todo — 新增任務到 To-Do List
-app.post('/api/todo', (req, res) => {
-    const { title, description, skillId, category } = req.body;
+app.post('/api/todo', async (req, res) => {
+    const { title, description, skillId, category, action } = req.body;
     const sops = loadAllSOPs(SOPS_DIR);
+    const sopsWithState = await annotateSOPRuntimeState(sops);
     const matchedSOP = sops.find((s) => s.id === skillId);
+    const resolvedAction = action || (matchedSOP ? (await evaluateSOPInstalledState(matchedSOP)).recommendedAction : 'install');
+    const resolvedTitle = matchedSOP ? buildTaskTitle(matchedSOP, resolvedAction) : (title || '未命名任務');
+    const resolvedDescription = matchedSOP
+        ? (resolvedAction === 'uninstall'
+            ? `解除安裝 ${String(matchedSOP.name || matchedSOP.id || '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^安裝\s*/u, '').replace(/^下載\s*/u, '')}`
+            : matchedSOP.name)
+        : (description || '');
 
     const task = {
         id: `task_${Date.now()}`,
-        title: title || (matchedSOP ? matchedSOP.name : '未命名任務'),
-        description: description || (matchedSOP ? matchedSOP.name : ''),
+        title: resolvedTitle,
+        description: resolvedDescription,
         skillId: skillId || null,
+        action: resolvedAction,
         category: category || (matchedSOP ? matchedSOP.category : '一般'),
         status: 'pending', // pending | running | success | failed | skipped
         progress: 0,
@@ -677,9 +768,54 @@ app.post('/api/chalkboard/export-file', (req, res) => {
     }
 });
 
+// POST /api/exps/export-file — 匯出 exps Markdown (跳出另存新檔對話框)
+app.post('/api/exps/export-file', (req, res) => {
+    try {
+        const { markdown } = req.body;
+        if (!markdown) {
+            return res.status(400).json({ success: false, error: 'No markdown content provided' });
+        }
+
+        const defaultName = `aipc-exps-${new Date().toISOString().slice(0, 10)}.md`;
+
+        const psScript = `
+        Add-Type -AssemblyName System.Windows.Forms
+        $dlg = New-Object System.Windows.Forms.SaveFileDialog
+        $dlg.Filter = 'Markdown 檔案 (*.md)|*.md|所有檔案 (*.*)|*.*'
+        $dlg.FileName = '${defaultName}'
+        $dlg.Title = '匯出 AI PC Agent exps'
+        $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
+        $res = $dlg.ShowDialog()
+        if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
+            Write-Output $dlg.FileName
+        }
+        `;
+
+        const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -Command "${psScript.replace(/\n/g, ';')}"`, {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            windowsHide: true,
+        }).trim();
+
+        if (!output) {
+            return res.json({ success: false, error: 'User cancelled', cancelled: true });
+        }
+
+        const filePath = output;
+        fs.writeFileSync(filePath, markdown, 'utf8');
+        res.json({ success: true, filePath, fileName: path.basename(filePath) });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
 // GET /api/recommend — 取得推薦清單（動態附帶 skillId）
-app.get('/api/recommend', (req, res) => {
-    res.json({ success: true, recommendList: getRecommendList() });
+app.get('/api/recommend', async (req, res) => {
+    try {
+        res.json({ success: true, recommendList: await getRecommendList() });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // GET /api/llm/status — 查詢 Ollama 狀態
@@ -776,7 +912,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
     });
 
     executor.on('phase:start', (e) => {
-        const progressMap = { check: 20, install: 40, verify: 80 };
+        const progressMap = { check: 20, install: 40, uninstall: 40, verify: 80 };
         task.progress = progressMap[e.phase] || task.progress;
     });
 
@@ -791,10 +927,11 @@ app.post('/api/execute/:taskId', async (req, res) => {
     res.json({ success: true, message: '任務已開始執行' });
 
     try {
-        const result = await executor.execute(sop);
+        const result = await executor.execute(sop, { action: task.action || 'install' });
         task.status = result.status;
         task.progress = 100;
         task.completedAt = new Date().toISOString();
+        if (task.skillId) sopStateCache.delete(task.skillId);
 
         const finishLog = { level: 'success', message: `任務「${task.title}」執行完畢 (狀態: ${result.status})`, timestamp: new Date().toISOString() };
         task.logs.push(finishLog);
@@ -810,6 +947,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
     } catch (err) {
         task.status = 'failed';
         task.completedAt = new Date().toISOString();
+        if (task.skillId) sopStateCache.delete(task.skillId);
         const errLog = { level: 'error', message: `任務執行崩潰: ${err.message}`, timestamp: new Date().toISOString() };
         task.logs.push(errLog);
         logs.push(errLog);
@@ -839,7 +977,7 @@ app.post('/api/chat', async (req, res) => {
     let suggestions = ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
     let llmErrorForFallback = null;
     // 1. 快速蒐集背景資訊
-    const sopCatalog = sops.map(s => `- ID: ${s.id}, 名稱: ${s.name}`).join('\n');
+    const sopCatalog = sopsWithState.map(s => `- ID: ${s.id}, 名稱: ${s.name}, 狀態: ${s.installed ? '已安裝' : '未安裝'}, 建議動作: ${s.recommendedAction === 'uninstall' ? '解除安裝' : '安裝'}`).join('\n');
     const taskContext = todoList.map(t => `- ID: ${t.id}, 標題: ${t.title}, 狀態: ${t.status}`).join('\n');
     const experienceContext = loadExperienceContext(message, 3);
     let systemHealth = null;
@@ -950,13 +1088,14 @@ ${taskContext || '(空)'}
                 if (actionStr.startsWith('ADD_TASK')) {
                     const idMatch = actionStr.match(/sop_id="(.*?)"/);
                     if (idMatch) {
-                        const mSop = sops.find(s => s.id === idMatch[1]);
+                        const mSop = sopsWithState.find(s => s.id === idMatch[1]);
                         if (mSop) {
                             todoList.push({
                                 id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-                                title: `📦 ${mSop.name}`,
+                                title: buildTaskTitle(mSop, mSop.recommendedAction),
                                 description: `由 AI 智慧管家排程`,
                                 skillId: mSop.id,
+                                action: mSop.recommendedAction,
                                 category: mSop.category || '系統維護',
                                 status: 'pending', progress: 0, logs: [],
                                 createdAt: new Date().toISOString()
@@ -1071,16 +1210,24 @@ ${taskContext || '(空)'}
     }
 
     if (!isActionTaken && !isConfirmation) {
-        if (/日文|日語|japanese|ja-jp/i.test(message)) matchedSOP = sops.find((s) => s.id === 'sys_lang_ja_jp');
-        if (/英文|english|en-us/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'sys_lang_en_us');
-        if (/繁中|繁體中文|traditional chinese|zh-tw/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'sys_lang_zh_tw');
-        if (/簡中|簡體中文|simplified chinese|zh-cn/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'sys_lang_zh_cn');
-        if (/chrome|谷歌|瀏覽器/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_install_chrome');
-        if (/ollama|llm|語言模型|ai引擎/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_install_ollama');
-        if (/steam|steam|遊戲/i.test(message)) matchedSOP = matchedSOP || sops.find((s) => s.id === 'rec_steam');
+        if (/日文|日語|japanese|ja-jp/i.test(message)) matchedSOP = sopsWithState.find((s) => s.id === 'sys_lang_ja_jp');
+        if (/英文|english|en-us/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_lang_en_us');
+        if (/繁中|繁體中文|traditional chinese|zh-tw/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_lang_zh_tw');
+        if (/簡中|簡體中文|simplified chinese|zh-cn/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_lang_zh_cn');
+        if (/chrome|谷歌|瀏覽器/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_install_chrome');
+        if (/ollama|llm|語言模型|ai引擎/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_install_ollama');
+        if (/steam|steam|遊戲/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_steam');
 
         if (matchedSOP) {
-            taskAdded = { id: `task_${Date.now()}`, title: `📦 ${matchedSOP.name}`, skillId: matchedSOP.id, status: 'pending', progress: 0, logs: [] };
+            taskAdded = {
+                id: `task_${Date.now()}`,
+                title: buildTaskTitle(matchedSOP, matchedSOP.recommendedAction),
+                skillId: matchedSOP.id,
+                action: matchedSOP.recommendedAction,
+                status: 'pending',
+                progress: 0,
+                logs: []
+            };
             todoList.push(taskAdded);
             saveTasks();
         }

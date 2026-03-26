@@ -17,14 +17,22 @@ OS: Windows 10 / 11
 指令 (PowerShell): 
 ```powershell
 try {
-    $steamCmd = Get-Command steam.exe -ErrorAction SilentlyContinue
-    $steamExe = if ($steamCmd) { $steamCmd.Source } else { "C:\Program Files (x86)\Steam\steam.exe" }
+    $steamCandidates = @(
+        "$env:ProgramFiles(x86)\Steam\steam.exe",
+        "$env:ProgramFiles\Steam\steam.exe",
+        "$env:LOCALAPPDATA\Programs\Steam\steam.exe"
+    ) | Where-Object { $_ } | Select-Object -Unique
 
-    if (Test-Path $steamExe) {
-        $true
-    } else {
-        $false
-    }
+    $steamExe = $steamCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $uninstallEntry = Get-ItemProperty `
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+        -ErrorAction SilentlyContinue | Where-Object {
+            $_.DisplayName -eq 'Steam'
+        } | Select-Object -First 1
+
+    if ($steamExe -or $uninstallEntry) { $true } else { $false }
 } catch {
     $false
 }
@@ -59,15 +67,84 @@ Start-Sleep -Seconds 2
 指令 (PowerShell): 
 ```powershell
 Write-Host "驗證 Steam 安裝..."
-$steamCmd = Get-Command steam.exe -ErrorAction SilentlyContinue
-$steamExe = if ($steamCmd) { $steamCmd.Source } else { "C:\Program Files (x86)\Steam\steam.exe" }
+$steamCandidates = @(
+    "$env:ProgramFiles(x86)\Steam\steam.exe",
+    "$env:ProgramFiles\Steam\steam.exe",
+    "$env:LOCALAPPDATA\Programs\Steam\steam.exe"
+) | Where-Object { $_ } | Select-Object -Unique
 
-if (-not (Test-Path $steamExe)) {
-    throw "Steam 執行檔不存在: $steamExe"
+$steamExe = $steamCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+$uninstallEntry = Get-ItemProperty `
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+    -ErrorAction SilentlyContinue | Where-Object {
+        $_.DisplayName -eq 'Steam'
+    } | Select-Object -First 1
+
+if (-not $steamExe -and -not $uninstallEntry) {
+    throw "找不到 Steam 的執行檔或安裝登錄資訊"
 }
 
-Write-Host "Steam 已安裝: $steamExe"
+if ($steamExe) {
+    Write-Host "Steam 已安裝: $steamExe"
+}
+
+if ($uninstallEntry) {
+    Write-Host "Steam 已登錄於系統移除清單: $($uninstallEntry.DisplayName)"
+}
+
 $true
+```
+
+第四階段：解除安裝 (Uninstall)
+指令 (PowerShell):
+
+```powershell
+Write-Host "正在透過 winget 解除安裝 Steam，請稍候..."
+
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget 未安裝或不在 PATH 中，請先安裝 App Installer"
+}
+
+& winget uninstall --id Valve.Steam --silent --accept-source-agreements
+
+if ($LASTEXITCODE -ne 0) {
+    throw "winget 解除安裝失敗，錯誤代碼: $LASTEXITCODE"
+}
+
+Write-Host "Steam 已送出解除安裝，等待系統移除完成..."
+
+$removed = $false
+for ($i = 0; $i -lt 60; $i++) {
+    Start-Sleep -Seconds 2
+
+    $steamCandidates = @(
+        "$env:ProgramFiles(x86)\Steam\steam.exe",
+        "$env:ProgramFiles\Steam\steam.exe",
+        "$env:LOCALAPPDATA\Programs\Steam\steam.exe"
+    ) | Where-Object { $_ } | Select-Object -Unique
+
+    $steamExe = $steamCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $uninstallEntry = Get-ItemProperty `
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+        -ErrorAction SilentlyContinue | Where-Object {
+            $_.DisplayName -eq 'Steam'
+        } | Select-Object -First 1
+
+    if (-not $steamExe -and -not $uninstallEntry) {
+        $removed = $true
+        break
+    }
+}
+
+if (-not $removed) {
+    throw "Steam 解除安裝精靈已結束，但系統仍偵測到 Steam 安裝資訊。"
+}
+
+Write-Host "Steam 已完成解除安裝。"
 ```
 
 4. 自動排錯邏輯 (Error Handling)

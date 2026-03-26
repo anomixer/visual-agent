@@ -57,6 +57,50 @@ if ($installed) {
 }
 ```
 
+第四階段：解除安裝 (Uninstall)
+指令 (PowerShell):
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$target = 'zh-TW'
+$installLanguageMap = @{
+    '0409' = 'en-US'
+    '0404' = 'zh-TW'
+    '0804' = 'zh-CN'
+    '0411' = 'ja-JP'
+}
+$installCode = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\Language' -ErrorAction Stop).InstallLanguage
+$originalLanguage = $installLanguageMap[$installCode]
+$installedTags = @((Get-InstalledLanguage | ForEach-Object {
+    $_.LanguageId, $_.LanguageTag, $_.LocaleName, $_.Language
+}) | Where-Object { $_ } | Select-Object -Unique)
+
+if (-not ($installedTags -contains $target)) {
+    throw "$target 尚未安裝，無需移除。"
+}
+
+if ($originalLanguage -eq $target) {
+    throw "不可移除系統原始安裝語言 $target。"
+}
+
+if ($installedTags.Count -le 1) {
+    throw "系統至少要保留一個語言，無法移除唯一語言 $target。"
+}
+
+$langList = Get-WinUserLanguageList
+$newList = New-Object 'System.Collections.Generic.List[Microsoft.InternationalSettings.Commands.WinUserLanguage]'
+foreach ($lang in $langList) {
+    if ($lang.LanguageTag -ne $target) {
+        [void]$newList.Add($lang)
+    }
+}
+if ($newList.Count -eq 0) {
+    throw "移除後會沒有任何使用者語言，已中止。"
+}
+Set-WinUserLanguageList -LanguageList $newList -Force -ErrorAction Stop
+Uninstall-Language -Language $target -ErrorAction Stop
+```
+
 4. 自動排錯邏輯 (Error Handling)
 
 錯誤代碼 / 訊息,可能原因,AI 自動修復行動

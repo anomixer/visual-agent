@@ -66,7 +66,9 @@ class SOPExecutor extends EventEmitter {
                 '-NonInteractive',
                 '-ExecutionPolicy', 'Bypass',
                 '-Command', wrappedCommand,
-            ]);
+            ], {
+                windowsHide: true,
+            });
 
             let stdout = '';
             let stderr = '';
@@ -175,7 +177,7 @@ class SOPExecutor extends EventEmitter {
             const launchCommand = [
                 '$ErrorActionPreference = "Stop"',
                 'try {',
-                `    $proc = Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '${quotedRunnerPath}')`,
+                `    $proc = Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Minimized -Wait -PassThru -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', '${quotedRunnerPath}')`,
                 '    exit $proc.ExitCode',
                 '} catch {',
                 '    $msg = $_ | Out-String',
@@ -199,7 +201,9 @@ class SOPExecutor extends EventEmitter {
                 '-NonInteractive',
                 '-ExecutionPolicy', 'Bypass',
                 '-Command', launchCommand,
-            ]);
+            ], {
+                windowsHide: true,
+            });
 
             let stderr = '';
             let timedOut = false;
@@ -442,10 +446,14 @@ class SOPExecutor extends EventEmitter {
         return /administrator|admin|uac/i.test(permissions);
     }
 
-    async execute(sop) {
+    async execute(sop, options = {}) {
+        const action = options.action === 'uninstall' ? 'uninstall' : 'install';
+        const actionPhase = action === 'uninstall' ? 'uninstall' : 'install';
+        const actionLabel = action === 'uninstall' ? '解除安裝' : '安裝';
         const result = {
             sopId: sop.id,
             sopName: sop.name,
+            action,
             status: 'pending', // pending | skipped | success | failed
             phases: {},
             startTime: new Date().toISOString(),
@@ -465,11 +473,24 @@ class SOPExecutor extends EventEmitter {
             if (checkResult.success) {
                 // 檢查回傳值是否為 True（表示已安裝，可跳過）
                 const lastOutput = checkResult.outputs[checkResult.outputs.length - 1];
-                if (lastOutput && this.isCheckSatisfied(lastOutput.stdout)) {
+                const isInstalled = lastOutput && this.isCheckSatisfied(lastOutput.stdout);
+                if (action === 'install' && isInstalled) {
                     this.emit('log', {
                         level: 'success',
                         phase: 'check',
                         message: '已偵測到目標已安裝，跳過執行。',
+                    });
+                    result.status = 'skipped';
+                    result.endTime = new Date().toISOString();
+                    this.emit('sop:end', result);
+                    return result;
+                }
+
+                if (action === 'uninstall' && !isInstalled) {
+                    this.emit('log', {
+                        level: 'success',
+                        phase: 'check',
+                        message: '已偵測到目標不在系統中，跳過解除安裝。',
                     });
                     result.status = 'skipped';
                     result.endTime = new Date().toISOString();
@@ -481,32 +502,37 @@ class SOPExecutor extends EventEmitter {
             this.emit('phase:end', { phase: 'check', success: checkResult.success });
         }
 
-        // ── Phase 2: Install ────────────────────────────────────────────
-        let installSuccess = false;
+        // ── Phase 2: Action ─────────────────────────────────────────────
+        let actionSuccess = false;
         let retries = 0;
+        const actionStep = sop.steps[actionPhase];
 
         while (retries <= this.maxRetries) {
-            if (sop.steps.install.commands.length === 0) {
-                installSuccess = true;
+            if (!actionStep || actionStep.commands.length === 0) {
+                throw new Error(`SOP 缺少${actionLabel}階段指令`);
+            }
+
+            if (actionStep.commands.length === 0) {
+                actionSuccess = true;
                 break;
             }
 
-            if (sop.steps.install.uiMessage) {
-                this.emit('ui:message', { message: sop.steps.install.uiMessage });
+            if (actionStep.uiMessage) {
+                this.emit('ui:message', { message: actionStep.uiMessage });
             }
 
-            this.emit('phase:start', { phase: 'install', sop: sop.id, attempt: retries + 1 });
+            this.emit('phase:start', { phase: actionPhase, sop: sop.id, attempt: retries + 1 });
 
             const installResult = await this.runPhaseCommands(
-                sop.steps.install.commands,
-                'install',
+                actionStep.commands,
+                actionPhase,
                 { elevate: requiresElevation }
             );
-            result.phases.install = installResult;
+            result.phases[actionPhase] = installResult;
 
             if (installResult.success) {
-                installSuccess = true;
-                this.emit('phase:end', { phase: 'install', success: true });
+                actionSuccess = true;
+                this.emit('phase:end', { phase: actionPhase, success: true });
                 break;
             }
 
@@ -519,8 +545,8 @@ class SOPExecutor extends EventEmitter {
                     retries++;
                     this.emit('log', {
                         level: 'info',
-                        phase: 'install',
-                        message: `修復完成，重新嘗試安裝 (第 ${retries} 次重試)...`,
+                        phase: actionPhase,
+                        message: `修復完成，重新嘗試${actionLabel} (第 ${retries} 次重試)...`,
                     });
                     continue;
                 }
@@ -528,7 +554,7 @@ class SOPExecutor extends EventEmitter {
                 if (fixResult.requiresManual) {
                     this.emit('log', {
                         level: 'error',
-                        phase: 'install',
+                        phase: actionPhase,
                         message: '此錯誤需要手動處理，停止自動重試。',
                     });
                 }
@@ -537,8 +563,8 @@ class SOPExecutor extends EventEmitter {
             // 無法處理的錯誤
             this.emit('log', {
                 level: 'error',
-                phase: 'install',
-                message: `安裝失敗且無法自動修復: ${installResult.error}`,
+                phase: actionPhase,
+                message: `${actionLabel}失敗且無法自動修復: ${installResult.error}`,
             });
             result.status = 'failed';
             result.endTime = new Date().toISOString();
@@ -547,7 +573,7 @@ class SOPExecutor extends EventEmitter {
         }
 
         // ── Phase 3: Verify ─────────────────────────────────────────────
-        if (installSuccess && sop.steps.verify.commands.length > 0) {
+        if (action === 'install' && actionSuccess && sop.steps.verify.commands.length > 0) {
             this.emit('phase:start', { phase: 'verify', sop: sop.id });
 
             const verifyResult = await this.runPhaseCommands(sop.steps.verify.commands, 'verify');
@@ -570,7 +596,34 @@ class SOPExecutor extends EventEmitter {
             }
 
             this.emit('phase:end', { phase: 'verify', success: verifyResult.success });
-        } else if (installSuccess) {
+        } else if (action === 'uninstall' && actionSuccess && sop.steps.check.commands.length > 0) {
+            this.emit('phase:start', { phase: 'verify', sop: sop.id });
+            // Reuse the check script to confirm the target is now absent.
+            // For uninstall verification, `false` means success, so we must not
+            // run this through the normal verify=false failure rule.
+            const verifyResult = await this.runPhaseCommands(sop.steps.check.commands, 'check');
+            result.phases.verify = verifyResult;
+            const lastOutput = verifyResult.outputs[verifyResult.outputs.length - 1];
+            const stillInstalled = lastOutput && this.isCheckSatisfied(lastOutput.stdout);
+
+            if (verifyResult.success && !stillInstalled) {
+                result.status = 'success';
+                this.emit('log', {
+                    level: 'success',
+                    phase: 'verify',
+                    message: '解除安裝驗證通過，目標已成功移除。',
+                });
+            } else {
+                result.status = 'failed';
+                this.emit('log', {
+                    level: 'error',
+                    phase: 'verify',
+                    message: '解除安裝後檢查仍顯示目標存在。',
+                });
+            }
+
+            this.emit('phase:end', { phase: 'verify', success: result.status === 'success' });
+        } else if (actionSuccess) {
             result.status = 'success';
         }
 

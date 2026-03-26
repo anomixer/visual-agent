@@ -18,7 +18,7 @@ OS: Windows 10 / 11
 try {
     $ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
     $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
-    if (Test-Path $ollamaExe) { $list = & $ollamaExe list 2>&1; if ($list -match "qwen3.5") { $true } else { $false } } else { $false }
+    if (Test-Path $ollamaExe) { $list = & $ollamaExe list 2>&1; if ($list -match "qwen3.5:4b") { $true } else { $false } } else { $false }
 } catch { $false }
 ```
 
@@ -48,15 +48,32 @@ try {
     $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
     if (Test-Path $ollamaExe) {
         $list = & $ollamaExe list 2>&1
-        if ($list -match "qwen3.5") {
+        if ($list -match "qwen3.5:4b") {
             $true
         } else {
-            throw "找不到 qwen3.5 模型"
+            throw "找不到 qwen3.5:4b 模型"
         }
     } else {
         throw "找不到 Ollama 執行檔: $ollamaExe"
     }
 } catch { $false }
+```
+
+第四階段：解除安裝 (Uninstall)
+指令 (PowerShell):
+
+```powershell
+$ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
+$ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
+if (-not (Test-Path $ollamaExe)) {
+    throw "找不到 Ollama 執行檔: $ollamaExe"
+}
+
+UI 顯示內容: 「正在移除 Qwen3.5 4B 語言模型...」
+& $ollamaExe rm qwen3.5:4b
+if ($LASTEXITCODE -ne 0) {
+    throw "Ollama rm 失敗，錯誤代碼: $LASTEXITCODE"
+}
 ```
 
 4. 自動排錯邏輯 (Error Handling)

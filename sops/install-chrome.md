@@ -20,12 +20,8 @@ try {
     $chromeCmd = Get-Command chrome.exe -ErrorAction SilentlyContinue
     $chromeExe = if ($chromeCmd) { $chromeCmd.Source } else { "C:\Program Files\Google\Chrome\Application\chrome.exe" }
     if (Test-Path $chromeExe) {
-        $v = & $chromeExe --version 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $true
-        } else {
-            $false
-        }
+        $version = (Get-Item $chromeExe).VersionInfo.ProductVersion
+        if ([string]::IsNullOrWhiteSpace($version)) { $false } else { $true }
     } else {
         $false
     }
@@ -71,16 +67,34 @@ if (-not (Test-Path $chromeExe)) {
 }
 
 try {
-    $v = & $chromeExe --version 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Chrome 已安裝，版本: $v"
-        $true
-    } else {
-        throw "Chrome 驗證失敗"
+    $version = (Get-Item $chromeExe).VersionInfo.ProductVersion
+    if ([string]::IsNullOrWhiteSpace($version)) {
+        throw "Chrome 版本資訊為空白"
     }
+    Write-Host "Chrome 已安裝，版本: $version"
+    $true
 } catch {
     throw "無法驗證 Chrome: $_"
 }
+```
+
+第四階段：解除安裝 (Uninstall)
+指令 (PowerShell):
+
+```powershell
+Write-Host "正在透過 winget 解除安裝 Google Chrome，請稍候..."
+
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget 未安裝或不在 PATH 中，請先安裝 App Installer"
+}
+
+& winget uninstall --id Google.Chrome --silent --accept-source-agreements
+
+if ($LASTEXITCODE -ne 0) {
+    throw "winget 解除安裝失敗，錯誤代碼: $LASTEXITCODE"
+}
+
+Write-Host "Google Chrome 已送出解除安裝。"
 ```
 
 4. 自動排錯邏輯 (Error Handling)

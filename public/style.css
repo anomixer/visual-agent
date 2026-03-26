@@ -1535,6 +1535,7 @@ ol {
   border: 1px solid var(--border-color);
   background: var(--bg-elevated);
   color: var(--text-primary);
+  color-scheme: dark;
   font-size: 11px;
   padding: 0 8px;
 }
@@ -1647,6 +1648,41 @@ ol {
 
 .exp-card-body li + li {
   margin-top: 2px;
+}
+
+.exp-detail-content {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.exp-detail-content h1,
+.exp-detail-content h2,
+.exp-detail-content h3 {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.exp-detail-content p,
+.exp-detail-content ul,
+.exp-detail-content ol,
+.exp-detail-content blockquote {
+  margin: 0 0 8px;
+}
+
+.exp-detail-content ul,
+.exp-detail-content ol {
+  padding-left: 18px;
+}
+
+.exp-detail-content li + li {
+  margin-top: 4px;
+}
+
+.exp-detail-content code {
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 /* ── RIGHT — Chat Column ──────────────────────────────────────── */
@@ -2219,6 +2255,7 @@ ol {
     border-radius: var(--radius-sm);
     padding: 8px 10px;
     color: var(--text-primary);
+    color-scheme: dark;
     font-size: 13px;
     transition: all var(--transition);
 }
@@ -2234,6 +2271,12 @@ select.form-input {
     background-repeat: no-repeat;
     background-position: right 10px center;
     background-size: 14px;
+}
+
+select.form-input option,
+.exps-filter-select option {
+    background: #1f2330;
+    color: #f5f7fb;
 }
 
 .btn-primary {
