@@ -31,7 +31,7 @@ AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可�
 | Provider 設定 | 可設定 Provider、Base URL、API Key、OAuth 2.0 與模型名稱 |
 | 安全互動 | 採用 consent-before-action，先建議再由使用者確認執行 |
 | 工作日誌 | 即時顯示 SOP 執行輸出，進度類訊息會原地更新 |
-| exps | 自動累積任務經驗摘要，支援搜尋、SOP 篩選與老司機備忘錄 |
+| 經驗庫 | 自動累積任務經驗摘要，支援搜尋、SOP 篩選與老司機備忘錄 |
 | Chalkboard | 中央黑板支援粉筆塗寫、局部板擦、圖形、圖片放置、文字框與 PNG 匯出 |
 | 硬體監控 | 顯示 CPU、GPU、RAM、Disk 與 NVIDIA GPU 溫度資訊 |
 | 插件系統 | 可用 `.js` 擴充系統監控能力 |
@@ -267,25 +267,28 @@ aipc-agent/
 
 ### 2026.03.26
 
-- **雙向 SOP 與卸載流程**：
-  - 安裝類 SOP 現在支援 `install / uninstall` 雙向動作。
-  - 推薦卡與 SOP 卡會先檢查系統狀態；若已安裝且 SOP 支援移除，卡片會自動切換為「解除安裝」。
-  - 工作清單、AI 對話、任務標題與完成訊息會依動作改口，不再把卸載任務誤寫成安裝。
-- **卸載驗證框架修正**：
-  - 修正 SOP Executor 在卸載後重跑 `check` 時，誤把 `false` 視為 verify 失敗的問題。
-  - 這讓所有以 `check = false` 代表「已成功移除」的 SOP 都可共用正確驗證邏輯。
-- **SOP 偵測穩健化**：
-  - Chrome 改為讀取檔案版本資訊，不再執行 `chrome.exe --version`，避免 Tauri 啟動或狀態掃描時誤噴 Chrome 視窗。
-  - Steam 改為較保守的安裝 / 卸載偵測條件，並等待互動式 uninstall wizard 完成後再判定結果。
-  - 語系 SOP 新增移除保護：若目標語言是原始安裝語言，或移除後會變成系統唯一語言，則不允許解除安裝。
+- **國際化完善**：
+  - AI Engine Settings dialog 中的所有標籤現在根據語系自動翻譯，英文模式下完全無中文殘留。
+  - AI chat 在英文模式下會使用英文 system prompt，確保 AI 回覆語言一致。
+  - 經驗庫的時間戳與空狀態文案也根據 locale 翻譯。
+- **經驗庫卡片排序修正**：
+  - 知識庫卡片現在按時間戳倒序排列，最新的經驗記錄顯示在最前面。
+  - 之前最新的記錄在最下方的問題已解決。
+- **多來源軟體推薦能力擴充**：
+  - AI 現在除了 `winget-store` 之外，也支援 `microsoft-store` 與 `github-releases` 兩條推薦路徑。
+  - 使用者若明確偏好 `Microsoft Store / UWP`，系統會改走 `msstore` 來源搜尋與建立 SOP。
+  - 使用者若要找 GitHub 上的 Windows App，系統會搜尋 repository 與 release assets，並只挑有明確 Windows 安裝檔或壓縮包的候選。
+- **內容規格英文化**：
+  - `sops/*.md`、`skills/*.md`、`plugins/*.js`、經驗庫/*.md` 的格式規格與內容骨架已改為英文，方便後續國際化與多語系 UI。
+  - `sop-parser.js` 保留中英雙語欄位相容，既有舊版中文 SOP 仍可被正確解析。
 
 ### 2026.03.25
 
-- **exps 知識庫視覺進化**：
-  - 工作日誌右側 `exps` tab 重塑為「知識庫」風格，卡片更緊湊。
+- **經驗庫視覺進化**：
+  - 工作日誌右側經驗庫 tab 重塑為「知識庫」風格，卡片更緊湊。
   - 摘要預設限制顯示 3 行，滑鼠懸停 (Hover) 時自動展開內容。
   - 新增「⬇ 匯出」按鈕，可將累積經驗匯出為 Markdown。
-  - 安裝任務結束後，自動將 log 摘要寫入 `%APPDATA%\aipc-agent\exps\exp-yyyymmdd.md`。
+  - 安裝任務結束後，自動將 log 摘要寫入 `%APPDATA%\aipc-agent\經驗庫\exp-yyyymmdd.md`。
 - **視窗持久化與最大化**：
   - 程式現在會記住上次視窗大小與位置，下次開啟自動還原。
   - 首次啟動預設以最大化視窗呈現。
@@ -324,16 +327,6 @@ aipc-agent/
 - 右側 AI 對話欄可往左拖拉到工作區一半寬度。
 - 左側 sidebar 新增 `SOP 清單` tab，可列出所有 SOP 並支援加入任務與立即執行。
 
-### 2026.03.26
-
-- **多來源軟體推薦能力擴充**：
-  - AI 現在除了 `winget-store` 之外，也支援 `microsoft-store` 與 `github-releases` 兩條推薦路徑。
-  - 使用者若明確偏好 `Microsoft Store / UWP`，系統會改走 `msstore` 來源搜尋與建立 SOP。
-  - 使用者若要找 GitHub 上的 Windows App，系統會搜尋 repository 與 release assets，並只挑有明確 Windows 安裝檔或壓縮包的候選。
-- **內容規格英文化**：
-  - `sops/*.md`、`skills/*.md`、`plugins/*.js`、`exps/*.md` 的格式規格與內容骨架已改為英文，方便後續國際化與多語系 UI。
-  - `sop-parser.js` 保留中英雙語欄位相容，既有舊版中文 SOP 仍可被正確解析。
-
 ---
 
 ## 常見問題
@@ -360,4 +353,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.03.25`。
+- 目前套件版本：`2026.03.26`。

@@ -447,18 +447,38 @@
 - 提權 PowerShell 在 UAC 同意後，改用較低干擾的 minimized 視窗執行。
 - 深色模式下的下拉選單與 `全部 SOP` 篩選器，補上明確的深底淺字樣式，避免選單文字難以辨識。
 
-## 2026.03.26 - Multi-source Discovery and English File Specs
+## 2026.03.26 - 多來源軟體發現與英文檔案規格
 
-### Software discovery skills
-- Added `skills/microsoft-store.md` so the agent can recommend and generate SOPs for Microsoft Store / UWP apps through `winget --source msstore`.
-- Added `skills/github-releases.md` so the agent can search GitHub repositories and Windows release assets, then generate conservative download-style SOPs when a suitable release exists.
-- `/api/chat` now supports `CREATE_MSSTORE_SOP` and `CREATE_GITHUB_RELEASE_SOP`, alongside the earlier `CREATE_WINGET_SOP` flow.
+### 軟體發現技能
+- 新增 `skills/microsoft-store.md`，讓 AI 能在使用者明確偏好商店版 App 時，改走 `msstore` 來源搜尋候選軟體，並透過 `winget --source msstore` 產生對應 SOP。
+- 新增 `skills/github-releases.md`，讓 AI 可搜尋 GitHub repository 與 Windows release assets，並在適當時產生保守的「下載型 SOP」。
+- `/api/chat` 現在支援 `CREATE_MSSTORE_SOP` 與 `CREATE_GITHUB_RELEASE_SOP`，搭配既有的 `CREATE_WINGET_SOP` 流程。
 
-### English content standardization
-- Converted the built-in `sops/*.md` content to English while keeping the required header `# AI PC Agent SOP File v1`.
-- Converted `skills/*.md` and `plugins/*.js` headers and core descriptions to English for future internationalization work.
-- Standardized `exps` markdown generation to English-oriented content and kept the header format `# AI PC Agent Experience Log - yyyymmdd`.
-- Rewrote `sop-parser.js` comments in English while preserving bilingual parsing compatibility for legacy Chinese SOP fields.
+### 英文內容標準化
+- 將內建 `sops/*.md` 內容改為英文，同時保留必要的標題 `# AI PC Agent SOP File v1`。
+- 將 `skills/*.md` 與 `plugins/*.js` 的標題與核心描述改為英文，為未來國際化做準備。
+- 標準化經驗庫 markdown 生成為英文導向內容，保留標題格式 `# AI PC Agent Experience Log - yyyymmdd`。
+- 重寫 `sop-parser.js` 註解為英文，同時保留對舊版中文 SOP 欄位的雙語相容性。
 
 ---
 > 📝 今天的進化讓 Agent 從「聽令行事」升級為「具備多語雙向心智、能自主跨平台查資料並自編手冊」的資深管家。
+
+## 📌 2026.03.26 — 黑板工具 i18n 與座標系統修復
+
+### 黑板工具完整國際化
+- 為所有黑板工具按鈕添加 i18n 支援：粉筆顏色、筆刷大小、形狀工具、編輯操作
+- 文字工具 modal 完整翻譯：標題、標籤、佔位符、幫助文本、按鈕
+- 文字工具選項翻譯：字型、字型風格（粉筆手寫、板書感等）、對齊方式（靠左、置中、靠右）
+- 上傳圖片、存成圖片按鈕翻譯
+
+### 座標系統修復
+- 簡化 `getChalkInputRect()` 直接使用 canvas 的 `getBoundingClientRect()`
+- 移除複雜的邊框計算，因為 canvas 已經是 `inset: 0` 填滿 surface 的內容區域
+- 修復選擇工具和文字工具的座標偏移問題
+
+### 中文字寬度補償
+- 修復 `measureChalkTextWidth()` 為中文字添加 5% 的寬度補償
+- 修復 `createTextPreviewCanvas()` 在計算對齊位置時也考慮中文字的補償
+- 中文字檢測使用正則表達式 `/[\u4e00-\u9fff]/` 來識別中文字符
+- 解決中文字落稿時的偏移現象
+

@@ -198,7 +198,7 @@ const I18N = {
             hardware: '硬體狀態',
             todolist: '工作清單',
             logs: '📝 工作日誌',
-            exps: '🧠 exps',
+            exps: '🧠 經驗庫',
             aiChat: '💬 AI 對話',
             chalkboard: 'Chalkboard',
         },
@@ -245,6 +245,68 @@ const I18N = {
             test: '測試模型',
             textToolTitle: '文字工具',
             save: '儲存並刷新',
+        },
+        textTool: {
+            title: '文字工具',
+            content: '文字內容',
+            contentPlaceholder: '輸入要放上黑板的文字',
+            fontFamily: '字型',
+            fontStyle: '字型風格',
+            fontSize: '字級',
+            color: '文字顏色',
+            align: '對齊方式',
+            bold: '粗體',
+            italic: '斜體',
+            usage: '使用方式',
+            usageText: '按下「建立文字框」後，到黑板上點一下放出文字框，再拖曳移動或拉 8 個控制點縮放，點框外即可定稿。',
+            cancel: '取消',
+            apply: '建立文字框',
+            fontOptions: {
+                kaiti: '標楷體',
+                jhenghei: '微軟正黑體',
+                yahei: '黑體',
+                mingliu: '細明體',
+                arial: 'Arial',
+                timesnewroman: 'Times New Roman',
+                couriernew: 'Courier New',
+            },
+            styleOptions: {
+                chalk: '粉筆手寫',
+                board: '板書感',
+                clean: '清晰無襯線',
+                serif: '經典襯線',
+                mono: '等寬打字',
+            },
+            alignOptions: {
+                left: '靠左',
+                center: '置中',
+                right: '靠右',
+            },
+        },
+        chalkboard: {
+            tools: {
+                eraser: '局部板擦',
+                chalkWhite: '白粉筆',
+                chalkRed: '紅粉筆',
+                chalkYellow: '黃粉筆',
+                chalkGreen: '綠粉筆',
+                chalkBlue: '藍粉筆',
+                sizeSmall: '細',
+                sizeMedium: '中',
+                sizeLarge: '粗',
+                select: '選取',
+                line: '直線',
+                rect: '矩形',
+                circle: '圓形',
+                text: '文字',
+                copy: '複製',
+                cut: '剪下',
+                paste: '貼上',
+                clear: '清空',
+                undo: 'Undo',
+                upload: '上傳圖片',
+                save: '存成圖片',
+            },
         },
         status: {
             llmReady: '🟢 AI 就緒',
@@ -350,7 +412,7 @@ const I18N = {
             hardware: 'Hardware',
             todolist: 'Tasks',
             logs: '📝 Work Log',
-            exps: '🧠 exps',
+            exps: '🧠 Exp. Log',
             aiChat: '💬 AI Chat',
             chalkboard: 'Chalkboard',
         },
@@ -397,6 +459,68 @@ const I18N = {
             test: 'Test Model',
             textToolTitle: 'Text Tool',
             save: 'Save & Refresh',
+        },
+        textTool: {
+            title: 'Text Tool',
+            content: 'Text Content',
+            contentPlaceholder: 'Enter text to place on the chalkboard',
+            fontFamily: 'Font',
+            fontStyle: 'Font Style',
+            fontSize: 'Font Size',
+            color: 'Text Color',
+            align: 'Alignment',
+            bold: 'Bold',
+            italic: 'Italic',
+            usage: 'How to Use',
+            usageText: 'Click "Create Text Box" then click on the chalkboard to place it. Drag to move or pull the 8 handles to resize. Click outside to finalize.',
+            cancel: 'Cancel',
+            apply: 'Create Text Box',
+            fontOptions: {
+                kaiti: 'Kai Ti',
+                jhenghei: 'Jhenghei',
+                yahei: 'YaHei',
+                mingliu: 'MingLiU',
+                arial: 'Arial',
+                timesnewroman: 'Times New Roman',
+                couriernew: 'Courier New',
+            },
+            styleOptions: {
+                chalk: 'Chalk Handwriting',
+                board: 'Blackboard',
+                clean: 'Clean Sans-serif',
+                serif: 'Classic Serif',
+                mono: 'Monospace',
+            },
+            alignOptions: {
+                left: 'Left',
+                center: 'Center',
+                right: 'Right',
+            },
+        },
+        chalkboard: {
+            tools: {
+                eraser: 'Eraser',
+                chalkWhite: 'White Chalk',
+                chalkRed: 'Red Chalk',
+                chalkYellow: 'Yellow Chalk',
+                chalkGreen: 'Green Chalk',
+                chalkBlue: 'Blue Chalk',
+                sizeSmall: 'Small',
+                sizeMedium: 'Medium',
+                sizeLarge: 'Large',
+                select: 'Select',
+                line: 'Line',
+                rect: 'Rectangle',
+                circle: 'Circle',
+                text: 'Text',
+                copy: 'Copy',
+                cut: 'Cut',
+                paste: 'Paste',
+                clear: 'Clear',
+                undo: 'Undo',
+                upload: 'Upload Image',
+                save: 'Save Image',
+            },
         },
         status: {
             llmReady: '🟢 AI Ready',
@@ -599,8 +723,12 @@ function getProviderDisplayLabel(provider) {
 function updateProviderHelp(provider) {
     const help = PROVIDER_HELP[provider] || {
         title: getProviderDisplayLabel(provider),
-        text: '請填入此 provider 需要的 API Key、連線網址與模型名稱。',
-        model: '若服務支援模型清單，可直接刷新後選擇。'
+        text: currentLocale === 'en-US'
+            ? 'Fill in the API Key, connection URL, and model name required by this provider.'
+            : '請填入此 provider 需要的 API Key、連線網址與模型名稱。',
+        model: currentLocale === 'en-US'
+            ? 'If the service supports a model list, you can refresh and select directly.'
+            : '若服務支援模型清單，可直接刷新後選擇。'
     };
 
     if (providerHelpTitle) providerHelpTitle.textContent = help.title;
@@ -739,9 +867,8 @@ function syncSelectionBox() {
     }
 
     const rect = chalkboardState.selectionRect;
-    const inset = getChalkSurfaceInset();
-    chalkSelectionBox.style.left = `${rect.left + inset.left}px`;
-    chalkSelectionBox.style.top = `${rect.top + inset.top}px`;
+    chalkSelectionBox.style.left = `${rect.left}px`;
+    chalkSelectionBox.style.top = `${rect.top}px`;
     chalkSelectionBox.style.width = `${rect.width}px`;
     chalkSelectionBox.style.height = `${rect.height}px`;
     chalkSelectionBox.classList.add('visible');
@@ -877,16 +1004,22 @@ function syncVisionModelInputs(useDropdown, visionModel = '', models = []) {
         settingVisionModelName.style.display = 'none';
         settingVisionModelSelect.style.display = 'block';
         const visionModels = models.filter(model => isVisionCapableModelName(model.name));
-        const options = ['<option value="">自動挑選 Vision 模型</option>']
+        const autoSelectText = currentLocale === 'en-US' ? 'Auto-select Vision Model' : '自動挑選 Vision 模型';
+        const options = [`<option value="">${autoSelectText}</option>`]
             .concat(visionModels.map(model => `<option value="${model.name}" ${model.name === visionModel ? 'selected' : ''}>${model.name}</option>`));
         settingVisionModelSelect.innerHTML = options.join('');
         if (visionModel && !visionModels.some(model => model.name === visionModel)) {
-            settingVisionModelSelect.innerHTML += `<option value="${visionModel}" selected>${visionModel}（目前設定）</option>`;
+            const currentText = currentLocale === 'en-US' ? '(current setting)' : '（目前設定）';
+            settingVisionModelSelect.innerHTML += `<option value="${visionModel}" selected>${visionModel}${currentText}</option>`;
         }
         if (visionModelHelpText) {
             visionModelHelpText.textContent = visionModels.length > 0
-                ? '這裡可指定處理 Chalkboard 與圖片理解的 vision 模型；留空則自動挑選。'
-                : '此 Provider 的模型清單裡目前沒有明確辨識出的 vision 模型；可留空自動挑選，或手動填入。';
+                ? (currentLocale === 'en-US'
+                    ? 'Specify a vision model for processing Chalkboard sketches and image understanding; leave empty to auto-select.'
+                    : '這裡可指定處理 Chalkboard 與圖片理解的 vision 模型；留空則自動挑選。')
+                : (currentLocale === 'en-US'
+                    ? 'No vision models detected in this provider\'s model list; you can leave empty to auto-select or enter manually.'
+                    : '此 Provider 的模型清單裡目前沒有明確辨識出的 vision 模型；可留空自動挑選，或手動填入。');
         }
     } else {
         settingVisionModelName.style.display = 'block';
@@ -1063,23 +1196,8 @@ function resizeChalkboardCanvas() {
 }
 
 function getChalkInputRect() {
-    if (!chalkboardSurface) {
-        return chalkboardCanvas.getBoundingClientRect();
-    }
-
-    const surfaceRect = chalkboardSurface.getBoundingClientRect();
-    const style = window.getComputedStyle(chalkboardSurface);
-    const borderLeft = parseFloat(style.borderLeftWidth || '0') || 0;
-    const borderTop = parseFloat(style.borderTopWidth || '0') || 0;
-    const borderRight = parseFloat(style.borderRightWidth || '0') || 0;
-    const borderBottom = parseFloat(style.borderBottomWidth || '0') || 0;
-
-    return {
-        left: surfaceRect.left + borderLeft,
-        top: surfaceRect.top + borderTop,
-        width: Math.max(1, surfaceRect.width - borderLeft - borderRight),
-        height: Math.max(1, surfaceRect.height - borderTop - borderBottom)
-    };
+    // 直接使用 canvas 的 bounding rect，因為 canvas 已經是 inset: 0 填滿 surface 的內容區域
+    return chalkboardCanvas.getBoundingClientRect();
 }
 
 function getChalkPoint(event) {
@@ -1661,7 +1779,7 @@ function drawChalkboardWelcome() {
     const lineWidth = Math.max(320, chalkboardState.cssWidth - padX * 2);
 
     drawChalkText(t('chalkboardWelcome.title'), padX, titleY, {
-        font: '700 34px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+        font: '700 28px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
         color: '#f4efe2',
         alpha: 0.96
     });
@@ -1827,11 +1945,14 @@ function createTextPreviewCanvas(lines, width, height, font, lineHeight, color, 
     lines.forEach((line, index) => {
         const y = padding + (index * lineHeight);
         const lineWidth = ctx.measureText(line).width;
+        // 檢測是否包含中文字符，如果有則添加補償
+        const hasChinese = /[\u4e00-\u9fff]/.test(line);
+        const compensatedLineWidth = hasChinese ? lineWidth * 1.05 : lineWidth;
         let x = padding;
         if (align === 'center') {
-            x = padding + Math.max(0, (width - lineWidth) / 2);
+            x = padding + Math.max(0, (width - compensatedLineWidth) / 2);
         } else if (align === 'right') {
-            x = padding + Math.max(0, width - lineWidth);
+            x = padding + Math.max(0, width - compensatedLineWidth);
         }
         ctx.fillText(line, x, y);
         ctx.globalAlpha = 0.18;
@@ -1863,7 +1984,14 @@ function measureChalkTextWidth(lines, font) {
 
     ctx.save();
     ctx.font = font;
-    const width = lines.reduce((maxWidth, line) => Math.max(maxWidth, ctx.measureText(line).width), 0);
+    let width = 0;
+    lines.forEach(line => {
+        const lineWidth = ctx.measureText(line).width;
+        // 檢測是否包含中文字符，如果有則添加補償
+        const hasChinese = /[\u4e00-\u9fff]/.test(line);
+        const compensatedWidth = hasChinese ? lineWidth * 1.05 : lineWidth;
+        width = Math.max(width, compensatedWidth);
+    });
     ctx.restore();
     return Math.max(48, Math.ceil(width));
 }
@@ -2380,13 +2508,22 @@ async function checkLLMStatus() {
             // Case 2: Ollama 好了，但模型沒好
             // await bootstrapModel(); // [2026.03.17] 暫時停用自動模型下載
         } else {
-            // Case 3: 全都好了 � 顯示初始訊息和徽章
+            // Case 3: 全都好了 → 顯示初始訊息和徽章
             if (!window._llmWelcomed) {
-                // 顯示初始訊息
-                appendChatBubble('ai', '你好！我是你的 AI PC Agent，可以輸入文字、用嘴巴說，或是畫圖，來告訴我你需要安裝什麼軟體，或是調整系統設定喔！');
+                // 顯示初始訊息（根據語系）
+                const welcomeMsg = currentLocale === 'en-US'
+                    ? 'Hello! I\'m your AI PC Agent. You can type, speak, or draw to tell me what software you need to install or what system settings to adjust.'
+                    : '你好！我是你的 AI PC Agent，可以輸入文字、用嘴巴說，或是畫圖，來告訴我你需要安裝什麼軟體，或是調整系統設定喔！';
+                appendChatBubble('ai', welcomeMsg);
                 const versionStr = data.version ? ` (v${data.version})` : '';
-                appendChatBubble('ai', `🧠 AI 引擎就緒！${data.provider || 'Ollama'}${versionStr} 模型 ${data.modelName || '預設'} 已載入，可以直接用中文告訴我你需要什麼。`);
-                addUILog(`🧠 AI 引擎就緒${versionStr}：${data.modelName || '已載入'}`, 'success');
+                const readyMsg = currentLocale === 'en-US'
+                    ? `🧠 AI Engine Ready! ${data.provider || 'Ollama'}${versionStr} model ${data.modelName || 'default'} loaded. You can start chatting in English.`
+                    : `🧠 AI 引擎就緒！${data.provider || 'Ollama'}${versionStr} 模型 ${data.modelName || '預設'} 已載入，可以直接用中文告訴我你需要什麼。`;
+                appendChatBubble('ai', readyMsg);
+                const logMsg = currentLocale === 'en-US'
+                    ? `🧠 AI Engine Ready${versionStr}: ${data.modelName || 'loaded'}`
+                    : `🧠 AI 引擎就緒${versionStr}：${data.modelName || '已載入'}`;
+                addUILog(logMsg, 'success');
                 window._llmWelcomed = true;
             }
 
@@ -2401,6 +2538,7 @@ async function checkLLMStatus() {
         updateLLMIndicator({ available: false, modelReady: false });
     }
 }
+
 
 function updateLLMIndicator(status) {
     if (!llmDot || !llmLabel) return;
@@ -2878,6 +3016,12 @@ function updateLocaleUI() {
     if (btnTestProviderSettings) btnTestProviderSettings.textContent = t('settings.test');
     if (btnSaveProviderSettings) btnSaveProviderSettings.textContent = t('settings.save');
     
+    // Model Name & Vision Model Labels
+    const labelModelName = document.getElementById('labelModelName');
+    if (labelModelName) labelModelName.textContent = t('settings.modelName');
+    const labelVisionModel = document.getElementById('labelVisionModel');
+    if (labelVisionModel) labelVisionModel.textContent = t('settings.visionModel');
+    
     // Auth Type Options
     const authOptions = document.querySelectorAll('#settingAuthType option');
     if (authOptions.length >= 3) {
@@ -2888,7 +3032,137 @@ function updateLocaleUI() {
     
     // Text Tool Modal
     const textToolTitle = document.querySelector('.text-tool-modal h3');
-    if (textToolTitle) textToolTitle.textContent = t('settings.textToolTitle');
+    if (textToolTitle) textToolTitle.textContent = t('textTool.title');
+    
+    const textToolContentLabel = document.getElementById('textToolContentLabel');
+    if (textToolContentLabel) textToolContentLabel.textContent = t('textTool.content');
+    
+    const textToolContent = document.getElementById('textToolContent');
+    if (textToolContent) textToolContent.placeholder = t('textTool.contentPlaceholder');
+    
+    const textToolFontFamilyLabel = document.getElementById('textToolFontFamilyLabel');
+    if (textToolFontFamilyLabel) textToolFontFamilyLabel.textContent = t('textTool.fontFamily');
+    
+    const textToolFontStyleLabel = document.getElementById('textToolFontStyleLabel');
+    if (textToolFontStyleLabel) textToolFontStyleLabel.textContent = t('textTool.fontStyle');
+    
+    const textToolFontSizeLabel = document.getElementById('textToolFontSizeLabel');
+    if (textToolFontSizeLabel) textToolFontSizeLabel.textContent = t('textTool.fontSize');
+    
+    const textToolColorLabel = document.getElementById('textToolColorLabel');
+    if (textToolColorLabel) textToolColorLabel.textContent = t('textTool.color');
+    
+    const textToolAlignLabel = document.getElementById('textToolAlignLabel');
+    if (textToolAlignLabel) textToolAlignLabel.textContent = t('textTool.align');
+    
+    const textToolBoldLabel = document.getElementById('textToolBoldLabel');
+    if (textToolBoldLabel) textToolBoldLabel.textContent = t('textTool.bold');
+    
+    const textToolItalicLabel = document.getElementById('textToolItalicLabel');
+    if (textToolItalicLabel) textToolItalicLabel.textContent = t('textTool.italic');
+    
+    const textToolUsageTitle = document.getElementById('textToolUsageTitle');
+    if (textToolUsageTitle) textToolUsageTitle.textContent = t('textTool.usage');
+    
+    const textToolUsageText = document.getElementById('textToolUsageText');
+    if (textToolUsageText) textToolUsageText.textContent = t('textTool.usageText');
+    
+    const btnCancelTextTool = document.getElementById('btnCancelTextTool');
+    if (btnCancelTextTool) btnCancelTextTool.textContent = t('textTool.cancel');
+    
+    const btnApplyTextTool = document.getElementById('btnApplyTextTool');
+    if (btnApplyTextTool) btnApplyTextTool.textContent = t('textTool.apply');
+    
+    // Text Tool Font Style Options
+    const textToolStyleChalk = document.getElementById('textToolStyleChalk');
+    if (textToolStyleChalk) textToolStyleChalk.textContent = t('textTool.styleOptions.chalk');
+    
+    const textToolStyleBoard = document.getElementById('textToolStyleBoard');
+    if (textToolStyleBoard) textToolStyleBoard.textContent = t('textTool.styleOptions.board');
+    
+    const textToolStyleClean = document.getElementById('textToolStyleClean');
+    if (textToolStyleClean) textToolStyleClean.textContent = t('textTool.styleOptions.clean');
+    
+    const textToolStyleSerif = document.getElementById('textToolStyleSerif');
+    if (textToolStyleSerif) textToolStyleSerif.textContent = t('textTool.styleOptions.serif');
+    
+    const textToolStyleMono = document.getElementById('textToolStyleMono');
+    if (textToolStyleMono) textToolStyleMono.textContent = t('textTool.styleOptions.mono');
+    
+    // Text Tool Alignment Options
+    const textToolAlignLeft = document.getElementById('textToolAlignLeft');
+    if (textToolAlignLeft) textToolAlignLeft.textContent = t('textTool.alignOptions.left');
+    
+    const textToolAlignCenter = document.getElementById('textToolAlignCenter');
+    if (textToolAlignCenter) textToolAlignCenter.textContent = t('textTool.alignOptions.center');
+    
+    const textToolAlignRight = document.getElementById('textToolAlignRight');
+    if (textToolAlignRight) textToolAlignRight.textContent = t('textTool.alignOptions.right');
+    
+    // Chalkboard Tools Tooltips
+    const chalkEraser = document.getElementById('chalkEraser');
+    if (chalkEraser) chalkEraser.title = t('chalkboard.tools.eraser');
+    
+    const chalkWhite = document.getElementById('chalkWhite');
+    if (chalkWhite) chalkWhite.title = t('chalkboard.tools.chalkWhite');
+    
+    const chalkRed = document.getElementById('chalkRed');
+    if (chalkRed) chalkRed.title = t('chalkboard.tools.chalkRed');
+    
+    const chalkYellow = document.getElementById('chalkYellow');
+    if (chalkYellow) chalkYellow.title = t('chalkboard.tools.chalkYellow');
+    
+    const chalkGreen = document.getElementById('chalkGreen');
+    if (chalkGreen) chalkGreen.title = t('chalkboard.tools.chalkGreen');
+    
+    const chalkBlue = document.getElementById('chalkBlue');
+    if (chalkBlue) chalkBlue.title = t('chalkboard.tools.chalkBlue');
+    
+    const chalkSizeSmall = document.getElementById('chalkSizeSmall');
+    if (chalkSizeSmall) chalkSizeSmall.title = t('chalkboard.tools.sizeSmall');
+    
+    const chalkSizeMedium = document.getElementById('chalkSizeMedium');
+    if (chalkSizeMedium) chalkSizeMedium.title = t('chalkboard.tools.sizeMedium');
+    
+    const chalkSizeLarge = document.getElementById('chalkSizeLarge');
+    if (chalkSizeLarge) chalkSizeLarge.title = t('chalkboard.tools.sizeLarge');
+    
+    const chalkSelectButton = document.getElementById('chalkSelectButton');
+    if (chalkSelectButton) chalkSelectButton.title = t('chalkboard.tools.select');
+    
+    const chalkLineButton = document.getElementById('chalkLineButton');
+    if (chalkLineButton) chalkLineButton.title = t('chalkboard.tools.line');
+    
+    const chalkRectButton = document.getElementById('chalkRectButton');
+    if (chalkRectButton) chalkRectButton.title = t('chalkboard.tools.rect');
+    
+    const chalkCircleButton = document.getElementById('chalkCircleButton');
+    if (chalkCircleButton) chalkCircleButton.title = t('chalkboard.tools.circle');
+    
+    const chalkTextButton = document.getElementById('chalkTextButton');
+    if (chalkTextButton) chalkTextButton.title = t('chalkboard.tools.text');
+    
+    const chalkCopyButton = document.getElementById('chalkCopyButton');
+    if (chalkCopyButton) chalkCopyButton.title = t('chalkboard.tools.copy');
+    
+    const chalkCutButton = document.getElementById('chalkCutButton');
+    if (chalkCutButton) chalkCutButton.title = t('chalkboard.tools.cut');
+    
+    const chalkPasteButton = document.getElementById('chalkPasteButton');
+    if (chalkPasteButton) chalkPasteButton.title = t('chalkboard.tools.paste');
+    
+    const chalkClearButton = document.getElementById('chalkClearButton');
+    if (chalkClearButton) chalkClearButton.title = t('chalkboard.tools.clear');
+    
+    const chalkUndoButton = document.getElementById('chalkUndoButton');
+    if (chalkUndoButton) chalkUndoButton.title = t('chalkboard.tools.undo');
+    
+    const chalkUploadButton = document.getElementById('chalkUploadButton');
+    if (chalkUploadButton) chalkUploadButton.title = t('chalkboard.tools.upload');
+    
+    const chalkSaveButton = document.getElementById('chalkSaveButton');
+    if (chalkSaveButton) chalkSaveButton.title = t('chalkboard.tools.save');
+    
     if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
     if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
     updateLLMStatusText(window.__lastLLMStatus);
@@ -3218,9 +3492,15 @@ function isProgressLogMessage(message) {
 }
 
 function clearChatMessages() {
-    if (confirm('確定要清除所有對話紀錄嗎？')) {
+    const confirmMsg = currentLocale === 'en-US' 
+        ? 'Clear all chat history?' 
+        : '確定要清除所有對話紀錄嗎？';
+    if (confirm(confirmMsg)) {
         chatMessages.innerHTML = '';
-        addUILog('💬 對話紀錄已清除', 'info');
+        const logMsg = currentLocale === 'en-US'
+            ? '💬 Chat history cleared'
+            : '💬 對話紀錄已清除';
+        addUILog(logMsg, 'info');
     }
 }
 
@@ -3356,7 +3636,7 @@ function renderExps() {
         expSopFilterSelect.innerHTML = '';
         const allOption = document.createElement('option');
         allOption.value = '';
-        allOption.textContent = '全部 SOP';
+        allOption.textContent = t('exps.filter_all_sops', { default: 'All SOPs' });
         expSopFilterSelect.appendChild(allOption);
         sopIds.forEach((sopId) => {
             const option = document.createElement('option');
@@ -3373,24 +3653,34 @@ function renderExps() {
     if (filtered.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'log-empty';
-        empty.textContent = expsEntries.length ? '找不到符合條件的經驗。' : '尚未累積安裝經驗...';
+        const emptyText = expsEntries.length 
+            ? t('exps.no_match', { default: 'No matching experiences found.' })
+            : t('exps.no_data', { default: 'No installation experiences yet...' });
+        empty.textContent = emptyText;
         expEntries.appendChild(empty);
         return;
     }
 
-    filtered.forEach((entry) => {
+    // Sort by updatedAt descending (newest first)
+    const sorted = [...filtered].sort((a, b) => {
+        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return timeB - timeA;
+    });
+
+    sorted.forEach((entry) => {
         const card = document.createElement('article');
         card.className = 'exp-card';
         const htmlContent = typeof marked !== 'undefined'
             ? marked.parse(entry.content || '')
             : escapeHtml(entry.content || '').replace(/\n/g, '<br>');
         const updatedAt = entry.updatedAt
-            ? new Date(entry.updatedAt).toLocaleString('zh-TW', { hour12: false })
+            ? new Date(entry.updatedAt).toLocaleString(currentLocale === 'en' ? 'en-US' : 'zh-TW', { hour12: false })
             : '';
 
         card.innerHTML = `
             <div class="exp-card-header">
-              <div class="exp-card-title">${escapeHtml(entry.title || entry.fileName || '未命名經驗')}</div>
+              <div class="exp-card-title">${escapeHtml(entry.title || entry.fileName || t('exps.unnamed', { default: 'Unnamed Experience' }))}</div>
               <div class="exp-card-meta">${escapeHtml(entry.sopId || 'dynamic')}<br>${escapeHtml(updatedAt)}</div>
             </div>
             <div class="exp-card-body">${htmlContent}</div>

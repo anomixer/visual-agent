@@ -211,62 +211,33 @@
                     </div>
                   </div>
                   <div class="chalkboard-tray">
-                    <button class="tray-action tray-icon danger" id="chalkClearButton" type="button" title="清空" aria-label="清空">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
-                        <path d="M4 7h16"></path>
-                        <path d="M9 4h6"></path>
-                        <path d="M6 7l1 12h10l1-12"></path>
-                        <path d="M10 10v6"></path>
-                        <path d="M14 10v6"></path>
-                      </svg>
-                    </button>
+                    <button class="tray-action tray-icon danger" id="chalkClearButton" type="button" title="清空" aria-label="清空">🗑️</button>
                     <button class="tray-action tray-icon" id="chalkUndoButton" type="button" title="Undo">↶</button>
                     <button class="chalk-tool chalk-mode eraser active" id="chalkEraser" type="button" data-tool="eraser" title="局部板擦"></button>
-                    <button class="chalk-tool chalk-mode chalk-stick chalk-white" type="button" data-tool="chalk" data-color="#f5f1e8" title="白粉筆"></button>
-                    <button class="chalk-tool chalk-mode chalk-stick chalk-red" type="button" data-tool="chalk" data-color="#ef6b6b" title="紅粉筆"></button>
-                    <button class="chalk-tool chalk-mode chalk-stick chalk-yellow" type="button" data-tool="chalk" data-color="#f4dd63" title="黃粉筆"></button>
-                    <button class="chalk-tool chalk-mode chalk-stick chalk-green" type="button" data-tool="chalk" data-color="#6bd29d" title="綠粉筆"></button>
-                    <button class="chalk-tool chalk-mode chalk-stick chalk-blue" type="button" data-tool="chalk" data-color="#74b8ff" title="藍粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-white" id="chalkWhite" type="button" data-tool="chalk" data-color="#f5f1e8" title="白粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-red" id="chalkRed" type="button" data-tool="chalk" data-color="#ef6b6b" title="紅粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-yellow" id="chalkYellow" type="button" data-tool="chalk" data-color="#f4dd63" title="黃粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-green" id="chalkGreen" type="button" data-tool="chalk" data-color="#6bd29d" title="綠粉筆"></button>
+                    <button class="chalk-tool chalk-mode chalk-stick chalk-blue" id="chalkBlue" type="button" data-tool="chalk" data-color="#74b8ff" title="藍粉筆"></button>
                     <div class="chalk-size-group" id="chalkSizeGroup">
-                      <button class="chalk-size active" type="button" data-size="4" title="細">S</button>
-                      <button class="chalk-size" type="button" data-size="8" title="中">M</button>
-                      <button class="chalk-size" type="button" data-size="14" title="粗">L</button>
+                      <button class="chalk-size active" id="chalkSizeSmall" type="button" data-size="4" title="細">S</button>
+                      <button class="chalk-size" id="chalkSizeMedium" type="button" data-size="8" title="中">M</button>
+                      <button class="chalk-size" id="chalkSizeLarge" type="button" data-size="14" title="粗">L</button>
                     </div>
                     <div class="chalk-tray-divider"></div>
                     <div class="shape-tool-group" id="shapeToolGroup">
                       <button class="shape-tool chalk-mode" id="chalkSelectButton" type="button" data-tool="select" title="選取">▭</button>
-                      <button class="shape-tool chalk-mode" type="button" data-tool="line" title="直線">/</button>
-                      <button class="shape-tool chalk-mode" type="button" data-tool="rect" title="矩形">□</button>
-                      <button class="shape-tool chalk-mode" type="button" data-tool="circle" title="圓形">○</button>
+                      <button class="shape-tool chalk-mode" id="chalkLineButton" type="button" data-tool="line" title="直線">/</button>
+                      <button class="shape-tool chalk-mode" id="chalkRectButton" type="button" data-tool="rect" title="矩形">□</button>
+                      <button class="shape-tool chalk-mode" id="chalkCircleButton" type="button" data-tool="circle" title="圓形">○</button>
                       <button class="shape-tool chalk-mode" id="chalkTextButton" type="button" data-tool="text" title="文字">T</button>
                     </div>
                     <div class="chalk-tray-divider"></div>
-                    <button class="tray-action tray-icon" id="chalkCopyButton" type="button" title="複製" aria-label="複製">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
-                        <rect x="9" y="9" width="10" height="10" rx="2"></rect>
-                        <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
-                      </svg>
-                    </button>
-                    <button class="tray-action tray-icon" id="chalkCutButton" type="button" title="剪下" aria-label="剪下">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
-                        <circle cx="6" cy="18" r="2.5"></circle>
-                        <circle cx="18" cy="18" r="2.5"></circle>
-                        <path d="M8 16l8-8"></path>
-                        <path d="M14.5 7.5L20 13"></path>
-                        <path d="M4 13l5.5-5.5"></path>
-                      </svg>
-                    </button>
-                    <button class="tray-action tray-icon" id="chalkPasteButton" type="button" title="貼上" aria-label="貼上">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
-                        <path d="M9 4h6"></path>
-                        <path d="M10 2h4a1 1 0 0 1 1 1v2H9V3a1 1 0 0 1 1-1z"></path>
-                        <path d="M8 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
-                        <path d="M12 10v6"></path>
-                        <path d="M9.5 13.5 12 16l2.5-2.5"></path>
-                      </svg>
-                    </button>
-                    <button class="tray-action" id="chalkUploadButton" type="button">上傳圖片</button>
-                    <button class="tray-action" id="chalkSaveButton" type="button">存成圖片</button>
+                    <button class="tray-action tray-icon" id="chalkCopyButton" type="button" title="複製" aria-label="複製">📋</button>
+                    <button class="tray-action tray-icon" id="chalkCutButton" type="button" title="剪下" aria-label="剪下">✂️</button>
+                    <button class="tray-action tray-icon" id="chalkPasteButton" type="button" title="貼上" aria-label="貼上">📎</button>
+                    <button class="tray-action" id="chalkUploadButton" type="button" title="上傳圖片">📁</button>
+                    <button class="tray-action" id="chalkSaveButton" type="button" title="存成圖片">💾</button>
                     <input type="file" id="chalkImageInput" accept="image/*" style="display:none">
                   </div>
                 </div>
@@ -452,12 +423,12 @@
   <div class="modal-overlay" id="providerSettingsOverlay">
     <div class="modal provider-modal">
       <div class="modal-header">
-        <h3>AI 引擎設定</h3>
+        <h3 id="providerSettingsTitle">AI 引擎設定</h3>
         <button class="btn-close" id="btnCloseProviderModal">&times;</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label>AI Provider</label>
+          <label id="labelProvider">AI Provider</label>
           <select id="settingProvider" class="form-input"></select>
         </div>
         <div class="provider-help-card">
@@ -465,23 +436,23 @@
           <div class="provider-help-text" id="providerHelpText">選擇 AI 引擎後，系統會提示你需要 API Key、模型名稱，或本地服務網址。</div>
         </div>
         <div class="form-group">
-          <label>連線網址 (Base URL)</label>
+          <label id="labelBaseUrl">連線網址 (Base URL)</label>
           <input type="text" id="settingBaseUrl" class="form-input" placeholder="例如: http://localhost:11434/v1">
         </div>
         <div class="form-group" style="display:none;">
-          <label>API Key</label>
+          <label id="labelApiKey">API Key</label>
           <input type="password" id="settingApiKey" class="form-input" placeholder="可留空">
         </div>
         <div class="form-group" id="authTypeGroup">
-          <label>認證方式</label>
+          <label id="labelAuthType">認證方式</label>
           <select id="settingAuthType" class="form-input">
-            <option value="none">無認證</option>
-            <option value="api_key">API Key</option>
-            <option value="oauth_client_credentials">OAuth 2.0 Client Credentials</option>
+            <option value="none" id="optAuthNone">無認證</option>
+            <option value="api_key" id="optAuthApiKey">API Key</option>
+            <option value="oauth_client_credentials" id="optAuthOAuth">OAuth 2.0 Client Credentials</option>
           </select>
         </div>
         <div class="form-group" id="apiKeyGroup">
-          <label>API Key</label>
+          <label id="labelApiKey2">API Key</label>
           <input type="password" id="settingApiKey2" class="form-input" placeholder="Bearer Token / API Key">
         </div>
         <div id="oauthFields" style="display:none;">
@@ -508,7 +479,7 @@
         </div>
         <div class="form-group">
           <label style="display:flex; justify-content:space-between; align-items:center;">
-            <span>模型名稱 (Model Name)</span>
+            <span id="labelModelName">模型名稱 (Model Name)</span>
             <button id="btnRefreshModels" class="btn-text" style="font-size:11px; color:var(--accent-blue); display:none;">🔄 刷新清單</button>
           </label>
           <div id="modelNameContainer">
@@ -518,7 +489,7 @@
           </div>
         </div>
         <div class="form-group">
-          <label>Vision 多模態模型</label>
+          <label id="labelVisionModel">Vision 多模態模型</label>
           <div id="visionModelContainer">
             <input type="text" id="settingVisionModelName" class="form-input" placeholder="留空則自動挑選可看圖模型">
             <select id="settingVisionModelSelect" class="form-input" style="display:none;"></select>
@@ -536,17 +507,17 @@
   <div class="modal-overlay" id="textToolOverlay">
     <div class="modal provider-modal text-tool-modal">
       <div class="modal-header">
-        <h3>文字工具</h3>
+        <h3 id="textToolModalTitle">文字工具</h3>
         <button class="btn-close" id="btnCloseTextToolModal">&times;</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label>文字內容</label>
+          <label id="textToolContentLabel">文字內容</label>
           <textarea id="textToolContent" class="form-input text-tool-textarea" rows="4" placeholder="輸入要放上黑板的文字"></textarea>
         </div>
         <div class="text-tool-grid">
           <div class="form-group">
-            <label>字型</label>
+            <label id="textToolFontFamilyLabel">字型</label>
             <select id="textToolFontFamily" class="form-input">
               <option value="&quot;DFKai-SB&quot;, &quot;BiauKai&quot;, serif">標楷體</option>
               <option value="&quot;Microsoft JhengHei&quot;, &quot;PingFang TC&quot;, sans-serif">微軟正黑體</option>
@@ -558,43 +529,43 @@
             </select>
           </div>
           <div class="form-group">
-            <label>字型風格</label>
+            <label id="textToolFontStyleLabel">字型風格</label>
             <select id="textToolFontStyle" class="form-input">
-              <option value="chalk">粉筆手寫</option>
-              <option value="board">板書感</option>
-              <option value="clean">清晰無襯線</option>
-              <option value="serif">經典襯線</option>
-              <option value="mono">等寬打字</option>
+              <option value="chalk" id="textToolStyleChalk">粉筆手寫</option>
+              <option value="board" id="textToolStyleBoard">板書感</option>
+              <option value="clean" id="textToolStyleClean">清晰無襯線</option>
+              <option value="serif" id="textToolStyleSerif">經典襯線</option>
+              <option value="mono" id="textToolStyleMono">等寬打字</option>
             </select>
           </div>
         </div>
         <div class="text-tool-grid text-tool-grid-compact">
           <div class="form-group">
-            <label>字級</label>
+            <label id="textToolFontSizeLabel">字級</label>
             <input type="number" id="textToolFontSize" class="form-input" min="14" max="160" step="1" value="28">
           </div>
         </div>
         <div class="text-tool-grid">
           <div class="form-group">
-            <label>文字顏色</label>
+            <label id="textToolColorLabel">文字顏色</label>
             <input type="color" id="textToolColor" class="form-input text-tool-color" value="#f5f1e8">
           </div>
           <div class="form-group">
-            <label>對齊方式</label>
+            <label id="textToolAlignLabel">對齊方式</label>
             <select id="textToolAlign" class="form-input">
-              <option value="left">靠左</option>
-              <option value="center">置中</option>
-              <option value="right">靠右</option>
+              <option value="left" id="textToolAlignLeft">靠左</option>
+              <option value="center" id="textToolAlignCenter">置中</option>
+              <option value="right" id="textToolAlignRight">靠右</option>
             </select>
           </div>
         </div>
         <div class="text-tool-toggle-row">
-          <label class="text-tool-toggle"><input type="checkbox" id="textToolBold" checked> 粗體</label>
-          <label class="text-tool-toggle"><input type="checkbox" id="textToolItalic"> 斜體</label>
+          <label class="text-tool-toggle"><input type="checkbox" id="textToolBold" checked> <span id="textToolBoldLabel">粗體</span></label>
+          <label class="text-tool-toggle"><input type="checkbox" id="textToolItalic"> <span id="textToolItalicLabel">斜體</span></label>
         </div>
         <div class="provider-help-card">
-          <div class="provider-help-title">使用方式</div>
-          <div class="provider-help-text">按下「建立文字框」後，到黑板上點一下放出文字框，再拖曳移動或拉 8 個控制點縮放，點框外即可定稿。</div>
+          <div class="provider-help-title" id="textToolUsageTitle">使用方式</div>
+          <div class="provider-help-text" id="textToolUsageText">按下「建立文字框」後，到黑板上點一下放出文字框，再拖曳移動或拉 8 個控制點縮放，點框外即可定稿。</div>
         </div>
         <div class="provider-actions">
           <button class="btn-secondary" id="btnCancelTextTool">取消</button>
