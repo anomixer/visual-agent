@@ -395,6 +395,22 @@
 - `skills/*.md` 第一行固定為 `# AI PC Agent Skill File v1`
 - `plugins/*.js` 第一行固定為 `// AI PC Agent Plugin File v1`
 
+## 2026.03.26 - 多來源軟體推薦能力擴充
+
+### Microsoft Store / UWP 技能
+- 新增 `skills/microsoft-store.md`，讓 AI 能在使用者明確偏好商店版 App 時，改走 `msstore` 來源搜尋候選軟體。
+- `/api/chat` 現在可直接列出 Microsoft Store 候選軟體，並在需要時自動產生對應 SOP。
+- 這類 SOP 會用 `winget --source msstore` 進行安裝、驗證與解除安裝。
+
+### GitHub Releases 技能
+- 新增 `skills/github-releases.md`，讓 AI 可搜尋 GitHub repository 與 release assets。
+- 新流程只挑選有明確 Windows `.exe`、`.msi`、`.zip` asset 的 repo，排除 source code、checksum、signature 類附件。
+- 若使用者要求建立 SOP，現在會產生保守的「下載型 SOP」：下載 release asset、驗證檔案存在，必要時移除下載檔案與解壓資料夾。
+
+### Parser 與 Prompt 相容
+- `sop-parser.js` 新增英文欄位相容，現在 `Category`、`Risk Level`、`Permissions`、`Network`、`Expected Result` 也能正確解析。
+- LLM prompt 現在除了 `winget` 候選之外，也會在需要時注入 Microsoft Store 與 GitHub Releases 候選資訊，並支援新的 `CREATE_MSSTORE_SOP` 與 `CREATE_GITHUB_RELEASE_SOP` action。
+
 ## 📌 2026.03.26 — 雙向 SOP、卸載驗證與 Tauri 啟動修正
 
 ### 雙向 SOP 與動作感知卡片
@@ -415,3 +431,16 @@
 ### Tauri / PowerShell 細節修正
 - 提權 PowerShell 在 UAC 同意後，改用較低干擾的 minimized 視窗執行。
 - 深色模式下的下拉選單與 `全部 SOP` 篩選器，補上明確的深底淺字樣式，避免選單文字難以辨識。
+
+## 2026.03.26 - Multi-source Discovery and English File Specs
+
+### Software discovery skills
+- Added `skills/microsoft-store.md` so the agent can recommend and generate SOPs for Microsoft Store / UWP apps through `winget --source msstore`.
+- Added `skills/github-releases.md` so the agent can search GitHub repositories and Windows release assets, then generate conservative download-style SOPs when a suitable release exists.
+- `/api/chat` now supports `CREATE_MSSTORE_SOP` and `CREATE_GITHUB_RELEASE_SOP`, alongside the earlier `CREATE_WINGET_SOP` flow.
+
+### English content standardization
+- Converted the built-in `sops/*.md` content to English while keeping the required header `# AI PC Agent SOP File v1`.
+- Converted `skills/*.md` and `plugins/*.js` headers and core descriptions to English for future internationalization work.
+- Standardized `exps` markdown generation to English-oriented content and kept the header format `# AI PC Agent Experience Log - yyyymmdd`.
+- Rewrote `sop-parser.js` comments in English while preserving bilingual parsing compatibility for legacy Chinese SOP fields.

@@ -1,20 +1,20 @@
 /**
  * SOP Parser - AI PC Agent
- * 
- * 解析 sops/ 目錄下的 .md 標準作業程序書，提取：
- *   - Metadata（ID, 名稱, 分類, 風險等級）
- *   - Prerequisites（OS, 權限, 網路需求）
- *   - Execution Steps（Check / Install / Verify 各階段的 PowerShell 指令）
- *   - Error Handling（錯誤代碼對應的自動修復邏輯）
+ *
+ * Parses markdown SOP files in the sops/ directory and extracts:
+ * - Metadata (ID, Name, Category, Risk Level)
+ * - Prerequisites (OS, Permissions, Network)
+ * - Execution Steps (PowerShell commands for Check / Install / Uninstall / Verify)
+ * - Error Handling (automatic recovery hints for known errors)
  */
 
 const fs = require('fs');
 const path = require('path');
 
 /**
- * 解析單一 sop.md 檔案
- * @param {string} filePath - sop 檔案的絕對路徑
- * @returns {object} 結構化的 sop 物件
+ * Parses a single SOP markdown file.
+ * @param {string} filePath Absolute path to the SOP file.
+ * @returns {object} Structured SOP object.
  */
 function parseSOPFile(filePath) {
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -40,8 +40,8 @@ function parseSOPFile(filePath) {
         sourceFile: path.basename(filePath),
     };
 
-    let currentSection = null;   // 'metadata' | 'prerequisites' | 'steps' | 'error'
-    let currentPhase = null;     // 'check' | 'install' | 'verify'
+    let currentSection = null;
+    let currentPhase = null;
     let inCodeBlock = false;
     let codeBlockContent = [];
 
@@ -49,44 +49,44 @@ function parseSOPFile(filePath) {
         const line = lines[i];
         const trimmed = line.trim();
 
-        // ── Code block extraction (MUST be first to avoid false matches) ─
+        // Code block extraction must run first to avoid false section matches.
         if (/^```\s*(powershell)?$/i.test(trimmed)) {
             if (!inCodeBlock) {
                 inCodeBlock = true;
                 codeBlockContent = [];
                 continue;
-            } else {
-                // Closing code block
-                inCodeBlock = false;
-                if (currentSection === 'steps' && currentPhase && codeBlockContent.length > 0) {
-                    // Filter out non-command lines (like UI display notes inside code blocks)
-                    const commands = codeBlockContent.filter(
-                        (cmd) => cmd.trim() && !/^UI\s*顯示/i.test(cmd.trim())
-                    );
-                    if (commands.length > 0) {
-                        // 將整塊程式碼合成一個指令執行，解決變數跨行失效問題
-                        sop.steps[currentPhase].commands.push(commands.join('\n'));
-                    }
+            }
 
-                    // Extract UI message if present
-                    const uiLine = codeBlockContent.find((cmd) =>
-                        /^UI\s*顯示/i.test(cmd.trim())
-                    );
-                    if (uiLine) {
-                        const match = uiLine.match(/[「「](.+?)[」」]/);
-                        if (match) {
-                            sop.steps[currentPhase].uiMessage = match[1];
-                        } else {
-                            // Try extracting after colon
-                            const colonMatch = uiLine.match(/[:：]\s*(.+)/);
-                            if (colonMatch) {
-                                sop.steps[currentPhase].uiMessage = colonMatch[1].trim().replace(/^[「「]|[」」]$/g, '');
-                            }
+            inCodeBlock = false;
+            if (currentSection === 'steps' && currentPhase && codeBlockContent.length > 0) {
+                // Filter out non-command lines such as embedded UI message notes.
+                const commands = codeBlockContent.filter(
+                    (cmd) => cmd.trim() && !/^UI\s*(顯示|Message)/i.test(cmd.trim())
+                );
+                if (commands.length > 0) {
+                    // Execute the full PowerShell block as one command so variables survive across lines.
+                    sop.steps[currentPhase].commands.push(commands.join('\n'));
+                }
+
+                // Extract UI message if present.
+                const uiLine = codeBlockContent.find((cmd) =>
+                    /^UI\s*(顯示|Message)/i.test(cmd.trim())
+                );
+                if (uiLine) {
+                    const quotedMatch = uiLine.match(/["“「](.+?)["”」]/);
+                    if (quotedMatch) {
+                        sop.steps[currentPhase].uiMessage = quotedMatch[1];
+                    } else {
+                        const colonMatch = uiLine.match(/[:：]\s*(.+)/);
+                        if (colonMatch) {
+                            sop.steps[currentPhase].uiMessage = colonMatch[1]
+                                .trim()
+                                .replace(/^["“「]|["”」]$/g, '');
                         }
                     }
                 }
-                continue;
             }
+            continue;
         }
 
         if (inCodeBlock) {
@@ -94,7 +94,7 @@ function parseSOPFile(filePath) {
             continue;
         }
 
-        // ── Section detection ───────────────────────────────────────────
+        // Section detection.
         if (/基本資訊|metadata/i.test(trimmed)) {
             currentSection = 'metadata';
             currentPhase = null;
@@ -116,8 +116,7 @@ function parseSOPFile(filePath) {
             continue;
         }
 
-        // ── Phase detection (within steps section) ──────────────────────
-        // Only match phase headers — lines like "第一階段：環境檢測 (Check)"
+        // Phase detection within the Execution Steps section.
         if (currentSection === 'steps') {
             if (/第.*階段.*環境檢測|^##*\s*.*check/i.test(trimmed)) {
                 currentPhase = 'check';
@@ -137,53 +136,62 @@ function parseSOPFile(filePath) {
             }
         }
 
-        // ── Metadata parsing ────────────────────────────────────────────
+        // Metadata parsing.
         if (currentSection === 'metadata') {
             const idMatch = trimmed.match(/^ID:\s*(.+)/i);
             if (idMatch) sop.id = idMatch[1].trim();
 
             const nameMatch = trimmed.match(/^名稱:\s*(.+)/i);
             if (nameMatch) sop.name = nameMatch[1].trim();
-
             const nameMatch2 = trimmed.match(/^Name:\s*(.+)/i);
             if (nameMatch2) sop.name = sop.name || nameMatch2[1].trim();
 
             const catMatch = trimmed.match(/^分類:\s*(.+)/i);
             if (catMatch) sop.category = catMatch[1].trim();
+            const catMatch2 = trimmed.match(/^Category:\s*(.+)/i);
+            if (catMatch2) sop.category = sop.category || catMatch2[1].trim();
 
             const riskMatch = trimmed.match(/^風險等級:\s*(.+)/i);
             if (riskMatch) sop.riskLevel = riskMatch[1].trim();
+            const riskMatch2 = trimmed.match(/^Risk\s*Level:\s*(.+)/i);
+            if (riskMatch2) sop.riskLevel = sop.riskLevel || riskMatch2[1].trim();
         }
 
-        // ── Prerequisites parsing ───────────────────────────────────────
+        // Prerequisites parsing.
         if (currentSection === 'prerequisites') {
             const osMatch = trimmed.match(/^OS:\s*(.+)/i);
             if (osMatch) sop.prerequisites.os = osMatch[1].trim();
 
             const permMatch = trimmed.match(/^權限:\s*(.+)/i);
             if (permMatch) sop.prerequisites.permissions = permMatch[1].trim();
+            const permMatch2 = trimmed.match(/^Permissions:\s*(.+)/i);
+            if (permMatch2) sop.prerequisites.permissions = sop.prerequisites.permissions || permMatch2[1].trim();
 
             const netMatch = trimmed.match(/^網路:\s*(.+)/i);
             if (netMatch) sop.prerequisites.network = netMatch[1].trim();
+            const netMatch2 = trimmed.match(/^Network:\s*(.+)/i);
+            if (netMatch2) sop.prerequisites.network = sop.prerequisites.network || netMatch2[1].trim();
         }
 
-        // ── Expected result parsing ─────────────────────────────────────
+        // Expected result and UI message parsing.
         if (currentSection === 'steps' && currentPhase) {
             const resultMatch = trimmed.match(/^預期結果:\s*(.+)/i);
             if (resultMatch) {
                 sop.steps[currentPhase].expectedResult = resultMatch[1].trim();
             }
+            const resultMatch2 = trimmed.match(/^Expected\s*Result:\s*(.+)/i);
+            if (resultMatch2) {
+                sop.steps[currentPhase].expectedResult = sop.steps[currentPhase].expectedResult || resultMatch2[1].trim();
+            }
 
-            // UI display message outside code block
-            const uiMatch = trimmed.match(/UI\s*顯示內容:\s*[「「](.+?)[」」]/i);
+            const uiMatch = trimmed.match(/UI\s*(顯示內容|Message):\s*["“「](.+?)["”」]/i);
             if (uiMatch) {
-                sop.steps[currentPhase].uiMessage = uiMatch[1];
+                sop.steps[currentPhase].uiMessage = uiMatch[2];
             }
         }
 
-        // ── Error handling parsing ──────────────────────────────────────
-        if (currentSection === 'error' && trimmed && !/^錯誤代碼/.test(trimmed)) {
-            // Format: errorCode,cause,actions
+        // Error handling parsing.
+        if (currentSection === 'error' && trimmed && !/^錯誤代碼|^Error\s*Code/i.test(trimmed)) {
             const parts = trimmed.split(',');
             if (parts.length >= 3) {
                 sop.errorHandling.push({
@@ -205,9 +213,9 @@ function parseSOPFile(filePath) {
 }
 
 /**
- * 掃描 sops 目錄，解析所有 .md 標準作業程序書
- * @param {string} sopsDir - sops 目錄路徑
- * @returns {object[]} 所有解析後的 sop 物件陣列
+ * Scans the sops directory and parses all markdown SOP files.
+ * @param {string} sopsDir Path to the sops directory.
+ * @returns {object[]} Parsed SOP objects.
  */
 function loadAllSOPs(sopsDir) {
     const resolvedDir = path.resolve(sopsDir);

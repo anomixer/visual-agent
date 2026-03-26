@@ -2,8 +2,9 @@
 
 /**
  * @name HardwareInfo
- * @description 基礎硬體監控插件，負責獲取 CPU 負載、GPU 名稱與負載、磁碟 S.M.A.R.T 健康度資訊。
- *              GPU load 優先由 temperature-monitor (nvidia-smi) 提供；此插件提供 WMI fallback。
+ * @description Core hardware monitoring plugin. Collects CPU load, GPU name/load fallback data,
+ *              and disk health information. GPU load should preferably come from
+ *              temperature-monitor (nvidia-smi); this plugin provides WMI fallback data.
  * @author AI PC Agent Team
  * @version 2026.03.25
  */
@@ -11,11 +12,11 @@
 const { exec } = require('child_process');
 
 /**
- * 基礎硬體監控插件
- * @param {Object} health - 共享的系統健康物件
+ * Core hardware monitoring plugin.
+ * @param {Object} health Shared system health object.
  */
 module.exports = async function(health) {
-    // 1) CPU + disk + GPU name (WMI, 快速且穩定)
+    // 1) CPU, disk, and GPU name via WMI. Fast and stable baseline probe.
     const psBasic = `
         $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 LoadPercentage;
         $disk = Get-PhysicalDisk | Select-Object DeviceID, FriendlyName, MediaType, HealthStatus, OperationalStatus;
@@ -31,7 +32,7 @@ module.exports = async function(health) {
         } | ConvertTo-Json -Depth 3
     `;
 
-    // 2) GPU utilization via Get-Counter (Tauri/packaged 環境下可能失敗，僅作 fallback)
+    // 2) GPU utilization via Get-Counter. This may fail in packaged/Tauri mode, so it is fallback-only.
     const psGpuLoad = `
         try {
             $g = Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop |
@@ -53,7 +54,7 @@ module.exports = async function(health) {
     if (basicData) {
         health.cpu.load = basicData.cpuLoad ?? health.cpu.load;
 
-        // GPU 名稱：若 nvidia-smi (temperature-monitor) 尚未填入，才用 WMI 值
+        // Only use the WMI GPU name when temperature-monitor has not already filled it from nvidia-smi.
         if (!health.gpu.name && basicData.gpuName) {
             health.gpu.name = Array.isArray(basicData.gpuName)
                 ? basicData.gpuName[0]
@@ -92,7 +93,7 @@ module.exports = async function(health) {
         }
     }
 
-    // GPU load fallback（只在 temperature-monitor 未填入時才嘗試）
+    // GPU load fallback: only attempt this when temperature-monitor did not provide a value.
     if (health.gpu.load === 0 || health.gpu.load === undefined) {
         await new Promise((resolve) => {
             exec(`powershell -NoProfile -Command "${psGpuLoad.replace(/\n/g, ' ')}"`, (err, stdout) => {

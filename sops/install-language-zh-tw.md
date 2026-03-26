@@ -1,22 +1,21 @@
 # AI PC Agent SOP File v1
 
-1. 基本資訊 (Metadata)
+1. Metadata
 ID: sys_lang_zh_tw
 
-名稱: 安裝 Traditional Chinese 語言包與輸入法
-分類: 系統設定 / 語系
-風險等級: 低 (系統原生功能)
+Name: Install the Traditional Chinese Language Pack and Input Method
+Category: System Settings / Language
+Risk Level: Low (native Windows feature)
 
-2. 需求環境 (Prerequisites)
+2. Prerequisites
 OS: Windows 10 / 11
+Permissions: Administrator (triggers UAC)
+Network: Required (internet connection needed to download language packs)
 
-權限: 需要 Administrator (觸發 UAC)
-網路: 需要網際網路連接 (下載語言包)
+3. Execution Steps
 
-3. 執行流程 (Execution Steps)
-
-第一階段：環境檢測 (Check)
-指令 (PowerShell): 
+## Check
+Commands (PowerShell):
 ```powershell
 $installed = @(Get-InstalledLanguage) | Where-Object {
     $_.LanguageId -eq 'zh-TW' -or
@@ -27,11 +26,10 @@ $installed = @(Get-InstalledLanguage) | Where-Object {
 [bool]$installed
 ```
 
-預期結果: 若回傳 True 則標記為「已安裝」，跳過執行。
+Expected Result: Return True when the language pack is already installed, so the action phase can be skipped.
 
-第二階段：安裝 (Install)
-指令 (PowerShell):
-
+## Install
+Commands (PowerShell):
 ```powershell
 $ErrorActionPreference = 'Stop'
 Install-Language -Language zh-TW -ErrorAction Stop
@@ -40,11 +38,11 @@ if (-not ($langList.LanguageTag -contains 'zh-TW')) {
     $langList.Add('zh-TW')
     Set-WinUserLanguageList -LanguageList $langList -Force -ErrorAction Stop
 }
-UI 顯示內容: 「正在向 Microsoft 伺服器請求 Traditional Chinese 語言包，這可能需要幾分鐘...」
+UI Message: "Requesting the Traditional Chinese language pack from Microsoft. This may take a few minutes..."
 ```
 
-第三階段：驗證 (Verify)
-指令 (PowerShell): 
+## Verify
+Commands (PowerShell):
 ```powershell
 $installed = @(Get-InstalledLanguage) | Where-Object {
     $_.LanguageId -eq 'zh-TW' -or
@@ -55,13 +53,12 @@ $installed = @(Get-InstalledLanguage) | Where-Object {
 if ($installed) {
     $true
 } else {
-    throw "找不到 zh-TW 語言包"
+    throw "The zh-TW language pack was not found."
 }
 ```
 
-第四階段：解除安裝 (Uninstall)
-指令 (PowerShell):
-
+## Uninstall
+Commands (PowerShell):
 ```powershell
 $ErrorActionPreference = 'Stop'
 $target = 'zh-TW'
@@ -78,15 +75,15 @@ $installedTags = @((Get-InstalledLanguage | ForEach-Object {
 }) | Where-Object { $_ } | Select-Object -Unique)
 
 if (-not ($installedTags -contains $target)) {
-    throw "$target 尚未安裝，無需移除。"
+    throw "$target is not installed, so there is nothing to remove."
 }
 
 if ($originalLanguage -eq $target) {
-    throw "不可移除系統原始安裝語言 $target。"
+    throw "The original Windows installation language $target cannot be removed."
 }
 
 if ($installedTags.Count -le 1) {
-    throw "系統至少要保留一個語言，無法移除唯一語言 $target。"
+    throw "Windows must keep at least one language. The only remaining language $target cannot be removed."
 }
 
 $langList = Get-WinUserLanguageList
@@ -97,17 +94,17 @@ foreach ($lang in $langList) {
     }
 }
 if ($newList.Count -eq 0) {
-    throw "移除後會沒有任何使用者語言，已中止。"
+    throw "Removing $target would leave the user with no language configured. Operation stopped."
 }
 Set-WinUserLanguageList -LanguageList $newList -Force -ErrorAction Stop
 Uninstall-Language -Language $target -ErrorAction Stop
 ```
 
-4. 自動排錯邏輯 (Error Handling)
+4. Error Handling
 
-錯誤代碼 / 訊息,可能原因,AI 自動修復行動
-0x80070005,沒有系統管理員權限或 UAC 被拒絕,1. 以系統管理員身分重新執行  2. 確認 UAC 已允許
-Access is denied,沒有系統管理員權限或 UAC 被拒絕,1. 以系統管理員身分重新執行  2. 確認 UAC 已允許
-0x80070422,Windows Update 服務被停用,1. 啟動 wuauserv 服務  2. 重新執行安裝
-0x8024402C,網路連線逾時或代理伺服器問題,1. 檢查網路狀態  2. 建議使用者關閉 VPN 後重試
-InsufficientSpace,系統槽空間不足,1. 執行磁碟清理建議  2. 提示使用者清理空間
+Error Code / Message,Possible Cause,AI Auto Fix
+0x80070005,Administrator permission missing or UAC was denied,1. Run again as Administrator 2. Confirm the UAC prompt was approved
+Access is denied,Administrator permission missing or UAC was denied,1. Run again as Administrator 2. Confirm the UAC prompt was approved
+0x80070422,Windows Update service is disabled,1. Start the wuauserv service 2. Run the installation again
+0x8024402C,Network timeout or proxy issue,1. Check network connectivity 2. Ask the user to retry after disabling VPN if applicable
+InsufficientSpace,System drive does not have enough free space,1. Perform disk cleanup 2. Ask the user to free disk space

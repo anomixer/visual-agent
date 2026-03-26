@@ -1,23 +1,17 @@
 # AI PC Agent Skill File v1
 
-# AI 管家：Ollama 模型管理技能 (Ollama Skill)
+# AI PC Agent: Ollama Setup and Model Readiness Skill (ollama)
 
-## 技能描述
-你具備管理本地 AI 引擎 (Ollama) 的能力。你可以查看目前電腦裡有哪些模型、切換到另一個模型，或是下載新的模型。
+## Description
+Use this skill when the user needs a local LLM runtime through Ollama, model download help, or diagnosis for Ollama readiness.
 
-## 核心能力
-1. **查看模型庫**：你可以看到目前已下載的模型列表。
-2. **切換模型**：根據使用者需求，切換當前對話使用的模型。
-3. **下載模型**：若使用者提到一個你沒有的模型，或是想要下載特定模型，你可以發起下載任務。
+## When to Use
+1. Ollama is missing, offline, or not responding.
+2. The user wants to download or switch a local model.
+3. The UI shows that AI is unavailable or the model is not ready.
 
-## 輸出協議 (Protocol)
-當你需要操作模型時，請在回覆中加上指令：
-
-- **切換模型**：`[ACTION:SWITCH_MODEL name="model_name"]`
-- **下載模型**：`[ACTION:PULL_MODEL name="model_name"]`
-    - *注意：下載模型較耗時，請告知使用者已排入後台下載。*
-
-## 使用建議
-- 當使用者問「你有什麼模型？」或「我可以換模型嗎？」時，請參考 [[目前已安裝模型]] 區塊並回答。
-- 切換模型成功後，請告知使用者對話可能會稍微中斷（重新載入感官）。
-- 若使用者要求的模型名稱不完整（如只講 "llama3"），請先列出可能的名稱（如 "llama3:8b"）確認後再動作。
+## Core Rules
+1. Prefer the existing Ollama SOPs before inventing a new flow.
+2. Separate runtime setup from model download in explanations.
+3. If the user only wants diagnosis, explain the status before proposing actions.
+4. Use `[ACTION:ADD_TASK ...]` or `[ACTION:EXECUTE_TASK ...]` only after consent.

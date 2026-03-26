@@ -203,6 +203,17 @@ $true
 - 新產生的 SOP 會寫入 `%APPDATA%\aipc-agent\sops\`
 - 產生完成後，左側 `SOP 清單` 會自動刷新
 
+### Microsoft Store / UWP
+
+- 若使用者明確提到 `Microsoft Store`、`UWP`、`商店版`，AI 會優先改用 `msstore` 來源搜尋
+- 可依結果建立對應 SOP，安裝與解除安裝會走 `winget --source msstore`
+
+### GitHub Releases
+
+- 若使用者明確要找 `GitHub` 上的 Windows App，AI 會搜尋 repository 與 release assets
+- 只會挑有明確 Windows `.exe` / `.msi` / `.zip` release asset 的候選
+- 若建立 SOP，預設產生的是「下載型 SOP」：下載到 `Downloads\AI PC Agent Downloads`，並支援驗證與移除下載檔
+
 ---
 
 ## 專案結構
@@ -225,7 +236,10 @@ aipc-agent/
 │   └── temperature-monitor.js
 ├── skills/
 │   ├── manager.md
-│   └── ollama.md
+│   ├── ollama.md
+│   ├── winget-store.md
+│   ├── microsoft-store.md
+│   └── github-releases.md
 ├── sops/
 │   ├── backup-system.md
 │   ├── check-drivers.md
@@ -309,6 +323,16 @@ aipc-agent/
 - 需要管理員權限的 SOP 會共用 UAC 提權執行器。
 - 右側 AI 對話欄可往左拖拉到工作區一半寬度。
 - 左側 sidebar 新增 `SOP 清單` tab，可列出所有 SOP 並支援加入任務與立即執行。
+
+### 2026.03.26
+
+- **多來源軟體推薦能力擴充**：
+  - AI 現在除了 `winget-store` 之外，也支援 `microsoft-store` 與 `github-releases` 兩條推薦路徑。
+  - 使用者若明確偏好 `Microsoft Store / UWP`，系統會改走 `msstore` 來源搜尋與建立 SOP。
+  - 使用者若要找 GitHub 上的 Windows App，系統會搜尋 repository 與 release assets，並只挑有明確 Windows 安裝檔或壓縮包的候選。
+- **內容規格英文化**：
+  - `sops/*.md`、`skills/*.md`、`plugins/*.js`、`exps/*.md` 的格式規格與內容骨架已改為英文，方便後續國際化與多語系 UI。
+  - `sop-parser.js` 保留中英雙語欄位相容，既有舊版中文 SOP 仍可被正確解析。
 
 ---
 

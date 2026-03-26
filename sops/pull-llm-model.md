@@ -1,49 +1,55 @@
 # AI PC Agent SOP File v1
 
-1. 基本資訊 (Metadata)
+1. Metadata
 ID: rec_pull_llm_model
 
-名稱: 下載 Qwen3.5 語言模型 (4B)
-分類: AI 引擎
-風險等級: 低
+Name: Download the Qwen3.5 4B Model
+Category: AI Engine
+Risk Level: Low
 
-2. 需求環境 (Prerequisites)
+2. Prerequisites
 OS: Windows 10 / 11
-權限: 一般使用者
-網路: 必須 (需要下載模型約 2.6GB)
+Permissions: Standard User
+Network: Required (downloads about 2.6 GB)
 
-3. 執行流程 (Execution Steps)
+3. Execution Steps
 
-第一階段：環境檢測 (Check)
-指令 (PowerShell):
+## Check
+Commands (PowerShell):
 ```powershell
 try {
     $ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
     $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
-    if (Test-Path $ollamaExe) { $list = & $ollamaExe list 2>&1; if ($list -match "qwen3.5:4b") { $true } else { $false } } else { $false }
-} catch { $false }
+    if (Test-Path $ollamaExe) {
+        $list = & $ollamaExe list 2>&1
+        if ($list -match "qwen3.5:4b") { $true } else { $false }
+    } else {
+        $false
+    }
+} catch {
+    $false
+}
 ```
 
-預期結果: 若模型已存在則回傳 True，跳過下載。
+Expected Result: Return True when the model already exists, so the download phase can be skipped.
 
-第二階段：安裝 (Install)
-指令 (PowerShell):
-
+## Install
+Commands (PowerShell):
 ```powershell
-UI 顯示內容: 「正在下載 Qwen3.5 語言模型 (約 2.6GB)，首次下載請耐心等候...」
+UI Message: "Downloading the Qwen3.5 4B model (about 2.6 GB). The first download may take a while..."
 $ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
 $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
 if (-not (Test-Path $ollamaExe)) {
-    throw "找不到 Ollama 執行檔: $ollamaExe"
+    throw "Ollama executable was not found: $ollamaExe"
 }
 & $ollamaExe pull qwen3.5:4b
 if ($LASTEXITCODE -ne 0) {
-    throw "Ollama pull 失敗，錯誤代碼: $LASTEXITCODE"
+    throw "Ollama pull failed. Exit code: $LASTEXITCODE"
 }
 ```
 
-第三階段：驗證 (Verify)
-指令 (PowerShell):
+## Verify
+Commands (PowerShell):
 ```powershell
 try {
     $ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
@@ -53,33 +59,34 @@ try {
         if ($list -match "qwen3.5:4b") {
             $true
         } else {
-            throw "找不到 qwen3.5:4b 模型"
+            throw "The qwen3.5:4b model was not found."
         }
     } else {
-        throw "找不到 Ollama 執行檔: $ollamaExe"
+        throw "Ollama executable was not found: $ollamaExe"
     }
-} catch { $false }
+} catch {
+    $false
+}
 ```
 
-第四階段：解除安裝 (Uninstall)
-指令 (PowerShell):
-
+## Uninstall
+Commands (PowerShell):
 ```powershell
 $ollamaCmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
 $ollamaExe = if ($ollamaCmd) { $ollamaCmd.Source } else { "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" }
 if (-not (Test-Path $ollamaExe)) {
-    throw "找不到 Ollama 執行檔: $ollamaExe"
+    throw "Ollama executable was not found: $ollamaExe"
 }
 
-UI 顯示內容: 「正在移除 Qwen3.5 4B 語言模型...」
+UI Message: "Removing the Qwen3.5 4B model..."
 & $ollamaExe rm qwen3.5:4b
 if ($LASTEXITCODE -ne 0) {
-    throw "Ollama rm 失敗，錯誤代碼: $LASTEXITCODE"
+    throw "Ollama rm failed. Exit code: $LASTEXITCODE"
 }
 ```
 
-4. 自動排錯邏輯 (Error Handling)
+4. Error Handling
 
-錯誤代碼 / 訊息,可能原因,AI 自動修復行動
-ollama: command not found,Ollama 尚未安裝,1. 請先安裝 Ollama 再執行此任務
-connection refused,Ollama 服務未啟動,1. 啟動 Ollama 服務後重試
+Error Code / Message,Possible Cause,AI Auto Fix
+ollama: command not found,Ollama is not installed yet,1. Install Ollama before running this task
+connection refused,Ollama service is not running,1. Start the Ollama service and retry

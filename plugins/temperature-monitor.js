@@ -2,23 +2,24 @@
 
 /**
  * @name TemperatureMonitor
- * @description 溫度監控插件，負責偵測 GPU (Nvidia) 與 CPU 的即時溫度變化。
+ * @description NVIDIA GPU temperature and utilization monitor via nvidia-smi.
  * @author AI PC Agent Team
- * @version 2026.03.17
+ * @version 2026.03.25
  */
 
 const { exec } = require('child_process');
 
 /**
- * 溫度監控插件 (CPU/GPU)
- * @param {Object} health - 共享的系統健康物件
+ * NVIDIA GPU temperature monitor plugin.
+ * @param {Object} health Shared system health object.
  */
 module.exports = async function(health) {
-    // 嘗試獲取 Nvidia GPU 詳細資訊
+    // Try to collect detailed NVIDIA GPU information.
     const gpuInfoCmd = `nvidia-smi --query-gpu=name,driver_version,temperature.gpu,utilization.gpu,memory.total,memory.used,memory.free,power.draw,power.limit --format=csv,noheader,nounits`;
-    
-    // 嘗試獲取 CPU 溫度 (這在沒管理員權限下通常會失敗)
+
+    // Try to read CPU temperature. This usually fails without elevated privileges, so it remains optional.
     const cpuTempCmd = `powershell -Command "Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue | Select-Object -ExpandProperty CurrentTemperature"`;
+    void cpuTempCmd;
 
     const getGpuInfo = new Promise((resolve) => {
         exec(gpuInfoCmd, (err, stdout) => {
