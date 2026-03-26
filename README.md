@@ -138,11 +138,26 @@ src-tauri\target\release\bundle\nsis\
 
 ---
 
+## 檔案格式規格
+
+- `sops/*.md`
+  第一行固定為 `# AI PC Agent SOP File v1`
+- `exps/exp-yyyymmdd.md`
+  第一行固定為 `# AI PC Agent Experience Log - yyyymmdd`
+- `skills/*.md`
+  第一行固定為 `# AI PC Agent Skill File v1`
+- `plugins/*.js`
+  第一行固定為 `// AI PC Agent Plugin File v1`
+
+---
+
 ## 自訂 SOP
 
 將 `.md` 檔放進開發目錄 `sops/`，或執行時目錄 `%APPDATA%\aipc-agent\sops\`。格式範例：
 
 ````markdown
+# AI PC Agent SOP File v1
+
 1. 基本資訊 (Metadata)
 ID: my_sop_id
 名稱: 我的自訂 SOP
@@ -176,6 +191,17 @@ $true
 ````
 
 重新整理頁面後，系統會重新掃描並載入新的 SOP。
+
+---
+
+## winget 商店推薦
+
+當使用者詢問推薦軟體，而現有 SOP 沒有直接對應項目時，AI 現在會先查詢 winget 商店候選軟體，再列出推薦名稱。
+
+- 若使用者只想看推薦，AI 會直接回推薦清單
+- 若使用者指定某一套軟體，AI 可直接產生對應 SOP
+- 新產生的 SOP 會寫入 `%APPDATA%\aipc-agent\sops\`
+- 產生完成後，左側 `SOP 清單` 會自動刷新
 
 ---
 

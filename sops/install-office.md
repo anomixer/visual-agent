@@ -1,3 +1,5 @@
+# AI PC Agent SOP File v1
+
 1. 基本資訊 (Metadata)
 ID: rec_office
 
@@ -17,13 +19,22 @@ OS: Windows 10 / 11
 指令 (PowerShell): 
 ```powershell
 try {
-    $officeCmd = Get-Command soffice.exe -ErrorAction SilentlyContinue
-    $officeExe = if ($officeCmd) { $officeCmd.Source } else { "C:\Program Files\LibreOffice\program\soffice.exe" }
-    if (Test-Path $officeExe) {
-        $true
-    } else {
-        $false
-    }
+    $officeCandidates = @(
+        "$env:ProgramFiles\LibreOffice\program\soffice.exe",
+        "$env:ProgramFiles(x86)\LibreOffice\program\soffice.exe",
+        "$env:LOCALAPPDATA\Programs\LibreOffice\program\soffice.exe"
+    ) | Where-Object { $_ } | Select-Object -Unique
+
+    $officeExe = $officeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $uninstallEntry = Get-ItemProperty `
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+        -ErrorAction SilentlyContinue | Where-Object {
+            $_.DisplayName -like 'LibreOffice*'
+        } | Select-Object -First 1
+
+    if ($officeExe -or $uninstallEntry) { $true } else { $false }
 } catch {
     $false
 }
@@ -58,14 +69,33 @@ Start-Sleep -Seconds 2
 指令 (PowerShell): 
 ```powershell
 Write-Host "驗證 LibreOffice 安裝..."
-$officeCmd = Get-Command soffice.exe -ErrorAction SilentlyContinue
-$officeExe = if ($officeCmd) { $officeCmd.Source } else { "C:\Program Files\LibreOffice\program\soffice.exe" }
+$officeCandidates = @(
+    "$env:ProgramFiles\LibreOffice\program\soffice.exe",
+    "$env:ProgramFiles(x86)\LibreOffice\program\soffice.exe",
+    "$env:LOCALAPPDATA\Programs\LibreOffice\program\soffice.exe"
+) | Where-Object { $_ } | Select-Object -Unique
 
-if (-not (Test-Path $officeExe)) {
-    throw "LibreOffice 執行檔不存在: $officeExe"
+$officeExe = $officeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+$uninstallEntry = Get-ItemProperty `
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+    -ErrorAction SilentlyContinue | Where-Object {
+        $_.DisplayName -like 'LibreOffice*'
+    } | Select-Object -First 1
+
+if (-not $officeExe -and -not $uninstallEntry) {
+    throw "找不到 LibreOffice 的執行檔或安裝登錄資訊"
 }
 
-Write-Host "LibreOffice 已安裝: $officeExe"
+if ($officeExe) {
+    Write-Host "LibreOffice 已安裝: $officeExe"
+}
+
+if ($uninstallEntry) {
+    Write-Host "LibreOffice 已登錄於系統移除清單: $($uninstallEntry.DisplayName)"
+}
+
 $true
 ```
 
@@ -82,10 +112,41 @@ if (-not (Get-Command winget -ErrorAction Ignore)) {
 & winget uninstall --id TheDocumentFoundation.LibreOffice --silent --accept-source-agreements
 
 if ($LASTEXITCODE -ne 0) {
-    throw "winget 解除安裝失敗，錯誤代碼: $LASTEXITCODE"
+    Write-Host "winget uninstall 回傳非零代碼: $LASTEXITCODE，改以實際系統狀態確認是否已解除安裝..."
 }
 
-Write-Host "LibreOffice 已送出解除安裝。"
+Write-Host "LibreOffice 已送出解除安裝，等待系統移除完成..."
+
+$removed = $false
+for ($i = 0; $i -lt 60; $i++) {
+    Start-Sleep -Seconds 2
+
+    $officeCandidates = @(
+        "$env:ProgramFiles\LibreOffice\program\soffice.exe",
+        "$env:ProgramFiles(x86)\LibreOffice\program\soffice.exe",
+        "$env:LOCALAPPDATA\Programs\LibreOffice\program\soffice.exe"
+    ) | Where-Object { $_ } | Select-Object -Unique
+
+    $officeExe = $officeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $uninstallEntry = Get-ItemProperty `
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" ,
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" `
+        -ErrorAction SilentlyContinue | Where-Object {
+            $_.DisplayName -like 'LibreOffice*'
+        } | Select-Object -First 1
+
+    if (-not $officeExe -and -not $uninstallEntry) {
+        $removed = $true
+        break
+    }
+}
+
+if (-not $removed) {
+    throw "LibreOffice 解除安裝程序已結束，但系統仍偵測到 LibreOffice 安裝資訊。"
+}
+
+Write-Host "LibreOffice 已完成解除安裝。"
 ```
 
 4. 自動排錯邏輯 (Error Handling)

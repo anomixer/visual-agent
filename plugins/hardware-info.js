@@ -1,3 +1,5 @@
+// AI PC Agent Plugin File v1
+
 /**
  * @name HardwareInfo
  * @description 基礎硬體監控插件，負責獲取 CPU 負載、GPU 名稱與負載、磁碟 S.M.A.R.T 健康度資訊。

@@ -1,3 +1,5 @@
+# AI PC Agent SOP File v1
+
 1. 基本資訊 (Metadata)
 ID: rec_steam
 

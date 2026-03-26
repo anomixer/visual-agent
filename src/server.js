@@ -8,6 +8,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 const pkg = require('../package.json');
 const { loadAllSOPs } = require('./sop-parser');
 const { SOPExecutor } = require('./sop-executor');
@@ -172,6 +173,48 @@ function escapeMarkdown(text = '') {
         .trim();
 }
 
+function redactSensitiveText(text = '') {
+    let value = String(text || '');
+    if (!value) return value;
+
+    const rules = [
+        {
+            pattern: /\b(api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|token|bearer|password|passwd|pwd|secret|client[_-]?secret)\b\s*([:=])\s*("[^"]*"|'[^']*'|`[^`]*`|[^\s,;]+)/gi,
+            replacer: (_, key, sep) => `${key}${sep} [REDACTED]`,
+        },
+        {
+            pattern: /((?:--?|\/)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|bearer|password|passwd|pwd|secret|client[_-]?secret))\s+("[^"]*"|'[^']*'|`[^`]*`|[^\s,;]+)/gi,
+            replacer: (_, key) => `${key} [REDACTED]`,
+        },
+        {
+            pattern: /\b(Bearer)\s+[A-Za-z0-9._~+\/=-]{8,}\b/gi,
+            replacer: '$1 [REDACTED]',
+        },
+        {
+            pattern: /\b([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/gi,
+            replacer: '$1[REDACTED]:[REDACTED]@',
+        },
+        {
+            pattern: /\b[A-Za-z]:(\\[^<>:"|?*\r\n]+)+/g,
+            replacer: '[PATH]',
+        },
+        {
+            pattern: /(^|[\s(])\\\\[^\\\s]+\\[^ \r\n\t)]+/g,
+            replacer: '$1[PATH]',
+        },
+        {
+            pattern: /\b(cd[\s-]?key|license[\s-]?key|product[\s-]?key|serial(?:\s+number)?|activation[\s-]?key)\b([^\r\n]{0,24}?)([A-Z0-9]{4,}(?:-[A-Z0-9]{4,}){2,})/gi,
+            replacer: (_, label, between) => `${label}${between}[REDACTED]`,
+        },
+    ];
+
+    rules.forEach(({ pattern, replacer }) => {
+        value = value.replace(pattern, replacer);
+    });
+
+    return value;
+}
+
 function getTaskDurationText(task) {
     if (!task?.createdAt || !task?.completedAt) return 'N/A';
     const start = new Date(task.createdAt).getTime();
@@ -191,7 +234,7 @@ function pickExperienceHighlights(task) {
 
     sourceLogs.forEach(log => {
         const level = String(log?.level || '').toLowerCase();
-        const message = escapeMarkdown(log?.message || '');
+        const message = redactSensitiveText(escapeMarkdown(log?.message || ''));
         if (!message) return;
         const isInterestingLevel = ['error', 'warn', 'success', 'ui'].includes(level);
         const hasSignalWord = /(失敗|錯誤|成功|完成|略過|跳過|uac|權限|denied|timeout|下載|安裝|verify|驗證|修復|retry|重試|already|exists)/i.test(message);
@@ -234,7 +277,7 @@ function buildExperienceAdvice(task, highlights) {
 function buildExperienceMarkdown(task, sop) {
     const completedAt = task?.completedAt ? new Date(task.completedAt) : new Date();
     const highlights = pickExperienceHighlights(task);
-    const advice = buildExperienceAdvice(task, highlights);
+    const advice = redactSensitiveText(buildExperienceAdvice(task, highlights));
     const summary = task.status === 'success'
         ? '本次任務成功完成，可作為後續相同安裝/設定流程的參考樣板。'
         : task.status === 'skipped'
@@ -242,13 +285,13 @@ function buildExperienceMarkdown(task, sop) {
             : '本次任務未成功完成，需記錄失敗原因與踩雷點，避免下次重蹈覆轍。';
 
     const lines = [
-        `## ${completedAt.toISOString()} - ${escapeMarkdown(task.title || sop?.name || task.id)}`,
+        `## ${completedAt.toISOString()} - ${redactSensitiveText(escapeMarkdown(task.title || sop?.name || task.id))}`,
         '',
-        `- Task ID: \`${escapeMarkdown(task.id || '')}\``,
-        `- SOP ID: \`${escapeMarkdown(task.skillId || sop?.id || 'dynamic')}\``,
-        `- Status: \`${escapeMarkdown(task.status || 'unknown')}\``,
+        `- Task ID: \`${redactSensitiveText(escapeMarkdown(task.id || ''))}\``,
+        `- SOP ID: \`${redactSensitiveText(escapeMarkdown(task.skillId || sop?.id || 'dynamic'))}\``,
+        `- Status: \`${redactSensitiveText(escapeMarkdown(task.status || 'unknown'))}\``,
         `- Duration: ${getTaskDurationText(task)}`,
-        `- Summary: ${summary}`,
+        `- Summary: ${redactSensitiveText(summary)}`,
         `- Advice: ${advice}`,
         ''
     ];
@@ -273,12 +316,12 @@ function buildExperienceAIPrompt(task, sop) {
         '4. å„ªå…ˆå¯«æœƒè¸©é›·çš„åœ°æ–¹ã€�æˆåŠŸæ¢ä»¶ã€�ä¸‹æ¬¡å»ºè­°é †åºã€‚',
         '5. ä¸è¦é‡è¤‡æè¿°ä»»å‹™æ¨™é¡Œã€‚',
         '',
-        `Task: ${task.title || sop?.name || task.id}`,
-        `SOP ID: ${task.skillId || sop?.id || 'dynamic'}`,
-        `Status: ${task.status || 'unknown'}`,
+        `Task: ${redactSensitiveText(task.title || sop?.name || task.id)}`,
+        `SOP ID: ${redactSensitiveText(task.skillId || sop?.id || 'dynamic')}`,
+        `Status: ${redactSensitiveText(task.status || 'unknown')}`,
         `Duration: ${getTaskDurationText(task)}`,
         'Highlights:',
-        ...(highlights.length > 0 ? highlights.map(item => `- ${item}`) : ['- (no notable logs)'])
+        ...(highlights.length > 0 ? highlights.map(item => `- ${redactSensitiveText(item)}`) : ['- (no notable logs)'])
     ].join('\n');
 }
 
@@ -288,7 +331,7 @@ async function enrichTaskExperienceWithAI(task, sop, expPath) {
         if (!llmStatus.available || !llmStatus.modelReady) return;
 
         const aiReply = await llm.chatWithLLM(buildExperienceAIPrompt(task, sop), []);
-        const cleaned = String(aiReply || '').trim();
+        const cleaned = redactSensitiveText(String(aiReply || '').trim());
         if (!cleaned) return;
 
         fs.appendFileSync(expPath, `### Veteran Notes\n${cleaned}\n\n`, 'utf8');
@@ -348,7 +391,10 @@ function loadExperienceContext(queryText = '', limit = 3) {
             .sort((a, b) => b.score - a.score)
             .filter((item, index) => item.score > 0 || index < limit)
             .slice(0, limit)
-            .map(item => item.section.length > 900 ? `${item.section.slice(0, 900)}...` : item.section);
+            .map(item => {
+                const section = item.section.length > 900 ? `${item.section.slice(0, 900)}...` : item.section;
+                return redactSensitiveText(section);
+            });
 
         return selected.join('\n\n');
     } catch (err) {
@@ -382,9 +428,9 @@ function loadExperienceEntries(limit = 18) {
             entries.push({
                 fileName: file.fileName,
                 updatedAt: file.updatedAt,
-                title,
-                content: body,
-                sopId: sopMatch ? sopMatch[1] : ''
+                title: redactSensitiveText(title),
+                content: redactSensitiveText(body),
+                sopId: sopMatch ? redactSensitiveText(sopMatch[1]) : ''
             });
         });
     });
@@ -402,6 +448,234 @@ function buildTaskTitle(sop, action = 'install') {
         return `🗑️ 解除安裝 ${normalizedName}`;
     }
     return `📦 ${sop.name}`;
+}
+
+function shouldSearchWingetForRecommendations(message = '') {
+    const text = String(message || '');
+    const wantsRecommendation = /(推薦|建議|值得|有什麼|有哪些|可以用什麼|找.+軟體|recommend|suggest)/i.test(text);
+    const mentionsSoftware = /(軟體|app|工具|程式|應用|software|application)/i.test(text);
+    return wantsRecommendation && mentionsSoftware;
+}
+
+function hasLikelySopForMessage(message = '', sops = []) {
+    const text = String(message || '').toLowerCase();
+    return sops.some((sop) => {
+        const normalized = String(sop?.name || '')
+            .replace(/^[^\p{L}\p{N}]+/gu, ' ')
+            .replace(/安裝|解除安裝|下載/gu, ' ')
+            .toLowerCase();
+        const tokens = normalized.split(/[\s()\-_/]+/).filter(token => token.length >= 3);
+        return tokens.some(token => text.includes(token));
+    });
+}
+
+function extractWingetSearchQuery(message = '') {
+    const text = String(message || '').toLowerCase();
+    const keywordMap = [
+        { pattern: /(繪圖|畫圖|畫畫|插畫|繪畫|drawing|paint|sketch)/i, query: 'drawing' },
+        { pattern: /(修圖|影像|圖片編輯|image|photo|edit)/i, query: 'image editor' },
+        { pattern: /(影片|剪輯|video|editor)/i, query: 'video editor' },
+        { pattern: /(筆記|note|markdown)/i, query: 'notes' },
+        { pattern: /(瀏覽器|browser)/i, query: 'browser' },
+        { pattern: /(解壓縮|壓縮|zip|rar|archive)/i, query: 'archive' },
+        { pattern: /(遠端|remote desktop|rdp)/i, query: 'remote desktop' },
+    ];
+
+    const mapped = keywordMap.find(entry => entry.pattern.test(text));
+    if (mapped) return mapped.query;
+
+    const cleaned = text
+        .replace(/請|幫我|想找|想要|推薦|建議|值得|有什麼|有哪些|可以|軟體|app|工具|程式|應用|下載|安裝/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    return cleaned || 'software';
+}
+
+function parseWingetSearchOutput(output = '') {
+    const lines = String(output || '').split(/\r?\n/).map(line => line.trimEnd()).filter(Boolean);
+    const packages = [];
+    let tableStarted = false;
+
+    for (const line of lines) {
+        if (/^-{3,}/.test(line.replace(/\s/g, ''))) {
+            tableStarted = true;
+            continue;
+        }
+        if (!tableStarted) continue;
+        if (/^The following packages/i.test(line) || /^No package found/i.test(line)) continue;
+
+        const match = line.match(/^(.*?)\s{2,}([A-Za-z0-9][A-Za-z0-9._-]+)\s{2,}(\S+)\s{2,}(\S+)(?:\s{2,}(\S+))?$/);
+        if (!match) continue;
+
+        const [, name, id, version, matchType, source] = match;
+        packages.push({
+            name: name.trim(),
+            id: id.trim(),
+            version: version.trim(),
+            matchType: matchType.trim(),
+            source: (source || '').trim() || 'winget',
+        });
+    }
+
+    return packages;
+}
+
+function searchWingetPackages(query, limit = 8) {
+    try {
+        const safeQuery = String(query || '').replace(/"/g, '');
+        const output = execSync(`winget search --query "${safeQuery}" --source winget --accept-source-agreements`, {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true,
+        });
+        return parseWingetSearchOutput(output).slice(0, limit);
+    } catch {
+        return [];
+    }
+}
+
+function slugifyWingetPackage(input = '') {
+    return String(input || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'package';
+}
+
+function escapeRegExp(text = '') {
+    return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildWingetSopMarkdown(packageInfo = {}) {
+    const packageName = String(packageInfo.name || packageInfo.id || 'Unknown Package').trim();
+    const packageId = String(packageInfo.id || '').trim();
+    const sopId = `winget_${slugifyWingetPackage(packageId || packageName)}`;
+    const packageIdRegex = escapeRegExp(packageId);
+    const packageNameRegex = escapeRegExp(packageName);
+
+    return `# AI PC Agent SOP File v1
+
+1. Metadata
+ID: ${sopId}
+
+Name: Install ${packageName}
+Category: winget store
+Risk Level: Low
+
+2. Prerequisites
+OS: Windows 10 / 11
+Permissions: Standard User
+Network: Required (download via winget)
+
+3. Execution Steps
+
+## Check
+Expected Result: Return True when the package is already installed.
+\`\`\`powershell
+try {
+    $result = (& winget list --id ${packageId} --exact --accept-source-agreements 2>&1 | Out-String)
+    if ($LASTEXITCODE -eq 0 -and ($result -match "${packageIdRegex}" -or $result -match "${packageNameRegex}")) {
+        $true
+    } else {
+        $false
+    }
+} catch {
+    $false
+}
+\`\`\`
+
+## Install
+\`\`\`powershell
+Write-Host "Installing ${packageName} via winget. Please wait..."
+
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget is not available. Please install or update Microsoft App Installer first."
+}
+
+& winget install --id ${packageId} --exact --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "winget install returned a non-zero exit code: $LASTEXITCODE. Verifying actual install state..."
+}
+
+$installed = $false
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Seconds 2
+    $result = (& winget list --id ${packageId} --exact --accept-source-agreements 2>&1 | Out-String)
+    if ($LASTEXITCODE -eq 0 -and ($result -match "${packageIdRegex}" -or $result -match "${packageNameRegex}")) {
+        $installed = $true
+        break
+    }
+}
+
+if (-not $installed) {
+    throw "winget finished but ${packageName} still cannot be detected. Check the source, network, or interactive installer behavior."
+}
+\`\`\`
+
+## Verify
+\`\`\`powershell
+try {
+    $result = (& winget list --id ${packageId} --exact --accept-source-agreements 2>&1 | Out-String)
+    if ($LASTEXITCODE -eq 0 -and ($result -match "${packageIdRegex}" -or $result -match "${packageNameRegex}")) {
+        $true
+    } else {
+        throw "${packageName} verification failed."
+    }
+} catch {
+    $false
+}
+\`\`\`
+
+## Uninstall
+\`\`\`powershell
+Write-Host "Uninstalling ${packageName} via winget. Please wait..."
+
+if (-not (Get-Command winget -ErrorAction Ignore)) {
+    throw "winget is not available. Please install or update Microsoft App Installer first."
+}
+
+& winget uninstall --id ${packageId} --exact --silent --accept-source-agreements --disable-interactivity
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "winget uninstall returned a non-zero exit code: $LASTEXITCODE. Verifying actual uninstall state..."
+}
+
+$removed = $false
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Seconds 2
+    $result = (& winget list --id ${packageId} --exact --accept-source-agreements 2>&1 | Out-String)
+    if (-not ($result -match "${packageIdRegex}") -and -not ($result -match "${packageNameRegex}")) {
+        $removed = $true
+        break
+    }
+}
+
+if (-not $removed) {
+    throw "winget finished but ${packageName} is still detected. Check whether an interactive uninstaller is still pending."
+}
+\`\`\`
+
+4. Error Handling
+
+Error Code / Message,Possible Cause,AI Auto Fix
+No package found,winget cannot find the requested package,1. Verify the package id 2. Search winget again
+winget is not available,Microsoft App Installer is missing,1. Install or update Microsoft App Installer
+`;
+}
+
+function createWingetSopFile(packageInfo = {}) {
+    const markdown = buildWingetSopMarkdown(packageInfo);
+    const sopIdMatch = markdown.match(/^ID:\s*(.+)$/m);
+    const fileName = `install-${slugifyWingetPackage(packageInfo.id || packageInfo.name || 'package')}.md`;
+    const filePath = path.join(SOPS_DIR, fileName);
+    fs.writeFileSync(filePath, markdown, 'utf8');
+    return {
+        fileName,
+        filePath,
+        sopId: sopIdMatch ? sopIdMatch[1].trim() : '',
+    };
 }
 
 async function evaluateSOPInstalledState(sop, options = {}) {
@@ -677,8 +951,6 @@ app.get('/api/todo/export', (req, res) => {
         tasks: todoList,
     });
 });
-
-const { execSync } = require('child_process');
 
 // POST /api/todo/export-file — 匯出任務清單 (跳出另存新檔對話框)
 app.post('/api/todo/export-file', (req, res) => {
@@ -974,12 +1246,64 @@ app.post('/api/chat', async (req, res) => {
     if (!message) return res.json({ success: false, error: '請輸入訊息' });
 
     const sops = loadAllSOPs(SOPS_DIR);
+    const sopsWithState = await annotateSOPRuntimeState(sops);
     let suggestions = ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
     let llmErrorForFallback = null;
     // 1. 快速蒐集背景資訊
     const sopCatalog = sopsWithState.map(s => `- ID: ${s.id}, 名稱: ${s.name}, 狀態: ${s.installed ? '已安裝' : '未安裝'}, 建議動作: ${s.recommendedAction === 'uninstall' ? '解除安裝' : '安裝'}`).join('\n');
     const taskContext = todoList.map(t => `- ID: ${t.id}, 標題: ${t.title}, 狀態: ${t.status}`).join('\n');
     const experienceContext = loadExperienceContext(message, 3);
+    const wingetRecommendation = shouldSearchWingetForRecommendations(message)
+        ? (() => {
+            const query = extractWingetSearchQuery(message);
+            return {
+                query,
+                packages: searchWingetPackages(query, 6),
+            };
+        })()
+        : null;
+
+    const wingetSopRequestMatch = String(message || '').match(/(?:幫我做|幫我產生|產生|建立|新增)\s+(.+?)\s*(?:的)?\s*sop/i);
+    if (wingetSopRequestMatch) {
+        const packageQuery = wingetSopRequestMatch[1].trim();
+        if (hasLikelySopForMessage(packageQuery, sops)) {
+            return res.json({
+                success: true,
+                reply: '目前 SOP 清單裡已經有相近項目了，先從左側 SOP 清單搜尋看看；如果你要，我也可以再幫你改寫成更適合的版本。',
+                suggestions: ['切到 SOP 清單', `搜尋 ${packageQuery}`],
+                task: false,
+                llmUsed: false
+            });
+        }
+        const candidates = searchWingetPackages(packageQuery, 5);
+        if (candidates.length > 0) {
+            const created = createWingetSopFile(candidates[0]);
+            return res.json({
+                success: true,
+                reply: `已幫你根據 winget 商店產生 SOP：${created.fileName}。之後重新整理 SOP 清單，就可以直接拿來加入任務或執行。`,
+                suggestions: ['重新整理 SOP 清單', `幫我安裝 ${candidates[0].name}`],
+                task: false,
+                sopChanged: true,
+                llmUsed: false
+            });
+        }
+    }
+
+    if (wingetRecommendation?.packages?.length && !hasLikelySopForMessage(message, sops)) {
+        const topPackages = wingetRecommendation.packages
+            .slice(0, 5)
+            .map((pkg, index) => `${index + 1}. ${pkg.name}`)
+            .join('\n');
+
+        return res.json({
+            success: true,
+            reply: `目前 SOP 裡沒有直接對應的軟體，我先從 winget 商店幫你找了幾個可參考選項：\n${topPackages}\n\n如果你要，我可以再幫你把其中一套產生成 SOP。`,
+            suggestions: wingetRecommendation.packages.slice(0, 3).map(pkg => `幫我做 ${pkg.name} 的 SOP`),
+            task: false,
+            llmUsed: false
+        });
+    }
+
     let systemHealth = null;
     try {
         systemHealth = await getSystemHealth();
@@ -1032,6 +1356,9 @@ ${taskContext || '(空)'}
 `;
 
             // 2. 呼叫 LLM (附帶歷史紀錄)
+            const wingetPromptNote = wingetRecommendation?.packages?.length
+                ? `\n\n[[winget 商店候選軟體]]\n使用者此刻在詢問軟體推薦，而且目前 SOP 未必有直接對應項目。若你要推薦軟體，請優先參考下列 winget 結果來列出「軟體名稱」。若使用者要求產生對應 SOP，請輸出 [ACTION:CREATE_WINGET_SOP package_id="..." package_name="..."]。\nQuery: ${wingetRecommendation.query}\n${wingetRecommendation.packages.map((pkg, index) => `${index + 1}. ${pkg.name} | id=${pkg.id} | version=${pkg.version || 'unknown'}`).join('\n')}`
+                : '';
             let llmReply;
             const chatOptions = {};
             if (chalkboardAttachment) {
@@ -1051,7 +1378,7 @@ ${taskContext || '(空)'}
             }
             try {
                 llmReply = await llm.chatWithLLM(
-                    message + "\n\n" + contextNote + "\n\n[[exps 經驗庫]]\n" + (experienceContext || '(目前尚無可參考經驗)'),
+                    message + "\n\n" + contextNote + wingetPromptNote + "\n\n[[exps 經驗庫]]\n" + (experienceContext || '(目前尚無可參考經驗)'),
                     requestHistory,
                     chatOptions
                 );
@@ -1060,7 +1387,7 @@ ${taskContext || '(空)'}
 
                 console.warn('[LLM] 黑板影像理解失敗，改以純文字重試:', visionErr.message);
                 llmReply = await llm.chatWithLLM(
-                    `${message}\n\n${contextNote}\n\n[[exps 經驗庫]]\n${experienceContext || '(目前尚無可參考經驗)'}\n\n[系統補充] 使用者原本有附上 Chalkboard 草圖，但目前這個模型或 Provider 沒有成功吃下圖片。請先明確告知圖片理解失敗，再根據文字需求提供最接近的協助。`,
+                    `${message}\n\n${contextNote}${wingetPromptNote}\n\n[[exps 經驗庫]]\n${experienceContext || '(目前尚無可參考經驗)'}\n\n[系統補充] 使用者原本有附上 Chalkboard 草圖，但目前這個模型或 Provider 沒有成功吃下圖片。請先明確告知圖片理解失敗，再根據文字需求提供最接近的協助。`,
                     requestHistory
                 );
             }
@@ -1079,6 +1406,8 @@ ${taskContext || '(空)'}
 
             let executeTaskId = null;
             let hasActionTaken = false;
+            let taskListChanged = false;
+            let sopChanged = false;
 
             if (hasSuggestions && isQuestioning) {
                 actions.length = 0; // 攔截待確認動作
@@ -1101,6 +1430,7 @@ ${taskContext || '(空)'}
                                 createdAt: new Date().toISOString()
                             });
                             hasActionTaken = true;
+                            taskListChanged = true;
                         }
                     }
                 }
@@ -1109,6 +1439,7 @@ ${taskContext || '(空)'}
                     if (idMatch) {
                         todoList = todoList.filter(t => t.id !== idMatch[1]);
                         hasActionTaken = true;
+                        taskListChanged = true;
                     }
                 }
                 if (actionStr.startsWith('EXECUTE_TASK')) {
@@ -1118,10 +1449,23 @@ ${taskContext || '(空)'}
                 if (actionStr === 'CLEAR_ALL') {
                     todoList = [];
                     hasActionTaken = true;
+                    taskListChanged = true;
                 }
                 if (actionStr.startsWith('SWITCH_MODEL')) {
                     const nameMatch = actionStr.match(/name="(.*?)"/);
                     if (nameMatch) llm.setCurrentModel(nameMatch[1]);
+                }
+                if (actionStr.startsWith('CREATE_WINGET_SOP')) {
+                    const idMatch = actionStr.match(/package_id="(.*?)"/);
+                    const nameMatch = actionStr.match(/package_name="(.*?)"/);
+                    if (idMatch) {
+                        createWingetSopFile({
+                            id: idMatch[1],
+                            name: nameMatch ? nameMatch[1] : idMatch[1],
+                        });
+                        hasActionTaken = true;
+                        sopChanged = true;
+                    }
                 }
             }
             if (hasActionTaken) saveTasks();
@@ -1139,7 +1483,8 @@ ${taskContext || '(空)'}
                 success: true,
                 reply: cleanReply,
                 suggestions: finalSuggestions,
-                task: actions.length > 0,
+                task: taskListChanged,
+                sopChanged,
                 executeTaskId,
                 llmUsed: true
             });

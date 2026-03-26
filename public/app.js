@@ -2580,6 +2580,9 @@ async function sendChat() {
             $$('.suggestions-container').forEach(el => el.remove());
             
             appendChatBubble('ai', data.reply, data.suggestions);
+            if (data.sopChanged) {
+                refreshSidebarDataSoon();
+            }
             if (data.task) {
                 await loadTodo();
                 openTab('todolist');

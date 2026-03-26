@@ -1,3 +1,5 @@
+// AI PC Agent Plugin File v1
+
 /**
  * @name TemperatureMonitor
  * @description 溫度監控插件，負責偵測 GPU (Nvidia) 與 CPU 的即時溫度變化。

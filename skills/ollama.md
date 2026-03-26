@@ -1,3 +1,5 @@
+# AI PC Agent Skill File v1
+
 # AI 管家：Ollama 模型管理技能 (Ollama Skill)
 
 ## 技能描述

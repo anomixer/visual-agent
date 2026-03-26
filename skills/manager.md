@@ -1,3 +1,5 @@
+# AI PC Agent Skill File v1
+
 # AI 管家：SOP 與任務管理技能 (Manager Skill)
 
 ## 技能描述
