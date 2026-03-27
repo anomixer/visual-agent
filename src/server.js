@@ -1404,7 +1404,9 @@ ${taskContext || '(空)'}
                 console.warn('[LLM] 黑板影像理解失敗，改以純文字重試:', visionErr.message);
                 llmReply = await llm.chatWithLLM(
                     `${message}\n\n${contextNote}${wingetPromptNote}${microsoftStorePromptNote}${githubPromptNote}\n\n[[exps 經驗庫]]\n${experienceContext || '(目前尚無可參考經驗)'}\n\n[系統補充] 使用者原本有附上 Chalkboard 草圖，但目前這個模型或 Provider 沒有成功吃下圖片。請先明確告知圖片理解失敗，再根據文字需求提供最接近的協助。`,
-                    requestHistory
+                    requestHistory,
+                    {},
+                    locale
                 );
             }
 

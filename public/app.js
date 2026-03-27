@@ -3165,6 +3165,15 @@ function updateLocaleUI() {
     
     if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
     if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
+    // Title and menu i18n
+    document.title = currentLocale === 'en-US' ? 'AI PC Agent - System Butler' : 'AI PC Agent - 系統管家';
+    const _appTitle = document.getElementById('appTitle');
+    if (_appTitle) _appTitle.textContent = document.title;
+    const _menuHelp = document.getElementById('menuHelp');
+    if (_menuHelp) _menuHelp.textContent = currentLocale === 'en-US' ? 'Help' : '說明';
+    const _menuView = document.getElementById('menuView');
+    if (_menuView) _menuView.textContent = currentLocale === 'en-US' ? 'View' : '檢視';
+    
     // File Menu i18n
     const isEn = currentLocale === 'en-US';
     const _mft = document.getElementById('menuFileText'); if (_mft) _mft.textContent = isEn ? 'File' : '檔案';
