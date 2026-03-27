@@ -83,10 +83,10 @@ function loadConfig() {
                 currentAuthConfig = { type: 'api_key', apiKey: data.currentApiKey };
             }
 
-            console.log(`[LLM] 載入設定: ${currentProvider} @ ${currentBaseUrl}`);
+            console.log(`[LLM] Config loaded: ${currentProvider} @ ${currentBaseUrl}`);
         }
     } catch (e) {
-        console.warn('[LLM] 載入設定失敗:', e.message);
+        console.warn('[LLM] Failed to load config:', e.message);
     }
 }
 
@@ -107,7 +107,7 @@ function saveConfig() {
         };
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
     } catch (e) {
-        console.error('[LLM] 儲存設定失敗:', e.message);
+        console.error('[LLM] Failed to save config:', e.message);
     }
 }
 
@@ -360,7 +360,7 @@ async function checkOllamaStatus(force = false) {
                 } else {
                     let hint = '';
                     if (currentBaseUrl.includes('ollama.com')) {
-                        hint = ' (提示：https://ollama.com 是官網，API 路徑通常與本地不同)';
+                        hint = ' (提示：https://ollama.com is the website; API path differs from local)';
                     }
                     console.warn(`[LLM] Check ${currentProvider} status failed. URL: ${checkUrl}, Expected JSON but got ${contentType}${hint}`);
                 }
@@ -368,7 +368,7 @@ async function checkOllamaStatus(force = false) {
                 console.warn(`[LLM] Check ${currentProvider} status returned error ${res.status} for ${checkUrl}`);
             } else if (currentProvider === 'Ollama') {
                 // Fetch failed and it's local Ollama
-                console.warn('[LLM] 本地 Ollama 未響應，嘗試啟動服務...');
+                console.warn('[LLM] Local Ollama not responding, trying to start...');
                 await ensureOllamaRunning();
             }
         } catch (e) {
@@ -430,15 +430,15 @@ async function checkOllamaStatus(force = false) {
                         }
                     }
                 } catch (tagsErr) {
-                    console.warn(`[LLM] 讀取模型清單失敗 (${listPath}):`, tagsErr.message);
+                    console.warn(`[LLM] Failed to fetch model list (${listPath}):`, tagsErr.message);
                 }
             } else {
-                console.warn(`[LLM] 檢查 ${currentProvider} 失敗。預期 JSON 但收到 ${contentType}。網址: ${checkUrl}`);
+                console.warn(`[LLM] 檢查 ${currentProvider} 失敗。Expected JSON but received ${contentType}。網址: ${checkUrl}`);
             }
         }
     } catch (err) {
         if (currentProvider === 'Ollama') {
-            console.warn('[LLM] 本地 Ollama 未響應，嘗試啟動服務...');
+            console.warn('[LLM] Local Ollama not responding, trying to start...');
             await ensureOllamaRunning();
         }
     }
@@ -452,7 +452,7 @@ async function checkOllamaStatus(force = false) {
  * 清除 LLM 狀態快取（執行任務後呼叫）
  */
 function invalidateCache() {
-    console.log('[LLM] 正在清除狀態快取...');
+    console.log('[LLM] Clearing status cache...');
     _cachedStatus = null;
     _lastCheck = 0;
     _cachedModels = null;
@@ -496,12 +496,12 @@ async function getAuthorizationHeader(authConfig = null) {
 
     if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`OAuth token 取得失敗 (${res.status}): ${errText.substring(0, 200)}`);
+        throw new Error(`OAuth token acquisition failed (${res.status}): ${errText.substring(0, 200)}`);
     }
 
     const data = await res.json();
     if (!data.access_token) {
-        throw new Error('OAuth token 回應缺少 access_token');
+        throw new Error('OAuth response missing access_token');
     }
 
     const expiresIn = Number(data.expires_in || 3600);
@@ -632,7 +632,7 @@ async function listModels(options = {}) {
  * 設定當前對話使用的模型
  */
 function setCurrentModel(modelName) {
-    console.log(`[LLM] 切換模型至: ${modelName}`);
+    console.log(`[LLM] Switching model to: ${modelName}`);
     currentModel = modelName;
     saveConfig();
     invalidateCache();
@@ -653,14 +653,14 @@ function ensureOllamaRunning() {
                 // 如果直接執行失敗，檢查預設安裝路徑
                 if (fs.existsSync(defaultPath)) {
                     cmd = `"${defaultPath}"`;
-                    console.log(`[LLM] 找到 Ollama 絕對路徑: ${defaultPath}`);
+                    console.log(`[LLM] Found Ollama at: ${defaultPath}`);
                 } else {
-                    console.warn('[LLM] 系統中未偵測到 Ollama，且預設路徑不存在');
+                    console.warn('[LLM] Ollama not found and default path does not exist');
                     return resolve(false);
                 }
             }
 
-            console.log(`[LLM] 正在背景嘗試啟動 Ollama 服務 (${cmd} serve)...`);
+            console.log(`[LLM] Attempting to start Ollama service in background (${cmd} serve)...`);
             try {
                 // 使用 spawn 啟動，不要等待它結束
                 const p = spawn(cmd, ['serve'], {
@@ -673,7 +673,7 @@ function ensureOllamaRunning() {
                 // 給它 3 秒鐘啟動
                 setTimeout(() => resolve(true), 3000);
             } catch (spawnErr) {
-                console.error('[LLM] 啟動 Ollama 服務失敗:', spawnErr);
+                console.error('[LLM] Failed to start Ollama service:', spawnErr);
                 resolve(false);
             }
         });
@@ -724,7 +724,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         if (!res.ok) {
             const errText = await res.text();
             if (res.status === 401) {
-                throw new Error(`AI 引擎身份驗證失敗 (401)。請點擊上方狀態列進入設定，並確認您是否正確填寫了 ${provider} 的 API Key。`);
+                throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
             }
             throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
         }
@@ -733,7 +733,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
             ? data.content.filter(item => item?.type === 'text').map(item => item.text).join('\n').trim()
             : '';
         if (!content) {
-            throw new Error('AI 引擎回傳了空內容，請確認 Anthropic model 名稱與權限設定。');
+            throw new Error('AI engine returned empty content. Please verify the Anthropic model name and permissions.');
         }
         return content;
     }
@@ -770,7 +770,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         chatUrl = baseUrl.endsWith('/') ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`;
     }
     
-    console.log(`[LLM] 傳送對話請求：Provider=${provider}, URL=${chatUrl}, Model=${modelName}`);
+    console.log(`[LLM] Sending chat: Provider=${provider}, URL=${chatUrl}, Model=${modelName}`);
 
     const body = meta.type === 'ollama'
         ? {
@@ -797,7 +797,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         });
     } catch (fetchErr) {
         if (fetchErr.name === 'TimeoutError' || fetchErr.message.includes('timeout')) {
-            throw new Error(`AI 引擎回應超時（已等待 3 分鐘）。這通常發生在模型正在加載或正在進行深度思考。請確保您的硬體資源充足，或稍後再試。`);
+            throw new Error(`AI engine timed out (waited 3 minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
         }
         throw fetchErr;
     }
@@ -805,7 +805,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
     if (!res.ok) {
         const errText = await res.text();
         if (res.status === 401) {
-            throw new Error(`AI 引擎身份驗證失敗 (401)。請點擊上方狀態列進入設定，並確認您是否正確填寫了 ${provider} 的 API Key。`);
+            throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
         }
         throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
     }
@@ -909,7 +909,7 @@ async function testProviderConnection({ provider, baseUrl, authConfig, model }) 
         || '';
 
     if (!String(reply).trim()) {
-        throw new Error('模型有回應，但內容為空。請檢查 model 名稱與 provider 相容格式。');
+        throw new Error('Model responded but content is empty. Please verify the model name and provider format.');
     }
 
     return String(reply).trim();
