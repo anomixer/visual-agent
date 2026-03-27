@@ -105,7 +105,7 @@ function syncBundledAssets() {
 
 
     } catch (e) {
-        console.error("[System] 同步內建資源失敗:", e.message);
+        console.error("[System] Failed to sync bundled assets:", e.message);
     }
 
 
@@ -130,7 +130,7 @@ function buildChatHistoryForRequest(history, hasChalkboardAttachment) {
     let skipAssistantReplyForImageTurn = false;
     history.forEach(entry => {
         const content = String(entry?.content || '');
-        if (entry?.role === 'user' && content.includes('[使用者當時附上了 Chalkboard 草圖]')) {
+        if (entry?.role === 'user' && content.includes('[User attached a Chalkboard sketch]')) {
             skipAssistantReplyForImageTurn = true;
             return;
         }
@@ -345,7 +345,7 @@ async function enrichTaskExperienceWithAI(task, sop, expPath) {
         if (!cleaned) return;
         fs.appendFileSync(expPath, `### Veteran Notes\n${cleaned}\n\n`, 'utf8');
     } catch (err) {
-        console.warn('[EXP] AI 老司機摘要生成失敗:', err.message);
+        console.warn('[EXP] AI experience summary generation failed:', err.message);
         fileLog(`EXP veteran summary failed: ${err.message}`);
     }
 
@@ -365,7 +365,7 @@ function appendTaskExperience(task, sop) {
         fs.appendFileSync(expPath, `${buildExperienceMarkdown(task, sop)}\n`, 'utf8');
         enrichTaskExperienceWithAI(task, sop, expPath);
     } catch (err) {
-        console.error('[EXP] 寫入經驗摘要失敗:', err.message);
+        console.error('[EXP] Failed to write experience log:', err.message);
         fileLog(`EXP write failed: ${err.message}`);
     }
 
@@ -410,7 +410,7 @@ function loadExperienceContext(queryText = '', limit = 3) {
             });
         return selected.join('\n\n');
     } catch (err) {
-        console.error('[EXP] 載入經驗摘要失敗:', err.message);
+        console.error('[EXP] Failed to load experience log:', err.message);
         return '';
     }
 
@@ -452,7 +452,7 @@ function loadExperienceEntries(limit = 18) {
 
 
 function buildTaskTitle(sop, action = 'install') {
-    if (!sop) return '未命名任務';
+    if (!sop) return 'Unnamed Task';
     if (action === 'uninstall') {
         const normalizedName = String(sop.name || sop.id || '')
             .replace(/^[^\p{L}\p{N}]+/u, '')
@@ -652,58 +652,58 @@ app.get('/api/meta', (req, res) => {
 const RECOMMEND_BASE = [
     {
         id: 'rec_install_ollama',
-        title: '🧠 安裝 Ollama 本地 AI 引擎',
-        description: '下載並安裝 Ollama，讓 AI Agent 具備本地語意理解能力',
-        category: 'AI 引擎',
+        title: '🧠 Install Ollama Local AI Engine',
+        description: 'Download and install Ollama to enable local AI understanding',
+        category: 'AI Engine',
         priority: 'critical',
     },
     {
         id: 'rec_pull_llm_model',
-        title: '📥 下載語言模型 (Qwen3.5 4B)',
-        description: '下載 Qwen3.5 4B 語言模型，約 2.6GB，完成後對話將由 AI 真正理解你的需求',
-        category: 'AI 引擎',
+        title: '📥 Download Language Model (Qwen3.5 4B)',
+        description: 'Download Qwen3.5 4B (~2.6GB). After this, AI will truly understand your requests',
+        category: 'AI Engine',
         priority: 'critical',
     },
     {
         id: 'rec_driver_check',
-        title: '🔍 檢查並安裝驅動程式',
-        description: '掃描硬體裝置並確認驅動程式是否為最新版本',
-        category: '系統優化',
+        title: '🔍 Check & Install Drivers',
+        description: 'Scan hardware and verify drivers are up to date',
+        category: 'System',
         priority: 'high',
     },
     {
         id: 'rec_remove_copilot',
-        title: '🗑️ 移除 Windows Copilot',
-        description: '停用並移除 Windows 內建的 Copilot 功能',
-        category: '系統淨化',
+        title: '🗑️ Remove Windows Copilot',
+        description: 'Disable and remove the built-in Windows Copilot feature',
+        category: 'Cleanup',
         priority: 'medium',
     },
     {
         id: 'rec_install_chrome',
-        title: '🌐 安裝 Google Chrome',
-        description: '下載並安裝 Chrome 瀏覽器，設為預設瀏覽器',
-        category: '瀏覽器',
+        title: '🌐 Install Google Chrome',
+        description: 'Download and install Chrome browser',
+        category: 'Browser',
         priority: 'high',
     },
     {
         id: 'rec_backup',
-        title: '💾 備份你的電腦',
-        description: '建立系統還原點，保護重要資料',
-        category: '資料保護',
+        title: '💾 Backup Your PC',
+        description: 'Create a Windows restore point to protect your data',
+        category: 'Backup',
         priority: 'medium',
     },
     {
         id: 'rec_office',
-        title: '📄 安裝 LibreOffice',
-        description: '強大且免費開源的辦公軟體套件，與 Microsoft Office 格式相容',
-        category: '工作必備',
+        title: '📄 Install LibreOffice',
+        description: 'Free and open-source office suite, compatible with Microsoft Office formats',
+        category: 'Productivity',
         priority: 'medium',
     },
     {
         id: 'rec_steam',
-        title: '🎮 安裝 Steam',
-        description: '安裝 Steam 遊戲平台，暢玩你的遊戲庫',
-        category: '娛樂',
+        title: '🎮 Install Steam',
+        description: 'Install the Steam gaming platform and access your game library',
+        category: 'Entertainment',
         priority: 'low',
     },
 ];
@@ -805,7 +805,7 @@ app.post('/api/todo', async (req, res) => {
     const sopsWithState = await annotateSOPRuntimeState(sops);
     const matchedSOP = sops.find((s) => s.id === skillId);
     const resolvedAction = action || (matchedSOP ? (await evaluateSOPInstalledState(matchedSOP)).recommendedAction : 'install');
-    const resolvedTitle = matchedSOP ? buildTaskTitle(matchedSOP, resolvedAction) : (title || '未命名任務');
+    const resolvedTitle = matchedSOP ? buildTaskTitle(matchedSOP, resolvedAction) : (title || 'Unnamed Task');
     const resolvedDescription = matchedSOP
         ? (resolvedAction === 'uninstall'
             ? `解除安裝 ${String(matchedSOP.name || matchedSOP.id || '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^安裝\s*/u, '').replace(/^下載\s*/u, '')}`
@@ -843,7 +843,7 @@ app.post('/api/todo/import', (req, res) => {
             saveTasks();
             res.json({ success: true, count: tasks.length });
         } else {
-            res.json({ success: false, error: '格式錯誤：需要 { tasks: [...] }' });
+            res.json({ success: false, error: 'Invalid format: expected { tasks: [...] }' });
         }
 
 
@@ -869,9 +869,9 @@ app.post('/api/todo/export-file', (req, res) => {
         const psScript = `
         Add-Type -AssemblyName System.Windows.Forms
         $dlg = New-Object System.Windows.Forms.SaveFileDialog
-        $dlg.Filter = 'JSON 檔案 (*.json)|*.json|所有檔案 (*.*)|*.*'
+        $dlg.Filter = 'JSON Files (*.json)|*.json|All Files (*.*)|*.*'
         $dlg.FileName = '${defaultName}'
-        $dlg.Title = '匯出 AI PC Agent 任務清單'
+        $dlg.Title = 'Export AI PC Agent Tasks'
         $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
         $res = $dlg.ShowDialog()
         if ($res -eq [System.Windows.Forms.DialogResult]::OK) { 
@@ -918,9 +918,9 @@ app.post('/api/chalkboard/export-file', (req, res) => {
         const psScript = `
         Add-Type -AssemblyName System.Windows.Forms
         $dlg = New-Object System.Windows.Forms.SaveFileDialog
-        $dlg.Filter = 'PNG 圖片 (*.png)|*.png|所有檔案 (*.*)|*.*'
+        $dlg.Filter = 'PNG Images (*.png)|*.png|All Files (*.*)|*.*'
         $dlg.FileName = '${defaultName}'
-        $dlg.Title = '匯出黑板圖片'
+        $dlg.Title = 'Export Chalkboard Image'
         $dlg.InitialDirectory = [Environment]::GetFolderPath('MyPictures')
         $res = $dlg.ShowDialog()
         if ($res -eq [System.Windows.Forms.DialogResult]::OK) { 
@@ -962,9 +962,9 @@ app.post('/api/exps/export-file', (req, res) => {
         const psScript = `
         Add-Type -AssemblyName System.Windows.Forms
         $dlg = New-Object System.Windows.Forms.SaveFileDialog
-        $dlg.Filter = 'Markdown 檔案 (*.md)|*.md|所有檔案 (*.*)|*.*'
+        $dlg.Filter = 'Markdown Files (*.md)|*.md|All Files (*.*)|*.*'
         $dlg.FileName = '${defaultName}'
-        $dlg.Title = '匯出 AI PC Agent exps'
+        $dlg.Title = 'Export AI PC Agent Experience Log'
         $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
         $res = $dlg.ShowDialog()
         if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
@@ -1024,7 +1024,7 @@ app.all('/api/llm/models', async (req, res) => {
         // 同時支援 GET (query) 與 POST (body)
         const params = req.method === 'POST' ? req.body : req.query;
         const { provider, baseUrl, apiKey, authConfig } = params;
-        console.log(`[LLM] 預覽模型列表: Provider=${provider || '預設'}, URL=${baseUrl || '預設'}`);
+        console.log(`[LLM] Preview model list: Provider=${provider || 'default'}, URL=${baseUrl || 'default'}`);
         const models = await llm.listModels({ provider, baseUrl, apiKey, authConfig, forceRefresh: true });
         res.json({ success: true, models, currentModel: llm.getCurrentModel() });
     } catch (err) {
@@ -1036,7 +1036,7 @@ app.all('/api/llm/models', async (req, res) => {
 // POST /api/llm/model 切換模型
 app.post('/api/llm/model', (req, res) => {
     const { modelName } = req.body;
-    if (!modelName) return res.json({ success: false, error: '缺少 modelName' });
+    if (!modelName) return res.json({ success: false, error: 'Missing modelName' });
     llm.setCurrentModel(modelName);
     res.json({ success: true, currentModel: llm.getCurrentModel() });
 });
@@ -1044,12 +1044,12 @@ app.post('/api/llm/model', (req, res) => {
 app.post('/api/execute/:taskId', async (req, res) => {
     const task = todoList.find((t) => t.id === req.params.taskId);
     if (!task) {
-        return res.json({ success: false, error: '找不到任務' });
+        return res.json({ success: false, error: 'Task not found' });
     }
 
 
     if (runningSOP) {
-        return res.json({ success: false, error: '目前有任務正在執行中，請稍候' });
+        return res.json({ success: false, error: 'A task is currently running, please wait' });
     }
 
 
@@ -1075,7 +1075,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
         };
     } else {
         if (!task.skillId) {
-            return res.json({ success: false, error: '此任務沒有對應的 SOP，無法自動執行' });
+            return res.json({ success: false, error: 'This task has no associated SOP and cannot be auto-executed' });
         }
 
 
@@ -1085,7 +1085,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
 
 
     if (!sop) {
-        return res.json({ success: false, error: `找不到對應的 SOP${task.skillId ? ': ' + task.skillId : ''}` });
+        return res.json({ success: false, error: `SOP not found${task.skillId ? ': ' + task.skillId : ''}` });
     }
 
 
@@ -1113,19 +1113,19 @@ app.post('/api/execute/:taskId', async (req, res) => {
         if (logs.length > 500) logs.shift();
     });
     // Run async
-    res.json({ success: true, message: '任務已開始執行' });
+    res.json({ success: true, message: 'Task execution started' });
     try {
         const result = await executor.execute(sop, { action: task.action || 'install' });
         task.status = result.status;
         task.progress = 100;
         task.completedAt = new Date().toISOString();
         if (task.skillId) sopStateCache.delete(task.skillId);
-        const finishLog = { level: 'success', message: `任務「${task.title}」執行完畢 (狀態: ${result.status})`, timestamp: new Date().toISOString() };
+        const finishLog = { level: 'success', message: `Task '${task.title}' completed (status: ${result.status})`, timestamp: new Date().toISOString() };
         task.logs.push(finishLog);
         logs.push(finishLog);
         // 針對 AI 引擎相關任務，強制清除快取並重新偵測
         if (sop.id === 'rec_install_ollama' || sop.id === 'rec_pull_llm_model' || task.skillId === 'rec_pull_llm_model' || task.dynamicCmd?.includes('ollama')) {
-            console.log(`[Server] 偵測到 AI 相關任務完成: ${sop.id || 'dynamic'}，執行快取更新...`);
+            console.log(`[Server] AI-related task completed: ${sop.id || 'dynamic'}, invalidating cache...`);
             fileLog(`AI Task Completed: ${sop.id || 'dynamic'}, invalidating cache.`);
             llm.invalidateCache();
         }
@@ -1136,7 +1136,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
         task.status = 'failed';
         task.completedAt = new Date().toISOString();
         if (task.skillId) sopStateCache.delete(task.skillId);
-        const errLog = { level: 'error', message: `任務執行崩潰: ${err.message}`, timestamp: new Date().toISOString() };
+        const errLog = { level: 'error', message: `Task execution crashed: ${err.message}`, timestamp: new Date().toISOString() };
         task.logs.push(errLog);
         logs.push(errLog);
         appendTaskExperience(task, sop);
@@ -1151,7 +1151,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
 app.get('/api/task/:taskId/status', (req, res) => {
     const task = todoList.find((t) => t.id === req.params.taskId);
     if (!task) {
-        return res.json({ success: false, error: '找不到任務' });
+        return res.json({ success: false, error: 'Task not found' });
     }
 
 
@@ -1161,14 +1161,14 @@ app.get('/api/task/:taskId/status', (req, res) => {
 app.post('/api/chat', async (req, res) => {
     const { message, locale } = req.body;
     const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
-    if (!message) return res.json({ success: false, error: '請輸入訊息' });
+    if (!message) return res.json({ success: false, error: 'Please enter a message' });
     const sops = loadAllSOPs(SOPS_DIR);
     const sopsWithState = await annotateSOPRuntimeState(sops);
     let suggestions = locale === 'en-US' ? ['Install Chrome', 'Clear Tasks', 'System Status'] : ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
     let llmErrorForFallback = null;
     // 1. 快速蒐集背景資訊
-    const sopCatalog = sopsWithState.map(s => `- ID: ${s.id}, 名稱: ${s.name}, 狀態: ${s.installed ? '已安裝' : '未安裝'}, 建議動作: ${s.recommendedAction === 'uninstall' ? '解除安裝' : '安裝'}`).join('\n');
-    const taskContext = todoList.map(t => `- ID: ${t.id}, 標題: ${t.title}, 狀態: ${t.status}`).join('\n');
+    const sopCatalog = sopsWithState.map(s => `- ID: ${s.id}, Name: ${s.name}, Status: ${s.installed ? 'installed' : 'not installed'}, Action: ${s.recommendedAction}`).join('\n');
+    const taskContext = todoList.map(t => `- ID: ${t.id}, Title: ${t.title}, Status: ${t.status}`).join('\n');
     const experienceContext = loadExperienceContext(message, 3);
     const wingetRecommendation = shouldSearchWingetForRecommendations(message)
         ? (() => {
@@ -1205,8 +1205,8 @@ app.post('/api/chat', async (req, res) => {
         if (hasLikelySopForMessage(packageQuery, sops)) {
             return res.json({
                 success: true,
-                reply: '目前 SOP 清單裡已經有相近項目了，先從左側 SOP 清單搜尋看看；如果你要，我也可以再幫你改寫成更適合的版本。',
-                suggestions: ['切到 SOP 清單', `搜尋 ${packageQuery}`],
+                reply: 'A similar SOP already exists. Try searching the SOP list on the left; I can also rewrite it if needed.',
+                suggestions: ['Go to SOP List', `Search ${packageQuery}`],
                 task: false,
                 llmUsed: false
             });
@@ -1218,8 +1218,8 @@ app.post('/api/chat', async (req, res) => {
             const created = createGitHubReleaseSopFile(githubCandidates[0]);
             return res.json({
                 success: true,
-                reply: `已幫你根據 GitHub Releases 產生 SOP：${created.fileName}。重新整理 SOP 清單後，就可以直接拿來下載或執行。`,
-                suggestions: ['重新整理 SOP 清單', `幫我下載 ${githubCandidates[0].name}`],
+                reply: `SOP generated from GitHub Releases: ${created.fileName}. Refresh the SOP list to use it.`,
+                suggestions: ['Refresh SOP List', `Download ${githubCandidates[0].name}`],
                 task: false,
                 sopChanged: true,
                 llmUsed: false
@@ -1232,8 +1232,8 @@ app.post('/api/chat', async (req, res) => {
             const created = createMicrosoftStoreSopFile(storeCandidates[0]);
             return res.json({
                 success: true,
-                reply: `已幫你根據 Microsoft Store 產生 SOP：${created.fileName}。之後重新整理 SOP 清單，就可以直接拿來加入任務或執行。`,
-                suggestions: ['重新整理 SOP 清單', `幫我安裝 ${storeCandidates[0].name}`],
+                reply: `SOP generated from Microsoft Store: ${created.fileName}. Refresh the SOP list to use it.`,
+                suggestions: ['Refresh SOP List', `Install ${storeCandidates[0].name}`],
                 task: false,
                 sopChanged: true,
                 llmUsed: false
@@ -1246,8 +1246,8 @@ app.post('/api/chat', async (req, res) => {
             const created = createWingetSopFile(candidates[0]);
             return res.json({
                 success: true,
-                reply: `已幫你根據 winget 商店產生 SOP：${created.fileName}。之後重新整理 SOP 清單，就可以直接拿來加入任務或執行。`,
-                suggestions: ['重新整理 SOP 清單', `幫我安裝 ${candidates[0].name}`],
+                reply: `SOP generated from winget: ${created.fileName}. Refresh the SOP list to use it.`,
+                suggestions: ['Refresh SOP List', `Install ${candidates[0].name}`],
                 task: false,
                 sopChanged: true,
                 llmUsed: false
@@ -1265,8 +1265,8 @@ app.post('/api/chat', async (req, res) => {
             .join('\n');
         return res.json({
             success: true,
-            reply: `我先從 Microsoft Store 幫你找了幾個可參考的 UWP / 商店版軟體：\n${topPackages}\n\n如果你要，我可以再幫你把其中一套產生成 SOP。`,
-            suggestions: microsoftStoreRecommendation.packages.slice(0, 3).map(pkg => `幫我做 ${pkg.name} 的 Microsoft Store SOP`),
+            reply: `Here are some Microsoft Store UWP apps I found:\n${topPackages}\n\nI can generate a SOP for any of them if you'd like.`,
+            suggestions: microsoftStoreRecommendation.packages.slice(0, 3).map(pkg => `Create Microsoft Store SOP for ${pkg.name}`),
             task: false,
             llmUsed: false
         });
@@ -1280,8 +1280,8 @@ app.post('/api/chat', async (req, res) => {
             .join('\n');
         return res.json({
             success: true,
-            reply: `我先從 GitHub Releases 幫你找了幾個有 Windows 版 release 的候選軟體：\n${topPackages}\n\n如果你要，我可以再幫你把其中一套產生成下載型 SOP。`,
-            suggestions: githubRecommendation.packages.slice(0, 3).map(pkg => `幫我做 ${pkg.name} 的 GitHub SOP`),
+            reply: `Here are some GitHub apps with Windows releases I found:\n${topPackages}\n\nI can generate a download SOP for any of them.`,
+            suggestions: githubRecommendation.packages.slice(0, 3).map(pkg => `Create GitHub SOP for ${pkg.name}`),
             task: false,
             llmUsed: false
         });
@@ -1295,8 +1295,8 @@ app.post('/api/chat', async (req, res) => {
             .join('\n');
         return res.json({
             success: true,
-            reply: `目前 SOP 裡沒有直接對應的軟體，我先從 winget 商店幫你找了幾個可參考選項：\n${topPackages}\n\n如果你要，我可以再幫你把其中一套產生成 SOP。`,
-            suggestions: wingetRecommendation.packages.slice(0, 3).map(pkg => `幫我做 ${pkg.name} 的 SOP`),
+            reply: `No matching SOP found. Here are some winget options:\n${topPackages}\n\nI can generate a SOP for any of them.`,
+            suggestions: wingetRecommendation.packages.slice(0, 3).map(pkg => `Create SOP for ${pkg.name}`),
             task: false,
             llmUsed: false
         });
@@ -1343,18 +1343,18 @@ app.post('/api/chat', async (req, res) => {
         try {
             const requestHistory = buildChatHistoryForRequest(chatHistory, Boolean(chalkboardAttachment));
             const contextNote = `
-[[當前系統環境]]
-1. 硬體簡報: ${hardwareSummary}
+[[Current System Context]]
+1. Hardware Summary: ${hardwareSummary}
 
-2. 可用 SOP (ID 列表):
-${sopCatalog || '(無)'}
+2. Available SOPs:
+${sopCatalog || '(none)'}
 
-3. 待辦任務清單:
-${taskContext || '(空)'}
+3. Task List:
+${taskContext || '(empty)'}
 
-4. 當前使用的 AI 模型: ${llm.getCurrentModel()}
+4. Current AI Model: ${llm.getCurrentModel()}
 
-5. Chalkboard 草圖: ${chalkboardAttachment ? `已附上 ${chalkboardAttachment.width || '?'}x${chalkboardAttachment.height || '?'} 黑板快照，請把它視為使用者的視覺需求草稿，優先結合圖片內容理解意圖。若本輪有附圖，這張圖就是「目前正在談的圖」；除非使用者明確要求比較前後兩張圖，否則請忽略先前任何圖片內容，只回答這一張。` : '本次未附上黑板快照。'}
+5. Chalkboard sketch: ${chalkboardAttachment ? `Attached ${chalkboardAttachment.width || '?'}x${chalkboardAttachment.height || '?'} chalkboard snapshot - treat it as the user's visual draft. This image is the current reference; unless the user explicitly asks to compare, ignore previous images.` : 'No chalkboard snapshot attached this round.'}
 
 `;
             // 2. 呼叫 LLM (附帶歷史紀錄)
@@ -1394,16 +1394,16 @@ ${taskContext || '(空)'}
 
             try {
                 llmReply = await llm.chatWithLLM(
-                    message + "\n\n" + contextNote + wingetPromptNote + microsoftStorePromptNote + githubPromptNote + "\n\n[[exps 經驗庫]]\n" + (experienceContext || '(目前尚無可參考經驗)'),
+                    message + "\n\n" + contextNote + wingetPromptNote + microsoftStorePromptNote + githubPromptNote + "\n\n[[Experience Log]]\n" + (experienceContext || '(No experience entries yet)'),
                     requestHistory,
                     chatOptions,
                     locale
                 );
             } catch (visionErr) {
                 if (!chalkboardAttachment) throw visionErr;
-                console.warn('[LLM] 黑板影像理解失敗，改以純文字重試:', visionErr.message);
+                console.warn('[LLM] Chalkboard vision failed, retrying as text:', visionErr.message);
                 llmReply = await llm.chatWithLLM(
-                    `${message}\n\n${contextNote}${wingetPromptNote}${microsoftStorePromptNote}${githubPromptNote}\n\n[[exps 經驗庫]]\n${experienceContext || '(目前尚無可參考經驗)'}\n\n[系統補充] 使用者原本有附上 Chalkboard 草圖，但目前這個模型或 Provider 沒有成功吃下圖片。請先明確告知圖片理解失敗，再根據文字需求提供最接近的協助。`,
+                    `${message}\n\n${contextNote}${wingetPromptNote}${microsoftStorePromptNote}${githubPromptNote}\n\n[[Experience Log]]\n${experienceContext || '(No experience entries yet)'}\n\n[System] The user attached a Chalkboard image, but this model/provider failed to process it. Please inform the user of the failure, then assist based on the text request.`,
                     requestHistory,
                     {},
                     locale
@@ -1441,10 +1441,10 @@ ${taskContext || '(空)'}
                             todoList.push({
                                 id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
                                 title: buildTaskTitle(mSop, mSop.recommendedAction),
-                                description: `由 AI 智慧管家排程`,
+                                description: `Scheduled by AI Agent`,
                                 skillId: mSop.id,
                                 action: mSop.recommendedAction,
-                                category: mSop.category || '系統維護',
+                                category: mSop.category || 'Maintenance',
                                 status: 'pending', progress: 0, logs: [],
                                 createdAt: new Date().toISOString()
                             });
@@ -1547,9 +1547,9 @@ ${taskContext || '(空)'}
 
             if (hasActionTaken) saveTasks();
             // 4. 更新對話紀錄
-            chatHistory.push({ role: 'user', content: chalkboardAttachment ? `${message}\n\n[使用者當時附上了 Chalkboard 草圖]` : message });
+            chatHistory.push({ role: 'user', content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message });
             const cleanReply = llmReply.replace(/\[ACTION:.*?\]/g, '').replace(/\[SUGGEST:.*?\]/g, '').trim();
-            chatHistory.push({ role: 'assistant', content: chalkboardAttachment ? `${cleanReply}\n\n[本回覆曾參考當輪 Chalkboard 草圖]` : cleanReply });
+            chatHistory.push({ role: 'assistant', content: chalkboardAttachment ? `${cleanReply}\n\n[This reply referenced the Chalkboard sketch]` : cleanReply });
             if (chatHistory.length > 6) chatHistory = chatHistory.slice(-6);
             const suggestMatch = llmReply.match(/\[SUGGEST:(.*?)\]/);
             // In en-US mode, if [SUGGEST:...] contains Chinese characters, discard it and use locale-aware defaults
@@ -1575,7 +1575,7 @@ ${taskContext || '(空)'}
                 llmUsed: true
             });
         } catch (llmErr) {
-            console.error('[LLM] 智慧管家處理失敗:', llmErr);
+            console.error('[LLM] AI Agent processing failed:', llmErr);
             llmErrorForFallback = llmErr.message;
             // 發生錯誤不中斷，讓它往下走到關鍵字比對模式
         }
@@ -1598,8 +1598,8 @@ ${taskContext || '(空)'}
             // 不直接刪除，改為詢問
             return res.json({
                 success: true,
-                reply: "確認要清空所有任務清單嗎？這項操作無法復原喔。",
-                suggestions: ['確認清空', '取消'],
+                reply: "Confirm clearing all tasks? This cannot be undone.",
+                suggestions: ['Confirm Clear', 'Cancel'],
                 task: false,
                 llmUsed: false
             });
@@ -1609,8 +1609,8 @@ ${taskContext || '(空)'}
             if (targetTask) {
                 return res.json({
                     success: true,
-                    reply: `我找到了任務「${targetTask.title}」，確認要移除它嗎？`,
-                    suggestions: [`移除 ${targetTask.title}`, '先不要'],
+                    reply: `Found task '${targetTask.title}'. Confirm removal?`,
+                    suggestions: [`Remove ${targetTask.title}`, 'Not now'],
                     task: false,
                     llmUsed: false
                 });
@@ -1628,7 +1628,7 @@ ${taskContext || '(空)'}
             todoList = [];
             saveTasks();
             chatHistory = []; // 清空也順便清空歷史
-            return res.json({ success: true, reply: "已清空所有任務。 🧹", suggestions, task: true, llmUsed: false });
+            return res.json({ success: true, reply: "All tasks cleared. 🧹", suggestions, task: true, llmUsed: false });
         }
 
 
@@ -1637,7 +1637,7 @@ ${taskContext || '(空)'}
             const title = removeMatch[1];
             todoList = todoList.filter(t => !t.title.includes(title));
             saveTasks();
-            return res.json({ success: true, reply: `已移除任務「${title}」。`, suggestions, task: true, llmUsed: false });
+            return res.json({ success: true, reply: `Task '${title}' removed.`, suggestions, task: true, llmUsed: false });
         }
 
 
@@ -1679,13 +1679,13 @@ ${taskContext || '(空)'}
 
     let reply = '';
     if (taskAdded) {
-        reply = `已幫你將「${taskAdded.title}」加入清單。現在要執行嗎？ 😊`;
-        suggestions = ['執行任務', '先不要'];
+        reply = `Added '${taskAdded.title}' to the list. Execute now? 😊`;
+        suggestions = ['Execute', 'Not now'];
     } else if (executeTaskId) {
-        reply = `沒問題，這就開始執行！ 🚀`;
+        reply = `Sure, starting now! 🚀`;
     } else {
-        const errorHint = llmErrorForFallback ? ` (AI 引擎故障: ${llmErrorForFallback})` : ' (AI 引擎未就緒，目前為關鍵字模式)';
-        reply = `收到您的訊息：「${message}」${errorHint}`;
+        const errorHint = llmErrorForFallback ? ` (AI engine error: ${llmErrorForFallback})` : ' (AI 引擎未就緒，目前為關鍵字模式)';
+        reply = `Received: '${message}'${errorHint}`;
     }
 
 
@@ -1728,12 +1728,12 @@ app.get('/api/llm/config', (req, res) => {
 app.post('/api/llm/config', (req, res) => {
     const { provider, baseUrl, apiKey, model, authConfig, visionModel } = req.body;
     if (!provider || !baseUrl) {
-        return res.status(400).json({ success: false, error: '缺少必要參數' });
+        return res.status(400).json({ success: false, error: 'Missing required parameters' });
     }
 
 
     llm.updateProviderSettings(provider, baseUrl, apiKey, model, authConfig, visionModel);
-    res.json({ success: true, message: '設定已儲存' });
+    res.json({ success: true, message: 'Settings saved' });
 });
 function pickBestGitHubAsset(releases = []) {
     const candidates = [];
@@ -2172,7 +2172,7 @@ app.post('/api/llm/test', async (req, res) => {
     try {
         const { provider, baseUrl, model, authConfig } = req.body;
         if (!provider || !baseUrl || !model) {
-            return res.status(400).json({ success: false, error: '缺少 provider、baseUrl 或 model' });
+            return res.status(400).json({ success: false, error: 'Missing provider, baseUrl or model' });
         }
 
 
@@ -2185,7 +2185,7 @@ app.post('/api/llm/test', async (req, res) => {
 
 });
 app.listen(PORT, async () => {
-    const startMsg = `AI PC Agent 已啟動！ (PID: ${process.pid}, Path: ${process.execPath})`;
+    const startMsg = `AI PC Agent started! (PID: ${process.pid}, Path: ${process.execPath})`;
     console.log(`\n  🖥️  ${startMsg}`);
     fileLog(startMsg);
     console.log(`  📍 http://localhost:${PORT}`);
@@ -2200,21 +2200,21 @@ app.listen(PORT, async () => {
         const result = await llm.checkOllamaStatus();
         const provider = llm.getCurrentProvider();
         if (result.available && result.modelReady) {
-            let msg = `🧠 LLM 就緒：${provider}`;
+            let msg = `🧠 LLM ready: ${provider}`;
             if (provider === 'Ollama' && result.version) {
                 msg += ` v${result.version}`;
             }
 
 
-            msg += `，模型 ${result.modelName} 已載入`;
+            msg += `, model ${result.modelName} loaded`;
             console.log(`  ${msg}\n`);
             fileLog(msg);
         } else if (result.available) {
-            const msg = `🟡 ${provider} 運作中，但模型尚未就緒`;
+            const msg = `🟡 ${provider} running, but no model ready`;
             console.log(`  ${msg}\n`);
             fileLog(msg);
         } else {
-            const msg = `🔴 未偵測到 ${provider} 服務 (${llm.getCurrentBaseUrl()})`;
+            const msg = `🔴 No ${provider} service detected (${llm.getCurrentBaseUrl()})`;
             console.log(`  ${msg}\n`);
             fileLog(msg);
         }
@@ -2222,7 +2222,7 @@ app.listen(PORT, async () => {
 
     } catch (e) {
         fileLog(`LLM Check Failed: ${e.message}`);
-        console.log(`  🔴 LLM 狀態檢查失敗\n`);
+        console.log(`  🔴 LLM status check failed\n`);
     }
 
 
