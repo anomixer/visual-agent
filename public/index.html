@@ -89,14 +89,14 @@
         <span class="app-author">by anomixer</span>
         <nav class="menu-bar">
           <div class="menu-dropdown-container" style="position:relative; display:inline-block;">
-              <span class="menu-item" id="menuFile" onclick="const fd = document.getElementById('fileDropdown'); fd.style.display = fd.style.display === 'block' ? 'none' : 'block';">File Menu</span>
+              <span class="menu-item" id="menuFile" onclick="const fd = document.getElementById('fileDropdown'); fd.style.display = fd.style.display === 'block' ? 'none' : 'block';"><span id="menuFileText">檔案</span></span>
               <div id="fileDropdown" style="display:none; position:absolute; top:100%; left:0; background:var(--bg-card); border:1px solid var(--border-color); box-shadow:0 8px 16px rgba(0,0,0,0.5); z-index:9999; padding:4px 0; border-radius:6px; min-width:160px; font-size:13px; color:var(--text-primary);">
                 <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="document.getElementById('importFileInput').click(); document.getElementById('fileDropdown').style.display='none';"><span id="importTasksText">匯入任務清單</span></div>
                 <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="document.getElementById('btnExport').click(); document.getElementById('fileDropdown').style.display='none';"><span id="exportTasksText">匯出任務清單</span></div>
                 <div style="height:1px; background:var(--border-color); margin:4px 0;"></div>
-                <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="window.location.reload();">Refresh畫面</div>
+                <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="window.location.reload();"><span id="menuRefreshText">Refresh畫面</span></div>
                 <div style="height:1px; background:var(--border-color); margin:4px 0;"></div>
-                <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="window.close();">Exit</div>
+                <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="window.close();"><span id="menuExitText">Exit</span></div>
               </div>
             </div>
           <span class="menu-item" id="menuView">檢視</span>

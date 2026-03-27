@@ -1396,7 +1396,8 @@ ${taskContext || '(空)'}
                 llmReply = await llm.chatWithLLM(
                     message + "\n\n" + contextNote + wingetPromptNote + microsoftStorePromptNote + githubPromptNote + "\n\n[[exps 經驗庫]]\n" + (experienceContext || '(目前尚無可參考經驗)'),
                     requestHistory,
-                    chatOptions
+                    chatOptions,
+                    locale
                 );
             } catch (visionErr) {
                 if (!chalkboardAttachment) throw visionErr;
@@ -1549,7 +1550,19 @@ ${taskContext || '(空)'}
             chatHistory.push({ role: 'assistant', content: chalkboardAttachment ? `${cleanReply}\n\n[本回覆曾參考當輪 Chalkboard 草圖]` : cleanReply });
             if (chatHistory.length > 6) chatHistory = chatHistory.slice(-6);
             const suggestMatch = llmReply.match(/\[SUGGEST:(.*?)\]/);
-            let finalSuggestions = suggestMatch ? suggestMatch[1].split(',').map(s => s.trim()) : suggestions;
+            // In en-US mode, if [SUGGEST:...] contains Chinese characters, discard it and use locale-aware defaults
+            let finalSuggestions;
+            if (suggestMatch) {
+                const suggestText = suggestMatch[1];
+                const hasChinese = /[\u4e00-\u9fff]/.test(suggestText);
+                if (locale === 'en-US' && hasChinese) {
+                    finalSuggestions = suggestions; // use locale-aware defaults defined at line 1167
+                } else {
+                    finalSuggestions = suggestText.split(',').map(s => s.trim());
+                }
+            } else {
+                finalSuggestions = suggestions;
+            }
             return res.json({
                 success: true,
                 reply: cleanReply,

@@ -3165,6 +3165,12 @@ function updateLocaleUI() {
     
     if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
     if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
+    // File Menu i18n
+    const isEn = currentLocale === 'en-US';
+    const _mft = document.getElementById('menuFileText'); if (_mft) _mft.textContent = isEn ? 'File' : '檔案';
+    const _itt = document.getElementById('importTasksText'); if (_itt) _itt.textContent = isEn ? 'Import Tasks' : '匯入任務清單';
+    const _ett = document.getElementById('exportTasksText'); if (_ett) _ett.textContent = isEn ? 'Export Tasks' : '匯出任務清單';
+    const _mrt = document.getElementById('menuRefreshText'); if (_mrt) _mrt.textContent = isEn ? 'Refresh' : 'Refresh 畫面';
     updateLLMStatusText(window.__lastLLMStatus);
     renderSidebarTab();
     renderTodoList();
