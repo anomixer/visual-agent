@@ -1164,7 +1164,7 @@ app.post('/api/chat', async (req, res) => {
     if (!message) return res.json({ success: false, error: '請輸入訊息' });
     const sops = loadAllSOPs(SOPS_DIR);
     const sopsWithState = await annotateSOPRuntimeState(sops);
-    let suggestions = ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
+    let suggestions = locale === 'en-US' ? ['Install Chrome', 'Clear Tasks', 'System Status'] : ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
     let llmErrorForFallback = null;
     // 1. 快速蒐集背景資訊
     const sopCatalog = sopsWithState.map(s => `- ID: ${s.id}, 名稱: ${s.name}, 狀態: ${s.installed ? '已安裝' : '未安裝'}, 建議動作: ${s.recommendedAction === 'uninstall' ? '解除安裝' : '安裝'}`).join('\n');
@@ -1574,7 +1574,7 @@ ${taskContext || '(空)'}
     let taskAdded = null;
     let executeTaskId = null;
     let isActionTaken = false;
-    suggestions = ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態'];
+    suggestions = locale === 'en-US' ? ['Install Chrome', 'Clear Tasks', 'System Status'] : ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態'];
     const isDeletionIntent = /刪除|移除|移掉|清空|清掉|delete|remove/.test(message);
     const isConfirmation = /是|好|確定|執行|同意/.test(message);
     // 備援模式的刪除邏輯：也改成需要確認

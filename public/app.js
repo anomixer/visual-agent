@@ -241,7 +241,7 @@ const I18N = {
             visionModelPlaceholder: '留空則自動挑選可看圖模型',
             refresh: '🔄 刷新清單',
             modelHelp: '雲端模型通常需要手動填入 model 名稱，本地引擎可直接從清單選擇。',
-            visionHelp: '用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。',
+            visionHelp: currentLocale === "en-US" ? "Used for reading Chalkboard sketches and multi-modal content. Leave empty for auto-selection." : "用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。",
             test: '測試模型',
             textToolTitle: '文字工具',
             save: '儲存並刷新',
@@ -685,28 +685,28 @@ const API_KEY_ONLY_PROVIDERS = Object.keys(PROVIDER_DEFAULTS).filter(
 const PROVIDER_HELP = {
     'OpenAI': {
         title: 'OpenAI',
-        text: '填入 API Key 與模型名稱即可。OpenAI API 目前仍以 API Key 為主。',
+        text: currentLocale === 'en-US' ? 'Just fill in API Key and model name. OpenAI focuses on API Key.' : '填入 API Key 與模型名稱即可。OpenAI API 目前仍以 API Key 為主。',
         model: '例如 gpt-4.1、gpt-4o-mini。'
     },
     'Google Gemini': {
         title: 'Gemini',
-        text: '這裡走 Google 官方 OpenAI compatibility 入口，通常需要 API Key 與 model 名稱。',
+        text: currentLocale === 'en-US' ? 'Uses Google official OpenAI compatibility endpoint. Usually needs API Key and model.' : '這裡走 Google 官方 OpenAI compatibility 入口，通常需要 API Key 與 model 名稱。',
         model: '例如 gemini-2.5-flash。'
     },
     'Anthropic Claude': {
         title: 'Anthropic Native',
-        text: 'Anthropic 走原生 API，不硬套 OpenAI-compatible。請填 API Key 與 Claude model。',
-        model: '例如 claude-sonnet-4-20250514。'
+        text: currentLocale === 'en-US' ? 'Uses Anthropic native API. Please provide API Key and Claude model.' : 'Anthropic 走原生 API，不硬套 OpenAI-compatible。請填 API Key 與 Claude model。',
+        model: currentLocale === 'en-US' ? 'e.g. claude-sonnet-4-20250514.' : '例如 claude-sonnet-4-20250514。'
     },
     'Ollama': {
-        title: '本地 Ollama',
-        text: '通常不需要 API Key。只要本機服務已啟動，就可以直接選模型。',
-        model: '建議直接從模型清單選擇。'
+        title: currentLocale === 'en-US' ? 'Local Ollama' : '本地 Ollama',
+        text: currentLocale === 'en-US' ? 'Usually no API Key needed. If local service is up, just select a model.' : '通常不需要 API Key。只要本機服務已啟動，就可以直接選模型。',
+        model: currentLocale === 'en-US' ? 'Recommended to pick directly from list.' : '建議直接從模型清單選擇。'
     },
     'Customer Provider': {
-        title: '自訂 Provider',
-        text: '用於企業 Gateway 或自架服務。可選 API Key 或 OAuth 2.0 Client Credentials。',
-        model: '請填服務端實際支援的模型名稱。'
+        title: currentLocale === 'en-US' ? 'Custom Provider' : '自訂 Provider',
+        text: currentLocale === 'en-US' ? 'For Enterprise Gateway or self-hosted. Choose API Key or OAuth 2.0 Client Credentials.' : '用於企業 Gateway 或自架服務。可選 API Key 或 OAuth 2.0 Client Credentials。',
+        model: currentLocale === 'en-US' ? 'Please fill in the exact model name supported by the server.' : '請填服務端實際支援的模型名稱。'
     }
 };
 
@@ -1026,7 +1026,7 @@ function syncVisionModelInputs(useDropdown, visionModel = '', models = []) {
         settingVisionModelSelect.style.display = 'none';
         settingVisionModelName.value = visionModel;
         if (visionModelHelpText) {
-            visionModelHelpText.textContent = '用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。';
+            visionModelHelpText.textContent = currentLocale === "en-US" ? "Used for reading Chalkboard sketches and multi-modal content. Leave empty for auto-selection." : "用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。";
         }
     }
 }
@@ -2561,7 +2561,7 @@ function updateLLMIndicator(status) {
         chatModelBadge.style.display = status.modelReady ? 'inline-block' : 'none';
         if (status.modelReady && status.modelName) {
             chatModelBadge.textContent = status.modelName;
-            chatModelBadge.title = `當前模型: ${status.modelName} (點擊切換)`;
+            chatModelBadge.title = currentLocale === 'en-US' ? `Current model: ${status.modelName} (Click to switch)` : `當前模型: ${status.modelName} (點擊切換)`;
         }
     }
 
@@ -3474,7 +3474,7 @@ function appendThinking() {
     const div = document.createElement('div');
     div.className = 'message ai-message';
     div.id = id;
-    div.innerHTML = `<div class="msg-avatar">🤖</div><div class="msg-bubble thinking-dots">思考中</div>`;
+    div.innerHTML = `<div class="msg-avatar">🤖</div><div class="msg-bubble thinking-dots">${currentLocale === "en-US" ? "Thinking..." : "思考中"}</div>`;
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return id;
@@ -3808,13 +3808,13 @@ function applyTheme(theme) {
                 <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
                     <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
                 </svg>`;
-            btnTheme.title = '切換至深色模式';
+            btnTheme.title = currentLocale === 'en-US' ? 'Switch to Dark Mode' : '切換至深色模式';
         } else {
             btnTheme.innerHTML = `
                 <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
                     <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.243 3.05a1 1 0 010 1.414l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM14.243 14.95a1 1 0 01-1.414 0l-.707-.707a1 1 0 111.414-1.414l.707.707a1 1 0 010 1.414zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.243-3.05a1 1 0 010-1.414l.707-.707a1 1 0 111.414 1.414l-.707.707a1 1 0 01-1.414 0zM3 10a1 1 0 011-1h1a1 1 0 110 2H4a1 1 0 01-1-1zm3.05-4.243a1 1 0 011.414 0l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414zM10 6a4 4 0 100 8 4 4 0 000-8z" clip-rule="evenodd" />
                 </svg>`;
-            btnTheme.title = '切換至淺色模式';
+            btnTheme.title = currentLocale === 'en-US' ? 'Switch to Light Mode' : '切換至淺色模式';
         }
     }
     
@@ -4345,7 +4345,7 @@ async function onProviderChange(provider, currentModel = '', currentVisionModel 
         if (btnRefreshModels) btnRefreshModels.style.display = 'inline-block';
         
         // 抓取模型清單
-        settingModelSelect.innerHTML = '<option value="">正在載入模型清單...</option>';
+        settingModelSelect.innerHTML = `<option value="">${currentLocale === "en-US" ? "Loading models..." : "正在載入模型清單..."}</option>`;
         try {
             // 切換為 POST 請求以支援帶有特殊符號的 API Key 並避免長 URL 問題
             const data = await api('/api/llm/models', {
@@ -4414,7 +4414,7 @@ async function saveProviderSettings() {
         if (chatModelBadge && model) {
             chatModelBadge.textContent = model;
             chatModelBadge.style.display = 'inline-block';
-            chatModelBadge.title = `當前模型: ${model} (點擊切換)`;
+            chatModelBadge.title = currentLocale === 'en-US' ? `Current model: ${model} (Click to switch)` : `當前模型: ${model} (點擊切換)`;
         }
 
         // 重新整理頁面以套用新設定
@@ -4438,7 +4438,7 @@ async function testProviderSettings() {
     }
 
     btnTestProviderSettings.disabled = true;
-    btnTestProviderSettings.textContent = '測試中...';
+    btnTestProviderSettings.textContent = currentLocale === 'en-US' ? 'Testing...' : '測試中...';
 
     const data = await api('/api/llm/test', {
         method: 'POST',
@@ -4446,14 +4446,14 @@ async function testProviderSettings() {
     });
 
     btnTestProviderSettings.disabled = false;
-    btnTestProviderSettings.textContent = '測試模型';
+    btnTestProviderSettings.textContent = currentLocale === 'en-US' ? 'Test Model' : '測試模型';
 
     if (data.success) {
-        addUILog(`🧪 模型測試成功：${provider} / ${model}`, 'success');
-        alert(`測試成功\n\nProvider: ${provider}\nModel: ${model}\nReply: ${data.reply || 'OK'}`);
+        addUILog(currentLocale === 'en-US' ? `🧪 Model test successful: ${provider} / ${model}` : `🧪 模型測試成功：${provider} / ${model}`, 'success');
+        alert(currentLocale === 'en-US' ? `Test successful\n\nProvider: ${provider}\nModel: ${model}\nReply: ${data.reply || 'OK'}` : `測試成功\n\nProvider: ${provider}\nModel: ${model}\nReply: ${data.reply || 'OK'}`);
     } else {
-        addUILog(`🧪 模型測試失敗：${provider} / ${model} - ${data.error || 'Unknown error'}`, 'error');
-        alert(`測試失敗\n\n${data.error || 'Unknown error'}`);
+        addUILog(currentLocale === 'en-US' ? `🧪 Model test failed: ${provider} / ${model} - ${data.error || 'Unknown error'}` : `🧪 模型測試失敗：${provider} / ${model} - ${data.error || 'Unknown error'}`, 'error');
+        alert(currentLocale === 'en-US' ? `Test failed\n\n${data.error || 'Unknown error'}` : `測試失敗\n\n${data.error || 'Unknown error'}`);
     }
 }
 
@@ -4618,3 +4618,15 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+
+document.addEventListener('click', (e) => {
+    const fileMenu = document.getElementById('menuFile');
+    const fileDropdown = document.getElementById('fileDropdown');
+    const importFileInput = document.getElementById('importFileInput');
+    const btnExport = document.getElementById('btnExport');
+    if (fileDropdown && fileMenu) {
+        if (!fileMenu.contains(e.target) && !fileDropdown.contains(e.target)) {
+            fileDropdown.style.display = 'none';
+        }
+    }
+});

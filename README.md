@@ -265,6 +265,18 @@ aipc-agent/
 
 ## 近期更新
 
+
+### 2026.03.27
+
+- **深度國際化補完**：
+  - 各大雲端與地端 AI Provider 的使用說明、推薦模型範例已完整支援中英切換。
+  - 模型測試工具 (Test Model) 按鈕狀態、警示與日誌成功實作雙語化。
+  - 對話框上方預設建議按鈕 (如 `Install Chrome`) 能隨語系自動切換。
+  - 大幅清理早期的生成式 `*.i18n.js` 檔案，減少結構混亂。
+- **選單系統 (File Menu)**：
+  - `index.html` 導入下拉式檔案選單。
+  - 將 `匯出任務`、`匯入任務` 統一整合，維持版面簡潔，並提供 `Refresh` 與 `Exit` 便捷操作。
+
 ### 2026.03.26
 
 - **國際化完善**：
@@ -354,3 +366,5 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
 - 目前套件版本：`2026.03.26`。
+
+<!-- Test edit by AI -->
