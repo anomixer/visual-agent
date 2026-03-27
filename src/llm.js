@@ -744,6 +744,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
 
     const messages = meta.type === 'ollama'
         ? [
+            { role: 'system', content: buildFullSystemPrompt(locale) },
             ...historyMessages.map(m => buildOllamaMessage(m.role, m.content)),
             buildOllamaMessage('user', userMessage, chalkboardAttachment),
         ]
