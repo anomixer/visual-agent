@@ -340,7 +340,7 @@ async function enrichTaskExperienceWithAI(task, sop, expPath) {
     try {
         const llmStatus = await llm.checkOllamaStatus();
         if (!llmStatus.available || !llmStatus.modelReady) return;
-        const aiReply = await llm.chatWithLLM(buildExperienceAIPrompt(task, sop, locale || "zh-TW"), []);
+        const aiReply = await llm.chatWithLLM(buildExperienceAIPrompt(task, sop), []);
         const cleaned = redactSensitiveText(String(aiReply || '').trim());
         if (!cleaned) return;
         fs.appendFileSync(expPath, `### Veteran Notes\n${cleaned}\n\n`, 'utf8');
@@ -438,18 +438,26 @@ function loadExperienceEntries(limit = 18) {
             const title = lines[0].replace(/^##\s*/, '').trim();
             const body = lines.slice(1).join('\n').trim();
             const sopMatch = body.match(/- SOP ID:\s*`([^`]+)`/i);
+            
+            // Extract timestamp from title (format: "YYYY-MM-DDTHH:mm:ss.sssZ - Task Title")
+            const timestampMatch = title.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s*-\s*/);
+            const entryTimestamp = timestampMatch ? timestampMatch[1] : file.updatedAt;
+            
             entries.push({
                 fileName: file.fileName,
-                updatedAt: file.updatedAt,
+                updatedAt: entryTimestamp,
                 title: redactSensitiveText(title),
                 content: redactSensitiveText(body),
                 sopId: sopMatch ? redactSensitiveText(sopMatch[1]) : ''
             });
         });
     });
+    
+    // Sort all entries by their actual timestamps (newest first)
+    entries.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    
     return entries.slice(0, limit);
 }
-
 
 function buildTaskTitle(sop, action = 'install') {
     if (!sop) return 'Unnamed Task';
@@ -457,20 +465,15 @@ function buildTaskTitle(sop, action = 'install') {
         const normalizedName = String(sop.name || sop.id || '')
             .replace(/^[^\p{L}\p{N}]+/u, '')
             .replace(/^安裝\s*/u, '')
-            .replace(/^下載\s*/u, '');
-        return `🗑️ 解除安裝 ${normalizedName}`;
+            .replace(/^下載\s*/u, '')
+            .replace(/^Install\s+/gi, '')
+            .replace(/^Download\s+/gi, '')
+            .trim();
+        return `🗑️ Uninstall ${normalizedName}`;
     }
 
 
     return `📦 ${sop.name}`;
-}
-
-
-function shouldSearchWingetForRecommendations(message = '') {
-    const text = String(message || '');
-    const wantsRecommendation = /(推薦|建議|值得|有什麼|有哪些|可以用什麼|找.+軟體|recommend|suggest)/i.test(text);
-    const mentionsSoftware = /(軟體|app|工具|程式|應用|software|application)/i.test(text);
-    return wantsRecommendation && mentionsSoftware;
 }
 
 
@@ -808,7 +811,7 @@ app.post('/api/todo', async (req, res) => {
     const resolvedTitle = matchedSOP ? buildTaskTitle(matchedSOP, resolvedAction) : (title || 'Unnamed Task');
     const resolvedDescription = matchedSOP
         ? (resolvedAction === 'uninstall'
-            ? `解除安裝 ${String(matchedSOP.name || matchedSOP.id || '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^安裝\s*/u, '').replace(/^下載\s*/u, '')}`
+            ? `Uninstall ${String(matchedSOP.name || matchedSOP.id || '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^安裝\s*/u, '').replace(/^下載\s*/u, '').replace(/^Install\s+/gi, '').replace(/^Download\s+/gi, '').trim()}`
             : matchedSOP.name)
         : (description || '');
     const task = {
@@ -1754,6 +1757,14 @@ function pickBestGitHubAsset(releases = []) {
 }
 
 
+function shouldSearchWingetForRecommendations(message = '') {
+    const text = String(message || '').toLowerCase();
+    // 如果沒有匹配的 SOP 且包含軟體相關關鍵字，則搜尋 winget
+    const softwareKeywords = /(軟體|app|工具|程式|應用|下載|安裝|推薦|找|想要|需要|安裝|下載|下載|推薦|軟體|app|工具|程式|應用|install|download|recommend|find|need|want)/i;
+    const excludePatterns = /(microsoft\s*store|msstore|uwp|商店版|市集|github|repo|repository|release|開源|portable)/i;
+    return softwareKeywords.test(text) && !excludePatterns.test(text);
+}
+
 function shouldSearchMicrosoftStore(message = '') {
     return /(microsoft\s*store|msstore|uwp|商店版|市集 app|windows store)/i.test(String(message || ''));
 }
@@ -2189,9 +2200,9 @@ app.listen(PORT, async () => {
     console.log(`\n  🖥️  ${startMsg}`);
     fileLog(startMsg);
     console.log(`  📍 http://localhost:${PORT}`);
-    console.log(`  📂 SOPs    目錄: ${SOPS_DIR}`);
-    console.log(`  🛠️ Skills  目錄: ${SKILLS_DIR}`);
-    console.log(`  🔌 Plugins 目錄: ${PLUGINS_DIR}`);
+    console.log(`  📂 SOPs    Directory: ${SOPS_DIR}`);
+    console.log(`  🛠️ Skills  Directory: ${SKILLS_DIR}`);
+    console.log(`  🔌 Plugins Directory: ${PLUGINS_DIR}`);
     fileLog(`SOPs Directory: ${SOPS_DIR}`);
     fileLog(`Skills Directory: ${SKILLS_DIR}`);
     fileLog(`Plugins Directory: ${PLUGINS_DIR}`);

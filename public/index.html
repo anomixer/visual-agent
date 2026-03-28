@@ -89,7 +89,7 @@
         <span class="app-author">by anomixer</span>
         <nav class="menu-bar">
           <div class="menu-dropdown-container" style="position:relative; display:inline-block;">
-              <span class="menu-item" id="menuFile" onclick="const fd = document.getElementById('fileDropdown'); fd.style.display = fd.style.display === 'block' ? 'none' : 'block';"><span id="menuFileText">檔案</span></span>
+              <span class="menu-item" id="menuFile" onclick="const fd = document.getElementById('fileDropdown'); fd.style.display = fd.style.display === 'block' ? 'none' : 'block';"><span id="menuHelp"></span></span>
               <div id="fileDropdown" style="display:none; position:absolute; top:100%; left:0; background:var(--bg-card); border:1px solid var(--border-color); box-shadow:0 8px 16px rgba(0,0,0,0.5); z-index:9999; padding:4px 0; border-radius:6px; min-width:160px; font-size:13px; color:var(--text-primary);">
                 <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="document.getElementById('importFileInput').click(); document.getElementById('fileDropdown').style.display='none';"><span id="importTasksText">匯入任務清單</span></div>
                 <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="document.getElementById('btnExport').click(); document.getElementById('fileDropdown').style.display='none';"><span id="exportTasksText">匯出任務清單</span></div>
@@ -99,7 +99,7 @@
                 <div class="menu-dropdown-item" style="padding:8px 16px; cursor:pointer;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='transparent'" onclick="window.close();"><span id="menuExitText">Exit</span></div>
               </div>
             </div>
-          <span class="menu-item" id="menuView">檢視</span>
+          <span class="menu-item" id="menuView"></span>
           <span class="menu-item" id="menuHelp" onclick="window.open('https://github.com/anomixer/aipc-agent', '_blank');" style="cursor:pointer;">說明</span>
         </nav>
       </div>
@@ -107,7 +107,7 @@
       <div class="title-bar-center">
         <div class="llm-status" id="llmStatus" title="設定 AI 引擎" style="cursor:pointer;">
           <span class="llm-dot" id="llmDot"></span>
-          <span class="llm-label" id="llmLabel">檢查中...</span>
+          <span class="llm-label"><span id="llmLabel"></span>
         </div>
       </div>
 
@@ -345,19 +345,19 @@
           </div>
           <div class="log-body active" id="logBody">
             <div class="log-entries" id="logEntries">
-              <div class="log-empty">等待任務執行...</div>
+              <div class="log-empty" id="logEmptyMessage">等待任務執行...</div>
             </div>
           </div>
           <div class="log-body" id="expsBody">
             <div class="exps-toolbar">
-              <input type="text" id="expSearchInput" class="exps-search-input" placeholder="搜尋經驗、關鍵字...">
+              <input type="text" id="expSearchInput" class="exps-search-input" placeholder="">
               <select id="expSopFilter" class="exps-filter-select">
                 <option value="">全部 SOP</option>
               </select>
               <button id="btnExpsExport" class="btn-exps-export" title="匯出所有 exps 為 Markdown">⬇ 匯出</button>
             </div>
             <div class="exp-entries" id="expEntries">
-              <div class="log-empty">尚未累積安裝經驗...</div>
+              <div class="log-empty" id="expsEmptyMessage">尚未累積安裝經驗...</div>
             </div>
           </div>
         </div>

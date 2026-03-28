@@ -43,9 +43,18 @@ module.exports = async function(health) {
     `;
 
     const basicData = await new Promise((resolve) => {
-        exec(`powershell -NoProfile -Command "${psBasic.replace(/\n/g, ' ')}"`, (err, stdout) => {
+        exec(`powershell -NoProfile -Command "${psBasic.replace(/\n/g, ' ')}"`, { timeout: 10000 }, (err, stdout) => {
             if (!err && stdout) {
-                try { resolve(JSON.parse(stdout)); return; } catch (_) {}
+                try { 
+                    const parsed = JSON.parse(stdout);
+                    // console.log('[HardwareInfo] Basic data collected successfully');
+                    resolve(parsed); 
+                    return; 
+                } catch (e) {
+                    console.error('[HardwareInfo] Failed to parse PowerShell output:', e.message);
+                }
+            } else {
+                console.error('[HardwareInfo] PowerShell execution failed:', err?.message || 'Unknown error');
             }
             resolve(null);
         });
@@ -96,10 +105,15 @@ module.exports = async function(health) {
     // GPU load fallback: only attempt this when temperature-monitor did not provide a value.
     if (health.gpu.load === 0 || health.gpu.load === undefined) {
         await new Promise((resolve) => {
-            exec(`powershell -NoProfile -Command "${psGpuLoad.replace(/\n/g, ' ')}"`, (err, stdout) => {
+            exec(`powershell -NoProfile -Command "${psGpuLoad.replace(/\n/g, ' ')}"`, { timeout: 5000 }, (err, stdout) => {
                 if (!err && stdout) {
                     const v = parseInt(stdout.trim(), 10);
-                    if (v >= 0) health.gpu.load = v;
+                    if (v >= 0) {
+                        health.gpu.load = v;
+                        // console.log('[HardwareInfo] GPU load fallback successful:', v);
+                    }
+                } else {
+                    // console.log('[HardwareInfo] GPU load fallback failed, using default value');
                 }
                 resolve();
             });

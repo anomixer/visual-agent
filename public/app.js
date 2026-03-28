@@ -1,5 +1,5 @@
 /**
- * AI PC Agent � Frontend Application (VS Code Layout)
+ * AI PC Agent — Frontend Application (VS Code Layout)
  *
  * 功能：
  *  - 三欄可拖拉 resize（sidebar / center / chat / log）
@@ -185,19 +185,24 @@ const I18N = {
             engineNotReady: 'AI 引擎未就緒',
             aiSettings: '設定 AI 引擎',
             toggleSidebar: '切換側邊欄 (Ctrl+B)',
-            toggleLog: '切換工作日誌 (Ctrl+J)',
+            toggleLog: '切換任務日誌 (Ctrl+J)',
             toggleChat: '切換 AI 對話 (Ctrl+Alt+B)',
+            refresh: 'Refresh畫面',
+            exit: 'Exit',
         },
         footer: {
             tasks: '{count} 個任務',
             switchTo: '切換成 English',
+            importTasks: '匯入任務清單',
+            exportTasks: '匯出任務清單',
         },
         tabs: {
             recommend: '💡 推薦清單',
             sops: '📚 SOP 清單',
             hardware: '硬體狀態',
             todolist: '工作清單',
-            logs: '📝 工作日誌',
+            logs: '📝 任務日誌',
+            emptyMessage: '等待任務執行...',
             exps: '🧠 經驗庫',
             aiChat: '💬 AI 對話',
             chalkboard: 'Chalkboard',
@@ -221,6 +226,17 @@ const I18N = {
             switchModel: '切換模型',
             placeholder: '告訴我你需要什麼... 例如「幫我移除 Copilot」',
             send: '送出',
+            connectionError: '對話連線發生錯誤。',
+        },
+        exps: {
+            searchPlaceholder: '搜尋經驗、關鍵字...',
+            exportButton: '⬇ 匯出',
+            exportTooltip: '匯出所有 exps 為 Markdown',
+            emptyMessage: '尚未累積安裝經驗...',
+            noExpsToExport: '目前沒有可匯出的 exps',
+            exportSuccess: 'exps 已匯出：{fileName}',
+            exportCancelled: '已取消匯出 exps',
+            exportFallback: '原生匯出 exps 失敗，已改用瀏覽器下載：{error}',
         },
         settings: {
             title: 'AI 引擎設定',
@@ -245,6 +261,10 @@ const I18N = {
             test: '測試模型',
             textToolTitle: '文字工具',
             save: '儲存並刷新',
+        },
+        llm: {
+            modelSwitched: '模型已切換至: {modelName}',
+            modelSwitchedChat: '我現在切換到 **{modelName}** 囉！隨時可以開始對話。',
         },
         textTool: {
             title: '文字工具',
@@ -323,6 +343,19 @@ const I18N = {
             unnamedItem: '未命名項目',
             addActionTask: '加入{action}清單',
             runActionNow: '立即{action}',
+            installCompleted: '{title} 安裝 / 執行完成',
+            uninstallCompleted: '{title} 解除安裝完成',
+            installSkipped: '{title} 已經存在，所以我幫你跳過了',
+            uninstallSkipped: '{title} 對應的項目目前已不在系統中，所以我幫你跳過了',
+            executionFailed: '{title} 執行失敗。你可以看一下下方任務日誌，我再幫你排除',
+            startingProcess: '正在啟動「{title}」流程...',
+            executionStarted: '「{title}」已開始執行！請查看下方進度與日誌...',
+            startingSOPProcess: '正在啟動「{name}」的{action}流程...',
+            exportCancelled: '已取消匯出任務清單',
+            addedToList: '已加入{action}：{title}',
+            addedSOPToList: '已加入{action} SOP：{name}',
+            startingAction: '開始{action}：{title}',
+            startingSOPAction: '開始{action} SOP：{name}',
         },
         sidebar: {
             recommendLoading: '推薦清單載入中...',
@@ -399,19 +432,24 @@ const I18N = {
             engineNotReady: 'AI Engine Not Ready',
             aiSettings: 'Configure AI Engine',
             toggleSidebar: 'Toggle Sidebar (Ctrl+B)',
-            toggleLog: 'Toggle Work Log (Ctrl+J)',
+            toggleLog: 'Toggle Task Log (Ctrl+J)',
             toggleChat: 'Toggle AI Chat (Ctrl+Alt+B)',
+            refresh: 'Refresh',
+            exit: 'Exit',
         },
         footer: {
             tasks: '{count} tasks',
             switchTo: 'Switch to 繁體中文',
+            importTasks: 'Import Task List',
+            exportTasks: 'Export Task List',
         },
         tabs: {
             recommend: '💡 Recommended',
             sops: '📚 SOPs',
             hardware: 'Hardware',
             todolist: 'Tasks',
-            logs: '📝 Work Log',
+            logs: '📝 Task Log',
+            emptyMessage: 'Waiting for task execution...',
             exps: '🧠 Exp. Log',
             aiChat: '💬 AI Chat',
             chalkboard: 'Chalkboard',
@@ -435,6 +473,17 @@ const I18N = {
             switchModel: 'Switch Model',
             placeholder: 'Tell me what you need... e.g., "help me remove Copilot"',
             send: 'Send',
+            connectionError: 'Chat connection error occurred.',
+        },
+        exps: {
+            searchPlaceholder: 'Search experiences, keywords...',
+            exportButton: '⬇ Export',
+            exportTooltip: 'Export all exps as Markdown',
+            emptyMessage: 'No installation experience accumulated yet...',
+            noExpsToExport: 'No exps available to export',
+            exportSuccess: 'exps exported: {fileName}',
+            exportCancelled: 'Export exps cancelled',
+            exportFallback: 'Native export failed, fallback to browser download: {error}',
         },
         settings: {
             title: 'AI Engine Settings',
@@ -459,6 +508,10 @@ const I18N = {
             test: 'Test Model',
             textToolTitle: 'Text Tool',
             save: 'Save & Refresh',
+        },
+        llm: {
+            modelSwitched: 'Model switched to: {modelName}',
+            modelSwitchedChat: 'I have now switched to **{modelName}**! Ready to start the conversation.',
         },
         textTool: {
             title: 'Text Tool',
@@ -537,6 +590,19 @@ const I18N = {
             unnamedItem: 'Untitled Item',
             addActionTask: 'Add {action} task',
             runActionNow: '{action} now',
+            installCompleted: '{title} installed / executed successfully',
+            uninstallCompleted: '{title} uninstalled successfully',
+            installSkipped: '{title} already exists, so I skipped it',
+            uninstallSkipped: '{title} is not currently in the system, so I skipped it',
+            executionFailed: '{title} execution failed. You can check the task log below and I\'ll help you troubleshoot',
+            startingProcess: 'Starting {title} process...',
+            executionStarted: '{title} execution started! Please check the progress and logs below...',
+            startingSOPProcess: 'Starting {action} process for {name}...',
+            exportCancelled: 'Task list export cancelled',
+            addedToList: 'Added {action}: {title}',
+            addedSOPToList: 'Added {action} SOP: {name}',
+            startingAction: 'Starting {action}: {title}',
+            startingSOPAction: 'Starting {action} SOP: {name}',
         },
         sidebar: {
             recommendLoading: 'Loading recommendations...',
@@ -2237,6 +2303,8 @@ function updateChalkboardCursor() {
 // ════════════════════════════════════════════════════════
 async function init() {
     loadAppMeta();
+    // Ensure locale is loaded from localStorage before updating UI
+    currentLocale = localStorage.getItem('ui_locale') || 'zh-TW';
     updateLocaleUI();
     checkFirstRun();
     applyTheme(localStorage.getItem('theme') || 'dark');
@@ -2370,15 +2438,18 @@ function syncKnownTaskStatuses(tasks) {
 function buildTaskCompletionMessage(task) {
     const actionLabel = getActionLabel(task.action || 'install');
     if (task.status === 'success') {
-        return `✅「${task.title}」已${actionLabel === '解除安裝' ? '解除安裝' : '安裝 / 執行'}完成。`;
+        const completionText = actionLabel === t('actions.uninstall') 
+            ? t('task.uninstallCompleted', { title: task.title })
+            : t('task.installCompleted', { title: task.title });
+        return `✅${completionText}`;
     }
     if (task.status === 'skipped') {
-        return actionLabel === '解除安裝'
-            ? `ℹ️「${task.title}」對應的項目目前已不在系統中，所以我幫你跳過了。`
-            : `ℹ️「${task.title}」已經存在，所以我幫你跳過了。`;
+        return actionLabel === t('actions.uninstall')
+            ? t('task.uninstallSkipped', { title: task.title })
+            : t('task.installSkipped', { title: task.title });
     }
     if (task.status === 'failed') {
-        return `❌「${task.title}」執行失敗。你可以看一下下方工作日誌，我再幫你排除。`;
+        return `❌${t('task.executionFailed', { title: task.title })}`;
     }
     return '';
 }
@@ -2626,8 +2697,8 @@ async function toggleModelMenu() {
             item.onclick = async () => {
                 const res = await api('/api/llm/model', { method: 'POST', body: { modelName: m.name } });
                 if (res.success) {
-                    addUILog(`🧠 模型已切換至: ${m.name}`, 'success');
-                    appendChatBubble('ai', `🧠 我現在切換到 **${m.name}** 囉！隨時可以開始對話。`);
+                    addUILog(`🧠 ${t('llm.modelSwitched', { modelName: m.name })}`, 'success');
+                    appendChatBubble('ai', `🧠 ${t('llm.modelSwitchedChat', { modelName: m.name })}`);
                     checkLLMStatus();
                 }
                 menu.remove();
@@ -2760,7 +2831,8 @@ function getActionTitle(title, action) {
     // 提取主體：移掉開頭的表情符號與常見動詞
     let subject = String(title)
         .replace(/^[^\p{L}\p{N}]+/u, '') // 移掉開頭符號/表情
-        .replace(/^(安裝|下載|建立|解除安裝|移除|清理|優化|檢測|設定|Install|Download|Create|Uninstall|Remove|Setup|Set up|Set|Get|Pull|Check|Add|Add-AppxPackage)\s*/iu, '')
+        .replace(/^(安裝|下載|建立|解除安裝|移除|清理|優化|檢測|設定)\s*/gi, '') // 中文動詞
+        .replace(/^(Install|Download|Create|Uninstall|Remove|Setup|Set up|Set|Get|Pull|Check|Add|Add-AppxPackage)\s+/gi, '') // 英文動詞
         .trim();
 
     // 如果主體為空（例如標題本來就只有一個動詞），就退回到原始標題
@@ -2969,6 +3041,47 @@ function updateLocaleUI() {
     if (btnMic) btnMic.title = t('chat.mic');
     if (btnChalkAttach) btnChalkAttach.title = t('chat.attachChalkboard');
     if (btnClearChat) btnClearChat.title = t('chat.clear');
+    
+    // Update experience search placeholder
+    if (expSearchInput) expSearchInput.placeholder = t('exps.searchPlaceholder');
+    if (btnExpsExport) {
+        btnExpsExport.textContent = t('exps.exportButton');
+        btnExpsExport.title = t('exps.exportTooltip');
+    }
+
+    // Update log empty message
+    const logEmptyMessage = document.getElementById('logEmptyMessage');
+    if (logEmptyMessage) logEmptyMessage.textContent = t('logs.emptyMessage');
+    
+    // Update exps empty message
+    const expsEmptyMessage = document.getElementById('expsEmptyMessage');
+    if (expsEmptyMessage) expsEmptyMessage.textContent = t('exps.emptyMessage');
+    
+    // Update menu elements
+    const menuFileText = document.getElementById('menuFileText');
+    if (menuFileText) menuFileText.textContent = t('titlebar.file');
+    
+    const menuViewText = document.getElementById('menuView');
+    if (menuViewText) menuViewText.textContent = t('titlebar.view');
+    
+    const menuHelpText = document.getElementById('menuHelp');
+    if (menuHelpText) menuHelpText.textContent = t('titlebar.help');
+    
+    const importTasksText = document.getElementById('importTasksText');
+    if (importTasksText) importTasksText.textContent = t('footer.importTasks');
+    
+    const exportTasksText = document.getElementById('exportTasksText');
+    if (exportTasksText) exportTasksText.textContent = t('footer.exportTasks');
+    
+    const menuRefreshText = document.getElementById('menuRefreshText');
+    if (menuRefreshText) menuRefreshText.textContent = t('titlebar.refresh');
+    
+    const menuExitText = document.getElementById('menuExitText');
+    if (menuExitText) menuExitText.textContent = t('titlebar.exit');
+    
+    // Update LLM status
+    const llmLabel = document.getElementById('llmLabel');
+    if (llmLabel) llmLabel.textContent = t('titlebar.llmReady');
 
     // Chat Input Area
     if (chatInput) chatInput.placeholder = t('chat.placeholder');
@@ -3282,7 +3395,7 @@ async function addRecommendToTodo(item) {
     if (data.success) { 
         todoList = data.todoList; 
         renderTodoList(); 
-        addUILog(`＋ 已加入${getActionLabel(action)}：${getActionTitle(localized.title, action)}`, 'info'); 
+        addUILog(`＋ ${t('task.addedToList', { action: getActionLabel(action), title: getActionTitle(localized.title, action) })}`, 'info'); 
         openTab('todolist');
     }
 }
@@ -3300,8 +3413,8 @@ async function addAndExecuteRecommend(item) {
         openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
-            addUILog(`▶ 開始${getActionLabel(action)}：${getActionTitle(localized.title, action)}`, 'info');
-            appendChatBubble('ai', `🚀 正在啟動「${getActionTitle(localized.title, action)}」流程...`);
+            addUILog(`▶ ${t('task.startingAction', { action: getActionLabel(action), title: getActionTitle(localized.title, action) })}`, 'info');
+            appendChatBubble('ai', `🚀 ${t('task.startingProcess', { title: getActionTitle(localized.title, action) })}`);
             expandLog();
             await executeTask(newTask.id);
         }
@@ -3310,7 +3423,7 @@ async function addAndExecuteRecommend(item) {
 
 async function executeTask(taskId) {
     const task = todoList.find(t => t.id === taskId);
-    if (task) appendChatBubble('ai', `🚀「${task.title}」已開始執行！請查看下方進度與日誌...`);
+    if (task) appendChatBubble('ai', `🚀 ${t('task.executionStarted', { title: task.title })}`);
     expandLog();
     await api(`/api/execute/${taskId}`, { method: 'POST' });
 }
@@ -3387,7 +3500,7 @@ async function sendChat() {
             appendChatBubble('ai', '使用者中斷');
         } else {
             console.error('[Chat] Error:', err);
-            appendChatBubble('ai', '對話連線發生錯誤。');
+            appendChatBubble('ai', t('chat.connectionError'));
         }
     } finally {
         // 恢復按鈕狀態
@@ -3582,7 +3695,7 @@ async function addSopToTodo(sop) {
     if (data.success) {
         todoList = data.todoList;
         renderTodoList();
-        addUILog(`＋ 已加入${getActionLabel(action)} SOP：${localized.name || localized.id}`, 'info');
+        addUILog(`＋ ${t('task.addedSOPToList', { action: getActionLabel(action), name: localized.name || localized.id })}`, 'info');
         openTab('todolist');
     }
 }
@@ -3606,8 +3719,8 @@ async function addAndExecuteSop(sop) {
         openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
-            addUILog(`▶ 開始${getActionLabel(action)} SOP：${localized.name || localized.id}`, 'info');
-            appendChatBubble('ai', `🚀 正在啟動「${localized.name || localized.id}」的${getActionLabel(action)}流程...`);
+            addUILog(`▶ ${t('task.startingSOPAction', { action: getActionLabel(action), name: localized.name || localized.id })}`, 'info');
+            appendChatBubble('ai', `🚀 ${t('task.startingSOPProcess', { name: localized.name || localized.id, action: getActionLabel(action) })}`);
             expandLog();
             await executeTask(newTask.id);
         }
@@ -3715,7 +3828,7 @@ async function loadExps() {
 
 function exportExps() {
     if (!expsEntries || expsEntries.length === 0) {
-        addUILog('ℹ️ 目前沒有可匯出的 exps', 'info');
+        addUILog(`ℹ️ ${t('exps.noExpsToExport')}`, 'info');
         return;
     }
     const md = expsEntries.map(e => {
@@ -3727,12 +3840,12 @@ function exportExps() {
         body: { markdown: md }
     }).then((data) => {
         if (data.success) {
-            addUILog(`✅ exps 已匯出：${data.fileName || data.filePath}`, 'success');
+            addUILog(`✅ ${t('exps.exportSuccess', { fileName: data.fileName || data.filePath })}`, 'success');
             return;
         }
 
         if (data.cancelled) {
-            addUILog('ℹ️ 已取消匯出 exps', 'info');
+            addUILog(`ℹ️ ${t('exps.exportCancelled')}`, 'info');
             return;
         }
 
@@ -3743,7 +3856,7 @@ function exportExps() {
         a.download = `aipc-exps-${new Date().toISOString().slice(0, 10)}.md`;
         a.click();
         URL.revokeObjectURL(url);
-        addUILog(`⚠️ 原生匯出 exps 失敗，已改用瀏覽器下載：${data.error || 'Unknown error'}`, 'warn');
+        addUILog(`⚠️ ${t('exps.exportFallback', { error: data.error || 'Unknown error' })}`, 'warn');
     });
 }
 
@@ -3853,7 +3966,7 @@ function exportTasks() {
         }
 
         if (data.cancelled) {
-            addUILog('ℹ️ 已取消匯出任務清單', 'info');
+            addUILog(`ℹ️ ${t('task.exportCancelled')}`, 'info');
             return;
         }
 

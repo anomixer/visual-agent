@@ -211,6 +211,8 @@
 - **RWD 儀表板**：硬體監控卡片支援響應式佈局，自動根據左右面板寬度切換 4 欄或 2x2 排列。
 - **啟動資訊強化**：Console 與日誌現在會顯示 `Plugins` 資料夾路徑，方便擴充。
 
+---
+
 ## 📌 2026.03.18 — 效能巔峰優化與推理模型強固
 
 ### ⚡ 聊天效能「秒開」優化
@@ -232,7 +234,7 @@
 
 ---
 
-## 2026.03.24 - AI Provider 與 SOP 穩定性修正
+## 📌 2026.03.24 - AI Provider 與 SOP 穩定性修正
 
 ### AI Provider
 - OpenAI 維持僅支援 API Key。
@@ -255,7 +257,7 @@
 - 將脆弱的 `Get-Command + Test-Path "command-name"` 改為先解析執行檔路徑再驗證。
 - 系統還原點 SOP 的 `Check` 改為無副作用。
 
-## 2026.03.24 - 工作日誌與版本同步
+## 工作日誌與版本同步
 
 - 工作日誌僅在畫面已停在底部時才自動往下捲。
 - Spinner 與下載進度類訊息會原地更新，不再洗出多行。
@@ -263,7 +265,7 @@
 - 前端改由 `/api/meta` 讀取版本，來源為 `package.json`。
 - 套件版本更新為 `2026.03.24`。
 
-## 2026.03.24 - EXE 啟動與匯出修正
+## EXE 啟動與匯出修正
 
 ### EXE 啟動
 - Tauri 改為背景啟動 Node sidecar，讓本地 HTML splash 可以先顯示，不再黑畫面等待。
@@ -274,7 +276,7 @@
 - EXE 模式下的任務匯出改為優先使用 `/api/todo/export-file` 的原生 Windows 另存新檔流程.
 - 瀏覽器型 blob 下載僅作為 fallback。
 
-## 2026.03.24 - 硬體上下文與語系 SOP 拆分
+## 硬體上下文與語系 SOP 拆分
 
 ### 硬體上下文
 - AI 對話 prompt 現在會注入 CPU、GPU、RAM、磁碟健康與磁碟剩餘空間摘要。
@@ -286,7 +288,7 @@
 - 暫時性的英文與繁中復原 SOP 已在拆分後移除。
 - 日文語言安裝遇到 access denied 時，會在 install 階段直接失敗，不再拖到 verify 才暴露問題。
 
-## 2026.03.24 - 共用 UAC 提權執行器
+## 共用 UAC 提權執行器
 
 ### 提權執行
 - SOP Executor 現在內建共用的 `runPowerShellElevated()`。
@@ -297,7 +299,7 @@
 - 若使用者取消 UAC，任務會直接失敗，不再假裝修復成功後重試。
 - 語系 SOP 的 `Check` 與 `Verify` 不再只依賴單一 `LanguageId` 欄位，會同時接受 `LanguageTag`、`LocaleName`、`Language` 等欄位。
 
-## 2026.03.24 - Sidebar 與 Chat 佈局補強
+## Sidebar 與 Chat 佈局補強
 
 ### 右側 AI 對話欄
 - 放寬 chat window 拖拉上限，現在可往左拉到工作區約一半寬度。
@@ -309,7 +311,9 @@
 - SOP 清單支援依名稱、ID、分類搜尋，並可直接「加入任務」或「立即執行」。
 - 搜尋框 placeholder 會隨 sidebar tab 切換成對應文案。
 
-## 2026.03.25 - Chalkboard 互動畫布與文字工具
+---
+
+## 📌 2026.03.25 - Chalkboard 與文字工具、知識庫視覺進化、視窗持久化與硬體感知強固
 
 ### 黑板畫布
 - 中央 `Chalkboard` 改為真正可畫的 canvas，不再只是靜態歡迎區塊。
@@ -336,8 +340,6 @@
 - AI Provider 設定視窗新增 `Vision 多模態模型` 欄位，可由使用者明確指定圖片理解模型。
 - 當本輪有附圖時，會忽略先前附圖回合的歷史描述，避免第二張圖被上一張圖的內容污染。
 
-## 📌 2026.03.25 — 知識庫視覺進化、視窗持久化與硬體感知強固
-
 ### exps 知識庫視覺進化
 - **視覺微調**：將 exps 面板重塑為「知識庫」風格。卡片密度更高，摘要預設限制顯示 3 行，滑鼠懸停 (Hover) 時自動展開完整內容。
 - **匯出功能**：新增「⬇ 匯出」按鈕，支援將所有累積的經驗一次匯出為單一 Markdown 文件，方便備份與知識共享。
@@ -358,6 +360,8 @@
 ### 封裝環境的指令與體驗修正 (Tauri EXE)
 - **硬體偵測的引號跳脫**：修正 `hardware-info.js` 中傳遞給 PowerShell 執行指令時的雙引號干擾問題（改以單引號封裝 `DriveType=3`），解決打包後因指令解析錯誤導致磁碟與 GPU 狀態監控全盤失效的問題。
 - **原生匯出圖片 API**：為了解決 Tauri EXE 容器內無法透過 `data:image` 超連結觸發原生瀏覽器下載的問題，於後端新增 `/api/chalkboard/export-file` 端點。此端點利用 PowerShell 的 `SaveFileDialog` 呼叫原生 Windows「另存新檔」視窗，確保黑板截圖能穩定儲存為 PNG。
+
+---
 
 ## 📌 2026.03.26 — 國際化、黑板優化與 AI 語系感知
 
@@ -382,7 +386,7 @@
 
 ---
 
-## 2026.03.26 - winget 商店推薦、格式規格與雙向 SOP 補強
+## 📌 2026.03.27 - winget 商店推薦、格式規格與雙向 SOP 補強
 
 ### winget 商店推薦與 SOP 生成
 - 新增 `skills/winget-store.md`，讓 AI 在現有 SOP 不足時可先查詢 winget 商店候選軟體，再回推薦名稱。
@@ -410,8 +414,6 @@
 - `skills/*.md` 第一行固定為 `# AI PC Agent Skill File v1`
 - `plugins/*.js` 第一行固定為 `// AI PC Agent Plugin File v1`
 
-## 2026.03.26 - 多來源軟體推薦能力擴充
-
 ### Microsoft Store / UWP 技能
 - 新增 `skills/microsoft-store.md`，讓 AI 能在使用者明確偏好商店版 App 時，改走 `msstore` 來源搜尋候選軟體。
 - `/api/chat` 現在可直接列出 Microsoft Store 候選軟體，並在需要時自動產生對應 SOP。
@@ -426,7 +428,16 @@
 - `sop-parser.js` 新增英文欄位相容，現在 `Category`、`Risk Level`、`Permissions`、`Network`、`Expected Result` 也能正確解析。
 - LLM prompt 現在除了 `winget` 候選之外，也會在需要時注入 Microsoft Store 與 GitHub Releases 候選資訊，並支援新的 `CREATE_MSSTORE_SOP` 與 `CREATE_GITHUB_RELEASE_SOP` action。
 
-## 📌 2026.03.26 — 雙向 SOP、卸載驗證與 Tauri 啟動修正
+### 軟體發現技能
+- 新增 `skills/microsoft-store.md`，讓 AI 能在使用者明確偏好商店版 App 時，改走 `msstore` 來源搜尋候選軟體，並透過 `winget --source msstore` 產生對應 SOP。
+- 新增 `skills/github-releases.md`，讓 AI 可搜尋 GitHub repository 與 Windows release assets，並在適當時產生保守的「下載型 SOP」。
+- `/api/chat` 現在支援 `CREATE_MSSTORE_SOP` 與 `CREATE_GITHUB_RELEASE_SOP`，搭配既有的 `CREATE_WINGET_SOP` 流程。
+
+### 英文內容標準化
+- 將內建 `sops/*.md` 內容改為英文，同時保留必要的標題 `# AI PC Agent SOP File v1`。
+- 將 `skills/*.md` 與 `plugins/*.js` 的標題與核心描述改為英文，為未來國際化做準備。
+- 標準化經驗庫 markdown 生成為英文導向內容，保留標題格式 `# AI PC Agent Experience Log - yyyymmdd`。
+- 重寫 `sop-parser.js` 註解為英文，同時保留對舊版中文 SOP 欄位的雙語相容性。
 
 ### 雙向 SOP 與動作感知卡片
 - 安裝類 SOP 現在正式支援 `install / uninstall` 雙向動作。
@@ -447,24 +458,6 @@
 - 提權 PowerShell 在 UAC 同意後，改用較低干擾的 minimized 視窗執行。
 - 深色模式下的下拉選單與 `全部 SOP` 篩選器，補上明確的深底淺字樣式，避免選單文字難以辨識。
 
-## 2026.03.26 - 多來源軟體發現與英文檔案規格
-
-### 軟體發現技能
-- 新增 `skills/microsoft-store.md`，讓 AI 能在使用者明確偏好商店版 App 時，改走 `msstore` 來源搜尋候選軟體，並透過 `winget --source msstore` 產生對應 SOP。
-- 新增 `skills/github-releases.md`，讓 AI 可搜尋 GitHub repository 與 Windows release assets，並在適當時產生保守的「下載型 SOP」。
-- `/api/chat` 現在支援 `CREATE_MSSTORE_SOP` 與 `CREATE_GITHUB_RELEASE_SOP`，搭配既有的 `CREATE_WINGET_SOP` 流程。
-
-### 英文內容標準化
-- 將內建 `sops/*.md` 內容改為英文，同時保留必要的標題 `# AI PC Agent SOP File v1`。
-- 將 `skills/*.md` 與 `plugins/*.js` 的標題與核心描述改為英文，為未來國際化做準備。
-- 標準化經驗庫 markdown 生成為英文導向內容，保留標題格式 `# AI PC Agent Experience Log - yyyymmdd`。
-- 重寫 `sop-parser.js` 註解為英文，同時保留對舊版中文 SOP 欄位的雙語相容性。
-
----
-> 📝 今天的進化讓 Agent 從「聽令行事」升級為「具備多語雙向心智、能自主跨平台查資料並自編手冊」的資深管家。
-
-## 📌 2026.03.26 — 黑板工具 i18n 與座標系統修復
-
 ### 黑板工具完整國際化
 - 為所有黑板工具按鈕添加 i18n 支援：粉筆顏色、筆刷大小、形狀工具、編輯操作
 - 文字工具 modal 完整翻譯：標題、標籤、佔位符、幫助文本、按鈕
@@ -482,8 +475,9 @@
 - 中文字檢測使用正則表達式 `/[\u4e00-\u9fff]/` 來識別中文字符
 - 解決中文字落稿時的偏移現象
 
+---
 
-## 📌 2026.03.27 — 深度國際化與檔案選單擴充
+## 📌 2026.03.29 - I18N 全面修正
 
 ### 全面國際化 (I18N) 補齊
 - **UI 與狀態文字多語系化**：將「思考中」、「正在載入模型清單」、以及各 AI Provider 的說明與模型指引，全面加入 `en-US` / `zh-TW` 動態判定。

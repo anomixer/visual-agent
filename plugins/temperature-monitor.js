@@ -22,7 +22,7 @@ module.exports = async function(health) {
     void cpuTempCmd;
 
     const getGpuInfo = new Promise((resolve) => {
-        exec(gpuInfoCmd, (err, stdout) => {
+        exec(gpuInfoCmd, { timeout: 8000 }, (err, stdout) => {
             if (!err && stdout) {
                 const firstLine = stdout.trim().split(/\r?\n/)[0];
                 const parts = firstLine.split(',').map(s => s.trim());
@@ -54,7 +54,12 @@ module.exports = async function(health) {
                         powerDrawW: Number(powerDrawRaw) || 0,
                         powerLimitW: Number(powerLimitRaw) || 0,
                     };
+                    // console.log('[TemperatureMonitor] NVIDIA GPU data collected successfully');
+                } else {
+                    // console.log('[TemperatureMonitor] nvidia-smi output format unexpected');
                 }
+            } else {
+                console.log('[TemperatureMonitor] nvidia-smi not available or failed:', err?.message || 'Command not found');
             }
             resolve();
         });

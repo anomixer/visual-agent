@@ -266,7 +266,7 @@ aipc-agent/
 ## 近期更新
 
 
-### 2026.03.27
+### 2026.03.29
 
 - **深度國際化補完**：
   - 各大雲端與地端 AI Provider 的使用說明、推薦模型範例已完整支援中英切換。
@@ -365,6 +365,6 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.03.26`。
+- 目前套件版本：`2026.03.29`。
 
 <!-- Test edit by AI -->

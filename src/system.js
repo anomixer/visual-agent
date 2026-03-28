@@ -45,7 +45,7 @@ async function getSystemHealth() {
                     }
                 } catch (e) {
                     // 即使單一插件失敗，也不要讓整個監控崩潰
-                    console.error(`[System Monitor] 插件 ${file} 執行失敗:`, e.message);
+                    console.error(`[System Monitor] Plugin ${file} execution failed:`, e.message);
                 }
             }
         }

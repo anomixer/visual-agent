@@ -408,6 +408,7 @@ ol {
   border-radius: 6px;
   color: var(--text-secondary);
   background: transparent;
+  font-size: 11px;
   transition: background var(--transition), color var(--transition);
 }
 

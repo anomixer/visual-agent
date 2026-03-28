@@ -193,7 +193,7 @@ class SOPExecutor extends EventEmitter {
             this.emit('log', {
                 level: 'info',
                 phase: 'install',
-                message: '此任務需要系統管理員權限，正在觸發 UAC 視窗...',
+                message: 'This task requires administrator privileges, triggering UAC window...',
             });
 
             const child = spawn('powershell.exe', [
@@ -276,7 +276,7 @@ class SOPExecutor extends EventEmitter {
             this.emit('log', {
                 level: 'info',
                 phase: phaseName,
-                message: `執行指令: ${cmd.trim().substring(0, 120)}...`,
+                message: `Executing command: ${cmd.trim().substring(0, 120)}...`,
             });
 
             try {
@@ -299,7 +299,7 @@ class SOPExecutor extends EventEmitter {
                     this.emit('log', {
                         level: 'error',
                         phase: phaseName,
-                        message: '驗證腳本回傳 false',
+                        message: 'Verification script returned false',
                         detail: errorMsg,
                     });
                     return { success: false, outputs, error: errorMsg };
@@ -308,7 +308,7 @@ class SOPExecutor extends EventEmitter {
                 this.emit('log', {
                     level: 'success',
                     phase: phaseName,
-                    message: `指令執行成功`,
+                    message: `Command executed successfully`,
                     detail: result.stdout.substring(0, 200),
                 });
             } catch (err) {
@@ -316,7 +316,7 @@ class SOPExecutor extends EventEmitter {
                 this.emit('log', {
                     level: 'error',
                     phase: phaseName,
-                    message: `指令執行異常: ${err.message}`,
+                    message: `Command execution error: ${err.message}`,
                 });
                 return { success: false, outputs, error: err.message };
             }
@@ -326,7 +326,7 @@ class SOPExecutor extends EventEmitter {
     }
 
     /**
-     * Check 階段允許 stdout 夾帶提示文字，只要有獨立一行 true 就視為已完成
+     * Check phase allows stdout to contain hint text, any standalone line 'true' is considered complete
      * @param {string} stdout
      * @returns {boolean}
      */
@@ -584,14 +584,14 @@ class SOPExecutor extends EventEmitter {
                 this.emit('log', {
                     level: 'success',
                     phase: 'verify',
-                    message: '驗證通過！任務已成功完成。',
+                    message: 'Verification passed! Task completed successfully.',
                 });
             } else {
                 result.status = 'failed';
                 this.emit('log', {
                     level: 'error',
                     phase: 'verify',
-                    message: '驗證失敗，安裝可能不完整。',
+                    message: 'Verification failed, installation may be incomplete.',
                 });
             }
 
@@ -611,14 +611,14 @@ class SOPExecutor extends EventEmitter {
                 this.emit('log', {
                     level: 'success',
                     phase: 'verify',
-                    message: '解除安裝驗證通過，目標已成功移除。',
+                    message: 'Uninstall verification passed, target successfully removed.',
                 });
             } else {
                 result.status = 'failed';
                 this.emit('log', {
                     level: 'error',
                     phase: 'verify',
-                    message: '解除安裝後檢查仍顯示目標存在。',
+                    message: 'Post-uninstall check still shows target exists.',
                 });
             }
 
