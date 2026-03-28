@@ -1,4 +1,4 @@
-# AI PC Agent â€” å¯¦ä½œéœ€æ±‚è¦æ ¼æ›¸ (2026.03.27 Updated)
+# AI PC Agent â€” å¯¦ä½œéœ€æ±‚è¦æ ¼æ›¸ (2026.03.29 Updated)
 
 > æœ¬åœ°å„ªå…ˆã€ç„¡å‘½ä»¤åˆ—ã€å…·å‚™æ„ŸçŸ¥èƒ½åŠ›çš„ Windows ç³»çµ±ç®¡å®¶
 
@@ -291,3 +291,8 @@ SOPs å­˜æ”¾ä½ç½®ï¼š
 
 ### é ‚éƒ¨èœå–®é€²åŒ–
 - **File Menu å¯¦ä½œ**ï¼šåœ¨æ¨™é¡Œåˆ— `æª”æ¡ˆ` å±•é–‹æ”¯æ´ absolute æ’ç‰ˆçš„ä¸‹æ‹‰é¸å–®ï¼ŒåŒ…å« `åŒ¯å…¥ä»»å‹™æ¸…å–®`ã€`åŒ¯å‡ºä»»å‹™æ¸…å–®`ã€`Refreshç•«é¢`ã€`Exit`ï¼Œå®Œæ•´å–ä»£èˆŠæœ‰çš„æ•£è½æŒ‰éˆ•ã€‚
+
+## 6.13 2026.03.29 Chalkboard Resize ¸¨½Z®Ø®Õ¥¿
+
+- **Resize Ä²µo¸É¥ş**¡Gsidebar¡Bchat Äæ¡Blog panel ¤T­Ó resizer ªº setSize callback¡A²{¦b§¡¦b chalkboard ¬°§@¥Î¤¤¤À­¶®É©I¥s `resizeChalkboardCanvas()`¡A½T«O®e¾¹¤Ø¤o§ïÅÜ®É canvas ¯à¥ß§Y­«ºâ¡C
+- **pendingTextRect ¤ñ¨Ò¬M®g**¡G`resizeChalkboardCanvas()` ¦b®M¥Î·s¤Ø¤o«e¥ı°O¿ıÂÂ `cssWidth / cssHeight`¡A­Y resize «á¤´¦³¥¼¸¨½Zªº¤å¦r®Ø¡A·|«ö `·s¤Ø¤o / ÂÂ¤Ø¤o` ¤ñ¨Ò¦P¨BÁY©ñ `pendingTextRect` ªº `left / top / width / height`¡A¦A©I¥s `syncPendingTextBox()`¡C¦¹¾÷¨î½T«O©ì©Ô¥ô¦ó­±ªOÃä®Ø®É¡A¸¨½Z®Ø»P 8 ÂI±±¨î®Ø©l²×¹ï»ô canvas ¤º®e¡A¤£¦A°¾²¾¡C

@@ -1234,6 +1234,10 @@ function resizeChalkboardCanvas() {
         snapshotCtx.drawImage(chalkboardCanvas, 0, 0);
     }
 
+    // 記住舊的 CSS 尺寸，用於 pendingTextRect 比例映射
+    const prevCssWidth = chalkboardState.cssWidth || cssWidth;
+    const prevCssHeight = chalkboardState.cssHeight || cssHeight;
+
     chalkboardCanvas.width = nextWidth;
     chalkboardCanvas.height = nextHeight;
     chalkboardState.cssWidth = cssWidth;
@@ -1248,6 +1252,18 @@ function resizeChalkboardCanvas() {
     } else if (snapshot.width && snapshot.height) {
         chalkboardState.ctx.drawImage(snapshot, 0, 0, cssWidth, cssHeight);
         if (chalkboardState.pendingText && chalkboardState.pendingTextRect) {
+            // Resize 後按比例重新映射落稿框座標，確保與內容對齊
+            if (prevCssWidth > 0 && prevCssHeight > 0) {
+                const scaleX = cssWidth / prevCssWidth;
+                const scaleY = cssHeight / prevCssHeight;
+                const r = chalkboardState.pendingTextRect;
+                chalkboardState.pendingTextRect = {
+                    left:   r.left   * scaleX,
+                    top:    r.top    * scaleY,
+                    width:  r.width  * scaleX,
+                    height: r.height * scaleY,
+                };
+            }
             chalkboardState.pendingTextSnapshot = createCanvasSnapshot();
             syncPendingTextBox();
             return;
@@ -4045,7 +4061,7 @@ function setupResizers() {
     setupHorizontalResizer(
         'sidebarResizer',
         () => sidebar.offsetWidth,
-        (w) => { sidebar.style.width = w + 'px'; saveLayout(); },
+        (w) => { sidebar.style.width = w + 'px'; saveLayout(); if (activeTab === 'chalkboard') resizeChalkboardCanvas(); },
         120, 500
     );
 
@@ -4058,7 +4074,7 @@ function setupResizers() {
     setupHorizontalResizer(
         'chatResizer',
         () => chatCol.offsetWidth,
-        (w) => { chatCol.style.width = w + 'px'; saveLayout(); },
+        (w) => { chatCol.style.width = w + 'px'; saveLayout(); if (activeTab === 'chalkboard') resizeChalkboardCanvas(); },
         220, () => getChatMaxWidth(),
         true // inverted (drag left = wider)
     );
@@ -4074,7 +4090,7 @@ function setupResizers() {
     setupVerticalResizer(
         logResizer,
         () => logPanel.offsetHeight,
-        (h) => { logPanel.style.minHeight = h + 'px'; logPanel.style.maxHeight = h + 'px'; saveLayout(); },
+        (h) => { logPanel.style.minHeight = h + 'px'; logPanel.style.maxHeight = h + 'px'; saveLayout(); if (activeTab === 'chalkboard') resizeChalkboardCanvas(); },
         60, 400,
         true // dragging up = taller
     );

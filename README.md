@@ -268,6 +268,10 @@ aipc-agent/
 
 ### 2026.03.29
 
+- **Chalkboard Resize 落稿框校正**：
+  - 拖拉 log 窗、sidebar 或 chat 欄縮放後，文字落稿框與 8 點控制框現在會同步按比例重新映射，不再偏移。
+  - 三個 panel resizer 的 setSize callback 均補上 `resizeChalkboardCanvas()` 觸發。
+  - `resizeChalkboardCanvas()` 在 resize 後對 `pendingTextRect` 按新舊尺寸比例縮放，確保落稿位置始終與 canvas 內容對齊。
 - **深度國際化補完**：
   - 各大雲端與地端 AI Provider 的使用說明、推薦模型範例已完整支援中英切換。
   - 模型測試工具 (Test Model) 按鈕狀態、警示與日誌成功實作雙語化。

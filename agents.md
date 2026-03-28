@@ -487,3 +487,20 @@
 ### æª”æ¡ˆé¸å–® (File Menu) é‡æ§‹
 - **ä¸‹æ‹‰å¼é¸å–® (Dropdown) å¯¦ä½œ**ï¼šå°‡åŸå…ˆç´”æ–‡å­—çš„ã€Œæª”æ¡ˆã€é€²åŒ–ç‚ºå…·å‚™è±å¯Œäº’å‹•çš„å…¨åŠŸèƒ½é¸å–®ã€‚
 - **æ ¸å¿ƒåŠŸèƒ½æ”¶ç·¨**ï¼šæ•´åˆã€ŒåŒ¯å…¥ä»»å‹™æ¸…å–®ã€ã€ã€ŒåŒ¯å‡ºä»»å‹™æ¸…å–®ã€ã€ã€ŒRefresh ç•«é¢ã€èˆ‡ã€ŒExitã€ï¼Œå…¼é¡§ç¾è§€èˆ‡é›™èªé¡¯ç¤ºã€‚
+
+---
+
+## ?? 2026.03.29 ¡X Chalkboard Resize ¸¨½Z®Ø®y¼Ğ®Õ¥¿­×´_
+
+### ?? Bug ­×´_¡G©ì©Ô­±ªO«á¤å¦r¸¨½Z®Ø»P 8 ÂI±±¨î®Ø¦ì¸m°¾²¾
+
+**°İÃD´y­z**
+¨Ï¥Î¤å¦r¤u¨ã¡]T¡^²£¥Í¸¨½Z®Ø«á¡A­Y©ì©Ô log µ¡©¹¤W¡]©Î sidebar¡Bchat Äæ¤ô¥­©ì©Ô¡^¡AChalkboard ®e¾¹°ª«×¡]©Î¼e«×¡^ÁY¤p¡A¸¨½Z®ØªºµøÄ±¦ì¸m»P 8 ­Ó±±¨îÂI·|»P canvas ¤º®e¹ï¤£»ô¡C
+
+**®Ú¦]¡]¨â¼h°İÃDÅ|¥[¡^**
+1. **Panel resizer ¥¼³qª¾ canvas ­«ºâ**¡G¤T­Ó resizer ªº setSize callback ¥u§ï CSS¡A¨S¦³©I¥s `resizeChalkboardCanvas()`¡Acanvas §¹¥ş¤£ª¾¹D®e¾¹¤j¤p¤w§ïÅÜ¡C
+2. **resize «á¥¼«ö¤ñ¨Ò­«·s¬M®g pendingTextRect**¡G§Y¨ÏÄ²µo resize¡AÂÂÅŞ¿è¥Î­ì©l®y¼Ğ¡]°ò©óÂÂ CSS ¤Ø¤o¡^ª½±µ©I¥s `syncPendingTextBox()`¡Acanvas ÁY¤F¦ı®y¼Ğ¨S¸òµÛÁY¡C
+
+**­×´_¡]`public/app.js`¡^**
+- ¤T­Ó resizer¡]sidebar¡Bchat¡BlogPanel¡^ªº setSize callback ¥[¤J¡G`if (activeTab === 'chalkboard') resizeChalkboardCanvas()`¡C
+- `resizeChalkboardCanvas()` ¦b§ó·s cssWidth/cssHeight «e¥ı°O¿ıÂÂ­È¡Aresize «á­Y¦³ `pendingTextRect`¡A«ö¤ñ¨Ò­«·s¬M®g¥|­ÓÄæ¦ì¡]scaleX = ·s¼e/ÂÂ¼e¡AscaleY = ·s°ª/ÂÂ°ª¡^¡C
