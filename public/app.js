@@ -261,6 +261,7 @@ const I18N = {
             test: '測試模型',
             textToolTitle: '文字工具',
             save: '儲存並刷新',
+            updated: 'AI 引擎設定已更新，正在重新啟動服務...',
         },
         llm: {
             modelSwitched: '模型已切換至: {modelName}',
@@ -304,6 +305,9 @@ const I18N = {
             },
         },
         chalkboard: {
+            exportSuccess: '黑板圖片已匯出：{fileName}',
+            exportCancelled: '已取消匯出黑板圖片',
+            exportFallback: '原生匯出圖片失敗，已改用瀏覽器下載：{error}',
             tools: {
                 eraser: '局部板擦',
                 chalkWhite: '白粉筆',
@@ -328,10 +332,24 @@ const I18N = {
                 save: '存成圖片',
             },
         },
+        ollama: {
+            notDetected: '未偵測到 Ollama，自動加入安裝任務',
+            installing: '未偵測到本地 AI 引擎（Ollama）。系統正自動為您安裝，請在出現提示時允許權限。',
+            ready: 'Ollama 已就緒，自動加入模型下載任務',
+            downloading: 'Ollama 已就緒，正在自動為您下載 qwen3.5 語言模型，請稍候...',
+        },
         status: {
             llmReady: '🟢 AI 就緒',
             modelNotReady: '🟡 模型未就緒',
             engineNotReady: '🔴 AI 未就緒',
+        },
+        tasks: {
+            exportSuccess: '任務清單已匯出：{fileName}',
+            exportSuccessChat: '任務清單已匯出成功。',
+            exportCancelled: '已取消匯出任務清單',
+            exportFallback: '原生匯出失敗，已改用瀏覽器下載：{error}',
+            importSuccess: '任務清單已匯入',
+            importFailed: '匯入失敗：JSON 格式錯誤',
         },
         buttons: {
             collapse: '收起 ▼',
@@ -341,6 +359,7 @@ const I18N = {
         task: {
             general: '一般',
             unnamedItem: '未命名項目',
+            autoExecute: '自動執行：{title}',
             addActionTask: '加入{action}清單',
             runActionNow: '立即{action}',
             installCompleted: '{title} 安裝 / 執行完成',
@@ -508,6 +527,7 @@ const I18N = {
             test: 'Test Model',
             textToolTitle: 'Text Tool',
             save: 'Save & Refresh',
+            updated: 'AI engine settings updated, restarting services...',
         },
         llm: {
             modelSwitched: 'Model switched to: {modelName}',
@@ -551,6 +571,9 @@ const I18N = {
             },
         },
         chalkboard: {
+            exportSuccess: 'Chalkboard image exported: {fileName}',
+            exportCancelled: 'Chalkboard export cancelled',
+            exportFallback: 'Native export failed, fallback to browser download: {error}',
             tools: {
                 eraser: 'Eraser',
                 chalkWhite: 'White Chalk',
@@ -575,10 +598,24 @@ const I18N = {
                 save: 'Save Image',
             },
         },
+        ollama: {
+            notDetected: 'Ollama not detected, automatically adding installation task',
+            installing: 'Local AI engine (Ollama) not detected. System is automatically installing it, please allow permissions when prompted.',
+            ready: 'Ollama is ready, automatically adding model download task',
+            downloading: 'Ollama is ready, automatically downloading qwen3.5 language model, please wait...',
+        },
         status: {
             llmReady: '🟢 AI Ready',
             modelNotReady: '🟡 Model Not Ready',
             engineNotReady: '🔴 AI Not Ready',
+        },
+        tasks: {
+            exportSuccess: 'Task list exported: {fileName}',
+            exportSuccessChat: 'Task list exported successfully.',
+            exportCancelled: 'Task list export cancelled',
+            exportFallback: 'Native export failed, fallback to browser download: {error}',
+            importSuccess: 'Task list imported',
+            importFailed: 'Import failed: JSON format error',
         },
         buttons: {
             collapse: 'Collapse ▼',
@@ -588,6 +625,7 @@ const I18N = {
         task: {
             general: 'General',
             unnamedItem: 'Untitled Item',
+            autoExecute: 'Auto-executing: {title}',
             addActionTask: 'Add {action} task',
             runActionNow: '{action} now',
             installCompleted: '{title} installed / executed successfully',
@@ -1657,9 +1695,9 @@ function saveChalkboardImage() {
     const base64Image = chalkboardCanvas.toDataURL('image/png');
     api('/api/chalkboard/export-file', { method: 'POST', body: { imageBase64: base64Image } }).then((data) => {
         if (data.success) {
-            addUILog(`✅ 黑板圖片已匯出：${data.fileName || data.filePath}`, 'success');
+            addUILog('✅ ' + t('chalkboard.exportSuccess', { fileName: data.fileName || data.filePath }), 'success');
         } else if (data.cancelled) {
-            addUILog('ℹ️ 已取消匯出黑板圖片', 'info');
+            addUILog('ℹ️ ' + t('chalkboard.exportCancelled'), 'info');
         } else {
             // fallback: 若原生另存失敗，仍嘗試瀏覽器下載
             const link = document.createElement('a');
@@ -1667,7 +1705,7 @@ function saveChalkboardImage() {
             link.href = base64Image;
             link.download = `chalkboard-${timestamp}.png`;
             link.click();
-            addUILog(`⚠️ 原生匯出圖片失敗，已改用瀏覽器下載：${data.error || 'Unknown error'}`, 'warn');
+            addUILog('⚠️ ' + t('chalkboard.exportFallback', { error: data.error || 'Unknown error' }), 'warn');
         }
     });
 }
@@ -2521,7 +2559,7 @@ async function bootstrapOllama() {
     // 檢查是否已經在清單中
     let task = todoList.find(t => t.skillId === 'rec_install_ollama');
     if (!task && !todoList.some(t => t.skillId === 'rec_install_ollama')) {
-        addUILog('🔴 未偵測到 Ollama，自動加入安裝任務', 'warn');
+        addUILog('🔴 ' + t('ollama.notDetected'), 'warn');
         const res = await api('/api/todo', {
             method: 'POST',
             body: { title: recOllama.title, description: recOllama.description, category: recOllama.category, skillId: recOllama.id }
@@ -2536,8 +2574,8 @@ async function bootstrapOllama() {
     if (task && task.status === 'pending') {
         const isRunning = todoList.some(t => t.status === 'running');
         if (!isRunning) {
-            appendChatBubble('ai', '🔴 未偵測到本地 AI 引擎（Ollama）。系統正自動為您安裝，請在出現提示時允許權限。');
-            addUILog(`▶ 自動執行：${task.title}`, 'info');
+            appendChatBubble('ai', '🔴 ' + t('ollama.installing'));
+            addUILog('▶ ' + t('task.autoExecute', { title: task.title }), 'info');
             executeTask(task.id);
         }
     }
@@ -2553,7 +2591,7 @@ async function bootstrapModel() {
 
     let task = todoList.find(t => t.skillId === 'rec_pull_llm_model');
     if (!task && !todoList.some(t => t.skillId === 'rec_pull_llm_model')) {
-        addUILog('🟡 Ollama 已就緒，自動加入模型下載任務', 'info');
+        addUILog('🟡 ' + t('ollama.ready'), 'info');
         const res = await api('/api/todo', {
             method: 'POST',
             body: { title: recModel.title, description: recModel.description, category: recModel.category, skillId: recModel.id }
@@ -2568,8 +2606,8 @@ async function bootstrapModel() {
     if (task && task.status === 'pending') {
         const isRunning = todoList.some(t => t.status === 'running');
         if (!isRunning) {
-            appendChatBubble('ai', '🟡 Ollama 已就緒，正在自動為您下載 qwen3.5 語言模型，請稍候...');
-            addUILog(`▶ 自動執行：${task.title}`, 'info');
+            appendChatBubble('ai', '🟡 ' + t('ollama.downloading'));
+            addUILog('▶ ' + t('task.autoExecute', { title: task.title }), 'info');
             executeTask(task.id);
         }
     }
@@ -3976,8 +4014,8 @@ function cycleTheme() {
 function exportTasks() {
     api('/api/todo/export-file', { method: 'POST' }).then((data) => {
         if (data.success) {
-            addUILog(`✅ 任務清單已匯出：${data.fileName || data.filePath}`, 'success');
-            appendChatBubble('ai', '✅ 任務清單已匯出成功。');
+            addUILog('✅ ' + t('tasks.exportSuccess', { fileName: data.fileName || data.filePath }), 'success');
+            appendChatBubble('ai', '✅ ' + t('tasks.exportSuccessChat'));
             return;
         }
 
@@ -3990,12 +4028,10 @@ function exportTasks() {
         const json = JSON.stringify(todoList, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
         a.download = `aipc-tasks-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        addUILog(`⚠️ 原生匯出失敗，已改用瀏覽器下載：${data.error || 'Unknown error'}`, 'warn');
+            addUILog(`⚠️ ${t('tasks.exportFallback', { error: data.error || 'Unknown error' })}`, 'warn');
     });
 }
 
@@ -4005,8 +4041,8 @@ function importTasks(file) {
         try {
             const tasks = JSON.parse(e.target.result);
             const data = await api('/api/import', { method: 'POST', body: { tasks } });
-            if (data.success) { todoList = data.todoList; renderTodoList(); addUILog('✅ 任務清單已匯入', 'success'); }
-        } catch { addUILog('❌ 匯入失敗：JSON 格式錯誤', 'error'); }
+            if (data.success) { todoList = data.todoList; renderTodoList(); addUILog('✅ ' + t('tasks.importSuccess'), 'success'); }
+        } catch { addUILog('❌ ' + t('tasks.importFailed'), 'error'); }
     };
     reader.readAsText(file);
 }
@@ -4540,9 +4576,9 @@ async function saveProviderSettings() {
     const isVisionDropdown = (settingVisionModelSelect?.style.display === 'block');
     const visionModel = isVisionDropdown ? settingVisionModelSelect.value : settingVisionModelName.value.trim();
 
-    if (!baseUrl) return alert('請輸入 API Base URL');
+    if (!baseUrl) return alert(currentLocale === 'en-US' ? 'Please enter API Base URL' : '請輸入 API Base URL');
     if (authConfig.type === 'oauth_client_credentials' && (!authConfig.tokenUrl || !authConfig.clientId || !authConfig.clientSecret)) {
-        return alert('OAuth 模式請完整填入 Token URL、Client ID、Client Secret');
+        return alert(currentLocale === 'en-US' ? 'OAuth mode: Please complete Token URL, Client ID, Client Secret' : 'OAuth 模式請完整填入 Token URL、Client ID、Client Secret');
     }
 
     const data = await api('/api/llm/config', {
@@ -4552,7 +4588,7 @@ async function saveProviderSettings() {
 
     if (data.success) {
         providerSettingsOverlay.classList.remove('visible');
-        addUILog('🚀 AI 引擎設定已更新，正在重新啟動服務...', 'success');
+        addUILog('🚀 ' + t('settings.updated', { restarting: true }), 'success');
 
         // 立即更新 UI 上的模型名稱
         if (chatModelBadge && model) {
@@ -4575,10 +4611,10 @@ async function testProviderSettings() {
     const isDropdown = (settingModelSelect.style.display === 'block');
     const model = isDropdown ? settingModelSelect.value : settingModelName.value.trim();
 
-    if (!baseUrl) return alert('請輸入 API Base URL');
-    if (!model) return alert('請先輸入或選擇模型名稱');
+    if (!baseUrl) return alert(currentLocale === 'en-US' ? 'Please enter API Base URL' : '請輸入 API Base URL');
+    if (!model) return alert(currentLocale === 'en-US' ? 'Please enter or select model name' : '請先輸入或選擇模型名稱');
     if (authConfig.type === 'oauth_client_credentials' && (!authConfig.tokenUrl || !authConfig.clientId || !authConfig.clientSecret)) {
-        return alert('OAuth 模式請完整填入 Token URL、Client ID、Client Secret');
+        return alert(currentLocale === 'en-US' ? 'OAuth mode: Please complete Token URL, Client ID, Client Secret' : 'OAuth 模式請完整填入 Token URL、Client ID、Client Secret');
     }
 
     btnTestProviderSettings.disabled = true;
