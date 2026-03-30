@@ -199,9 +199,13 @@ Your rules:
 /**
  * 載入所有 Skill 定義並組合為 System Prompt
  */
-function buildFullSystemPrompt(locale = 'zh-TW') {
+function buildFullSystemPrompt(locale = 'zh-TW', extraContext = '') {
     const base = (locale === 'en-US') ? BASE_SYSTEM_PROMPT_EN : BASE_SYSTEM_PROMPT_ZH;
     let fullPrompt = base + '\n\n';
+
+    if (extraContext) {
+        fullPrompt += `${locale === 'en-US' ? '### Runtime Context' : '### 執行階段情境'}\n${String(extraContext).trim()}\n\n`;
+    }
 
     // 掃描 AppData 中的 skills 目錄
     const skillsDir = path.join(APP_DATA_DIR, 'skills');
@@ -693,6 +697,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
     const authConfig = options.authConfigOverride || currentAuthConfig;
     const meta = PROVIDER_ENDPOINTS[provider] || { type: 'openai' };
     const chalkboardAttachment = options.chalkboardAttachment || null;
+    const systemContext = options.systemContext || '';
     if (meta.type === 'anthropic') {
         const headers = {
             'Content-Type': 'application/json',
@@ -703,7 +708,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         const body = {
             model: modelName,
             max_tokens: 1024,
-            system: buildFullSystemPrompt(locale),
+            system: buildFullSystemPrompt(locale, systemContext),
             messages: [
                 ...history.map(m => ({
                     role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -744,12 +749,12 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
 
     const messages = meta.type === 'ollama'
         ? [
-            { role: 'system', content: buildFullSystemPrompt(locale) },
+            { role: 'system', content: buildFullSystemPrompt(locale, systemContext) },
             ...historyMessages.map(m => buildOllamaMessage(m.role, m.content)),
             buildOllamaMessage('user', userMessage, chalkboardAttachment),
         ]
         : [
-            { role: 'system', content: buildFullSystemPrompt(locale) },
+            { role: 'system', content: buildFullSystemPrompt(locale, systemContext) },
             ...historyMessages,
             { role: 'user', content: buildOpenAIMessageContent(userMessage, chalkboardAttachment) },
         ];

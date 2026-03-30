@@ -365,11 +365,44 @@
 
       <div class="chat-col">
         <div class="chat-history" id="chatHistory">
-          <div class="panel-titlebar">
-            <span class="panel-title">💬 AI 對話</span>
-            <span class="chat-model-badge" id="chatModelBadge" style="display:none; cursor:pointer;" title="切換模型">AI 模型</span>
+          <div class="panel-titlebar chat-panel-header">
+            <div class="chat-mode-tabs" id="chatModeTabs">
+              <button class="chat-mode-tab active" type="button" data-chat-mode="local">💬 本機 AI</button>
+              <button class="chat-mode-tab" type="button" data-chat-mode="remote">🌐 遠端 AI</button>
+            </div>
+            <div class="chat-panel-actions">
+              <span class="remote-session-status" id="remoteSessionStatus">未連線</span>
+              <span class="chat-model-badge" id="chatModelBadge" style="display:none; cursor:pointer;" title="切換模型">AI 模型</span>
+            </div>
           </div>
-          <div class="chat-messages" id="chatMessages"></div>
+          <div class="chat-pane active" id="localChatPane">
+            <div class="chat-messages" id="chatMessages"></div>
+          </div>
+          <div class="chat-pane" id="remoteChatPane">
+            <div class="remote-chat-toolbar">
+              <div class="remote-connect-row">
+                <input type="text" id="remoteHostInput" class="remote-input" placeholder="輸入對方 IP，例如 192.168.1.88">
+                <button class="btn-secondary remote-btn" id="btnRemoteConnect" type="button">連線</button>
+              </div>
+              <div class="remote-profile-row">
+                <input type="text" id="remoteAgentNameInput" class="remote-input" placeholder="AI 名稱">
+                <input type="text" id="remoteUserNameInput" class="remote-input" placeholder="使用者名稱">
+                <button class="btn-secondary remote-btn" id="btnSaveRemoteProfile" type="button">儲存名稱</button>
+              </div>
+              <div class="remote-session-row">
+                <select id="remoteSessionSelect" class="remote-input"></select>
+                <select id="remoteSendMode" class="remote-input remote-select">
+                  <option value="user">以我發送</option>
+                  <option value="local-ai">以本機 AI 發送</option>
+                </select>
+                <button class="btn-secondary remote-btn" id="btnShareModel" type="button">分享模型</button>
+                <button class="btn-secondary remote-btn" id="btnShareScreen" type="button">分享畫面</button>
+                <button class="btn-secondary remote-btn" id="btnDisconnectRemote" type="button">中斷</button>
+              </div>
+              <div class="remote-chat-hint" id="remoteChatHint">等待遠端連線。Port: 19168</div>
+            </div>
+            <div class="chat-messages remote-messages" id="remoteChatMessages"></div>
+          </div>
         </div>
 
         <div class="chat-input-area">
@@ -391,6 +424,7 @@
             </button>
             <span class="input-hint">Enter 送出 · Shift+Enter 換行</span>
           </div>
+          <div class="mention-menu" id="mentionMenu"></div>
           <div class="input-row">
             <textarea id="chatInput" rows="3" placeholder="告訴我你需要什麼... 例如「幫我移除 Copilot」" autocomplete="off"></textarea>
             <button class="btn-send" id="btnSend" title="送出">
@@ -580,6 +614,42 @@
         <div class="provider-actions">
           <button class="btn-secondary" id="btnCancelTextTool">取消</button>
           <button class="btn-primary" id="btnApplyTextTool">建立文字框</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="remoteRequestOverlay">
+    <div class="modal remote-request-modal">
+      <div class="modal-header">
+        <h3 id="remoteRequestTitle">遠端連線請求</h3>
+      </div>
+      <div class="modal-body">
+        <div class="provider-help-card">
+          <div class="provider-help-title" id="remoteRequestSummary">有另一台 AI PC Agent 想要與您通訊</div>
+          <div class="provider-help-text" id="remoteRequestDetails"></div>
+        </div>
+        <div class="provider-actions">
+          <button class="btn-secondary" id="btnRejectRemoteRequest">拒絕</button>
+          <button class="btn-primary" id="btnAcceptRemoteRequest">允許</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modelShareOverlay">
+    <div class="modal remote-request-modal">
+      <div class="modal-header">
+        <h3 id="modelShareTitle">分享模型請求</h3>
+      </div>
+      <div class="modal-body">
+        <div class="provider-help-card">
+          <div class="provider-help-title" id="modelShareSummary">對方想改用您本機的 AI API</div>
+          <div class="provider-help-text" id="modelShareDetails"></div>
+        </div>
+        <div class="provider-actions">
+          <button class="btn-secondary" id="btnRejectModelShare">拒絕</button>
+          <button class="btn-primary" id="btnAcceptModelShare">允許</button>
         </div>
       </div>
     </div>

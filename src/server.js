@@ -7,12 +7,14 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 const pkg = require('../package.json');
 const { loadAllSOPs } = require('./sop-parser');
 const { SOPExecutor } = require('./sop-executor');
 const llm = require('./llm');
 const { getSystemHealth } = require('./system');
+const { DEFAULT_REMOTE_PORT, RemoteAgentService, getLocalIPv4List } = require('./remote-agent');
 const app = express();
 const PORT = 3210;
 const APP_VERSION = pkg.version || 'dev';
@@ -39,14 +41,72 @@ if (!fs.existsSync(aipcDir)) {
 
 
 const TASKS_FILE = path.join(aipcDir, 'tasks.json');
+const REMOTE_PROFILE_FILE = path.join(aipcDir, 'remote-profile.json');
 const SOPS_DIR = path.join(aipcDir, 'sops');
 const SKILLS_DIR = path.join(aipcDir, 'skills');
 const PLUGINS_DIR = path.join(aipcDir, 'plugins');
 const EXPS_DIR = path.join(aipcDir, 'exps');
+let remoteStateTick = Date.now();
 if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
 if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
 if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
 if (!fs.existsSync(EXPS_DIR)) fs.mkdirSync(EXPS_DIR, { recursive: true });
+
+function buildDefaultRemoteProfile() {
+    const machineName = process.env.COMPUTERNAME || os.hostname() || 'AI-PC';
+    const userName = process.env.USERNAME || os.userInfo().username || 'User';
+    const ips = getLocalIPv4List();
+    return {
+        machineName,
+        userName,
+        agentName: machineName,
+        ip: ips[0] || '127.0.0.1',
+        locale: 'zh-TW',
+    };
+}
+
+function loadRemoteProfile() {
+    const fallback = buildDefaultRemoteProfile();
+    try {
+        if (!fs.existsSync(REMOTE_PROFILE_FILE)) {
+            fs.writeFileSync(REMOTE_PROFILE_FILE, JSON.stringify(fallback, null, 2), 'utf8');
+            return fallback;
+        }
+
+        const parsed = JSON.parse(fs.readFileSync(REMOTE_PROFILE_FILE, 'utf8'));
+        return {
+            ...fallback,
+            ...parsed,
+            ip: (parsed?.ip || fallback.ip || '').trim() || fallback.ip,
+        };
+    } catch {
+        return fallback;
+    }
+}
+
+function saveRemoteProfile(profile = {}) {
+    const merged = {
+        ...buildDefaultRemoteProfile(),
+        ...profile,
+    };
+    fs.writeFileSync(REMOTE_PROFILE_FILE, JSON.stringify(merged, null, 2), 'utf8');
+    return merged;
+}
+
+function getRemoteProfile() {
+    const stored = loadRemoteProfile();
+    const ips = getLocalIPv4List();
+    const ip = stored.ip && ips.includes(stored.ip) ? stored.ip : (ips[0] || stored.ip || '127.0.0.1');
+    return {
+        ...stored,
+        ip,
+        locale: stored.locale || 'zh-TW',
+    };
+}
+
+function touchRemoteState() {
+    remoteStateTick = Date.now();
+}
 /**
  * 同步內建的腳本與技能至 AppData
  */
@@ -113,11 +173,69 @@ function syncBundledAssets() {
 
 
 syncBundledAssets();
+const remoteAgent = new RemoteAgentService({
+    port: DEFAULT_REMOTE_PORT,
+    onStateChanged: () => touchRemoteState(),
+    onError: (error) => fileLog(`Remote Agent Error: ${error.message}`),
+    onMessage: async (session, message, payload) => {
+        try {
+            if (message.type !== 'chat_message') return;
+            if (message.target !== 'remote-ai') return;
+            const profile = getRemoteProfile();
+            const history = session.messages
+                .filter((item) => item.type === 'chat_message')
+                .slice(-6)
+                .map((item) => ({
+                    role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
+                    content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
+                }));
+            const aiReply = await llm.chatWithLLM(
+                message.text || '',
+                history,
+                {
+                    systemContext: [
+                        `Current AI agent name: ${profile.agentName}`,
+                        `Current machine name: ${profile.machineName}`,
+                        `Current Windows user name: ${profile.userName}`,
+                        `Current machine IP: ${profile.ip}`,
+                        `Remote peer machine: ${session.peer?.machineName || 'Unknown'}`,
+                        `Remote peer user: ${session.peer?.userName || 'Unknown'}`,
+                        `Remote peer IP: ${session.peer?.ip || session.host || 'Unknown'}`,
+                        `Current AI provider: ${llm.getCurrentProvider() || 'Unknown'}`,
+                        `Current AI model: ${llm.getCurrentModel() || 'Unknown'}`,
+                        `Model sharing status for this session: ${session.modelShare?.status || 'idle'}`,
+                        `The current requester is: ${message.senderType === 'ai' ? 'the remote AI agent' : 'the remote human user'} (${message.senderLabel || 'Unknown'}).`,
+                        `You are replying inside a remote support chat over TCP port ${DEFAULT_REMOTE_PORT}.`,
+                        'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
+                        'If asked what model you are using, answer with the exact current provider and model shown above.',
+                        'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
+                    ].join('\n'),
+                },
+                payload?.locale || session.peer?.locale || 'zh-TW'
+            );
+            remoteAgent.sendChatMessage(session.id, {
+                senderType: 'ai',
+                senderLabel: profile.agentName,
+                text: aiReply,
+                target: 'remote-user',
+            });
+        } catch (error) {
+            fileLog(`Remote AI reply failed: ${error.message}`);
+            try {
+                remoteAgent.sendSystemMessage(session.id, `Remote AI failed to reply: ${error.message}`);
+            } catch {
+                // ignore
+            }
+        }
+    }
+});
+remoteAgent.start();
 // ── In-memory state ─────────────────────────────────────────────────
 let todoList = [];
 let logs = [];
 let runningSOP = null;
 let chatHistory = []; // 儲存最近 6 則對話：[{role: 'user', content: '...'}, {role: 'assistant', content: '...'}]
+const localChatHistoryBySession = new Map();
 const sopStateCache = new Map();
 const SOP_STATE_TTL_MS = 30000;
 function buildChatHistoryForRequest(history, hasChalkboardAttachment) {
@@ -476,6 +594,95 @@ function buildTaskTitle(sop, action = 'install') {
     return `📦 ${sop.name}`;
 }
 
+function buildLocalAgentContext(sessionSummary = null) {
+    const profile = getRemoteProfile();
+    const sharedProvider = sessionSummary?.status === 'active' && sessionSummary?.modelShare?.status === 'active' && sessionSummary?.modelShare?.role === 'consumer'
+        ? (sessionSummary.modelShare.provider || sessionSummary.peer || null)
+        : null;
+    const lines = [
+        `Current AI agent name: ${profile.agentName}`,
+        `Current machine name: ${profile.machineName}`,
+        `Current Windows user name: ${profile.userName}`,
+        `Current machine IP: ${profile.ip}`,
+        `Current AI provider: ${llm.getCurrentProvider() || 'Unknown'}`,
+        `Current AI model: ${llm.getCurrentModel() || 'Unknown'}`,
+    ];
+
+    if (sessionSummary?.peer) {
+        lines.push(`Connected remote machine name: ${sessionSummary.peer.machineName || 'Unknown'}`);
+        lines.push(`Connected remote user name: ${sessionSummary.peer.userName || 'Unknown'}`);
+        lines.push(`Connected remote AI name: ${sessionSummary.peer.agentName || 'Unknown'}`);
+        lines.push(`Connected remote IP: ${sessionSummary.peer.ip || sessionSummary.host || 'Unknown'}`);
+        lines.push(`Remote model sharing status: ${sessionSummary.modelShare?.status || 'idle'}`);
+        lines.push(`Remote model sharing role: ${sessionSummary.modelShare?.role || 'none'}`);
+    }
+
+    if (sharedProvider) {
+        lines.push(`Shared model provider machine: ${sharedProvider.machineName || 'Unknown'}`);
+        lines.push(`Shared model provider AI: ${sharedProvider.agentName || 'Unknown'}`);
+        lines.push(`Shared model token expires at: ${sessionSummary.modelShare?.expiresAt || 'Unknown'}`);
+    }
+
+    return lines.join('\n');
+}
+
+function getRemoteSessionById(sessionId = '') {
+    return remoteAgent.getSession(sessionId) || null;
+}
+
+function getSharedModelSession(preferredSessionId = '') {
+    const sessions = remoteAgent.getState().sessions
+        .filter((item) => {
+            if (!(item.status === 'active' && item.modelShare?.status === 'active' && item.modelShare?.role === 'consumer')) {
+                return false;
+            }
+            const expiresAtMs = Date.parse(String(item.modelShare?.expiresAt || ''));
+            return Number.isNaN(expiresAtMs) || expiresAtMs <= 0 || Date.now() <= expiresAtMs;
+        })
+        .sort((a, b) => new Date(b.lastEventAt || 0).getTime() - new Date(a.lastEventAt || 0).getTime());
+    if (preferredSessionId) {
+        const preferred = sessions.find((item) => item.id === preferredSessionId);
+        if (preferred) return preferred;
+    }
+    return sessions[0] || null;
+}
+
+async function proxyChatToSharedRemoteModel({ session, message, history = [], systemContext = '', locale = 'zh-TW', chalkboardAttachment = null }) {
+    const peerHost = session?.peer?.ip || session?.host;
+    const proxyToken = session?.modelShare?.proxyToken || '';
+    if (!peerHost) {
+        throw new Error('Shared model session is missing peer IP.');
+    }
+    if (!proxyToken) {
+        throw new Error('Shared model session is missing authorization token.');
+    }
+
+    const response = await fetch(`http://${peerHost}:3210/api/remote/model-proxy/chat`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-AIPC-Model-Share-Token': proxyToken,
+        },
+        body: JSON.stringify({
+            sessionId: session.id,
+            message,
+            history,
+            locale,
+            systemContext,
+            chalkboard: chalkboardAttachment || null,
+            token: proxyToken,
+        }),
+        signal: AbortSignal.timeout(180000),
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Remote shared model failed (${response.status}): ${text.slice(0, 160)}`);
+    }
+
+    return response.json();
+}
+
 
 function hasLikelySopForMessage(message = '', sops = []) {
     const text = String(message || '').toLowerCase();
@@ -649,6 +856,306 @@ app.get('/api/meta', (req, res) => {
         name: pkg.name || 'aipc-agent',
         version: APP_VERSION,
     });
+});
+
+app.get('/api/remote/profile', (req, res) => {
+    const profile = getRemoteProfile();
+    res.json({
+        success: true,
+        profile,
+        localIps: getLocalIPv4List(),
+        port: DEFAULT_REMOTE_PORT,
+    });
+});
+
+app.post('/api/remote/profile', (req, res) => {
+    const current = getRemoteProfile();
+    const nextProfile = saveRemoteProfile({
+        ...current,
+        machineName: String(req.body?.machineName || current.machineName).trim() || current.machineName,
+        userName: String(req.body?.userName || current.userName).trim() || current.userName,
+        agentName: String(req.body?.agentName || current.agentName).trim() || current.agentName,
+        ip: String(req.body?.ip || current.ip).trim() || current.ip,
+        locale: String(req.body?.locale || current.locale || 'zh-TW'),
+    });
+    touchRemoteState();
+    res.json({ success: true, profile: nextProfile });
+});
+
+app.get('/api/remote/state', (req, res) => {
+    res.json({
+        success: true,
+        tick: remoteStateTick,
+        profile: getRemoteProfile(),
+        ...remoteAgent.getState(),
+    });
+});
+
+app.post('/api/remote/connect', async (req, res) => {
+    try {
+        const host = String(req.body?.host || '').trim();
+        if (!host) {
+            return res.status(400).json({ success: false, error: 'Missing host' });
+        }
+        const port = Number(req.body?.port) || DEFAULT_REMOTE_PORT;
+        const session = await remoteAgent.connect(host, getRemoteProfile(), port);
+        touchRemoteState();
+        res.json({ success: true, session });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/session/:sessionId/respond', (req, res) => {
+    try {
+        const session = remoteAgent.respondToSession(req.params.sessionId, !!req.body?.accept, getRemoteProfile());
+        touchRemoteState();
+        res.json({ success: true, session });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/session/:sessionId/message', async (req, res) => {
+    try {
+        const sessionId = req.params.sessionId;
+        const text = String(req.body?.text || '').trim();
+        const mode = String(req.body?.mode || 'user').trim();
+        const target = String(req.body?.target || 'remote-user').trim();
+        const locale = String(req.body?.locale || 'zh-TW');
+        if (!text) {
+            return res.status(400).json({ success: false, error: 'Missing text' });
+        }
+
+        let senderType = 'user';
+        let senderLabel = getRemoteProfile().userName;
+        let outboundText = text;
+        if (mode === 'local-ai') {
+            const profile = getRemoteProfile();
+            const remoteState = remoteAgent.getState();
+            const currentSession = remoteState.sessions.find((item) => item.id === sessionId);
+            const history = (currentSession?.messages || [])
+                .filter((item) => item.type === 'chat_message')
+                .slice(-6)
+                .map((item) => ({
+                    role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
+                    content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
+                }));
+            outboundText = await llm.chatWithLLM(
+                text,
+                history,
+                {
+                    systemContext: [
+                        buildLocalAgentContext(currentSession),
+                        'You are speaking as the local AI agent inside a peer-to-peer support chat.',
+                        'The current requester is the local human user on this machine.',
+                        'If asked what model you are using, answer with the exact current provider and model from the system context.',
+                        'Keep the answer concise and practical.',
+                    ].join('\n'),
+                },
+                locale
+            );
+            senderType = 'ai';
+            senderLabel = profile.agentName;
+        }
+
+        const message = remoteAgent.sendChatMessage(sessionId, {
+            senderType,
+            senderLabel,
+            text: outboundText,
+            target,
+        });
+        touchRemoteState();
+        res.json({ success: true, message });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/session/:sessionId/share-screen', (req, res) => {
+    try {
+        const imageDataUrl = String(req.body?.imageDataUrl || '').trim();
+        const caption = String(req.body?.caption || '').trim();
+        if (!imageDataUrl.startsWith('data:image/')) {
+            return res.status(400).json({ success: false, error: 'Invalid image data' });
+        }
+        const profile = getRemoteProfile();
+        const message = remoteAgent.sendScreenShare(req.params.sessionId, {
+            senderType: 'user',
+            senderLabel: profile.userName,
+            imageDataUrl,
+            caption,
+            target: 'remote-user',
+        });
+        touchRemoteState();
+        res.json({ success: true, message });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/session/:sessionId/model-share/request', (req, res) => {
+    try {
+        const profile = getRemoteProfile();
+        const session = remoteAgent.requestModelShare(req.params.sessionId, {
+            requestedBy: `${profile.userName} @ ${profile.machineName}`,
+            note: String(req.body?.note || '').trim(),
+        });
+        touchRemoteState();
+        res.json({ success: true, session });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/session/:sessionId/model-share/respond', (req, res) => {
+    try {
+        const profile = getRemoteProfile();
+        const session = remoteAgent.respondModelShare(req.params.sessionId, !!req.body?.accept, {
+            respondedBy: `${profile.userName} @ ${profile.machineName}`,
+        });
+        touchRemoteState();
+        res.json({ success: true, session });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/session/:sessionId/model-share/cancel', (req, res) => {
+    try {
+        const profile = getRemoteProfile();
+        const session = remoteAgent.cancelModelShare(req.params.sessionId, {
+            cancelledBy: `${profile.userName} @ ${profile.machineName}`,
+            reason: String(req.body?.reason || '').trim() || 'Model sharing stopped by local user.',
+        });
+        touchRemoteState();
+        res.json({ success: true, session });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/model-proxy/chat', async (req, res) => {
+    try {
+        const sessionId = String(req.body?.sessionId || '').trim();
+        const message = String(req.body?.message || '').trim();
+        const locale = String(req.body?.locale || 'zh-TW');
+        const history = Array.isArray(req.body?.history) ? req.body.history : [];
+        const systemContext = String(req.body?.systemContext || '').trim();
+        const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
+        const providedToken = String(req.headers['x-aipc-model-share-token'] || req.body?.token || '').trim();
+
+        if (!sessionId || !message) {
+            return res.status(400).json({ success: false, error: 'Missing sessionId or message' });
+        }
+
+        const session = getRemoteSessionById(sessionId);
+        if (!session || session.status !== 'active') {
+            return res.status(403).json({ success: false, error: 'Session is not active' });
+        }
+        if (session.modelShare?.status !== 'active' || session.modelShare?.role !== 'provider') {
+            return res.status(403).json({ success: false, error: 'Model share is not active' });
+        }
+        const expiresAtMs = Date.parse(String(session.modelShare?.expiresAt || ''));
+        if (!Number.isNaN(expiresAtMs) && expiresAtMs > 0 && Date.now() > expiresAtMs) {
+            return res.status(403).json({ success: false, error: 'Shared model token expired' });
+        }
+        const expectedToken = String(session.modelShare?.proxyToken || '');
+        const providedBuffer = Buffer.from(providedToken);
+        const expectedBuffer = Buffer.from(expectedToken);
+        if (!providedToken || !expectedToken || providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
+            return res.status(403).json({ success: false, error: 'Invalid shared model token' });
+        }
+
+        const chatOptions = {
+            systemContext: [
+                buildLocalAgentContext(session),
+                systemContext,
+                'You are answering through a remote shared-model request.',
+                'Be concise and practical.',
+            ].filter(Boolean).join('\n'),
+            chalkboardAttachment,
+        };
+        if (chalkboardAttachment) {
+            const preferredVisionModel = llm.getCurrentVisionModel();
+            if (preferredVisionModel) {
+                chatOptions.modelOverride = preferredVisionModel;
+            } else if (!llm.modelSupportsVision(llm.getCurrentModel())) {
+                const visionModel = await llm.getVisionCapableModel();
+                if (visionModel) chatOptions.modelOverride = visionModel;
+            }
+        }
+
+        const reply = await llm.chatWithLLM(
+            message,
+            history,
+            chatOptions,
+            locale
+        );
+
+        return res.json({
+            success: true,
+            reply,
+            provider: llm.getCurrentProvider(),
+            model: llm.getCurrentModel(),
+            machineName: getRemoteProfile().machineName,
+            agentName: getRemoteProfile().agentName,
+            sessionId,
+            expiresAt: session.modelShare?.expiresAt || '',
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/save-image-file', (req, res) => {
+    try {
+        const imageDataUrl = String(req.body?.imageDataUrl || '').trim();
+        if (!imageDataUrl.startsWith('data:image/')) {
+            return res.status(400).json({ success: false, error: 'Invalid image data' });
+        }
+
+        const defaultName = `remote-share-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+        const psScript = `
+        Add-Type -AssemblyName System.Windows.Forms
+        $dlg = New-Object System.Windows.Forms.SaveFileDialog
+        $dlg.Filter = 'PNG Images (*.png)|*.png|All Files (*.*)|*.*'
+        $dlg.FileName = '${defaultName}'
+        $dlg.Title = 'Save Shared Screen Image'
+        $dlg.InitialDirectory = [Environment]::GetFolderPath('MyPictures')
+        $res = $dlg.ShowDialog()
+        if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
+            Write-Output $dlg.FileName
+        }
+        `;
+        const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -Command "${psScript.replace(/\n/g, ';')}"`, {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            windowsHide: true,
+        }).trim();
+        if (!output) {
+            return res.json({ success: false, error: 'User cancelled', cancelled: true });
+        }
+
+        const base64 = imageDataUrl.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '');
+        fs.writeFileSync(output, Buffer.from(base64, 'base64'));
+        res.json({ success: true, filePath: output, fileName: path.basename(output) });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/session/:sessionId/disconnect', (req, res) => {
+    try {
+        remoteAgent.disconnectSession(
+            req.params.sessionId,
+            String(req.body?.reason || '').trim() || 'Disconnected by local user.'
+        );
+        touchRemoteState();
+        res.json({ success: true });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
 });
 // Default recommend list
 // 推薦清單基本資料（按優先順序排列，AI 引擎放最前面）
@@ -1163,6 +1670,10 @@ app.get('/api/task/:taskId/status', (req, res) => {
 // POST /api/chat 處理對話輸入（LLM 優先，fallback 到關鍵字比對）
 app.post('/api/chat', async (req, res) => {
     const { message, locale } = req.body;
+    const preferRemoteModel = !!req.body?.preferRemoteModel;
+    const remoteSessionId = String(req.body?.remoteSessionId || '').trim();
+    const localChatSessionId = String(req.body?.localChatSessionId || '').trim();
+    const requestedHistory = Array.isArray(req.body?.history) ? req.body.history : null;
     const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
     if (!message) return res.json({ success: false, error: 'Please enter a message' });
     const sops = loadAllSOPs(SOPS_DIR);
@@ -1344,7 +1855,9 @@ app.post('/api/chat', async (req, res) => {
     // ── 情境 1：AI 引擎就緒 (驅動模式) ───────────────────────
     if (llmStatus.available && llmStatus.modelReady) {
         try {
-            const requestHistory = buildChatHistoryForRequest(chatHistory, Boolean(chalkboardAttachment));
+            const baseHistory = requestedHistory
+                || (localChatSessionId ? (localChatHistoryBySession.get(localChatSessionId) || []) : chatHistory);
+            const requestHistory = buildChatHistoryForRequest(baseHistory, Boolean(chalkboardAttachment));
             const contextNote = `
 [[Current System Context]]
 1. Hardware Summary: ${hardwareSummary}
@@ -1371,7 +1884,19 @@ ${taskContext || '(empty)'}
                 ? `\n\n[[GitHub Releases 候選軟體]]\n使用者在找 GitHub 上有 Windows release 的開源 App。若你要推薦軟體，請優先參考下列候選；若使用者要求建立 SOP，請輸出 [ACTION:CREATE_GITHUB_RELEASE_SOP repo_full_name="..." asset_name="..." download_url="..."]。\nQuery: ${githubRecommendation.query}\n${githubRecommendation.packages.map((pkg, index) => `${index + 1}. ${pkg.name} | repo=${pkg.fullName} | tag=${pkg.tagName || 'latest'} | asset=${pkg.assetName}`).join('\n')}`
                 : '';
             let llmReply;
-            const chatOptions = {};
+            const remoteState = remoteAgent.getState();
+            const activeRemoteSession = remoteState.sessions.find((item) => item.status === 'active');
+            const sharedModelSession = preferRemoteModel ? getSharedModelSession(remoteSessionId) : null;
+            const chatOptions = {
+                systemContext: [
+                    buildLocalAgentContext(activeRemoteSession || null),
+                    `Available local IPv4 list: ${remoteState.localIps.join(', ') || 'N/A'}`,
+                    `Remote chat service port: ${DEFAULT_REMOTE_PORT}`,
+                    sharedModelSession
+                        ? `Shared remote model is active on ${sharedModelSession.peer?.machineName || sharedModelSession.host} (${sharedModelSession.peer?.agentName || 'Remote AI'}).`
+                        : 'Shared remote model is not active.',
+                ].join('\n'),
+            };
             if (chalkboardAttachment) {
                 chatOptions.chalkboardAttachment = chalkboardAttachment;
                 const preferredVisionModel = llm.getCurrentVisionModel();
@@ -1396,19 +1921,54 @@ ${taskContext || '(empty)'}
 
 
             try {
-                llmReply = await llm.chatWithLLM(
-                    message + "\n\n" + contextNote + wingetPromptNote + microsoftStorePromptNote + githubPromptNote + "\n\n[[Experience Log]]\n" + (experienceContext || '(No experience entries yet)'),
-                    requestHistory,
-                    chatOptions,
-                    locale
-                );
+                const composedMessage = message + "\n\n" + contextNote + wingetPromptNote + microsoftStorePromptNote + githubPromptNote + "\n\n[[Experience Log]]\n" + (experienceContext || '(No experience entries yet)');
+                let modelSource = {
+                    type: 'local',
+                    provider: llm.getCurrentProvider(),
+                    model: chatOptions.modelOverride || llm.getCurrentModel(),
+                    machineName: getRemoteProfile().machineName,
+                    agentName: getRemoteProfile().agentName,
+                    sessionId: '',
+                    expiresAt: '',
+                };
+                if (sharedModelSession) {
+                    const remoteResult = await proxyChatToSharedRemoteModel({
+                        session: sharedModelSession,
+                        message: composedMessage,
+                        history: requestHistory,
+                        systemContext: chatOptions.systemContext,
+                        locale,
+                        chalkboardAttachment,
+                    });
+                    if (!remoteResult?.success) {
+                        throw new Error(remoteResult?.error || 'Remote shared model failed');
+                    }
+                    llmReply = remoteResult.reply;
+                    modelSource = {
+                        type: 'remote-shared',
+                        provider: remoteResult.provider,
+                        model: remoteResult.model,
+                        machineName: remoteResult.machineName,
+                        agentName: remoteResult.agentName,
+                        sessionId: remoteResult.sessionId || sharedModelSession.id,
+                        expiresAt: remoteResult.expiresAt || sharedModelSession.modelShare?.expiresAt || '',
+                    };
+                } else {
+                    llmReply = await llm.chatWithLLM(
+                        composedMessage,
+                        requestHistory,
+                        chatOptions,
+                        locale
+                    );
+                }
+                req.__modelSource = modelSource;
             } catch (visionErr) {
                 if (!chalkboardAttachment) throw visionErr;
                 console.warn('[LLM] Chalkboard vision failed, retrying as text:', visionErr.message);
                 llmReply = await llm.chatWithLLM(
                     `${message}\n\n${contextNote}${wingetPromptNote}${microsoftStorePromptNote}${githubPromptNote}\n\n[[Experience Log]]\n${experienceContext || '(No experience entries yet)'}\n\n[System] The user attached a Chalkboard image, but this model/provider failed to process it. Please inform the user of the failure, then assist based on the text request.`,
                     requestHistory,
-                    {},
+                    { systemContext: chatOptions.systemContext },
                     locale
                 );
             }
@@ -1550,10 +2110,17 @@ ${taskContext || '(empty)'}
 
             if (hasActionTaken) saveTasks();
             // 4. 更新對話紀錄
-            chatHistory.push({ role: 'user', content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message });
             const cleanReply = llmReply.replace(/\[ACTION:.*?\]/g, '').replace(/\[SUGGEST:.*?\]/g, '').trim();
-            chatHistory.push({ role: 'assistant', content: chalkboardAttachment ? `${cleanReply}\n\n[This reply referenced the Chalkboard sketch]` : cleanReply });
-            if (chatHistory.length > 6) chatHistory = chatHistory.slice(-6);
+            const trimmedHistory = [
+                ...baseHistory,
+                { role: 'user', content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message },
+                { role: 'assistant', content: chalkboardAttachment ? `${cleanReply}\n\n[This reply referenced the Chalkboard sketch]` : cleanReply },
+            ].slice(-6);
+            if (localChatSessionId) {
+                localChatHistoryBySession.set(localChatSessionId, trimmedHistory);
+            } else {
+                chatHistory = trimmedHistory;
+            }
             const suggestMatch = llmReply.match(/\[SUGGEST:(.*?)\]/);
             // In en-US mode, if [SUGGEST:...] contains Chinese characters, discard it and use locale-aware defaults
             let finalSuggestions;
@@ -1575,7 +2142,17 @@ ${taskContext || '(empty)'}
                 task: taskListChanged,
                 sopChanged,
                 executeTaskId,
-                llmUsed: true
+                llmUsed: true,
+                modelSource: req.__modelSource || {
+                    type: 'local',
+                    provider: llm.getCurrentProvider(),
+                    model: chatOptions.modelOverride || llm.getCurrentModel(),
+                    machineName: getRemoteProfile().machineName,
+                    agentName: getRemoteProfile().agentName,
+                    sessionId: '',
+                    expiresAt: '',
+                },
+                history: trimmedHistory,
             });
         } catch (llmErr) {
             console.error('[LLM] AI Agent processing failed:', llmErr);
@@ -1630,7 +2207,11 @@ ${taskContext || '(empty)'}
         if (message.includes('清空')) {
             todoList = [];
             saveTasks();
-            chatHistory = []; // 清空也順便清空歷史
+            if (localChatSessionId) {
+                localChatHistoryBySession.set(localChatSessionId, []);
+            } else {
+                chatHistory = []; // 清空也順便清空歷史
+            }
             return res.json({ success: true, reply: "All tasks cleared. 🧹", suggestions, task: true, llmUsed: false });
         }
 
@@ -2200,10 +2781,12 @@ app.listen(PORT, async () => {
     console.log(`\n  🖥️  ${startMsg}`);
     fileLog(startMsg);
     console.log(`  📍 http://localhost:${PORT}`);
+    console.log(`  🌐 Remote Agent TCP: 0.0.0.0:${DEFAULT_REMOTE_PORT}`);
     console.log(`  📂 SOPs    Directory: ${SOPS_DIR}`);
     console.log(`  🛠️ Skills  Directory: ${SKILLS_DIR}`);
     console.log(`  🔌 Plugins Directory: ${PLUGINS_DIR}`);
     fileLog(`SOPs Directory: ${SOPS_DIR}`);
+    fileLog(`Remote Agent TCP Port: ${DEFAULT_REMOTE_PORT}`);
     fileLog(`Skills Directory: ${SKILLS_DIR}`);
     fileLog(`Plugins Directory: ${PLUGINS_DIR}`);
     // 啟動時非同步檢查 LLM 狀態

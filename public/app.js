@@ -21,6 +21,10 @@ let recommendList = [];
 let sopsList = [];
 let pollingInterval = null;
 let chatAbortController = null;
+let localChatAbortController = null;
+let remoteChatAbortController = null;
+let localThinkingId = '';
+let remoteThinkingId = '';
 let isSidebarCollapsed = false;
 let isChatCollapsed = false;
 let isLogCollapsed = false; 
@@ -37,6 +41,17 @@ let expsEntries = [];
 let expSearchQuery = '';
 let expSopFilter = '';
 let currentLocale = localStorage.getItem('ui_locale') || 'zh-TW';
+let activeChatMode = 'local';
+let remoteProfile = null;
+let remoteState = { sessions: [], pendingApprovals: [], localIps: [], port: 19168 };
+let selectedRemoteSessionId = localStorage.getItem('selected_remote_session_id') || '';
+let remoteStateInterval = null;
+let pendingRemoteRequestId = '';
+let localChatSessions = [];
+let selectedLocalChatSessionId = localStorage.getItem('selected_local_chat_session_id') || '';
+let mentionCandidates = [];
+let activeMentionIndex = 0;
+let pendingModelShareSessionId = '';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -69,11 +84,29 @@ const btnExpsExport = $('#btnExpsExport');
 const statusVersion = $('#statusVersion');
 const btnLang = $('#btnLang');
 const chatMessages = $('#chatMessages');
+const remoteChatMessages = $('#remoteChatMessages');
 const chatInput = $('#chatInput');
+const mentionMenu = $('#mentionMenu');
 const btnSend = $('#btnSend');
 const btnMic = $('#btnMic');
 const btnChalkAttach = $('#btnChalkAttach');
 const btnClearChat = $('#btnClearChat');
+const chatModeTabs = $('#chatModeTabs');
+const localChatPane = $('#localChatPane');
+const remoteChatPane = $('#remoteChatPane');
+const remoteSessionStatus = $('#remoteSessionStatus');
+const remoteHostInput = $('#remoteHostInput');
+const remoteAgentNameInput = $('#remoteAgentNameInput');
+const remoteUserNameInput = $('#remoteUserNameInput');
+const remoteSessionSelect = $('#remoteSessionSelect');
+const remoteSendMode = $('#remoteSendMode');
+const remoteChatHint = $('#remoteChatHint');
+const remoteSessionQuickList = $('#remoteSessionQuickList');
+const btnRemoteConnect = $('#btnRemoteConnect');
+const btnSaveRemoteProfile = $('#btnSaveRemoteProfile');
+const btnShareScreen = $('#btnShareScreen');
+const btnShareModel = $('#btnShareModel');
+const btnDisconnectRemote = $('#btnDisconnectRemote');
 const recSearchInput = $('#recSearchInput');
 const btnTheme = $('#btnTheme');
 const btnExport = $('#btnExport');
@@ -145,6 +178,18 @@ const visionModelHelpText = $('#visionModelHelpText');
 const btnTestProviderSettings = $('#btnTestProviderSettings');
 const btnSaveProviderSettings = $('#btnSaveProviderSettings');
 const btnRefreshModels = $('#btnRefreshModels');
+const remoteRequestOverlay = $('#remoteRequestOverlay');
+const remoteRequestTitle = $('#remoteRequestTitle');
+const remoteRequestSummary = $('#remoteRequestSummary');
+const remoteRequestDetails = $('#remoteRequestDetails');
+const btnAcceptRemoteRequest = $('#btnAcceptRemoteRequest');
+const btnRejectRemoteRequest = $('#btnRejectRemoteRequest');
+const modelShareOverlay = $('#modelShareOverlay');
+const modelShareTitle = $('#modelShareTitle');
+const modelShareSummary = $('#modelShareSummary');
+const modelShareDetails = $('#modelShareDetails');
+const btnAcceptModelShare = $('#btnAcceptModelShare');
+const btnRejectModelShare = $('#btnRejectModelShare');
 
 const PROVIDER_DEFAULTS = {
     'OpenAI': 'https://api.openai.com/v1',
@@ -227,6 +272,57 @@ const I18N = {
             placeholder: '告訴我你需要什麼... 例如「幫我移除 Copilot」',
             send: '送出',
             connectionError: '對話連線發生錯誤。',
+            localSessionNew: '新增對話',
+            localSessionDefault: '本機對話',
+            pendingRowLocal: '本機 AI',
+            pendingRowRemote: '遠端 AI',
+            pendingIdle: '待命',
+            pendingBusy: '思考中',
+        },
+        remote: {
+            localTab: '💬 本機 AI',
+            remoteTab: '🌐 遠端 AI',
+            disconnected: '未連線',
+            connecting: '連線中',
+            connected: '已連線',
+            pending: '等待允許',
+            connect: '連線',
+            saveProfile: '儲存名稱',
+            disconnect: '中斷',
+            shareScreen: '分享畫面',
+            shareModel: '分享模型',
+            hostPlaceholder: '輸入對方 IP，例如 192.168.1.88',
+            agentPlaceholder: 'AI 名稱',
+            userPlaceholder: '使用者名稱',
+            waitingHint: '等待遠端連線。Port: 19168',
+            acceptedHint: '您已接受對話。請開始聊天或支援',
+            requestTitle: '遠端連線請求',
+            requestSummary: '有另一台 AI PC Agent 想要與您通訊',
+            accept: '允許',
+            reject: '拒絕',
+            modelShareTitle: '分享模型請求',
+            modelShareSummary: '對方想把他的 AI 模型分享給您',
+            modelShareRequested: '已送出分享模型請求，等待對方回應',
+            modelShareActive: '共享模型已啟用，本機 AI 對話會暫時改走對方模型',
+            modelShareRejected: '模型分享已被拒絕',
+            modelShareDetails: '機器名稱：{machineName}\n使用者名稱：{userName}\nAI 名稱：{agentName}\n說明：是否接受對方分享他的 AI 模型給您使用？接受後，本機所有 AI 對話 API 會暫時改呼叫對方 API。',
+            requestAccepted: '您已接受對話。請開始聊天或支援',
+            profileSaved: '遠端身份設定已儲存',
+            connectSuccess: '已送出連線請求，等待對方允許',
+            connectFailed: '遠端連線失敗：{error}',
+            noSession: '請先建立或選擇遠端連線',
+            screenShared: '畫面已分享給對方',
+            screenFailed: '畫面分享失敗：{error}',
+            saveImage: '另存圖片',
+            imageSaved: '共享畫面已儲存：{fileName}',
+            modeUser: '以我發送',
+            modeLocalAi: '以本機 AI 發送',
+            remoteAiTarget: '遠端 AI',
+            remoteUserTarget: '遠端使用者',
+            connectDetails: '機器名稱：{machineName}\n使用者名稱：{userName}\nAI 名稱：{agentName}\nIP：{ip}',
+            modelShareProviding: '正在分享我的模型',
+            modelShareUsing: '正在使用對方模型',
+            modelShareExpires: '共享到期：{time}',
         },
         exps: {
             searchPlaceholder: '搜尋經驗、關鍵字...',
@@ -493,6 +589,57 @@ const I18N = {
             placeholder: 'Tell me what you need... e.g., "help me remove Copilot"',
             send: 'Send',
             connectionError: 'Chat connection error occurred.',
+            localSessionNew: 'New Chat',
+            localSessionDefault: 'Local Chat',
+            pendingRowLocal: 'Local AI',
+            pendingRowRemote: 'Remote AI',
+            pendingIdle: 'Idle',
+            pendingBusy: 'Thinking',
+        },
+        remote: {
+            localTab: '💬 Local AI',
+            remoteTab: '🌐 Remote AI',
+            disconnected: 'Disconnected',
+            connecting: 'Connecting',
+            connected: 'Connected',
+            pending: 'Pending',
+            connect: 'Connect',
+            saveProfile: 'Save Names',
+            disconnect: 'Disconnect',
+            shareScreen: 'Share Screen',
+            shareModel: 'Share Model',
+            hostPlaceholder: 'Enter peer IP, e.g. 192.168.1.88',
+            agentPlaceholder: 'AI Name',
+            userPlaceholder: 'User Name',
+            waitingHint: 'Waiting for remote connection. Port: 19168',
+            acceptedHint: 'You accepted the conversation. Start chatting or supporting now.',
+            requestTitle: 'Remote Connection Request',
+            requestSummary: 'Another AI PC Agent wants to talk to you',
+            accept: 'Allow',
+            reject: 'Reject',
+            modelShareTitle: 'Model Share Request',
+            modelShareSummary: 'The peer wants to share their AI model with you',
+            modelShareRequested: 'Model share request sent. Waiting for response.',
+            modelShareActive: 'Shared model is active. Local AI chats now use the peer model.',
+            modelShareRejected: 'Model sharing was rejected.',
+            modelShareDetails: 'Machine: {machineName}\nUser: {userName}\nAI: {agentName}\nNote: accept the peer model as a temporary shared model? If accepted, all local AI chat API calls will go through the peer API.',
+            requestAccepted: 'You accepted the conversation. Start chatting or supporting now.',
+            profileSaved: 'Remote identity saved',
+            connectSuccess: 'Connection request sent. Waiting for approval.',
+            connectFailed: 'Remote connection failed: {error}',
+            noSession: 'Please create or select a remote session first',
+            screenShared: 'Screen shared to remote peer',
+            screenFailed: 'Screen sharing failed: {error}',
+            saveImage: 'Save Image',
+            imageSaved: 'Shared image saved: {fileName}',
+            modeUser: 'Send as Me',
+            modeLocalAi: 'Send as Local AI',
+            remoteAiTarget: 'Remote AI',
+            remoteUserTarget: 'Remote User',
+            connectDetails: 'Machine: {machineName}\nUser: {userName}\nAI: {agentName}\nIP: {ip}',
+            modelShareProviding: 'Providing my model',
+            modelShareUsing: 'Using peer model',
+            modelShareExpires: 'Shared until: {time}',
         },
         exps: {
             searchPlaceholder: 'Search experiences, keywords...',
@@ -715,6 +862,24 @@ const I18N = {
     }
 };
 
+Object.assign(I18N['zh-TW'].remote, {
+    cancelConnect: '取消連線',
+    stopModelShare: '中斷分享模型',
+    connectingTo: 'connecting to {host}.',
+    sharingModelTo: 'sharing model to {host}.',
+    waitingResponse: 'waiting for response.',
+    modelShareOn: 'Model Share ON',
+});
+
+Object.assign(I18N['en-US'].remote, {
+    cancelConnect: 'Cancel Connect',
+    stopModelShare: 'Stop Model Share',
+    connectingTo: 'connecting to {host}.',
+    sharingModelTo: 'sharing model to {host}.',
+    waitingResponse: 'waiting for response.',
+    modelShareOn: 'Model Share ON',
+});
+
 function getLocalePack() {
     return I18N[currentLocale] || I18N['zh-TW'];
 }
@@ -899,6 +1064,712 @@ async function api(endpoint, options = {}) {
         console.error('[API]', endpoint, err);
         return { success: false, error: err.message };
     }
+}
+
+function renderMarkdown(text = '') {
+    if (typeof marked !== 'undefined') {
+        return marked.parse(text);
+    }
+
+    const escaped = escapeHtml(String(text || ''));
+    const lines = escaped.split('\n');
+    const html = [];
+    let inList = false;
+    let inCode = false;
+
+    const closeList = () => {
+        if (inList) {
+            html.push('</ul>');
+            inList = false;
+        }
+    };
+
+    lines.forEach((line) => {
+        if (line.startsWith('```')) {
+            closeList();
+            html.push(inCode ? '</code></pre>' : '<pre><code>');
+            inCode = !inCode;
+            return;
+        }
+        if (inCode) {
+            html.push(`${line}\n`);
+            return;
+        }
+        const headingMatch = line.match(/^(#{1,3})\s+(.*)$/);
+        if (headingMatch) {
+            closeList();
+            html.push(`<h${headingMatch[1].length}>${headingMatch[2]}</h${headingMatch[1].length}>`);
+            return;
+        }
+        const listMatch = line.match(/^\s*[-*]\s+(.*)$/);
+        if (listMatch) {
+            if (!inList) {
+                html.push('<ul>');
+                inList = true;
+            }
+            html.push(`<li>${listMatch[1]}</li>`);
+            return;
+        }
+        closeList();
+        if (!line.trim()) {
+            html.push('<br>');
+            return;
+        }
+        html.push(`<p>${line}</p>`);
+    });
+    closeList();
+    let output = html.join('');
+    output = output
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*(.+?)\*/g, '$1<em>$2</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    return output;
+}
+
+function getMentionHighlightNames() {
+    const session = getActiveRemoteSession();
+    return [
+        remoteProfile?.userName,
+        remoteProfile?.agentName,
+        session?.peer?.userName,
+        session?.peer?.agentName,
+    ]
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .filter((item, index, array) => array.findIndex((value) => value.toLowerCase() === item.toLowerCase()) === index);
+}
+
+function highlightMentionsInHtml(html = '', names = []) {
+    if (!html || !names.length) return html;
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+    const escapedNames = names
+        .map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .sort((a, b) => b.length - a.length);
+    if (!escapedNames.length) return html;
+    const mentionRegex = new RegExp(`@(${escapedNames.join('|')})(?=\\b|\\s|$)`, 'gi');
+    const nodes = [];
+    while (walker.nextNode()) {
+        nodes.push(walker.currentNode);
+    }
+    nodes.forEach((node) => {
+        if (!node.nodeValue || !mentionRegex.test(node.nodeValue)) return;
+        mentionRegex.lastIndex = 0;
+        const fragment = document.createDocumentFragment();
+        let lastIndex = 0;
+        node.nodeValue.replace(mentionRegex, (match, name, offset) => {
+            if (offset > lastIndex) {
+                fragment.appendChild(document.createTextNode(node.nodeValue.slice(lastIndex, offset)));
+            }
+            const span = document.createElement('span');
+            span.className = 'mention-highlight';
+            span.textContent = `@${name}`;
+            fragment.appendChild(span);
+            lastIndex = offset + match.length;
+            return match;
+        });
+        if (lastIndex < node.nodeValue.length) {
+            fragment.appendChild(document.createTextNode(node.nodeValue.slice(lastIndex)));
+        }
+        node.parentNode?.replaceChild(fragment, node);
+    });
+    return template.innerHTML;
+}
+
+function getSortedRemoteSessions() {
+    return [...(remoteState.sessions || [])].sort((a, b) => {
+        const aTime = new Date(a.lastEventAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.lastEventAt || b.createdAt || 0).getTime();
+        return bTime - aTime;
+    });
+}
+
+function getSharedModelSession() {
+    const sessions = getSortedRemoteSessions().filter((item) => {
+        if (!(item.status === 'active' && item.modelShare?.status === 'active' && item.modelShare?.role === 'consumer')) {
+            return false;
+        }
+        const expiresAtMs = Date.parse(String(item.modelShare?.expiresAt || ''));
+        return Number.isNaN(expiresAtMs) || expiresAtMs <= 0 || Date.now() <= expiresAtMs;
+    });
+    if (selectedRemoteSessionId) {
+        const selected = sessions.find((item) => item.id === selectedRemoteSessionId);
+        if (selected) return selected;
+    }
+    return sessions[0] || null;
+}
+
+function ensureRemoteSessionQuickList() {
+    if (remoteSessionQuickList) return remoteSessionQuickList;
+    if (!remoteChatHint?.parentElement) return null;
+    let el = remoteChatHint.parentElement.querySelector('#remoteSessionQuickList');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'remoteSessionQuickList';
+    el.className = 'remote-session-quick-list';
+    remoteChatHint.insertAdjacentElement('afterend', el);
+    return el;
+}
+
+function createLocalChatSession(title = '') {
+    return {
+        id: `local_chat_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+        title: String(title || '').trim() || t('chat.localSessionDefault'),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [],
+        history: [],
+    };
+}
+
+function normalizeLocalChatSessions() {
+    if (!Array.isArray(localChatSessions) || !localChatSessions.length) {
+        localChatSessions = [createLocalChatSession()];
+    }
+    if (!selectedLocalChatSessionId || !localChatSessions.some((item) => item.id === selectedLocalChatSessionId)) {
+        selectedLocalChatSessionId = localChatSessions[0].id;
+    }
+}
+
+function saveLocalChatSessions() {
+    normalizeLocalChatSessions();
+    localStorage.setItem('local_chat_sessions_v1', JSON.stringify(localChatSessions.slice(0, 24)));
+    localStorage.setItem('selected_local_chat_session_id', selectedLocalChatSessionId || '');
+}
+
+function loadLocalChatSessions() {
+    try {
+        const raw = JSON.parse(localStorage.getItem('local_chat_sessions_v1') || '[]');
+        localChatSessions = Array.isArray(raw) ? raw.map((item) => ({
+            id: String(item.id || ''),
+            title: String(item.title || '').trim() || t('chat.localSessionDefault'),
+            createdAt: item.createdAt || new Date().toISOString(),
+            updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+            messages: Array.isArray(item.messages) ? item.messages : [],
+            history: Array.isArray(item.history) ? item.history : [],
+        })).filter((item) => item.id) : [];
+    } catch {
+        localChatSessions = [];
+    }
+    normalizeLocalChatSessions();
+    saveLocalChatSessions();
+}
+
+function getSortedLocalChatSessions() {
+    normalizeLocalChatSessions();
+    return [...localChatSessions].sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+}
+
+function getActiveLocalChatSession() {
+    normalizeLocalChatSessions();
+    return localChatSessions.find((item) => item.id === selectedLocalChatSessionId) || localChatSessions[0] || null;
+}
+
+function touchLocalChatSession(sessionId = selectedLocalChatSessionId) {
+    const session = localChatSessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    session.updatedAt = new Date().toISOString();
+    saveLocalChatSessions();
+}
+
+function ensureLocalSessionQuickList() {
+    if (!localChatPane) return null;
+    let el = localChatPane.querySelector('#localSessionQuickList');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'localSessionQuickList';
+    el.className = 'remote-session-quick-list local-session-quick-list';
+    localChatPane.insertBefore(el, chatMessages);
+    return el;
+}
+
+function ensureChatPendingStatusRow() {
+    const header = document.querySelector('.chat-panel-header');
+    if (!header?.parentElement) return null;
+    let row = header.parentElement.querySelector('#chatPendingStatusRow');
+    if (row) return row;
+    row = document.createElement('div');
+    row.id = 'chatPendingStatusRow';
+    row.className = 'chat-pending-status-row';
+    header.insertAdjacentElement('afterend', row);
+    return row;
+}
+
+function getActiveAbortController(mode = activeChatMode) {
+    return mode === 'remote' ? remoteChatAbortController : localChatAbortController;
+}
+
+function setActiveAbortController(controller, mode = activeChatMode) {
+    if (mode === 'remote') {
+        remoteChatAbortController = controller;
+    } else {
+        localChatAbortController = controller;
+    }
+    chatAbortController = controller;
+}
+
+function getThinkingIdForMode(mode = 'local') {
+    return mode === 'remote' ? remoteThinkingId : localThinkingId;
+}
+
+function setThinkingIdForMode(mode = 'local', id = '') {
+    if (mode === 'remote') {
+        remoteThinkingId = id;
+    } else {
+        localThinkingId = id;
+    }
+}
+
+function isModePending(mode = 'local') {
+    return Boolean(mode === 'remote' ? remoteChatAbortController : localChatAbortController);
+}
+
+function updateChatModeBadges() {
+    $$('.chat-mode-tab').forEach((button) => {
+        const mode = button.dataset.chatMode === 'remote' ? 'remote' : 'local';
+        button.classList.toggle('pending', isModePending(mode));
+    });
+    updatePendingStatusRow();
+}
+
+function updateSendButtonState() {
+    const iconSend = btnSend?.querySelector('.icon-send');
+    const iconStop = btnSend?.querySelector('.icon-stop');
+    const pending = isModePending(activeChatMode);
+    btnSend?.classList.toggle('stop', pending);
+    if (btnSend) btnSend.title = pending ? (currentLocale === 'en-US' ? 'Stop' : '停止') : t('chat.send');
+    iconSend?.classList.toggle('hidden', pending);
+    iconStop?.classList.toggle('hidden', !pending);
+    updateChatModeBadges();
+}
+
+function updatePendingStatusRow() {
+    const row = ensureChatPendingStatusRow();
+    if (!row) return;
+    row.innerHTML = `
+        <div class="chat-pending-pill ${isModePending('local') ? 'busy' : ''}">${escapeHtml(t('chat.pendingRowLocal'))}: ${escapeHtml(isModePending('local') ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
+        <div class="chat-pending-pill ${isModePending('remote') ? 'busy' : ''}">${escapeHtml(t('chat.pendingRowRemote'))}: ${escapeHtml(isModePending('remote') ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
+    `;
+}
+
+function updateChatModelBadgeDisplay(lastStatus = null) {
+    if (!chatModelBadge) return;
+    const sharedSession = getSharedModelSession();
+    const currentModel = lastStatus?.modelName || chatModelBadge.dataset.baseModel || '';
+    const sharedText = sharedSession
+        ? `${sharedSession.peer?.agentName || sharedSession.peer?.machineName || sharedSession.host} model (Shared)`
+        : '';
+    const badgeText = sharedText || currentModel || t('chat.modelBadge');
+    chatModelBadge.textContent = badgeText;
+    chatModelBadge.style.display = (sharedText || (lastStatus?.modelReady && currentModel)) ? 'inline-block' : 'none';
+    chatModelBadge.title = sharedSession
+        ? `${t('remote.modelShareUsing')} · ${sharedSession.peer?.machineName || ''} / ${sharedSession.peer?.agentName || ''}${sharedSession.modelShare?.expiresAt ? ` / ${t('remote.modelShareExpires', { time: sharedSession.modelShare.expiresAt })}` : ''}`
+        : t('chat.switchModel');
+}
+
+function getMentionParticipants() {
+    const session = getActiveRemoteSession();
+    const candidates = [];
+    const addCandidate = (name, role) => {
+        const normalized = String(name || '').trim();
+        if (!normalized) return;
+        if (candidates.some((item) => item.name.toLowerCase() === normalized.toLowerCase())) return;
+        candidates.push({ name: normalized, role });
+    };
+
+    addCandidate(remoteProfile?.agentName || remoteProfile?.machineName, 'Local AI');
+    addCandidate(session?.peer?.userName, 'Remote User');
+    addCandidate(session?.peer?.agentName, 'Remote AI');
+    return candidates.filter((item) => item.name.toLowerCase() !== String(remoteProfile?.userName || '').trim().toLowerCase());
+}
+
+function hideMentionMenu() {
+    activeMentionIndex = 0;
+    mentionCandidates = [];
+    mentionMenu?.classList.remove('visible');
+    if (mentionMenu) mentionMenu.innerHTML = '';
+}
+
+function insertMention(name) {
+    if (!chatInput) return;
+    const value = chatInput.value;
+    const cursor = chatInput.selectionStart;
+    const before = value.slice(0, cursor);
+    const after = value.slice(cursor);
+    const match = before.match(/(^|\s)@([^\s@]*)$/);
+    if (!match) return;
+    const startIndex = cursor - match[0].length + match[1].length;
+    chatInput.value = `${value.slice(0, startIndex)}@${name} ${after}`;
+    const nextCursor = startIndex + name.length + 2;
+    chatInput.setSelectionRange(nextCursor, nextCursor);
+    chatInput.focus();
+    hideMentionMenu();
+}
+
+function updateMentionMenu() {
+    if (!chatInput || !mentionMenu) return;
+    const before = chatInput.value.slice(0, chatInput.selectionStart);
+    const match = before.match(/(^|\s)@([^\s@]*)$/);
+    if (!match) {
+        hideMentionMenu();
+        return;
+    }
+    const keyword = String(match[2] || '').toLowerCase();
+    mentionCandidates = getMentionParticipants().filter((item) => item.name.toLowerCase().includes(keyword));
+    if (!mentionCandidates.length) {
+        hideMentionMenu();
+        return;
+    }
+    activeMentionIndex = Math.min(activeMentionIndex, mentionCandidates.length - 1);
+    mentionMenu.innerHTML = mentionCandidates.map((item, index) => `
+        <div class="mention-item ${index === activeMentionIndex ? 'active' : ''}" data-mention-name="${escapeHtml(item.name)}">
+            <span>@${escapeHtml(item.name)}</span>
+            <span class="mention-role">${escapeHtml(item.role)}</span>
+        </div>
+    `).join('');
+    mentionMenu.classList.add('visible');
+    mentionMenu.querySelectorAll('.mention-item').forEach((el) => {
+        el.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            insertMention(el.dataset.mentionName);
+        });
+    });
+}
+
+function getActiveRemoteSession() {
+    const sessions = remoteState.sessions || [];
+    return sessions.find((session) => session.id === selectedRemoteSessionId) || null;
+}
+
+function getRemoteStatusText(session = null) {
+    if (!session) return t('remote.disconnected');
+    if (session.status === 'active') return t('remote.connected');
+    if (session.status === 'pending_approval') return t('remote.pending');
+    return t('remote.disconnected');
+}
+
+function isContainerPinnedToBottom(container) {
+    const threshold = 24;
+    if (!container) return true;
+    return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+}
+
+function getRemoteConnectButtonText(session = null) {
+    if (!session) return t('remote.connect');
+    if (session.status === 'pending_approval') return t('remote.cancelConnect');
+    if (session.status === 'active') return t('remote.disconnect');
+    return t('remote.connect');
+}
+
+function getModelShareButtonText(session = null) {
+    const status = session?.modelShare?.status || 'idle';
+    if (status === 'pending' || status === 'active') return t('remote.stopModelShare');
+    return t('remote.shareModel');
+}
+
+function buildRemoteHintText(session = null) {
+    if (!session) return t('remote.waitingHint');
+    const host = session.peer?.ip || session.host || '';
+    const machine = session.peer?.machineName || session.host || '';
+    const user = session.peer?.userName || '';
+    const model = session.modelShare?.status || 'idle';
+    const role = session.modelShare?.role || 'none';
+    const expiresAt = session.modelShare?.expiresAt || '';
+
+    if (session.status === 'pending_approval') {
+        return t('remote.connectingTo', { host }) + ' ' + t('remote.waitingResponse');
+    }
+    if (model === 'pending') {
+        return t('remote.sharingModelTo', { host }) + ' ' + t('remote.waitingResponse');
+    }
+    if (model === 'active') {
+        const shareStatus = role === 'provider' ? t('remote.modelShareProviding') : t('remote.modelShareUsing');
+        const expiryText = expiresAt ? ` / ${t('remote.modelShareExpires', { time: expiresAt })}` : '';
+        return `${machine} / ${user} / ${host} / ${shareStatus}${expiryText}`;
+    }
+    return `${machine} / ${user} / ${host}`;
+}
+
+function switchChatMode(mode) {
+    activeChatMode = mode === 'remote' ? 'remote' : 'local';
+    hideMentionMenu();
+    $$('.chat-mode-tab').forEach((button) => {
+        button.classList.toggle('active', button.dataset.chatMode === activeChatMode);
+    });
+    localChatPane?.classList.toggle('active', activeChatMode === 'local');
+    remoteChatPane?.classList.toggle('active', activeChatMode === 'remote');
+    if (btnMic) btnMic.style.display = activeChatMode === 'local' ? '' : 'none';
+    if (btnChalkAttach) btnChalkAttach.style.display = activeChatMode === 'local' ? '' : 'none';
+    if (btnClearChat) btnClearChat.title = activeChatMode === 'local' ? t('chat.clear') : t('remote.disconnect');
+    chatInput.placeholder = activeChatMode === 'local'
+        ? t('chat.placeholder')
+        : (getActiveRemoteSession()
+            ? `${t('remote.connected')} - ${getActiveRemoteSession()?.peer?.machineName || getActiveRemoteSession()?.host || ''}`
+            : t('remote.waitingHint'));
+    if (activeChatMode === 'local') {
+        renderLocalSessionControls();
+        renderLocalChatMessages();
+    }
+    updateSendButtonState();
+}
+
+function renderRemotePopup() {
+    const pending = remoteState.pendingApprovals?.[0];
+    if (!pending) {
+        pendingRemoteRequestId = '';
+        remoteRequestOverlay?.classList.remove('visible');
+        return;
+    }
+
+    pendingRemoteRequestId = pending.id;
+    remoteRequestTitle.textContent = t('remote.requestTitle');
+    remoteRequestSummary.textContent = t('remote.requestSummary');
+    remoteRequestDetails.textContent = t('remote.connectDetails', {
+        machineName: pending.peer?.machineName || 'Unknown',
+        userName: pending.peer?.userName || 'Unknown',
+        agentName: pending.peer?.agentName || 'Unknown',
+        ip: pending.peer?.ip || pending.host || 'Unknown',
+    });
+    remoteRequestOverlay?.classList.add('visible');
+}
+
+function renderModelSharePopup() {
+    const pending = (remoteState.sessions || []).find((session) => session.modelShare?.status === 'pending' && session.modelShare?.role === 'consumer');
+    if (!pending) {
+        pendingModelShareSessionId = '';
+        modelShareOverlay?.classList.remove('visible');
+        return;
+    }
+
+    pendingModelShareSessionId = pending.id;
+    if (modelShareTitle) modelShareTitle.textContent = t('remote.modelShareTitle');
+    if (modelShareSummary) modelShareSummary.textContent = t('remote.modelShareSummary');
+    if (modelShareDetails) {
+        modelShareDetails.textContent = t('remote.modelShareDetails', {
+            machineName: pending.peer?.machineName || 'Unknown',
+            userName: pending.peer?.userName || 'Unknown',
+            agentName: pending.peer?.agentName || 'Unknown',
+        });
+    }
+    modelShareOverlay?.classList.add('visible');
+}
+
+function formatRemoteSender(message = {}) {
+    if (message.senderType === 'system') return 'System';
+    return message.senderLabel || (message.senderType === 'ai' ? (currentLocale === 'en-US' ? 'AI' : 'AI') : (currentLocale === 'en-US' ? 'User' : '使用者'));
+}
+
+function renderRemoteMessages() {
+    if (!remoteChatMessages) return;
+    const shouldStick = isContainerPinnedToBottom(remoteChatMessages);
+    const previousScrollTop = remoteChatMessages.scrollTop;
+    remoteChatMessages.innerHTML = '';
+    const session = getActiveRemoteSession();
+    if (!session) {
+        const empty = document.createElement('div');
+        empty.className = 'log-empty';
+        empty.textContent = t('remote.waitingHint');
+        remoteChatMessages.appendChild(empty);
+        return;
+    }
+
+    session.messages.forEach((message) => {
+        appendChatBubble(
+            message.senderType === 'system' ? 'system' : (message.senderType === 'ai' ? 'ai' : 'user'),
+            message.type === 'screen_share'
+                ? (message.caption || (currentLocale === 'en-US' ? 'Screen shared' : '已分享畫面'))
+                : message.text,
+            [],
+            {
+                container: remoteChatMessages,
+                senderLabel: formatRemoteSender(message),
+                isRemote: true,
+                forceSystem: message.senderType === 'system',
+                imageDataUrl: message.type === 'screen_share' ? message.imageDataUrl : '',
+            }
+        );
+    });
+    if (getThinkingIdForMode('remote')) {
+        appendThinking(remoteChatMessages, getThinkingIdForMode('remote'));
+    }
+    remoteChatMessages.scrollTop = shouldStick
+        ? remoteChatMessages.scrollHeight
+        : previousScrollTop;
+}
+
+function addLocalSessionMessage(role, text, suggestions = [], options = {}) {
+    const session = getActiveLocalChatSession();
+    if (!session) return;
+    if (role === 'user' && (!session.messages.length || /^本機對話\b|^Local Chat\b/i.test(session.title || ''))) {
+        session.title = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 18) || session.title;
+    }
+    session.messages.push({
+        id: `local_msg_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+        role,
+        text,
+        suggestions: Array.isArray(suggestions) ? suggestions : [],
+        senderLabel: options.senderLabel || '',
+        forceSystem: !!options.forceSystem,
+        imageDataUrl: options.imageDataUrl || '',
+        createdAt: new Date().toISOString(),
+    });
+    session.messages = session.messages.slice(-120);
+    touchLocalChatSession(session.id);
+    if (activeChatMode === 'local') {
+        renderLocalSessionControls();
+    }
+}
+
+function renderLocalChatMessages() {
+    if (!chatMessages) return;
+    const shouldStick = isContainerPinnedToBottom(chatMessages);
+    const previousScrollTop = chatMessages.scrollTop;
+    chatMessages.innerHTML = '';
+    const session = getActiveLocalChatSession();
+    (session?.messages || []).forEach((message) => {
+        appendChatBubble(message.role, message.text, message.suggestions || [], {
+            container: chatMessages,
+            senderLabel: message.senderLabel || '',
+            forceSystem: !!message.forceSystem,
+            imageDataUrl: message.imageDataUrl || '',
+            fromRender: true,
+        });
+    });
+    if (getThinkingIdForMode('local')) {
+        appendThinking(chatMessages, getThinkingIdForMode('local'));
+    }
+    chatMessages.scrollTop = shouldStick ? chatMessages.scrollHeight : previousScrollTop;
+}
+
+function renderLocalSessionControls() {
+    const quickListEl = ensureLocalSessionQuickList();
+    if (!quickListEl) return;
+    const sessions = getSortedLocalChatSessions();
+    quickListEl.innerHTML = `
+        <button type="button" class="remote-session-chip local-session-new" data-local-action="new">${escapeHtml(t('chat.localSessionNew'))}</button>
+        ${sessions.map((session) => {
+            const activeClass = session.id === selectedLocalChatSessionId ? 'active' : '';
+            const pendingClass = session.id === selectedLocalChatSessionId && isModePending('local') ? 'pending' : '';
+            return `<button type="button" class="remote-session-chip ${activeClass} ${pendingClass}" data-local-session-id="${session.id}">${escapeHtml(session.title || t('chat.localSessionDefault'))}</button>`;
+        }).join('')}
+    `;
+    quickListEl.querySelector('[data-local-action="new"]')?.addEventListener('click', () => {
+        const next = createLocalChatSession(`${t('chat.localSessionDefault')} ${localChatSessions.length + 1}`);
+        localChatSessions.unshift(next);
+        selectedLocalChatSessionId = next.id;
+        saveLocalChatSessions();
+        renderLocalSessionControls();
+        renderLocalChatMessages();
+        switchChatMode('local');
+    });
+    quickListEl.querySelectorAll('[data-local-session-id]').forEach((button) => {
+        button.addEventListener('click', () => {
+            selectedLocalChatSessionId = button.dataset.localSessionId || '';
+            saveLocalChatSessions();
+            renderLocalSessionControls();
+            renderLocalChatMessages();
+            switchChatMode('local');
+        });
+    });
+}
+
+async function saveSharedImage(imageDataUrl) {
+    const data = await api('/api/remote/save-image-file', {
+        method: 'POST',
+        body: { imageDataUrl }
+    });
+    if (data.success) {
+        addUILog(t('remote.imageSaved', { fileName: data.fileName || data.filePath }), 'success');
+    } else if (!data.cancelled) {
+        addUILog(t('remote.screenFailed', { error: data.error || 'unknown' }), 'error');
+    }
+}
+
+function renderRemoteSessionControls() {
+    if (!remoteSessionSelect) return;
+    const sessions = getSortedRemoteSessions();
+    if (selectedRemoteSessionId && !sessions.some((item) => item.id === selectedRemoteSessionId)) {
+        selectedRemoteSessionId = '';
+    }
+    if (!selectedRemoteSessionId) {
+        selectedRemoteSessionId = sessions.find((item) => item.status === 'active')?.id || sessions[0]?.id || '';
+    }
+    localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
+    remoteSessionSelect.innerHTML = sessions.length
+        ? sessions.map((session) => {
+            const shareLabel = session.modelShare?.status === 'active'
+                ? (session.modelShare?.role === 'consumer' ? ' · Shared' : ' · Provider')
+                : '';
+            const peerUser = session.peer?.userName ? ` / ${session.peer.userName}` : '';
+            const label = `${session.peer?.machineName || session.host || session.id}${peerUser} · ${getRemoteStatusText(session)}${shareLabel}`;
+            return `<option value="${session.id}" ${session.id === selectedRemoteSessionId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('')
+        : '<option value="">No session</option>';
+    const quickListEl = ensureRemoteSessionQuickList();
+    if (quickListEl) {
+        quickListEl.innerHTML = sessions.map((session) => {
+            const activeClass = session.id === selectedRemoteSessionId ? 'active' : '';
+            const pendingClass = session.status === 'pending_approval' ? 'pending' : '';
+            const sharedClass = session.modelShare?.status === 'active'
+                ? (session.modelShare?.role === 'consumer' ? 'shared' : 'shared provider')
+                : '';
+            const label = session.peer?.machineName || session.host || session.id;
+            return `<button type="button" class="remote-session-chip ${activeClass} ${pendingClass} ${sharedClass}" data-session-id="${session.id}">${escapeHtml(label)}</button>`;
+        }).join('');
+        quickListEl.querySelectorAll('.remote-session-chip').forEach((button) => {
+            button.addEventListener('click', () => {
+                selectedRemoteSessionId = button.dataset.sessionId || '';
+                localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
+                renderRemoteSessionControls();
+                switchChatMode('remote');
+            });
+        });
+    }
+    const activeSession = getActiveRemoteSession();
+    remoteSessionStatus.textContent = getRemoteStatusText(activeSession);
+    remoteChatHint.textContent = buildRemoteHintText(activeSession);
+    if (btnRemoteConnect) btnRemoteConnect.textContent = getRemoteConnectButtonText(activeSession);
+    if (btnShareModel) btnShareModel.textContent = getModelShareButtonText(activeSession);
+    if (btnShareModel) btnShareModel.disabled = !activeSession || activeSession.status !== 'active';
+    if (btnShareScreen) btnShareScreen.disabled = !activeSession || activeSession.status !== 'active';
+    if (btnDisconnectRemote) btnDisconnectRemote.style.display = 'none';
+    updateChatModelBadgeDisplay(window.__lastLLMStatus || null);
+    renderRemoteMessages();
+}
+
+async function loadRemoteProfileAndState() {
+    const data = await api('/api/remote/state');
+    if (!data.success) return;
+    remoteState = data;
+    remoteProfile = data.profile;
+    if (remoteAgentNameInput) remoteAgentNameInput.value = data.profile?.agentName || '';
+    if (remoteUserNameInput) remoteUserNameInput.value = data.profile?.userName || '';
+    renderRemoteSessionControls();
+    renderRemotePopup();
+    renderModelSharePopup();
+}
+
+function resolveRemoteTargets(messageText = '') {
+    const names = getMentionParticipants();
+    const lowerText = String(messageText || '').toLowerCase();
+    const targets = new Set();
+    names.forEach((item) => {
+        if (!lowerText.includes(`@${item.name.toLowerCase()}`)) return;
+        if (item.role === 'Remote AI') targets.add('remote-ai');
+        if (item.role === 'Local AI') targets.add('local-ai');
+        if (item.role === 'Remote User') targets.add('remote-user');
+    });
+    if (!targets.size) {
+        if ((remoteSendMode?.value || 'user') === 'local-ai') {
+            targets.add('local-ai');
+            targets.add('remote-ai');
+        } else {
+            targets.add('remote-ai');
+        }
+    }
+    return [...targets];
 }
 
 /**
@@ -2359,6 +3230,7 @@ async function init() {
     loadAppMeta();
     // Ensure locale is loaded from localStorage before updating UI
     currentLocale = localStorage.getItem('ui_locale') || 'zh-TW';
+    loadLocalChatSessions();
     updateLocaleUI();
     checkFirstRun();
     applyTheme(localStorage.getItem('theme') || 'dark');
@@ -2369,7 +3241,12 @@ async function init() {
     setupSpeechRecognition();
 
     // 並行載入資料，不要等待啟動畫面
-    await Promise.all([loadTodo(), loadRecommend(), loadSops(), loadExps()]);
+    await Promise.all([loadTodo(), loadRecommend(), loadSops(), loadExps(), loadRemoteProfileAndState()]);
+    renderLocalSessionControls();
+    renderLocalChatMessages();
+    updatePendingStatusRow();
+    if (remoteStateInterval) clearInterval(remoteStateInterval);
+    remoteStateInterval = setInterval(loadRemoteProfileAndState, 2000);
     
     // 硬體監控改為「顯示時才執行」，避免啟動延遲
     if (activeTab === 'hardware') {
@@ -3084,8 +3961,10 @@ function updateLocaleUI() {
     const expsTab = document.querySelector('[data-bottom-tab="exps"]');
     if (logTab) logTab.textContent = t('tabs.logs');
     if (expsTab) expsTab.textContent = t('tabs.exps');
-    const panelTitle = document.querySelector('.chat-history .panel-title');
-    if (panelTitle) panelTitle.textContent = t('tabs.aiChat');
+    const localChatTab = document.querySelector('.chat-mode-tab[data-chat-mode="local"]');
+    const remoteChatTab = document.querySelector('.chat-mode-tab[data-chat-mode="remote"]');
+    if (localChatTab) localChatTab.textContent = t('remote.localTab');
+    if (remoteChatTab) remoteChatTab.textContent = t('remote.remoteTab');
     if (chatModelBadge) {
         if (!chatModelBadge.textContent || chatModelBadge.textContent === 'AI 模型' || chatModelBadge.textContent === 'AI Model') {
             chatModelBadge.textContent = t('chat.modelBadge');
@@ -3094,7 +3973,27 @@ function updateLocaleUI() {
     }
     if (btnMic) btnMic.title = t('chat.mic');
     if (btnChalkAttach) btnChalkAttach.title = t('chat.attachChalkboard');
-    if (btnClearChat) btnClearChat.title = t('chat.clear');
+    if (btnClearChat) btnClearChat.title = activeChatMode === 'local' ? t('chat.clear') : t('remote.disconnect');
+    if (remoteSessionStatus) remoteSessionStatus.textContent = getRemoteStatusText(getActiveRemoteSession());
+    if (remoteHostInput) remoteHostInput.placeholder = t('remote.hostPlaceholder');
+    if (remoteAgentNameInput) remoteAgentNameInput.placeholder = t('remote.agentPlaceholder');
+    if (remoteUserNameInput) remoteUserNameInput.placeholder = t('remote.userPlaceholder');
+    if (btnRemoteConnect) btnRemoteConnect.textContent = getRemoteConnectButtonText(getActiveRemoteSession());
+    if (btnSaveRemoteProfile) btnSaveRemoteProfile.textContent = t('remote.saveProfile');
+    if (btnDisconnectRemote) btnDisconnectRemote.style.display = 'none';
+    if (btnShareScreen) btnShareScreen.textContent = t('remote.shareScreen');
+    if (btnShareModel) btnShareModel.textContent = getModelShareButtonText(getActiveRemoteSession());
+    if (remoteChatHint) remoteChatHint.textContent = buildRemoteHintText(getActiveRemoteSession());
+    if (remoteSendMode?.options?.[0]) remoteSendMode.options[0].text = t('remote.modeUser');
+    if (remoteSendMode?.options?.[1]) remoteSendMode.options[1].text = t('remote.modeLocalAi');
+    if (remoteRequestTitle) remoteRequestTitle.textContent = t('remote.requestTitle');
+    if (remoteRequestSummary) remoteRequestSummary.textContent = t('remote.requestSummary');
+    if (btnAcceptRemoteRequest) btnAcceptRemoteRequest.textContent = t('remote.accept');
+    if (btnRejectRemoteRequest) btnRejectRemoteRequest.textContent = t('remote.reject');
+    if (modelShareTitle) modelShareTitle.textContent = t('remote.modelShareTitle');
+    if (modelShareSummary) modelShareSummary.textContent = t('remote.modelShareSummary');
+    if (btnAcceptModelShare) btnAcceptModelShare.textContent = t('remote.accept');
+    if (btnRejectModelShare) btnRejectModelShare.textContent = t('remote.reject');
     
     // Update experience search placeholder
     if (expSearchInput) expSearchInput.placeholder = t('exps.searchPlaceholder');
@@ -3142,6 +4041,7 @@ function updateLocaleUI() {
     if (btnSend) btnSend.title = t('chat.send');
     const inputHint = document.querySelector('.input-hint');
     if (inputHint) inputHint.textContent = t('chat.hint');
+    switchChatMode(activeChatMode);
 
     // AI Settings Modal
     const settingsTitle = document.querySelector('.provider-modal .modal-header h3');
@@ -3350,6 +4250,10 @@ function updateLocaleUI() {
     updateLLMStatusText(window.__lastLLMStatus);
     renderSidebarTab();
     renderTodoList();
+    updateChatModeBadges();
+    updateChatModelBadgeDisplay(window.__lastLLMStatus || null);
+    renderLocalSessionControls();
+    renderLocalChatMessages();
 }
 
 function setLocale(locale) {
@@ -3365,6 +4269,9 @@ function toggleLocale() {
 function updateLLMStatusText(status = {}) {
     if (!llmDot || !llmLabel) return;
     window.__lastLLMStatus = status || {};
+    if (chatModelBadge && status.modelName) {
+        chatModelBadge.dataset.baseModel = status.modelName;
+    }
     if (status.available && status.modelReady) {
         llmLabel.textContent = t('titlebar.aiReady');
         if (statusLLM) statusLLM.textContent = `🟢 ${t('titlebar.aiReady')}`;
@@ -3375,6 +4282,7 @@ function updateLLMStatusText(status = {}) {
         llmLabel.textContent = t('titlebar.engineNotReady');
         if (statusLLM) statusLLM.textContent = `🔴 ${t('titlebar.engineNotReady')}`;
     }
+    updateChatModelBadgeDisplay(status);
 }
 
 // ════════════════════════════════════════════════════════
@@ -3492,88 +4400,175 @@ async function deleteTask(taskId) {
 // ════════════════════════════════════════════════════════
 async function sendChat() {
     // 如果目前正在處理中，點擊就是「中斷」
-    if (btnSend.classList.contains('stop')) {
-        if (chatAbortController) {
-            chatAbortController.abort();
-            chatAbortController = null;
-        }
+    if (isModePending(activeChatMode)) {
+        const controller = getActiveAbortController(activeChatMode);
+        controller?.abort();
+        setActiveAbortController(null, activeChatMode);
+        updateSendButtonState();
         return;
     }
 
     const msg = chatInput.value.trim();
     if (!msg) return;
+    if (activeChatMode === 'local' && getActiveRemoteSession() && /(^|\s)@/.test(msg)) {
+        switchChatMode('remote');
+    }
+    if (activeChatMode === 'remote' && !getActiveRemoteSession()) {
+        appendChatBubble('system', t('remote.noSession'), [], { container: remoteChatMessages, forceSystem: true });
+        return;
+    }
     const chalkboardAttachment = isChalkboardAttachmentEnabled ? buildChalkboardChatAttachment() : null;
     chatInput.value = '';
     chatInput.style.height = '';
 
-    appendChatBubble('user', chalkboardAttachment ? `${msg}\n\n[已附上 Chalkboard 草圖供 AI 參考]` : msg);
-    const thinkId = appendThinking();
+    if (activeChatMode === 'remote') {
+        appendChatBubble('user', msg, [], {
+            container: remoteChatMessages,
+            senderLabel: remoteProfile?.userName || 'Me',
+        });
+    } else {
+        appendChatBubble('user', chalkboardAttachment ? `${msg}\n\n[已附上 Chalkboard 草圖供 AI 參考]` : msg);
+    }
+    const currentMode = activeChatMode;
+    const currentLocalSession = currentMode === 'local' ? getActiveLocalChatSession() : null;
+    const thinkId = appendThinking(currentMode === 'remote' ? remoteChatMessages : chatMessages);
 
     // 初始化中斷控制
-    chatAbortController = new AbortController();
+    const requestAbortController = new AbortController();
+    setThinkingIdForMode(currentMode, thinkId);
+    setActiveAbortController(requestAbortController, currentMode);
+    updateSendButtonState();
 
     // 切換按鈕狀態為 Stop
     const iconSend = btnSend.querySelector('.icon-send');
     const iconStop = btnSend.querySelector('.icon-stop');
     btnSend.classList.add('stop');
-    btnSend.title = '停止';
+    btnSend.title = currentLocale === 'en-US' ? 'Stop' : '停止';
     iconSend?.classList.add('hidden');
     iconStop?.classList.remove('hidden');
 
     try {
-        const data = await api('/api/chat', { 
-            method: 'POST', 
-            body: { message: msg, chalkboard: chalkboardAttachment, locale: currentLocale },
-            signal: chatAbortController.signal
-        });
+        const localSharedModelSession = currentMode === 'local' ? getSharedModelSession() : null;
+        const data = currentMode === 'remote'
+            ? await (async () => {
+                const targets = resolveRemoteTargets(msg);
+                if (targets.includes('local-ai')) {
+                    return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
+                        method: 'POST',
+                        body: {
+                            text: msg,
+                            mode: 'local-ai',
+                            target: targets.includes('remote-user') && !targets.includes('remote-ai') ? 'remote-user' : 'remote-ai',
+                            locale: currentLocale,
+                        },
+                        signal: requestAbortController.signal
+                    });
+                }
+                if (targets.includes('remote-ai') || targets.includes('remote-user')) {
+                    return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
+                        method: 'POST',
+                        body: {
+                            text: msg,
+                            mode: remoteSendMode?.value || 'user',
+                            target: targets.includes('remote-ai') ? 'remote-ai' : 'remote-user',
+                            locale: currentLocale,
+                        },
+                        signal: requestAbortController.signal
+                    });
+                }
+                return { success: true };
+            })()
+            : await api('/api/chat', {
+                method: 'POST',
+                body: {
+                    message: msg,
+                    chalkboard: chalkboardAttachment,
+                    locale: currentLocale,
+                    preferRemoteModel: !!localSharedModelSession,
+                    remoteSessionId: localSharedModelSession?.id || '',
+                    localChatSessionId: currentLocalSession?.id || '',
+                    history: currentLocalSession?.history || [],
+                },
+                signal: requestAbortController.signal
+            });
 
         removeThinking(thinkId);
 
         if (data.success) {
-            // 移除舊的建議按鈕
-            $$('.suggestions-container').forEach(el => el.remove());
-            
-            appendChatBubble('ai', data.reply, data.suggestions);
-            if (data.sopChanged) {
-                refreshSidebarDataSoon();
-            }
-            if (data.task) {
-                await loadTodo();
-                openTab('todolist');
-                if (todoList.length > 0) expandLog();
-            }
-            if (data.executeTaskId && !data.executeTaskId.includes('CLEAR') && !data.executeTaskId.includes('DELETE')) {
-                executeTask(data.executeTaskId);
+            setThinkingIdForMode(currentMode, '');
+            if (currentMode === 'remote') {
+                await loadRemoteProfileAndState();
+            } else {
+                $$('.suggestions-container').forEach(el => el.remove());
+                if (currentLocalSession && Array.isArray(data.history)) {
+                    currentLocalSession.history = data.history;
+                    touchLocalChatSession(currentLocalSession.id);
+                }
+                appendChatBubble('ai', data.reply, data.suggestions);
+                if (data.modelSource?.type === 'remote-shared') {
+                    appendChatBubble('system', `Shared model: ${data.modelSource.machineName || ''} / ${data.modelSource.agentName || ''} / ${data.modelSource.provider || ''} / ${data.modelSource.model || ''}`);
+                }
+                if (data.sopChanged) {
+                    refreshSidebarDataSoon();
+                }
+                if (data.task) {
+                    await loadTodo();
+                    openTab('todolist');
+                    if (todoList.length > 0) expandLog();
+                }
+                if (data.executeTaskId && !data.executeTaskId.includes('CLEAR') && !data.executeTaskId.includes('DELETE')) {
+                    executeTask(data.executeTaskId);
+                }
             }
         } else {
-            appendChatBubble('ai', '抱歉，出現了一點問題，請再試一次。');
+            appendChatBubble(currentMode === 'remote' ? 'system' : 'ai', currentLocale === 'en-US' ? 'Sorry, something went wrong. Please try again.' : '抱歉，出現了一點問題，請再試一次。', [], {
+                container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
+                forceSystem: currentMode === 'remote',
+            });
         }
     } catch (err) {
         removeThinking(thinkId);
+        setThinkingIdForMode(currentMode, '');
         if (err.name === 'AbortError') {
-            appendChatBubble('ai', '使用者中斷');
+            appendChatBubble(currentMode === 'remote' ? 'system' : 'ai', currentLocale === 'en-US' ? 'Cancelled by user' : '使用者中斷', [], {
+                container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
+                forceSystem: currentMode === 'remote',
+            });
         } else {
             console.error('[Chat] Error:', err);
-            appendChatBubble('ai', t('chat.connectionError'));
+            appendChatBubble(currentMode === 'remote' ? 'system' : 'ai', currentMode === 'remote' ? t('remote.connectFailed', { error: err.message }) : t('chat.connectionError'), [], {
+                container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
+                forceSystem: currentMode === 'remote',
+            });
         }
     } finally {
         // 恢復按鈕狀態
         btnSend.classList.remove('stop');
-        btnSend.title = '送出';
-        iconSend?.classList.remove('hidden');
-        iconStop?.classList.add('hidden');
-        chatAbortController = null;
+        setActiveAbortController(null, currentMode);
+        updateSendButtonState();
     }
 }
 
-function appendChatBubble(role, text, suggestions = []) {
+function appendChatBubble(role, text, suggestions = [], options = {}) {
     const isAI = role === 'ai';
+    const isSystem = role === 'system' || options.forceSystem;
+    const container = options.container || chatMessages;
+    const shouldStick = isContainerPinnedToBottom(container);
+    if (!options.fromRender && container === chatMessages) {
+        addLocalSessionMessage(role, text, suggestions, options);
+    }
     const div = document.createElement('div');
-    div.className = `message ${isAI ? 'ai-message' : 'user-message'}`;
+    div.className = `message ${isSystem ? 'system-message' : (isAI ? 'ai-message' : 'user-message')}`;
     
-    if (isAI) {
+    if (isSystem) {
+        div.innerHTML = `
+            <div class="msg-bubble-wrapper">
+                <div class="msg-bubble markdown-body">${renderMarkdown(text)}</div>
+            </div>
+        `;
+    } else if (isAI) {
         // 設定 marked 選項 (若 library 已載入)
-        const htmlContent = typeof marked !== 'undefined' ? marked.parse(text) : escapeHtml(text).replace(/\n/g, '<br>');
+        const htmlContent = highlightMentionsInHtml(renderMarkdown(text), options.highlightNames || getMentionHighlightNames());
         
         let suggestionsHtml = '';
         if (suggestions && suggestions.length > 0) {
@@ -3593,7 +4588,10 @@ function appendChatBubble(role, text, suggestions = []) {
                 </button>
             </div>
             <div class="msg-bubble-wrapper">
+                ${options.senderLabel ? `<div class="remote-chat-author">${escapeHtml(options.senderLabel)}</div>` : ''}
                 <div class="msg-bubble markdown-body">${htmlContent}</div>
+                ${options.imageDataUrl ? `<img class="remote-image" src="${options.imageDataUrl}" alt="shared screen">` : ''}
+                ${options.imageDataUrl ? `<div class="image-action-row"><button class="btn-inline-save" type="button">${t('remote.saveImage')}</button></div>` : ''}
                 ${suggestionsHtml}
             </div>
         `;
@@ -3609,12 +4607,24 @@ function appendChatBubble(role, text, suggestions = []) {
     } else {
         div.innerHTML = `
             <div class="msg-avatar">👤</div>
-            <div class="msg-bubble">${escapeHtml(text)}</div>
+            <div class="msg-bubble-wrapper">
+                ${options.senderLabel ? `<div class="remote-chat-author">${escapeHtml(options.senderLabel)}</div>` : ''}
+                <div class="msg-bubble markdown-body">${highlightMentionsInHtml(renderMarkdown(text), options.highlightNames || getMentionHighlightNames())}</div>
+                ${options.imageDataUrl ? `<img class="remote-image" src="${options.imageDataUrl}" alt="shared screen">` : ''}
+                ${options.imageDataUrl ? `<div class="image-action-row"><button class="btn-inline-save" type="button">${t('remote.saveImage')}</button></div>` : ''}
+            </div>
         `;
     }
+    const avatarEl = div.querySelector('.msg-avatar');
+    if (avatarEl && !isSystem) {
+        avatarEl.innerHTML = isAI ? '&#129302;' : '&#128100;';
+    }
+    div.querySelector('.btn-inline-save')?.addEventListener('click', () => saveSharedImage(options.imageDataUrl));
     
-    chatMessages.appendChild(div);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    container.appendChild(div);
+    if (shouldStick) {
+        container.scrollTop = container.scrollHeight;
+    }
     return div;
 }
 
@@ -3651,14 +4661,19 @@ function speakText(text, btn) {
     speechSynth.speak(utterance);
 }
 
-function appendThinking() {
-    const id = 'thinking-' + Date.now();
+function appendThinking(container = chatMessages, forcedId = '') {
+    const id = forcedId || ('thinking-' + Date.now());
+    const shouldStick = isContainerPinnedToBottom(container);
     const div = document.createElement('div');
     div.className = 'message ai-message';
     div.id = id;
     div.innerHTML = `<div class="msg-avatar">🤖</div><div class="msg-bubble thinking-dots">${currentLocale === "en-US" ? "Thinking..." : "思考中"}</div>`;
-    chatMessages.appendChild(div);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    const avatarEl = div.querySelector('.msg-avatar');
+    if (avatarEl) avatarEl.innerHTML = '&#129302;';
+    container.appendChild(div);
+    if (shouldStick) {
+        container.scrollTop = container.scrollHeight;
+    }
     return id;
 }
 function removeThinking(id) { document.getElementById(id)?.remove(); }
@@ -3674,15 +4689,172 @@ function isProgressLogMessage(message) {
 }
 
 function clearChatMessages() {
+    if (activeChatMode === 'remote') {
+        disconnectRemoteSession();
+        return;
+    }
     const confirmMsg = currentLocale === 'en-US' 
         ? 'Clear all chat history?' 
         : '確定要清除所有對話紀錄嗎？';
     if (confirm(confirmMsg)) {
-        chatMessages.innerHTML = '';
+        const session = getActiveLocalChatSession();
+        if (session) {
+            session.messages = [];
+            session.history = [];
+            touchLocalChatSession(session.id);
+        }
+        renderLocalSessionControls();
+        renderLocalChatMessages();
         const logMsg = currentLocale === 'en-US'
             ? '💬 Chat history cleared'
             : '💬 對話紀錄已清除';
         addUILog(logMsg, 'info');
+    }
+}
+
+async function saveRemoteProfile() {
+    const data = await api('/api/remote/profile', {
+        method: 'POST',
+        body: {
+            agentName: remoteAgentNameInput?.value.trim(),
+            userName: remoteUserNameInput?.value.trim(),
+            locale: currentLocale,
+        }
+    });
+    if (data.success) {
+        remoteProfile = data.profile;
+        addUILog(t('remote.profileSaved'), 'success');
+        await loadRemoteProfileAndState();
+    }
+}
+
+async function connectRemotePeer() {
+    const currentSession = getActiveRemoteSession();
+    if (currentSession && (currentSession.status === 'active' || currentSession.status === 'pending_approval')) {
+        await disconnectRemoteSession();
+        return;
+    }
+    const host = remoteHostInput?.value.trim();
+    if (!host) return;
+    const data = await api('/api/remote/connect', {
+        method: 'POST',
+        body: { host }
+    });
+    if (data.success) {
+        selectedRemoteSessionId = data.session?.id || selectedRemoteSessionId;
+        addUILog(t('remote.connectSuccess'), 'info');
+        switchChatMode('remote');
+        appendChatBubble('system', `${t('remote.connectingTo', { host })} ${t('remote.waitingResponse')}`, [], { container: remoteChatMessages, forceSystem: true });
+        await loadRemoteProfileAndState();
+    } else {
+        appendChatBubble('system', t('remote.connectFailed', { error: data.error || 'unknown' }), [], { container: remoteChatMessages, forceSystem: true });
+    }
+}
+
+async function respondRemoteRequest(accept) {
+    if (!pendingRemoteRequestId) return;
+    const data = await api(`/api/remote/session/${pendingRemoteRequestId}/respond`, {
+        method: 'POST',
+        body: { accept }
+    });
+    remoteRequestOverlay?.classList.remove('visible');
+    pendingRemoteRequestId = '';
+    if (data.success && accept) {
+        selectedRemoteSessionId = data.session?.id || selectedRemoteSessionId;
+        switchChatMode('remote');
+        appendChatBubble('system', t('remote.requestAccepted'), [], { container: remoteChatMessages, forceSystem: true });
+    }
+    await loadRemoteProfileAndState();
+}
+
+async function disconnectRemoteSession() {
+    const session = getActiveRemoteSession();
+    if (!session) return;
+    const reason = session.status === 'pending_approval'
+        ? 'Connection cancelled by local user.'
+        : 'Disconnected by local user.';
+    await api(`/api/remote/session/${session.id}/disconnect`, {
+        method: 'POST',
+        body: { reason }
+    });
+    await loadRemoteProfileAndState();
+}
+
+async function requestModelShare() {
+    const session = getActiveRemoteSession();
+    if (!session) {
+        appendChatBubble('system', t('remote.noSession'), [], { container: remoteChatMessages, forceSystem: true });
+        return;
+    }
+    if (session.modelShare?.status === 'pending' || session.modelShare?.status === 'active') {
+        const cancelData = await api(`/api/remote/session/${session.id}/model-share/cancel`, {
+            method: 'POST',
+            body: {}
+        });
+        if (cancelData.success) {
+            await loadRemoteProfileAndState();
+        }
+        return;
+    }
+    const data = await api(`/api/remote/session/${session.id}/model-share/request`, {
+        method: 'POST',
+        body: {}
+    });
+    if (data.success) {
+        addUILog(t('remote.modelShareRequested'), 'info');
+        appendChatBubble('system', `${t('remote.sharingModelTo', { host: session.peer?.ip || session.host || '' })} ${t('remote.waitingResponse')}`, [], { container: remoteChatMessages, forceSystem: true });
+        await loadRemoteProfileAndState();
+    }
+}
+
+async function respondModelShare(accept) {
+    if (!pendingModelShareSessionId) return;
+    const data = await api(`/api/remote/session/${pendingModelShareSessionId}/model-share/respond`, {
+        method: 'POST',
+        body: { accept }
+    });
+    modelShareOverlay?.classList.remove('visible');
+    pendingModelShareSessionId = '';
+    if (data.success) {
+        addUILog(accept ? t('remote.modelShareActive') : t('remote.modelShareRejected'), accept ? 'success' : 'warn');
+        await loadRemoteProfileAndState();
+    }
+}
+
+async function shareRemoteScreen() {
+    const session = getActiveRemoteSession();
+    if (!session) {
+        appendChatBubble('system', t('remote.noSession'), [], { container: remoteChatMessages, forceSystem: true });
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        await video.play();
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 1280;
+        canvas.height = video.videoHeight || 720;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        stream.getTracks().forEach((track) => track.stop());
+        const imageDataUrl = canvas.toDataURL('image/png', 0.92);
+        const data = await api(`/api/remote/session/${session.id}/share-screen`, {
+            method: 'POST',
+            body: {
+                imageDataUrl,
+                caption: currentLocale === 'en-US' ? 'Shared current screen' : '分享目前畫面',
+            }
+        });
+        if (data.success) {
+            addUILog(t('remote.screenShared'), 'success');
+            await loadRemoteProfileAndState();
+        } else {
+            appendChatBubble('system', t('remote.screenFailed', { error: data.error || 'unknown' }), [], { container: remoteChatMessages, forceSystem: true });
+        }
+    } catch (error) {
+        appendChatBubble('system', t('remote.screenFailed', { error: error.message }), [], { container: remoteChatMessages, forceSystem: true });
     }
 }
 
@@ -4212,22 +5384,70 @@ function restoreLayout() {
 //  EVENT LISTENERS
 // ════════════════════════════════════════════════════════
 function setupEventListeners() {
+    chatModeTabs?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.chat-mode-tab');
+        if (!btn) return;
+        switchChatMode(btn.dataset.chatMode);
+    });
     // Send chat
     btnSend?.addEventListener('click', sendChat);
     chatInput?.addEventListener('keydown', (e) => {
+        if (mentionMenu?.classList.contains('visible')) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeMentionIndex = Math.min(activeMentionIndex + 1, mentionCandidates.length - 1);
+                updateMentionMenu();
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeMentionIndex = Math.max(activeMentionIndex - 1, 0);
+                updateMentionMenu();
+                return;
+            }
+            if (e.key === 'Enter' && mentionCandidates[activeMentionIndex]) {
+                e.preventDefault();
+                insertMention(mentionCandidates[activeMentionIndex].name);
+                return;
+            }
+            if (e.key === 'Escape') {
+                hideMentionMenu();
+                return;
+            }
+        }
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
     });
     // Auto-resize textarea
     chatInput?.addEventListener('input', () => {
         chatInput.style.height = '';
         chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+        activeMentionIndex = 0;
+        updateMentionMenu();
     });
+    chatInput?.addEventListener('click', updateMentionMenu);
+    chatInput?.addEventListener('blur', () => setTimeout(hideMentionMenu, 120));
 
     // Mic
     btnMic?.addEventListener('click', () => isRecording ? stopRecording() : startRecording());
 
     // Clear Chat
     btnClearChat?.addEventListener('click', clearChatMessages);
+    btnRemoteConnect?.addEventListener('click', connectRemotePeer);
+    btnSaveRemoteProfile?.addEventListener('click', saveRemoteProfile);
+    btnShareModel?.addEventListener('click', requestModelShare);
+    btnShareScreen?.addEventListener('click', shareRemoteScreen);
+    btnDisconnectRemote?.addEventListener('click', disconnectRemoteSession);
+    remoteSessionSelect?.addEventListener('change', () => {
+        selectedRemoteSessionId = remoteSessionSelect.value;
+        localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
+        renderRemoteSessionControls();
+        switchChatMode('remote');
+    });
+    remoteSendMode?.addEventListener('change', updateMentionMenu);
+    btnAcceptRemoteRequest?.addEventListener('click', () => respondRemoteRequest(true));
+    btnRejectRemoteRequest?.addEventListener('click', () => respondRemoteRequest(false));
+    btnAcceptModelShare?.addEventListener('click', () => respondModelShare(true));
+    btnRejectModelShare?.addEventListener('click', () => respondModelShare(false));
     btnLang?.addEventListener('click', toggleLocale);
 
     // Sidebar Search

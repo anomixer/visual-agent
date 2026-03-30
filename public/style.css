@@ -1758,6 +1758,224 @@ ol {
   user-select: none;
 }
 
+.chat-panel-header {
+  gap: 10px;
+}
+
+.chat-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-mode-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-mode-tab {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  transition: background var(--transition), color var(--transition);
+}
+
+.chat-mode-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.chat-mode-tab.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.chat-mode-tab.pending::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #4ec9b0;
+  box-shadow: 0 0 8px rgba(78, 201, 176, 0.8);
+}
+
+.chat-pane {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.chat-pane.active {
+  display: flex;
+}
+
+.remote-session-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.remote-chat-toolbar {
+  border-bottom: 1px solid var(--border-panel);
+  background: var(--bg-sidebar);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.remote-connect-row,
+.remote-profile-row,
+.remote-session-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.remote-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.remote-select {
+  max-width: 140px;
+}
+
+.remote-btn {
+  white-space: nowrap;
+}
+
+.remote-chat-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.remote-session-quick-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.local-session-quick-list {
+  padding: 8px 12px 0;
+}
+
+.chat-pending-status-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px 0;
+}
+
+.chat-pending-pill {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+}
+
+.chat-pending-pill.busy {
+  color: #86efac;
+  border-color: rgba(134, 239, 172, 0.35);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.remote-session-chip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-mid);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.remote-session-chip.active {
+  color: var(--text-primary);
+  border-color: rgba(78, 201, 176, 0.5);
+  background: rgba(78, 201, 176, 0.12);
+}
+
+.remote-session-chip.pending {
+  border-color: rgba(220, 220, 170, 0.4);
+}
+
+.remote-session-chip.shared::after {
+  content: ' share';
+  color: #7ee7d3;
+}
+
+.remote-session-chip.provider::after {
+  content: ' provider';
+  color: #93c5fd;
+}
+
+.remote-messages {
+  flex: 1;
+}
+
+.message.system-message {
+  justify-content: center;
+}
+
+.message.system-message .msg-bubble-wrapper {
+  max-width: 100%;
+}
+
+.message.system-message .msg-bubble {
+  border-radius: 999px;
+  background: rgba(86, 156, 214, 0.12);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.remote-image {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border-mid);
+  display: block;
+  margin-top: 8px;
+}
+
+.image-action-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-inline-save {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.btn-inline-save:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text-primary);
+}
+
+.remote-request-modal {
+  width: 420px;
+}
+
+.remote-request-modal .provider-help-text {
+  white-space: pre-line;
+}
+
 :root.theme-light .chat-model-badge {
   background: rgba(99, 102, 241, 0.1);
   color: #4f46e5;
@@ -1908,6 +2126,12 @@ ol {
   flex-direction: column;
   gap: 8px;
   max-width: 90%;
+}
+
+.remote-chat-author {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 0 2px;
 }
 
 .msg-bubble {
@@ -2085,6 +2309,56 @@ ol {
   background: var(--bg-sidebar);
   padding: 8px 10px;
   flex-shrink: 0;
+  position: relative;
+}
+
+.mention-menu {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 58px;
+  z-index: 20;
+  display: none;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-md);
+  background: var(--bg-modal);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.mention-menu.visible {
+  display: block;
+}
+
+.mention-highlight {
+  display: inline-block;
+  padding: 0 6px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: rgba(78, 201, 176, 0.18);
+  color: #7ee7d3;
+  border: 1px solid rgba(78, 201, 176, 0.28);
+  font-weight: 600;
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.mention-item:hover,
+.mention-item.active {
+  background: var(--bg-card-hover);
+}
+
+.mention-role {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .input-toolbar {
