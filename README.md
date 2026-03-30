@@ -92,7 +92,7 @@ http://localhost:3210
 
 ### 本機 Ollama
 
-系統可自動偵測 Ollama 是否存在，若缺少則可透過內建 SOP 自動安裝，並下載預設模型 `qwen3.5:4b`。當 UI 顯示 `AI 就緒` 時，就可以直接在右側對話區輸入需求。
+系統可自動偵測 Ollama 是否存在，若缺少則可透過內建 SOP 安裝，並下載預設模型 `qwen3.5:4b`。當 UI 顯示 `AI 就緒` 時，就可以直接在右側對話區輸入需求。
 
 ### 其他 Provider
 
@@ -265,6 +265,11 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.03.30
+- **遠端 AI 聊天室**：支援區域網路互連 (19168 TCP)，雙方 AI 與使用者可進行多方通訊。
+- **模型共享 (Model Share)**：可將本機模型分享給遠端代理使用，由授權端決定是否接管。
+- **協作輔助**：包含畫面分享另存、多對話紀錄管理 (Session Chips)，以及 `@mention` 對象標記功能。
+
 
 ### 2026.03.29
 
@@ -272,6 +277,9 @@ aipc-agent/
   - 拖拉 log 窗、sidebar 或 chat 欄縮放後，文字落稿框與 8 點控制框現在會同步按比例重新映射，不再偏移。
   - 三個 panel resizer 的 setSize callback 均補上 `resizeChalkboardCanvas()` 觸發。
   - `resizeChalkboardCanvas()` 在 resize 後對 `pendingTextRect` 按新舊尺寸比例縮放，確保落稿位置始終與 canvas 內容對齊。
+
+### 2026.03.28
+
 - **深度國際化補完**：
   - 各大雲端與地端 AI Provider 的使用說明、推薦模型範例已完整支援中英切換。
   - 模型測試工具 (Test Model) 按鈕狀態、警示與日誌成功實作雙語化。

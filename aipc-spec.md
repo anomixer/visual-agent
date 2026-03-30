@@ -282,7 +282,7 @@ SOPs 存放位置：
 - **`createTextPreviewCanvas()` 修復**：在計算對齊位置時也考慮中文字的補償係數
 - **結果**：中文字落稿時不再出現偏移現象，英文字不受影響
 
-## 6.12 2026.03.29 國際化修補
+## 6.12 2026.03.28 國際化修補
 
 ### 深度國際化修補
 - **Provider 幫助文案**：修正 `PROVIDER_HELP` 在切換語系時未動態覆蓋的問題，支援英文與中文提示。
@@ -292,7 +292,21 @@ SOPs 存放位置：
 ### 頂部菜單進化
 - **File Menu 實作**：在標題列 `檔案` 展開支援 absolute 排版的下拉選單，包含 `匯入任務清單`、`匯出任務清單`、`Refresh畫面`、`Exit`，完整取代舊有的散落按鈕。
 
-## 6.13 2026.03.29 Chalkboard Resize ���Z�خե�
+## 6.13 2026.03.29 Chalkboard Resize 黑板縮放修補
 
-- **Resize Ĳ�o�ɥ�**�Gsidebar�Bchat ��Blog panel �T�� resizer �� setSize callback�A�{�b���b chalkboard ���@�Τ������ɩI�s `resizeChalkboardCanvas()`�A�T�O�e���ؤo���ܮ� canvas ��ߧY����C
-- **pendingTextRect ��ҬM�g**�G`resizeChalkboardCanvas()` �b�M�ηs�ؤo�e���O���� `cssWidth / cssHeight`�A�Y resize �ᤴ�������Z����r�ءA�|�� `�s�ؤo / �¤ؤo` ��ҦP�B�Y�� `pendingTextRect` �� `left / top / width / height`�A�A�I�s `syncPendingTextBox()`�C������T�O��ԥ��󭱪O��خɡA���Z�ػP 8 �I����ةl�׹�� canvas ���e�A���A�����C
+- **Resize 觸發時機**：sidebar、chat 與 log panel 三個 resizer 的 setSize callback，確認目前在 chalkboard 分頁時呼叫 `resizeChalkboardCanvas()`，確保畫布大小與視窗同步。
+- **pendingTextRect 座標修正**：`resizeChalkboardCanvas()` 在改變新畫布寬高前儲存 `cssWidth / cssHeight`，於 resize 後重新計算縮放比例，更新 `pendingTextRect` 的 `left / top / width / height`，以呼叫 `syncPendingTextBox()`。確保縮放視窗時，尚未確定的文字框與 8 個控制點會跟隨著 canvas 縮放，不會跑位。
+
+## 7. 遠端實體與通訊 (Remote Agent & Communication)
+### 7.1 協定與連接埠
+- **TCP 19168**：用於遠端 AI 與遠端使用者的點對點連線。
+- **通訊協定**：自訂 JSON Line Protocol (hello, chat_message, screen_share, disconnect)。
+
+### 7.2 身份與連線授權
+- 連線建立前，需透過 Popup 要求使用者同意或拒絕 (Connection rejected by remote user)。
+- 自動獲取本機 Machine Name, Username, Local IP 進行身份廣播與 Prompt 注入。
+
+### 7.3 會話管理與代理 (Session & Model Proxy)
+- **多對話 (Multi-session)**：支援本機與遠端對話歷史分頁，以及獨立的 Pending (Thinking) 列。
+- **Model Sharing**：A 端同意接受 B 端分享之模型後，A 端 UI 將改用 B 端 API (利用 Session Token 驗證)。
+- **@mention 機制**：透過 `@` 啟動對象名單，點名遠端 AI 即可讓遠端模型介入回答。

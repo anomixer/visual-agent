@@ -477,7 +477,7 @@
 
 ---
 
-## 📌 2026.03.29 - I18N 全面修正
+## 📌 2026.03.28 - I18N 全面修正
 
 ### 全面國際化 (I18N) 補齊
 - **UI 與狀態文字多語系化**：將「思考中」、「正在載入模型清單」、以及各 AI Provider 的說明與模型指引，全面加入 `en-US` / `zh-TW` 動態判定。
@@ -490,17 +490,27 @@
 
 ---
 
-## ?? 2026.03.29 �X Chalkboard Resize ���Z�خy�Юե��״_
+## 📌 2026.03.29 - Chalkboard Resize 黑板縮放與定位修補
+### 🐛 Bug 修復：還原未定案文字框與 8 控制點位置偏移
+**修復 (`public/app.js`)**
+- 三個 resizer (sidebar、chat、logPanel) 的 setSize callback 加入：`if (activeTab === 'chalkboard') resizeChalkboardCanvas()`。
+- `resizeChalkboardCanvas()` 在更新 cssWidth/cssHeight 前會記錄原始大小，resize 後若有 `pendingTextRect`，會重新計算並更新其座標（scaleX = 新寬/舊寬，scaleY = 新高/舊高）。
 
-### ?? Bug �״_�G��ԭ��O���r���Z�ػP 8 �I����ئ�m����
+## 📌 2026.03.30 - 遠端 AI 對話與模型共享功能
+### 遠端實體連線與聊天機制
+- **本機身份感知**：AI 獲取自身 Windows 機器名稱、使用者名稱及 IP，並注入系統 Prompt。
+- **19168 Port 通訊**：新增自訂 JSON Line TCP 協定 (hello/chat_message/screen_share/disconnect 等)。
+- **遠端 AI 聊天室**：UI 將聊天區域分為「本機 AI」與「遠端 AI」雙頁籤。
+- **連線審批 UI**：收到連線請求時會彈出 Popup，顯示來源身份並供使用者接受或拒絕。
+- **支援 Markdown 與 `@mention`**：輸入 `@` 可呼叫參與者清單，點名另一台機器的 AI 時對方 AI 會自動接管回覆；對話支援 Markdown。
+- **畫面分享與另存**：雙方可傳送截圖給對方，並支援透過原生檔案視窗「另存圖片」。
 
-**���D�y�z**
-�ϥΤ�r�u��]T�^���͸��Z�ث�A�Y��� log �����W�]�� sidebar�Bchat �������ԡ^�AChalkboard �e�����ס]�μe�ס^�Y�p�A���Z�ت���ı��m�P 8 �ӱ����I�|�P canvas ���e�藍���C
+### 多 Session 與非同步任務解耦
+- **Session 管理**：本機與遠端均實作歷史紀錄切換 Chips (依活躍度排序)。
+- **Pending 狀態分離**：切換分頁時，本機或遠端 AI 的思考狀態不會被中斷。
 
-**�ڦ]�]��h���D�|�[�^**
-1. **Panel resizer ���q�� canvas ����**�G�T�� resizer �� setSize callback �u�� CSS�A�S���I�s `resizeChalkboardCanvas()`�Acanvas ���������D�e���j�p�w���ܡC
-2. **resize �᥼����ҭ��s�M�g pendingTextRect**�G�Y��Ĳ�o resize�A���޿�έ�l�y�С]����� CSS �ؤo�^�����I�s `syncPendingTextBox()`�Acanvas �Y�F���y�ШS����Y�C
+### 遠端模型共享 (Model Share)
+- **模型代理**：一方可提供本機模型給對方使用。
+- **共享授權機制**：分享模型需經由接收端同意。接管後，客戶端全域 AI 呼叫皆透過提供者的 API 處理 (掛載 proxyToken 及過期校驗)。
+- **狀態標示**：主聊天模型徽章動態顯示 Shared 狀態，並具備取消連線 / 中斷分享機制。
 
-**�״_�]`public/app.js`�^**
-- �T�� resizer�]sidebar�Bchat�BlogPanel�^�� setSize callback �[�J�G`if (activeTab === 'chalkboard') resizeChalkboardCanvas()`�C
-- `resizeChalkboardCanvas()` �b��s cssWidth/cssHeight �e���O���­ȡAresize ��Y�� `pendingTextRect`�A����ҭ��s�M�g�|�����]scaleX = �s�e/�¼e�AscaleY = �s��/�°��^�C
