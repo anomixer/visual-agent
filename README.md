@@ -278,6 +278,14 @@ aipc-agent/
   - 若缺少試算表工具，會分流詢問「安裝 Office 相容工具」或「改用 Google Sheets web」。
   - 新增遊戲攻略/影片代理流程：自動網頁蒐集後回傳 Markdown 結果，並附 `Chalkboard 摘要草稿`。
   - 新增 Agent action：`OPEN_FILE`、`OPEN_URL`。
+- **Browser Use / Computer Use 分級**：
+  - Browser Use（內宇宙）：`/api/agent/browser-use`，提供 `search/open/fetch_title`。
+  - Computer Use（外宇宙）：`/api/agent/computer-use`，提供 `open_file/open_url/install_sop`。
+  - 新增 `/api/agent/capability`：需 `top-tier + vision` 模型才允許進入 Browser/Computer Use。
+- **xlsx 寫入強化**：
+  - 財報更新改為多策略：`Excel COM` → `WPS COM` → `OpenXML` 直寫，降低環境相依性。
+- **Chalkboard API 直寫**：
+  - 新增 `/api/chalkboard/draft`，AI 回覆可附 `chalkboardDraft`，前端會自動落板成重點草稿。
 - **本機對話 Tab 化**：上方聊天模式改為本機多對話 tab + 遠端 tab；本機新增對話支援 `x` 關閉。
 - **新增對話按鈕位置調整**：`+` 移到聊天輸入工具列，位於「清除對話」左側。
 - **Chalkboard Resize 重繪強化**：resize 後會重算 `selectionRect / pendingTextRect` 與互動座標，並重建文字預覽，降低縮放糊化與偏移復發。

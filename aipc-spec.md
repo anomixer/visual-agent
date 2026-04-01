@@ -354,3 +354,29 @@ SOPs 存放位置：
 - 協議擴充：
   - `[ACTION:OPEN_FILE file_path="..."]`
   - `[ACTION:OPEN_URL url="..."]`
+
+### 8.8 Browser Use / Computer Use 架構分級
+- **Level-1 內宇宙（Browser Use）**：
+  - API：`POST /api/agent/browser-use`
+  - 模式：`open`、`search`、`fetch_title`
+  - 用途：Web 搜尋、頁面導覽、內容擷取。
+- **Level-2 外宇宙（Computer Use）**：
+  - API：`POST /api/agent/computer-use`
+  - 模式：`open_file`、`open_url`、`install_sop`
+  - 用途：本機 App 操作、檔案開啟、SOP 任務調度。
+- **能力門檻**：
+  - API：`GET /api/agent/capability`
+  - 條件：`vision capable` + `top-tier model` 才可啟用 Browser/Computer Use。
+
+### 8.9 財報 xlsx 自動寫入能力
+- 寫入引擎採多策略 fallback：
+  1. Excel COM
+  2. WPS COM
+  3. OpenXML 直接寫入 `xl/worksheets/sheet1.xml`
+- 規範：寫入結果需回報方法（method）與來源連結（source URL）。
+
+### 8.10 Chalkboard Agent Draft API
+- API：`POST /api/chalkboard/draft`
+- 輸入：`title`、`bullets[]`
+- 輸出：標準化 draft（含 timestamp）
+- 前端行為：收到 `chalkboardDraft` 後可直接渲染到 Chalkboard，不需人工重打。

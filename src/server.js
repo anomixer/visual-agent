@@ -960,7 +960,7 @@ function buildNvidiaSnapshotLines(snapshot = {}) {
     ];
 }
 
-function updateWorkbookWithNvidiaSnapshot(filePath = '', snapshot = {}) {
+function updateWorkbookWithExcelComSnapshot(filePath = '', snapshot = {}) {
     const escapedPath = escapePowerShellSingleQuoted(filePath);
     const lines = buildNvidiaSnapshotLines(snapshot)
         .map((line) => `'${escapePowerShellSingleQuoted(line)}'`)
@@ -994,6 +994,223 @@ function updateWorkbookWithNvidiaSnapshot(filePath = '', snapshot = {}) {
         '}',
     ].join('; ');
     return runPowerShellJson(cmd, 60000);
+}
+
+function updateWorkbookWithWpsComSnapshot(filePath = '', snapshot = {}) {
+    const escapedPath = escapePowerShellSingleQuoted(filePath);
+    const lines = buildNvidiaSnapshotLines(snapshot)
+        .map((line) => `'${escapePowerShellSingleQuoted(line)}'`)
+        .join(', ');
+    const cmd = [
+        `$target = '${escapedPath}'`,
+        'if (-not (Test-Path -LiteralPath $target)) { throw "Workbook not found." }',
+        '$app = $null',
+        'try {',
+        '  $app = New-Object -ComObject ket.Application',
+        '  $app.Visible = $false',
+        '  $app.DisplayAlerts = $false',
+        '  $wb = $app.Workbooks.Open($target)',
+        '  $ws = $wb.Worksheets.Item(1)',
+        "  $ws.Range('A1').Value2 = 'NVIDIA Latest Earnings Update'",
+        `  $payload = @(${lines})`,
+        '  for ($i = 0; $i -lt $payload.Count; $i++) {',
+        "    $ws.Cells.Item($i + 2, 1).Value2 = $payload[$i]",
+        '  }',
+        "  $ws.Range('A1:A20').EntireColumn.AutoFit() | Out-Null",
+        '  $wb.Save()',
+        '  $wb.Close($true)',
+        "  [PSCustomObject]@{ success = $true; method = 'wps-com'; message = 'Workbook updated with WPS COM' } | ConvertTo-Json -Compress",
+        '} catch {',
+        "  [PSCustomObject]@{ success = $false; method = 'wps-com'; message = ($_ | Out-String).Trim() } | ConvertTo-Json -Compress",
+        '} finally {',
+        '  if ($app -ne $null) {',
+        '    $app.Quit()',
+        '    [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($app)',
+        '  }',
+        '}',
+    ].join('; ');
+    return runPowerShellJson(cmd, 60000);
+}
+
+function updateWorkbookWithOpenXmlSnapshot(filePath = '', snapshot = {}) {
+    const escapedPath = escapePowerShellSingleQuoted(filePath);
+    const lines = [
+        'NVIDIA Latest Earnings Update',
+        ...buildNvidiaSnapshotLines(snapshot),
+    ].map((line) => `'${escapePowerShellSingleQuoted(line)}'`).join(', ');
+    const cmd = [
+        'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+        `$target = '${escapedPath}'`,
+        'if (-not (Test-Path -LiteralPath $target)) { throw "Workbook not found." }',
+        '$zip = [System.IO.Compression.ZipFile]::Open($target, [System.IO.Compression.ZipArchiveMode]::Update)',
+        'try {',
+        "  $entry = $zip.GetEntry('xl/worksheets/sheet1.xml')",
+        "  if (-not $entry) { throw 'sheet1.xml not found in workbook' }",
+        '  $reader = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)',
+        '  $xmlText = $reader.ReadToEnd()',
+        '  $reader.Close()',
+        '  [xml]$doc = $xmlText',
+        "  $ns = New-Object System.Xml.XmlNamespaceManager($doc.NameTable)",
+        "  $ns.AddNamespace('x', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main')",
+        "  $sheetData = $doc.SelectSingleNode('//x:worksheet/x:sheetData', $ns)",
+        "  if (-not $sheetData) { throw 'sheetData missing' }",
+        `  $payload = @(${lines})`,
+        '  for ($i = 0; $i -lt $payload.Count; $i++) {',
+        '    $rowIndex = $i + 1',
+        "    $cellRef = 'A' + $rowIndex",
+        "    $rowNode = $sheetData.SelectSingleNode(\"x:row[@r='$rowIndex']\", $ns)",
+        '    if (-not $rowNode) {',
+        "      $rowNode = $doc.CreateElement('row', $ns.LookupNamespace('x'))",
+        "      $rowNode.SetAttribute('r', [string]$rowIndex)",
+        '      [void]$sheetData.AppendChild($rowNode)',
+        '    }',
+        "    $cellNode = $rowNode.SelectSingleNode(\"x:c[@r='$cellRef']\", $ns)",
+        '    if (-not $cellNode) {',
+        "      $cellNode = $doc.CreateElement('c', $ns.LookupNamespace('x'))",
+        "      $cellNode.SetAttribute('r', $cellRef)",
+        "      $cellNode.SetAttribute('t', 'inlineStr')",
+        '      [void]$rowNode.AppendChild($cellNode)',
+        '    } else {',
+        "      $cellNode.SetAttribute('t', 'inlineStr')",
+        '      while ($cellNode.HasChildNodes) { [void]$cellNode.RemoveChild($cellNode.FirstChild) }',
+        '    }',
+        "    $isNode = $doc.CreateElement('is', $ns.LookupNamespace('x'))",
+        "    $tNode = $doc.CreateElement('t', $ns.LookupNamespace('x'))",
+        '    $tNode.InnerText = [string]$payload[$i]',
+        '    [void]$isNode.AppendChild($tNode)',
+        '    [void]$cellNode.AppendChild($isNode)',
+        '  }',
+        '$newXml = $doc.OuterXml',
+        '$entry.Delete()',
+        "$newEntry = $zip.CreateEntry('xl/worksheets/sheet1.xml')",
+        '$writer = New-Object System.IO.StreamWriter($newEntry.Open(), [System.Text.Encoding]::UTF8)',
+        '$writer.Write($newXml)',
+        '$writer.Flush()',
+        '$writer.Close()',
+        "  [PSCustomObject]@{ success = $true; method = 'openxml'; message = 'Workbook updated with OpenXML' } | ConvertTo-Json -Compress",
+        '} catch {',
+        "  [PSCustomObject]@{ success = $false; method = 'openxml'; message = ($_ | Out-String).Trim() } | ConvertTo-Json -Compress",
+        '} finally {',
+        '  $zip.Dispose()',
+        '}',
+    ].join('; ');
+    return runPowerShellJson(cmd, 60000);
+}
+
+function updateWorkbookWithNvidiaSnapshot(filePath = '', snapshot = {}, env = {}) {
+    const resultBag = [];
+    if (env.excel) {
+        const excelResult = updateWorkbookWithExcelComSnapshot(filePath, snapshot);
+        resultBag.push(excelResult);
+        if (excelResult.success && excelResult.data?.success) return excelResult;
+    }
+    if (env.wps) {
+        const wpsResult = updateWorkbookWithWpsComSnapshot(filePath, snapshot);
+        resultBag.push(wpsResult);
+        if (wpsResult.success && wpsResult.data?.success) return wpsResult;
+    }
+    const openXmlResult = updateWorkbookWithOpenXmlSnapshot(filePath, snapshot);
+    resultBag.push(openXmlResult);
+    if (openXmlResult.success && openXmlResult.data?.success) return openXmlResult;
+    return {
+        success: false,
+        data: { success: false, message: resultBag.map((item) => item?.data?.message || item?.error).filter(Boolean).join(' | ') || 'Workbook update failed' },
+        error: 'Workbook update failed',
+    };
+}
+
+function parseActionArg(actionStr = '', key = '') {
+    const regex = new RegExp(`${key}="(.*?)"`);
+    const match = String(actionStr || '').match(regex);
+    return match ? match[1] : '';
+}
+
+function buildModelCapabilityProfile() {
+    const model = llm.getCurrentModel();
+    const provider = llm.getCurrentProvider();
+    const hasVision = llm.modelSupportsVision(model) || llm.modelSupportsVision(llm.getCurrentVisionModel() || '');
+    const isTopTier = /(gpt-5|gpt-4\.1|claude-sonnet-4|claude-opus|gemini-2\.5|qwen.*vl|llama-3\.2-90b-vision|phi-4-multimodal)/i.test(
+        `${provider} ${model} ${llm.getCurrentVisionModel() || ''}`
+    );
+    return {
+        provider,
+        model,
+        hasVision,
+        isTopTier,
+        canUseAdvancedAgent: hasVision && isTopTier,
+    };
+}
+
+async function runBrowserUseOperation(params = {}) {
+    const mode = String(params.mode || '').toLowerCase();
+    if (mode === 'open') {
+        return {
+            success: openUrlInDefaultBrowser(params.url).success,
+            mode,
+            openedUrl: params.url || '',
+        };
+    }
+    if (mode === 'search') {
+        const query = String(params.query || '').trim();
+        const results = await searchWebLinks(query, Math.min(10, Number(params.limit) || 5));
+        return {
+            success: true,
+            mode,
+            query,
+            results,
+        };
+    }
+    if (mode === 'fetch_title') {
+        const url = String(params.url || '').trim();
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { 'User-Agent': 'aipc-agent/2026.04.01' },
+            signal: AbortSignal.timeout(20000),
+        });
+        if (!response.ok) throw new Error(`fetch failed (${response.status})`);
+        const html = await response.text();
+        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        return {
+            success: true,
+            mode,
+            url,
+            title: decodeHtmlEntities((titleMatch?.[1] || '').trim()),
+        };
+    }
+    return { success: false, mode, error: 'Unsupported browser mode' };
+}
+
+function runComputerUseOperation(params = {}, sopsWithState = []) {
+    const mode = String(params.mode || '').toLowerCase();
+    if (mode === 'open_file') {
+        const result = openFileWithDefaultApp(params.filePath || params.file_path || '');
+        return { success: result.success, mode, detail: result.stderr || result.error || '' };
+    }
+    if (mode === 'open_url') {
+        const result = openUrlInDefaultBrowser(params.url || '');
+        return { success: result.success, mode, detail: result.stderr || result.error || '' };
+    }
+    if (mode === 'install_sop') {
+        const sopId = String(params.sopId || params.sop_id || '').trim();
+        const targetSop = sopsWithState.find((item) => item.id === sopId);
+        if (!targetSop) return { success: false, mode, error: `SOP not found: ${sopId}` };
+        const task = {
+            id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            title: buildTaskTitle(targetSop, targetSop.recommendedAction),
+            description: 'Scheduled by Computer Use',
+            skillId: targetSop.id,
+            action: targetSop.recommendedAction,
+            category: targetSop.category || 'Maintenance',
+            status: 'pending',
+            progress: 0,
+            logs: [],
+            createdAt: new Date().toISOString(),
+        };
+        todoList.push(task);
+        saveTasks();
+        return { success: true, mode, taskId: task.id, sopId: targetSop.id };
+    }
+    return { success: false, mode, error: 'Unsupported computer mode' };
 }
 
 function decodeHtmlEntities(value = '') {
@@ -1106,36 +1323,40 @@ async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW'
 
     const snapshot = await fetchNvidiaLatestFinancialSnapshot();
     const summary = buildNvidiaSnapshotLines(snapshot);
-    if (env.excel) {
-        const writeResult = updateWorkbookWithNvidiaSnapshot(workbookPath, snapshot);
-        if (writeResult.success && writeResult.data?.success) {
-            openFileWithDefaultApp(workbookPath);
-            return {
-                success: true,
-                reply: [
-                    locale === 'en-US'
-                        ? `Workbook updated: ${workbookPath}`
-                        : `已更新活頁簿：${workbookPath}`,
-                    '',
-                    ...summary.map((line) => `- ${line}`),
-                    '',
-                    snapshot.sourceUrl,
-                ].join('\n'),
-                suggestions: locale === 'en-US'
-                    ? ['Open workbook folder', 'Update another workbook']
-                    : ['開啟活頁簿所在資料夾', '更新另一個活頁簿'],
-                task: false,
-                llmUsed: false,
-            };
-        }
+    const writeResult = updateWorkbookWithNvidiaSnapshot(workbookPath, snapshot, env);
+    if (writeResult.success && writeResult.data?.success) {
+        openFileWithDefaultApp(workbookPath);
+        return {
+            success: true,
+            reply: [
+                locale === 'en-US'
+                    ? `Workbook updated: ${workbookPath}`
+                    : `已更新活頁簿：${workbookPath}`,
+                locale === 'en-US'
+                    ? `Write method: ${writeResult.data?.method || 'auto'}`
+                    : `寫入方式：${writeResult.data?.method || 'auto'}`,
+                '',
+                ...summary.map((line) => `- ${line}`),
+                '',
+                snapshot.sourceUrl,
+            ].join('\n'),
+            suggestions: locale === 'en-US'
+                ? ['Open workbook folder', 'Update another workbook']
+                : ['開啟活頁簿所在資料夾', '更新另一個活頁簿'],
+            task: false,
+            llmUsed: false,
+        };
     }
 
     return {
         success: true,
         reply: [
             locale === 'en-US'
-                ? `Detected workbook: ${workbookPath}. Automatic write requires Excel COM.`
-                : `已找到活頁簿：${workbookPath}。自動寫入目前需使用 Excel COM。`,
+                ? `Detected workbook: ${workbookPath}, but automatic write failed.`
+                : `已找到活頁簿：${workbookPath}，但自動寫入失敗。`,
+            locale === 'en-US'
+                ? `Failure: ${writeResult.data?.message || writeResult.error || 'Unknown'}`
+                : `錯誤：${writeResult.data?.message || writeResult.error || 'Unknown'}`,
             '',
             locale === 'en-US' ? 'Latest NVIDIA snapshot:' : 'NVIDIA 最新財報摘要：',
             ...summary.map((line) => `- ${line}`),
@@ -1183,6 +1404,10 @@ async function handleAgentGameResearchWorkflow(message = '', locale = 'zh-TW') {
     return {
         success: true,
         reply,
+        chalkboardDraft: {
+            title: locale === 'en-US' ? `Game Research: ${topic}` : `遊戲資料蒐集：${topic}`,
+            bullets: chalkboardBullets,
+        },
         suggestions: locale === 'en-US'
             ? ['Find more videos', 'Search another game']
             : ['再找更多影片', '搜尋另一款遊戲'],
@@ -2505,6 +2730,34 @@ ${taskContext || '(empty)'}
                     }
                 }
 
+                if (actionStr.startsWith('BROWSER_USE')) {
+                    const mode = parseActionArg(actionStr, 'mode') || 'search';
+                    const query = parseActionArg(actionStr, 'query');
+                    const url = parseActionArg(actionStr, 'url');
+                    const capability = buildModelCapabilityProfile();
+                    if (capability.canUseAdvancedAgent) {
+                        await runBrowserUseOperation({ mode, query, url, limit: 5 });
+                        hasActionTaken = true;
+                    } else {
+                        fileLog(`BROWSER_USE blocked: top-tier VLM required (${capability.provider}/${capability.model})`);
+                    }
+                }
+
+                if (actionStr.startsWith('COMPUTER_USE')) {
+                    const mode = parseActionArg(actionStr, 'mode');
+                    const filePath = parseActionArg(actionStr, 'file_path');
+                    const url = parseActionArg(actionStr, 'url');
+                    const sopId = parseActionArg(actionStr, 'sop_id');
+                    const capability = buildModelCapabilityProfile();
+                    if (capability.canUseAdvancedAgent) {
+                        runComputerUseOperation({ mode, filePath, url, sopId }, sopsWithState);
+                        hasActionTaken = true;
+                        taskListChanged = true;
+                    } else {
+                        fileLog(`COMPUTER_USE blocked: top-tier VLM required (${capability.provider}/${capability.model})`);
+                    }
+                }
+
 
                 if (actionStr.startsWith('CREATE_WINGET_SOP')) {
                     const idMatch = actionStr.match(/package_id="(.*?)"/);
@@ -2733,6 +2986,71 @@ ${taskContext || '(empty)'}
         task: !!taskAdded,
         executeTaskId,
         llmUsed: false
+    });
+});
+
+app.get('/api/agent/capability', (req, res) => {
+    const profile = buildModelCapabilityProfile();
+    res.json({
+        success: true,
+        levels: {
+            browserUse: 'inner-universe',
+            computerUse: 'outer-universe',
+        },
+        model: profile,
+    });
+});
+
+app.post('/api/agent/browser-use', async (req, res) => {
+    try {
+        const profile = buildModelCapabilityProfile();
+        if (!profile.canUseAdvancedAgent) {
+            return res.status(412).json({
+                success: false,
+                error: 'Top-tier VLM capability required for Browser Use.',
+                model: profile,
+            });
+        }
+        const result = await runBrowserUseOperation(req.body || {});
+        return res.json({ success: Boolean(result?.success), result, model: profile });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/agent/computer-use', async (req, res) => {
+    try {
+        const profile = buildModelCapabilityProfile();
+        if (!profile.canUseAdvancedAgent) {
+            return res.status(412).json({
+                success: false,
+                error: 'Top-tier VLM capability required for Computer Use.',
+                model: profile,
+            });
+        }
+        const sops = await annotateSOPRuntimeState(loadAllSOPs(SOPS_DIR));
+        const result = runComputerUseOperation(req.body || {}, sops);
+        return res.json({ success: Boolean(result?.success), result, model: profile });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/chalkboard/draft', (req, res) => {
+    const title = String(req.body?.title || '').trim();
+    const bullets = Array.isArray(req.body?.bullets)
+        ? req.body.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
+        : [];
+    if (!title && bullets.length === 0) {
+        return res.status(400).json({ success: false, error: 'Empty chalkboard draft.' });
+    }
+    res.json({
+        success: true,
+        draft: {
+            title: title || 'Chalkboard Draft',
+            bullets,
+            createdAt: new Date().toISOString(),
+        },
     });
 });
 // GET /api/logs 取得全域 log

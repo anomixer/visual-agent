@@ -555,3 +555,16 @@
 - 擴充動作協議：新增 `[ACTION:OPEN_FILE ...]`、`[ACTION:OPEN_URL ...]`。
 - 新增 Skills：`skills/desktop-agent.md`、`skills/game-research.md`。
 
+### Browser Use / Computer Use 雙層代理（內宇宙 / 外宇宙）
+- **內宇宙（Browser Use）**：新增 `/api/agent/browser-use`，支援 `search/open/fetch_title` 模式，供 AI 進行瀏覽器層級操作。
+- **外宇宙（Computer Use）**：新增 `/api/agent/computer-use`，支援 `open_file/open_url/install_sop` 模式，供 AI 操控本機應用與任務。
+- **VLM 門檻控管**：新增能力檢查 `/api/agent/capability`；Browser/Computer Use 僅在 `top-tier + vision capable` 模型下啟用。
+- **Action 協議升級**：LLM 新增可輸出 `[ACTION:BROWSER_USE ...]` / `[ACTION:COMPUTER_USE ...]`。
+
+### 財報工作流強化（多寫入引擎）
+- `.xlsx` 更新改為多策略：`Excel COM` → `WPS COM` → `OpenXML 直寫`，提升非 Office 環境成功率。
+- 仍保留環境檢查與分流：若無可用試算表工具，優先回到「安裝 Office SOP 或 Google Sheets」。
+
+### Chalkboard API 直寫
+- 新增 `/api/chalkboard/draft`，AI 回覆可帶 `chalkboardDraft`，前端會自動把摘要渲染到黑板（標題 + 重點條列）。
+

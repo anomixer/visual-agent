@@ -2859,6 +2859,63 @@ function drawChalkboardHint() {
     );
 }
 
+async function applyAgentChalkboardDraft(draft) {
+    if (!draft) return;
+    const title = String(draft.title || '').trim();
+    const bullets = Array.isArray(draft.bullets)
+        ? draft.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
+        : [];
+    if (!title && bullets.length === 0) return;
+
+    try {
+        const normalized = await api('/api/chalkboard/draft', {
+            method: 'POST',
+            body: { title, bullets },
+        });
+        if (!normalized.success || !normalized.draft) return;
+
+        openTab('chalkboard');
+        requestAnimationFrame(() => {
+            if (!chalkboardState.ctx) return;
+            if (!chalkboardState.hasInteracted) {
+                activateChalkboard();
+            }
+            pushChalkHistory();
+            const finalTitle = String(normalized.draft.title || title || 'Chalkboard Draft').trim();
+            const finalBullets = Array.isArray(normalized.draft.bullets)
+                ? normalized.draft.bullets
+                : bullets;
+            const padX = 34;
+            let cursorY = 62;
+            drawChalkText(finalTitle, padX, cursorY, {
+                font: '700 30px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+                color: '#f4efe2',
+                alpha: 0.95,
+            });
+            cursorY += 44;
+            finalBullets.forEach((line, index) => {
+                drawWrappedChalkText(
+                    `${index + 1}. ${line}`,
+                    padX,
+                    cursorY,
+                    Math.max(280, chalkboardState.cssWidth - 68),
+                    28,
+                    {
+                        font: '600 22px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+                        color: '#eef0df',
+                        alpha: 0.9,
+                    }
+                );
+                cursorY += 48;
+            });
+            markChalkboardUserContent(true);
+            addUILog(currentLocale === 'en-US' ? 'Agent draft rendered on Chalkboard.' : '已將 Agent 摘要寫入 Chalkboard。', 'success');
+        });
+    } catch (err) {
+        console.error('[Chalkboard Draft] failed:', err);
+    }
+}
+
 function drawWrappedChalkText(text, x, y, maxWidth, lineHeight, options) {
     const ctx = chalkboardState.ctx;
     if (!ctx) return;
@@ -4597,6 +4654,9 @@ async function sendChat() {
                     touchLocalChatSession(currentLocalSession.id);
                 }
                 appendChatBubble('ai', data.reply, data.suggestions);
+                if (data.chalkboardDraft) {
+                    applyAgentChalkboardDraft(data.chalkboardDraft);
+                }
                 if (data.modelSource?.type === 'remote-shared') {
                     appendChatBubble('system', `Shared model: ${data.modelSource.machineName || ''} / ${data.modelSource.agentName || ''} / ${data.modelSource.provider || ''} / ${data.modelSource.model || ''}`);
                 }
