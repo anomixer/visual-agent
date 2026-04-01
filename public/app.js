@@ -2880,7 +2880,17 @@ async function applyAgentChalkboardDraft(draft) {
             if (!chalkboardState.hasInteracted) {
                 activateChalkboard();
             }
+            cancelPendingChalkPreview(false);
+            hidePlacementGuide();
+            hidePendingTextBox();
+            clearSelectionBox();
+            chalkboardState.pendingText = null;
+            chalkboardState.pendingTextRect = null;
+            chalkboardState.pendingTextSnapshot = null;
+            chalkboardState.pendingTextPreviewUrl = null;
+            chalkboardState.textManipulation = null;
             pushChalkHistory();
+            clearChalkboardSurface();
             const finalTitle = String(normalized.draft.title || title || 'Chalkboard Draft').trim();
             const finalBullets = Array.isArray(normalized.draft.bullets)
                 ? normalized.draft.bullets
@@ -2894,7 +2904,7 @@ async function applyAgentChalkboardDraft(draft) {
             });
             cursorY += 44;
             finalBullets.forEach((line, index) => {
-                drawWrappedChalkText(
+                const wrappedLines = drawWrappedChalkText(
                     `${index + 1}. ${line}`,
                     padX,
                     cursorY,
@@ -2906,7 +2916,7 @@ async function applyAgentChalkboardDraft(draft) {
                         alpha: 0.9,
                     }
                 );
-                cursorY += 48;
+                cursorY += Math.max(40, wrappedLines * 28 + 10);
             });
             markChalkboardUserContent(true);
             addUILog(currentLocale === 'en-US' ? 'Agent draft rendered on Chalkboard.' : '已將 Agent 摘要寫入 Chalkboard。', 'success');
@@ -2918,13 +2928,14 @@ async function applyAgentChalkboardDraft(draft) {
 
 function drawWrappedChalkText(text, x, y, maxWidth, lineHeight, options) {
     const ctx = chalkboardState.ctx;
-    if (!ctx) return;
+    if (!ctx) return 0;
 
     ctx.save();
     ctx.font = options.font;
     const chars = Array.from(text);
     let line = '';
     let currentY = y;
+    let lineCount = 0;
 
     chars.forEach(char => {
         const testLine = line + char;
@@ -2932,6 +2943,7 @@ function drawWrappedChalkText(text, x, y, maxWidth, lineHeight, options) {
             drawChalkText(line, x, currentY, options);
             line = char;
             currentY += lineHeight;
+            lineCount += 1;
         } else {
             line = testLine;
         }
@@ -2939,8 +2951,10 @@ function drawWrappedChalkText(text, x, y, maxWidth, lineHeight, options) {
 
     if (line) {
         drawChalkText(line, x, currentY, options);
+        lineCount += 1;
     }
     ctx.restore();
+    return lineCount;
 }
 
 async function requestPendingChalkText() {

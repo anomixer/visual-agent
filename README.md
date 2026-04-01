@@ -286,6 +286,10 @@ aipc-agent/
   - 財報更新改為多策略：`Excel COM` → `WPS COM` → `OpenXML` 直寫，降低環境相依性。
 - **Chalkboard API 直寫**：
   - 新增 `/api/chalkboard/draft`，AI 回覆可附 `chalkboardDraft`，前端會自動落板成重點草稿。
+  - Agent 落板前會先清除舊內容，再以粉筆字重畫，並依實際包行高度排版，避免字重疊。
+- **內宇宙 / 外宇宙**：
+  - 內宇宙（Browser Use）：偏向瀏覽器內資源取得與編輯。
+  - 外宇宙（Computer Use）：偏向桌面操作，預設先 VM sandbox（如 VirtualBox）再執行，減少對主機干擾。
 - **本機對話 Tab 化**：上方聊天模式改為本機多對話 tab + 遠端 tab；本機新增對話支援 `x` 關閉。
 - **新增對話按鈕位置調整**：`+` 移到聊天輸入工具列，位於「清除對話」左側。
 - **Chalkboard Resize 重繪強化**：resize 後會重算 `selectionRect / pendingTextRect` 與互動座標，並重建文字預覽，降低縮放糊化與偏移復發。

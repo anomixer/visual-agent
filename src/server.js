@@ -1180,13 +1180,92 @@ async function runBrowserUseOperation(params = {}) {
     return { success: false, mode, error: 'Unsupported browser mode' };
 }
 
+function detectVirtualBoxStatus() {
+    const cmd = [
+        '$vbox = Get-Command VBoxManage.exe -ErrorAction SilentlyContinue',
+        '$obj = [PSCustomObject]@{',
+        '  installed = [bool]$vbox;',
+        "  executable = if ($vbox) { $vbox.Source } else { '' }",
+        "  hypervisor = if ($vbox) { 'virtualbox' } else { 'none' }",
+        '}',
+        '$obj | ConvertTo-Json -Compress',
+    ].join('; ');
+    const output = runPowerShellJson(cmd, 10000);
+    if (!output.success || !output.data) {
+        return { installed: false, executable: '', hypervisor: 'none' };
+    }
+    return output.data;
+}
+
 function runComputerUseOperation(params = {}, sopsWithState = []) {
+    const vmSafeByDefault = params.vmSafeByDefault !== false;
     const mode = String(params.mode || '').toLowerCase();
+    if (mode === 'prepare_vm_sandbox') {
+        const vmStatus = detectVirtualBoxStatus();
+        if (vmStatus.installed) {
+            return {
+                success: true,
+                mode,
+                vm: vmStatus,
+                message: 'VM sandbox is ready.',
+            };
+        }
+        const existing = sopsWithState.find((item) => /virtualbox|vm/i.test(`${item.id} ${item.name}`));
+        if (existing) {
+            const task = {
+                id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                title: buildTaskTitle(existing, existing.recommendedAction),
+                description: 'Scheduled by Computer Use (VM sandbox prep)',
+                skillId: existing.id,
+                action: existing.recommendedAction,
+                category: existing.category || 'Maintenance',
+                status: 'pending',
+                progress: 0,
+                logs: [],
+                createdAt: new Date().toISOString(),
+            };
+            todoList.push(task);
+            saveTasks();
+            return {
+                success: true,
+                mode,
+                vm: vmStatus,
+                taskId: task.id,
+                sopId: existing.id,
+                message: 'Queued VM install task via existing SOP.',
+            };
+        }
+        const generated = createWingetSopFile({
+            id: 'Oracle.VirtualBox',
+            name: 'Oracle VM VirtualBox',
+        });
+        return {
+            success: true,
+            mode,
+            vm: vmStatus,
+            generatedSop: generated.fileName,
+            message: 'Generated VirtualBox install SOP. Please approve installation before Computer Use executes inside VM.',
+        };
+    }
     if (mode === 'open_file') {
+        if (vmSafeByDefault) {
+            return {
+                success: false,
+                mode,
+                error: 'Direct host file open blocked. Use prepare_vm_sandbox first or set vmSafeByDefault=false explicitly.',
+            };
+        }
         const result = openFileWithDefaultApp(params.filePath || params.file_path || '');
         return { success: result.success, mode, detail: result.stderr || result.error || '' };
     }
     if (mode === 'open_url') {
+        if (vmSafeByDefault) {
+            return {
+                success: false,
+                mode,
+                error: 'Direct host browser open blocked. Use Browser Use or VM sandbox flow first.',
+            };
+        }
         const result = openUrlInDefaultBrowser(params.url || '');
         return { success: result.success, mode, detail: result.stderr || result.error || '' };
     }
@@ -2996,6 +3075,11 @@ app.get('/api/agent/capability', (req, res) => {
         levels: {
             browserUse: 'inner-universe',
             computerUse: 'outer-universe',
+        },
+        policy: {
+            browserUse: 'Browser Use is for web resource acquisition and browser-side editing actions.',
+            computerUse: 'Computer Use should run inside VM sandbox when possible to avoid host interference.',
+            vmSandboxFirst: true,
         },
         model: profile,
     });

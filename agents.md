@@ -567,4 +567,12 @@
 
 ### Chalkboard API 直寫
 - 新增 `/api/chalkboard/draft`，AI 回覆可帶 `chalkboardDraft`，前端會自動把摘要渲染到黑板（標題 + 重點條列）。
+- AI 下筆前會先清板、清除 pending/selection，再以粉筆字逐行重畫；包行後改用實際行數累進 Y 座標，避免重疊。
+
+### 外宇宙（Computer）沙箱化補強
+- Computer Use 新增 `prepare_vm_sandbox` 模式，優先檢查/準備 VirtualBox 作為沙箱執行層。
+- 預設策略改為 VM 優先；未明確覆蓋前，阻擋直接在主機開檔/開網址，避免干擾本機環境。
+
+### 內宇宙（Browser）用途明確化
+- Browser Use 定位為「資源取得 + 瀏覽器內編輯」層，供 AI 在 web 內完成搜尋、讀取、導覽與內容處理。
 
