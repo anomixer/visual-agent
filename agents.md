@@ -538,3 +538,8 @@
 - `新增對話` 按鈕移到輸入工具列，位置在「清除對話」左側，降低建立新會話的操作成本。
 - Chalkboard 在 resize 後，除了縮放快照，也會同步重算 `selectionRect/pendingTextRect/drag points`，並重建 pending 文字 preview，降低字體糊化與偏移復發。
 
+### 黑板 8 點框拖曳精準化（補丁）
+- 修正 8 點框 resize 時「框體與游標左右偏移」問題，改為以即時游標位置作為邊界計算，不再使用舊版 `dx` 累加造成漂移。
+- 修正畫布 resize 當下若仍在拖曳文字框，會同步縮放 `textManipulation.originPoint / originRect / anchor`，避免拖曳中途視窗改變導致框與游標脫鉤。
+- 修正文字框縮放時字級不變問題：pending 文字預覽改為依框內可用區域動態計算 `fontSize / lineHeight`，落稿視覺與框體一致。
+

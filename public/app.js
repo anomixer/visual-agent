@@ -2176,11 +2176,24 @@ function resizeChalkboardCanvas() {
                     y: pointValue.y * scaleY,
                 };
             };
+            const scaleTextManipulation = (manipulationValue) => {
+                if (!manipulationValue) return manipulationValue;
+                return {
+                    ...manipulationValue,
+                    originPoint: scalePoint(manipulationValue.originPoint),
+                    originRect: scaleRect(manipulationValue.originRect),
+                    anchorLeft: typeof manipulationValue.anchorLeft === 'number' ? (manipulationValue.anchorLeft * scaleX) : manipulationValue.anchorLeft,
+                    anchorTop: typeof manipulationValue.anchorTop === 'number' ? (manipulationValue.anchorTop * scaleY) : manipulationValue.anchorTop,
+                    anchorRight: typeof manipulationValue.anchorRight === 'number' ? (manipulationValue.anchorRight * scaleX) : manipulationValue.anchorRight,
+                    anchorBottom: typeof manipulationValue.anchorBottom === 'number' ? (manipulationValue.anchorBottom * scaleY) : manipulationValue.anchorBottom,
+                };
+            };
             chalkboardState.pendingTextRect = scaleRect(chalkboardState.pendingTextRect);
             chalkboardState.selectionRect = scaleRect(chalkboardState.selectionRect);
             chalkboardState.dragStart = scalePoint(chalkboardState.dragStart);
             chalkboardState.hoverPoint = scalePoint(chalkboardState.hoverPoint);
             chalkboardState.dragPresetEnd = scalePoint(chalkboardState.dragPresetEnd);
+            chalkboardState.textManipulation = scaleTextManipulation(chalkboardState.textManipulation);
         }
         if (chalkboardState.pendingText && chalkboardState.pendingTextRect) {
             refreshPendingTextPreview();
@@ -2455,7 +2468,11 @@ function startTextBoxManipulation(event) {
         mode: handle === 'move' ? 'move' : 'resize',
         handle: handle === 'move' ? null : handle,
         originPoint: point,
-        originRect: { ...chalkboardState.pendingTextRect }
+        originRect: { ...chalkboardState.pendingTextRect },
+        anchorLeft: chalkboardState.pendingTextRect.left,
+        anchorTop: chalkboardState.pendingTextRect.top,
+        anchorRight: chalkboardState.pendingTextRect.left + chalkboardState.pendingTextRect.width,
+        anchorBottom: chalkboardState.pendingTextRect.top + chalkboardState.pendingTextRect.height
     };
     chalkboardState.drawing = true;
     chalkboardState.hoverPoint = point;
@@ -2915,12 +2932,19 @@ async function requestPendingChalkText() {
     chalkboardState.pendingText = {
         lines,
         fontSize,
+        baseFontSize: fontSize,
         lineHeight,
+        baseLineHeight: lineHeight,
         textWidth: width,
+        baseTextWidth: width,
         textHeight: height,
+        baseTextHeight: height,
         baseWidth: width + (previewPadding * 2),
         baseHeight: height + (previewPadding * 2),
         font,
+        fontFamily,
+        fontWeight,
+        fontVariant,
         color,
         align,
         bold,
@@ -3096,20 +3120,22 @@ function updatePendingTextRect(point) {
         nextTop = rect.top + dy;
     } else {
         const handle = interaction.handle || 'se';
-        let right = rect.left + rect.width;
-        let bottom = rect.top + rect.height;
+        let right = interaction.anchorRight ?? (rect.left + rect.width);
+        let bottom = interaction.anchorBottom ?? (rect.top + rect.height);
 
         if (handle.includes('w')) {
-            nextLeft = Math.min(rect.left + dx, right - minWidth);
+            nextLeft = Math.min(point.x, right - minWidth);
         }
         if (handle.includes('e')) {
-            right = Math.max(rect.left + minWidth, right + dx);
+            nextLeft = interaction.anchorLeft ?? rect.left;
+            right = Math.max(nextLeft + minWidth, point.x);
         }
         if (handle.includes('n')) {
-            nextTop = Math.min(rect.top + dy, bottom - minHeight);
+            nextTop = Math.min(point.y, bottom - minHeight);
         }
         if (handle.includes('s')) {
-            bottom = Math.max(rect.top + minHeight, bottom + dy);
+            nextTop = interaction.anchorTop ?? rect.top;
+            bottom = Math.max(nextTop + minHeight, point.y);
         }
 
         nextWidth = right - nextLeft;
@@ -3156,23 +3182,45 @@ function refreshPendingTextPreview() {
     const block = chalkboardState.pendingText;
     if (!block || !Array.isArray(block.lines) || !block.lines.length) return;
     const previewPadding = Math.max(6, Number(block.previewPadding) || 0);
-    let previewWidth = Number(block.textWidth) || 1;
-    let previewHeight = Number(block.textHeight) || 1;
+    let previewWidth = Number(block.baseTextWidth || block.textWidth) || 1;
+    let previewHeight = Number(block.baseTextHeight || block.textHeight) || 1;
+    const baseTextWidth = Math.max(1, Number(block.baseTextWidth || block.textWidth) || 1);
+    const baseTextHeight = Math.max(1, Number(block.baseTextHeight || block.textHeight) || 1);
+    const baseFontSize = Math.max(8, Number(block.baseFontSize || block.fontSize) || 8);
+    const baseLineHeight = Math.max(10, Number(block.baseLineHeight || block.lineHeight) || 10);
+    let nextFontSize = baseFontSize;
+    let nextLineHeight = baseLineHeight;
     if (chalkboardState.pendingTextRect) {
-        previewWidth = Math.max(previewWidth, chalkboardState.pendingTextRect.width - (previewPadding * 2));
-        previewHeight = Math.max(previewHeight, chalkboardState.pendingTextRect.height - (previewPadding * 2));
+        const innerWidth = Math.max(1, chalkboardState.pendingTextRect.width - (previewPadding * 2));
+        const innerHeight = Math.max(1, chalkboardState.pendingTextRect.height - (previewPadding * 2));
+        const scaleX = innerWidth / baseTextWidth;
+        const scaleY = innerHeight / baseTextHeight;
+        const scale = Math.max(0.25, Math.min(scaleX, scaleY));
+        nextFontSize = Math.max(8, Math.round(baseFontSize * scale));
+        nextLineHeight = Math.max(10, Math.round(baseLineHeight * scale));
+        previewWidth = innerWidth;
+        previewHeight = innerHeight;
     }
+    const fontVariant = block.fontVariant || (block.italic ? 'italic' : 'normal');
+    const fontWeight = block.fontWeight || (block.bold ? '700' : '400');
+    const fontFamily = block.fontFamily || (String(block.font || '').split('px ').slice(1).join('px ') || 'sans-serif');
+    const dynamicFont = `${fontVariant} ${fontWeight} ${nextFontSize}px ${fontFamily}`;
     const previewCanvas = createTextPreviewCanvas(
         block.lines,
         previewWidth,
         previewHeight,
-        block.font,
-        block.lineHeight,
+        dynamicFont,
+        nextLineHeight,
         block.color,
         previewPadding,
         block.align || 'left'
     );
     block.previewCanvas = previewCanvas;
+    block.font = dynamicFont;
+    block.fontSize = nextFontSize;
+    block.lineHeight = nextLineHeight;
+    block.textWidth = previewWidth;
+    block.textHeight = previewHeight;
     block.baseWidth = previewCanvas.width;
     block.baseHeight = previewCanvas.height;
     chalkboardState.pendingTextPreviewUrl = previewCanvas.toDataURL('image/png');

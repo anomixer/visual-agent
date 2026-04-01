@@ -334,3 +334,8 @@ SOPs 存放位置：
 - resize 後需同步重算 `pendingTextRect`、`selectionRect` 與互動點位（`dragStart` / `hoverPoint` / `dragPresetEnd`）。
 - resize 觸發時重建 pending 文字 preview canvas，避免字體被快照縮放造成糊化。
 - 規範：落稿座標應以當前框體與當前畫布尺度為唯一來源，不可混用舊快照像素比例。
+
+### 8.6 Chalkboard 8 點框縮放與游標對齊
+- 文字框 8 點控制點在左右縮放時，邊界計算改為使用當前游標絕對位置（而非舊版位移累加），確保控制邊與游標貼齊。
+- 若縮放進行中遇到畫布 resize，必須同步更新 `textManipulation` 內的 `originPoint`、`originRect`、`anchorLeft/Top/Right/Bottom`，避免框體偏移。
+- 文字預覽在縮放過程中必須依 `pendingTextRect` 內部可用區域動態重算 `fontSize` 與 `lineHeight`，確保框體、預覽與最終落稿一致。
