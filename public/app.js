@@ -90,8 +90,10 @@ const mentionMenu = $('#mentionMenu');
 const btnSend = $('#btnSend');
 const btnMic = $('#btnMic');
 const btnChalkAttach = $('#btnChalkAttach');
+const btnNewLocalSession = $('#btnNewLocalSession');
 const btnClearChat = $('#btnClearChat');
 const chatModeTabs = $('#chatModeTabs');
+const localChatTabs = $('#localChatTabs');
 const localChatPane = $('#localChatPane');
 const remoteChatPane = $('#remoteChatPane');
 const remoteSessionStatus = $('#remoteSessionStatus');
@@ -1274,15 +1276,20 @@ function touchLocalChatSession(sessionId = selectedLocalChatSessionId) {
     saveLocalChatSessions();
 }
 
-function ensureLocalSessionQuickList() {
-    if (!localChatPane) return null;
-    let el = localChatPane.querySelector('#localSessionQuickList');
-    if (el) return el;
-    el = document.createElement('div');
-    el.id = 'localSessionQuickList';
-    el.className = 'remote-session-quick-list local-session-quick-list';
-    localChatPane.insertBefore(el, chatMessages);
-    return el;
+function removeLocalChatSession(sessionId = '') {
+    const targetId = String(sessionId || '').trim();
+    if (!targetId || localChatSessions.length <= 1) return;
+    localChatSessions = localChatSessions.filter((item) => item.id !== targetId);
+    if (!localChatSessions.length) {
+        localChatSessions = [createLocalChatSession()];
+    }
+    if (selectedLocalChatSessionId === targetId || !localChatSessions.some((item) => item.id === selectedLocalChatSessionId)) {
+        selectedLocalChatSessionId = localChatSessions[0].id;
+    }
+    saveLocalChatSessions();
+    renderLocalSessionControls();
+    renderLocalChatMessages();
+    switchChatMode('local');
 }
 
 function ensureChatPendingStatusRow() {
@@ -1327,10 +1334,7 @@ function isModePending(mode = 'local') {
 }
 
 function updateChatModeBadges() {
-    $$('.chat-mode-tab').forEach((button) => {
-        const mode = button.dataset.chatMode === 'remote' ? 'remote' : 'local';
-        button.classList.toggle('pending', isModePending(mode));
-    });
+    renderLocalSessionControls();
     updatePendingStatusRow();
 }
 
@@ -1495,9 +1499,6 @@ function buildRemoteHintText(session = null) {
 function switchChatMode(mode) {
     activeChatMode = mode === 'remote' ? 'remote' : 'local';
     hideMentionMenu();
-    $$('.chat-mode-tab').forEach((button) => {
-        button.classList.toggle('active', button.dataset.chatMode === activeChatMode);
-    });
     localChatPane?.classList.toggle('active', activeChatMode === 'local');
     remoteChatPane?.classList.toggle('active', activeChatMode === 'remote');
     if (btnMic) btnMic.style.display = activeChatMode === 'local' ? '' : 'none';
@@ -1644,35 +1645,28 @@ function renderLocalChatMessages() {
 }
 
 function renderLocalSessionControls() {
-    const quickListEl = ensureLocalSessionQuickList();
-    if (!quickListEl) return;
+    if (!localChatTabs) return;
     const sessions = getSortedLocalChatSessions();
-    quickListEl.innerHTML = `
-        <button type="button" class="remote-session-chip local-session-new" data-local-action="new">${escapeHtml(t('chat.localSessionNew'))}</button>
-        ${sessions.map((session) => {
-            const activeClass = session.id === selectedLocalChatSessionId ? 'active' : '';
-            const pendingClass = session.id === selectedLocalChatSessionId && isModePending('local') ? 'pending' : '';
-            return `<button type="button" class="remote-session-chip ${activeClass} ${pendingClass}" data-local-session-id="${session.id}">${escapeHtml(session.title || t('chat.localSessionDefault'))}</button>`;
-        }).join('')}
-    `;
-    quickListEl.querySelector('[data-local-action="new"]')?.addEventListener('click', () => {
-        const next = createLocalChatSession(`${t('chat.localSessionDefault')} ${localChatSessions.length + 1}`);
-        localChatSessions.unshift(next);
-        selectedLocalChatSessionId = next.id;
-        saveLocalChatSessions();
-        renderLocalSessionControls();
-        renderLocalChatMessages();
-        switchChatMode('local');
-    });
-    quickListEl.querySelectorAll('[data-local-session-id]').forEach((button) => {
-        button.addEventListener('click', () => {
-            selectedLocalChatSessionId = button.dataset.localSessionId || '';
-            saveLocalChatSessions();
-            renderLocalSessionControls();
-            renderLocalChatMessages();
-            switchChatMode('local');
-        });
-    });
+    localChatTabs.innerHTML = sessions.map((session) => {
+        const isSelected = session.id === selectedLocalChatSessionId;
+        const isActive = activeChatMode === 'local' && isSelected;
+        const activeClass = isActive ? 'active' : '';
+        const pendingClass = isSelected && isModePending('local') ? 'pending' : '';
+        const canClose = sessions.length > 1;
+        const title = escapeHtml(session.title || t('chat.localSessionDefault'));
+        return `
+            <button type="button" class="chat-mode-tab local-chat-tab ${activeClass} ${pendingClass}" data-chat-mode="local" data-local-session-id="${session.id}">
+                <span class="local-chat-tab-title">${title}</span>
+                ${canClose ? `<span class="local-chat-tab-close" data-local-close-id="${session.id}" title="Close">×</span>` : ''}
+            </button>
+        `;
+    }).join('');
+    const remoteBtn = chatModeTabs?.querySelector('.chat-mode-tab[data-chat-mode="remote"]');
+    if (remoteBtn) {
+        remoteBtn.classList.toggle('active', activeChatMode === 'remote');
+        remoteBtn.classList.toggle('pending', isModePending('remote'));
+        remoteBtn.textContent = t('remote.remoteTab');
+    }
 }
 
 async function saveSharedImage(imageDataUrl) {
@@ -2159,24 +2153,43 @@ function resizeChalkboardCanvas() {
     if (!chalkboardState.hasInteracted) {
         drawChalkboardWelcome();
     } else if (snapshot.width && snapshot.height) {
+        chalkboardState.ctx.save();
+        chalkboardState.ctx.imageSmoothingEnabled = false;
         chalkboardState.ctx.drawImage(snapshot, 0, 0, cssWidth, cssHeight);
-        if (chalkboardState.pendingText && chalkboardState.pendingTextRect) {
-            // Resize 後按比例重新映射落稿框座標，確保與內容對齊
-            if (prevCssWidth > 0 && prevCssHeight > 0) {
-                const scaleX = cssWidth / prevCssWidth;
-                const scaleY = cssHeight / prevCssHeight;
-                const r = chalkboardState.pendingTextRect;
-                chalkboardState.pendingTextRect = {
-                    left:   r.left   * scaleX,
-                    top:    r.top    * scaleY,
-                    width:  r.width  * scaleX,
-                    height: r.height * scaleY,
+        chalkboardState.ctx.restore();
+        if (prevCssWidth > 0 && prevCssHeight > 0) {
+            const scaleX = cssWidth / prevCssWidth;
+            const scaleY = cssHeight / prevCssHeight;
+            const scaleRect = (rectValue) => {
+                if (!rectValue) return rectValue;
+                return {
+                    left: rectValue.left * scaleX,
+                    top: rectValue.top * scaleY,
+                    width: rectValue.width * scaleX,
+                    height: rectValue.height * scaleY,
                 };
-            }
+            };
+            const scalePoint = (pointValue) => {
+                if (!pointValue) return pointValue;
+                return {
+                    x: pointValue.x * scaleX,
+                    y: pointValue.y * scaleY,
+                };
+            };
+            chalkboardState.pendingTextRect = scaleRect(chalkboardState.pendingTextRect);
+            chalkboardState.selectionRect = scaleRect(chalkboardState.selectionRect);
+            chalkboardState.dragStart = scalePoint(chalkboardState.dragStart);
+            chalkboardState.hoverPoint = scalePoint(chalkboardState.hoverPoint);
+            chalkboardState.dragPresetEnd = scalePoint(chalkboardState.dragPresetEnd);
+        }
+        if (chalkboardState.pendingText && chalkboardState.pendingTextRect) {
+            refreshPendingTextPreview();
             chalkboardState.pendingTextSnapshot = createCanvasSnapshot();
             syncPendingTextBox();
+            syncSelectionBox();
             return;
         }
+        syncSelectionBox();
         if (chalkboardState.dragStart && chalkboardState.hoverPoint && (
             chalkboardState.pendingShapePreview ||
             ((chalkboardState.tool === 'image' || chalkboardState.tool === 'text') && chalkboardState.drawing)
@@ -3035,6 +3048,7 @@ function placePendingTextAt(point) {
     const rect = getTextPlacementRect(point);
     if (!rect) return;
     chalkboardState.pendingTextRect = rect;
+    refreshPendingTextPreview();
     hidePlacementGuide();
     syncPendingTextBox();
 }
@@ -3113,6 +3127,7 @@ function updatePendingTextRect(point) {
         width: nextWidth,
         height: nextHeight
     };
+    refreshPendingTextPreview();
     syncPendingTextBox();
 }
 
@@ -3135,6 +3150,32 @@ function syncPendingTextBox() {
         chalkTextBoxContent.src = chalkboardState.pendingTextPreviewUrl || '';
         chalkTextBoxContent.style.opacity = '0.96';
     }
+}
+
+function refreshPendingTextPreview() {
+    const block = chalkboardState.pendingText;
+    if (!block || !Array.isArray(block.lines) || !block.lines.length) return;
+    const previewPadding = Math.max(6, Number(block.previewPadding) || 0);
+    let previewWidth = Number(block.textWidth) || 1;
+    let previewHeight = Number(block.textHeight) || 1;
+    if (chalkboardState.pendingTextRect) {
+        previewWidth = Math.max(previewWidth, chalkboardState.pendingTextRect.width - (previewPadding * 2));
+        previewHeight = Math.max(previewHeight, chalkboardState.pendingTextRect.height - (previewPadding * 2));
+    }
+    const previewCanvas = createTextPreviewCanvas(
+        block.lines,
+        previewWidth,
+        previewHeight,
+        block.font,
+        block.lineHeight,
+        block.color,
+        previewPadding,
+        block.align || 'left'
+    );
+    block.previewCanvas = previewCanvas;
+    block.baseWidth = previewCanvas.width;
+    block.baseHeight = previewCanvas.height;
+    chalkboardState.pendingTextPreviewUrl = previewCanvas.toDataURL('image/png');
 }
 
 function hidePendingTextBox() {
@@ -3965,9 +4006,7 @@ function updateLocaleUI() {
     const expsTab = document.querySelector('[data-bottom-tab="exps"]');
     if (logTab) logTab.textContent = t('tabs.logs');
     if (expsTab) expsTab.textContent = t('tabs.exps');
-    const localChatTab = document.querySelector('.chat-mode-tab[data-chat-mode="local"]');
     const remoteChatTab = document.querySelector('.chat-mode-tab[data-chat-mode="remote"]');
-    if (localChatTab) localChatTab.textContent = t('remote.localTab');
     if (remoteChatTab) remoteChatTab.textContent = t('remote.remoteTab');
     if (chatModelBadge) {
         if (!chatModelBadge.textContent || chatModelBadge.textContent === 'AI 模型' || chatModelBadge.textContent === 'AI Model') {
@@ -3977,6 +4016,7 @@ function updateLocaleUI() {
     }
     if (btnMic) btnMic.title = t('chat.mic');
     if (btnChalkAttach) btnChalkAttach.title = t('chat.attachChalkboard');
+    if (btnNewLocalSession) btnNewLocalSession.title = t('chat.localSessionNew');
     if (btnClearChat) btnClearChat.title = activeChatMode === 'local' ? t('chat.clear') : t('remote.disconnect');
     if (remoteSessionStatus) remoteSessionStatus.textContent = getRemoteStatusText(getActiveRemoteSession());
     if (remoteHostInput) remoteHostInput.placeholder = t('remote.hostPlaceholder');
@@ -5389,8 +5429,24 @@ function restoreLayout() {
 // ════════════════════════════════════════════════════════
 function setupEventListeners() {
     chatModeTabs?.addEventListener('click', (e) => {
+        const closeBtn = e.target.closest('[data-local-close-id]');
+        if (closeBtn) {
+            removeLocalChatSession(closeBtn.dataset.localCloseId || '');
+            return;
+        }
         const btn = e.target.closest('.chat-mode-tab');
         if (!btn) return;
+        if (btn.dataset.chatMode === 'local') {
+            const nextSessionId = String(btn.dataset.localSessionId || '').trim();
+            if (nextSessionId && selectedLocalChatSessionId !== nextSessionId) {
+                selectedLocalChatSessionId = nextSessionId;
+                saveLocalChatSessions();
+                renderLocalSessionControls();
+                renderLocalChatMessages();
+            }
+            switchChatMode('local');
+            return;
+        }
         switchChatMode(btn.dataset.chatMode);
     });
     // Send chat
@@ -5433,6 +5489,15 @@ function setupEventListeners() {
 
     // Mic
     btnMic?.addEventListener('click', () => isRecording ? stopRecording() : startRecording());
+    btnNewLocalSession?.addEventListener('click', () => {
+        const next = createLocalChatSession(`${t('chat.localSessionDefault')} ${localChatSessions.length + 1}`);
+        localChatSessions.unshift(next);
+        selectedLocalChatSessionId = next.id;
+        saveLocalChatSessions();
+        renderLocalSessionControls();
+        renderLocalChatMessages();
+        switchChatMode('local');
+    });
 
     // Clear Chat
     btnClearChat?.addEventListener('click', clearChatMessages);

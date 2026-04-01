@@ -324,3 +324,13 @@ SOPs 存放位置：
 ### 8.3 黑板 8 點框與落稿座標
 - `getChalkPoint()` 將座標正規化後 clamp 到 0~1，修正邊界滑動造成的座標漂移。
 - `drawPlacedText()` 改為以 8 點框尺寸直接落稿，不再額外擴張到 base size，確保「游標位置 / 8 點框 / 最終落稿」一致。
+
+### 8.4 本機聊天分頁化 (Local Chat Tabs)
+- 本機聊天由單一入口改為多對話 tab 管理，保留遠端聊天 tab。
+- 新增本機對話 tab 後可個別關閉（`x`），並保留至少一個本機對話以避免空狀態。
+- `新增對話` 按鈕移至輸入工具列，位於「清除對話」左側，符合高頻操作路徑。
+
+### 8.5 Chalkboard Resize 重繪與座標重算
+- resize 後需同步重算 `pendingTextRect`、`selectionRect` 與互動點位（`dragStart` / `hoverPoint` / `dragPresetEnd`）。
+- resize 觸發時重建 pending 文字 preview canvas，避免字體被快照縮放造成糊化。
+- 規範：落稿座標應以當前框體與當前畫布尺度為唯一來源，不可混用舊快照像素比例。

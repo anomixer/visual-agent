@@ -1771,6 +1771,52 @@ ol {
 .chat-mode-tabs {
   display: flex;
   gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.local-chat-tabs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.local-chat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.local-chat-tab-title {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-chat-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.local-chat-tab-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.chat-mode-tab-remote {
+  flex-shrink: 0;
 }
 
 .chat-mode-tab {

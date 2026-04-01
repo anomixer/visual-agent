@@ -367,8 +367,8 @@
         <div class="chat-history" id="chatHistory">
           <div class="panel-titlebar chat-panel-header">
             <div class="chat-mode-tabs" id="chatModeTabs">
-              <button class="chat-mode-tab active" type="button" data-chat-mode="local">💬 本機 AI</button>
-              <button class="chat-mode-tab" type="button" data-chat-mode="remote">🌐 遠端 AI</button>
+              <div class="local-chat-tabs" id="localChatTabs"></div>
+              <button class="chat-mode-tab chat-mode-tab-remote" type="button" data-chat-mode="remote">🌐 遠端 AI</button>
             </div>
             <div class="chat-panel-actions">
               <span class="remote-session-status" id="remoteSessionStatus">未連線</span>
@@ -415,6 +415,11 @@
             <button class="input-btn" id="btnChalkAttach" title="附上 Chalkboard" aria-pressed="false">
               <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
                 <path d="M5 3a2 2 0 00-2 2v7a2 2 0 002 2h3l3.4 3.06A1 1 0 0013 16.3V14h2a2 2 0 002-2V5a2 2 0 00-2-2H5zm1 3h8a1 1 0 110 2H6a1 1 0 010-2zm0 3h5a1 1 0 110 2H6a1 1 0 110-2z"/>
+              </svg>
+            </button>
+            <button class="input-btn" id="btnNewLocalSession" title="新增對話">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+                <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z"/>
               </svg>
             </button>
             <button class="input-btn" id="btnClearChat" title="清除對話">
