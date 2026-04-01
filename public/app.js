@@ -2193,9 +2193,13 @@ function getChalkInputRect() {
 
 function getChalkPoint(event) {
     const rect = getChalkInputRect();
+    const normalizedX = rect.width > 0 ? ((event.clientX - rect.left) / rect.width) : 0;
+    const normalizedY = rect.height > 0 ? ((event.clientY - rect.top) / rect.height) : 0;
+    const clampedX = Math.max(0, Math.min(1, normalizedX));
+    const clampedY = Math.max(0, Math.min(1, normalizedY));
     return {
-        x: ((event.clientX - rect.left) / rect.width) * chalkboardState.cssWidth,
-        y: ((event.clientY - rect.top) / rect.height) * chalkboardState.cssHeight
+        x: clampedX * chalkboardState.cssWidth,
+        y: clampedY * chalkboardState.cssHeight
     };
 }
 
@@ -2743,8 +2747,8 @@ function drawPlacedText(left, top, width, height, preview) {
     const block = chalkboardState.pendingText;
     if (!block || !chalkboardState.ctx) return;
 
-    const targetWidth = Math.max(width, block.baseWidth);
-    const targetHeight = Math.max(height, block.baseHeight);
+    const targetWidth = Math.max(1, width);
+    const targetHeight = Math.max(1, height);
     const image = block.previewCanvas;
     if (!image) return;
 
@@ -5950,12 +5954,12 @@ async function updateHardwareStatus() {
             // CPU
             setGauge('cpu', h.cpu.load);
             if ($('#hw-cpu-model')) $('#hw-cpu-model').textContent = h.cpu.model;
-            if ($('#hw-cpu-temp')) $('#hw-cpu-temp').textContent = h.cpu.temp ? `${h.cpu.temp}�C` : '';
+            if ($('#hw-cpu-temp')) $('#hw-cpu-temp').textContent = h.cpu.temp ? `${h.cpu.temp}°C` : '';
 
             // GPU
             setGauge('gpu', h.gpu.load);
             if ($('#hw-gpu-name')) $('#hw-gpu-name').textContent = h.gpu.name || 'N/A';
-            if ($('#hw-gpu-temp')) $('#hw-gpu-temp').textContent = h.gpu.temp ? `${h.gpu.temp}�C` : '';
+            if ($('#hw-gpu-temp')) $('#hw-gpu-temp').textContent = h.gpu.temp ? `${h.gpu.temp}°C` : '';
 
             // RAM
             setGauge('ram', h.ram.usage);

@@ -9,7 +9,19 @@
  * @version 2026.03.25
  */
 
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
+
+function runPowerShell(script, timeout = 10000) {
+    return new Promise((resolve) => {
+        const encoded = Buffer.from(String(script || ''), 'utf16le').toString('base64');
+        execFile(
+            'powershell.exe',
+            ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+            { timeout, windowsHide: true },
+            (error, stdout) => resolve({ error, stdout: String(stdout || '') })
+        );
+    });
+}
 
 /**
  * Core hardware monitoring plugin.
@@ -18,19 +30,29 @@ const { exec } = require('child_process');
 module.exports = async function(health) {
     // 1) CPU, disk, and GPU name via WMI. Fast and stable baseline probe.
     const psBasic = `
-        $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 LoadPercentage;
-        $disk = Get-PhysicalDisk | Select-Object DeviceID, FriendlyName, MediaType, HealthStatus, OperationalStatus;
-        $logicalDisk = Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, Size, FreeSpace;
-        $gpu = Get-CimInstance Win32_VideoController | Select-Object -First 1 Name;
-        $smart = Get-WmiObject -namespace root\\wmi -class MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue;
+        $ErrorActionPreference = 'Stop'
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 LoadPercentage
+        $disk = @()
+        try {
+            $disk = Get-PhysicalDisk | Select-Object DeviceID, FriendlyName, MediaType, HealthStatus, OperationalStatus
+        } catch {
+            $disk = @()
+        }
+        if (-not $disk -or $disk.Count -eq 0) {
+            $disk = Get-CimInstance Win32_DiskDrive | Select-Object DeviceID, Model, MediaType, Status, Size
+        }
+        $logicalDisk = Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID, VolumeName, Size, FreeSpace
+        $gpu = Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name
+        $smart = Get-CimInstance -Namespace root\\wmi -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction SilentlyContinue
         @{
-            cpuLoad = $cpu.LoadPercentage;
-            gpuName = $gpu.Name;
-            disks = $disk;
-            logicalDisks = $logicalDisk;
-            smart = $smart;
-        } | ConvertTo-Json -Depth 3
-    `;
+            cpuLoad = $cpu.LoadPercentage
+            gpuName = $gpu
+            disks = $disk
+            logicalDisks = $logicalDisk
+            smart = $smart
+        } | ConvertTo-Json -Depth 6 -Compress
+    `
 
     // 2) GPU utilization via Get-Counter. This may fail in packaged/Tauri mode, so it is fallback-only.
     const psGpuLoad = `
@@ -43,18 +65,16 @@ module.exports = async function(health) {
     `;
 
     const basicData = await new Promise((resolve) => {
-        exec(`powershell -NoProfile -Command "${psBasic.replace(/\n/g, ' ')}"`, { timeout: 10000 }, (err, stdout) => {
-            if (!err && stdout) {
-                try { 
-                    const parsed = JSON.parse(stdout);
-                    // console.log('[HardwareInfo] Basic data collected successfully');
-                    resolve(parsed); 
-                    return; 
-                } catch (e) {
-                    console.error('[HardwareInfo] Failed to parse PowerShell output:', e.message);
+        runPowerShell(psBasic, 10000).then(({ error, stdout }) => {
+            if (!error && stdout) {
+                try {
+                    resolve(JSON.parse(stdout));
+                    return;
+                } catch {
+                    console.warn('[HardwareInfo] Unable to parse baseline probe output.');
                 }
-            } else {
-                console.error('[HardwareInfo] PowerShell execution failed:', err?.message || 'Unknown error');
+            } else if (error) {
+                console.warn(`[HardwareInfo] Baseline probe failed (${error.code || 'ERR'}).`);
             }
             resolve(null);
         });
@@ -73,13 +93,22 @@ module.exports = async function(health) {
         if (basicData.disks) {
             const diskArr = Array.isArray(basicData.disks) ? basicData.disks : [basicData.disks];
             health.disk.drives = diskArr.map(d => {
+                const name = d.FriendlyName || d.Model || d.DeviceID || 'Disk';
                 let type = d.MediaType === 4 ? 'SSD' : (d.MediaType === 3 ? 'HDD' : 'Storage');
-                if ((type === 'Storage' || type === 'HDD') && /SSD|NVMe|Flash/i.test(d.FriendlyName)) {
+                if ((type === 'Storage' || type === 'HDD') && /SSD|NVMe|Flash/i.test(name)) {
                     type = 'SSD';
                 }
-                return { name: d.FriendlyName, type, health: d.HealthStatus, status: d.OperationalStatus };
+                if ((type === 'Storage') && /HDD|SATA/i.test(String(d.MediaType || ''))) {
+                    type = 'HDD';
+                }
+                return {
+                    name,
+                    type,
+                    health: d.HealthStatus || d.Status || 'Unknown',
+                    status: d.OperationalStatus || d.Status || 'Unknown'
+                };
             });
-            if (health.disk.drives.some(d => d.health !== 'Healthy')) {
+            if (health.disk.drives.some(d => String(d.health || '').toLowerCase() !== 'healthy')) {
                 health.disk.status = 'Warning';
             }
         }
@@ -105,15 +134,12 @@ module.exports = async function(health) {
     // GPU load fallback: only attempt this when temperature-monitor did not provide a value.
     if (health.gpu.load === 0 || health.gpu.load === undefined) {
         await new Promise((resolve) => {
-            exec(`powershell -NoProfile -Command "${psGpuLoad.replace(/\n/g, ' ')}"`, { timeout: 5000 }, (err, stdout) => {
-                if (!err && stdout) {
-                    const v = parseInt(stdout.trim(), 10);
-                    if (v >= 0) {
+            runPowerShell(psGpuLoad, 5000).then(({ error, stdout }) => {
+                if (!error && stdout) {
+                    const v = parseInt(String(stdout).trim(), 10);
+                    if (Number.isFinite(v) && v >= 0) {
                         health.gpu.load = v;
-                        // console.log('[HardwareInfo] GPU load fallback successful:', v);
                     }
-                } else {
-                    // console.log('[HardwareInfo] GPU load fallback failed, using default value');
                 }
                 resolve();
             });

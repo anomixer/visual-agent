@@ -265,6 +265,12 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.04.01
+- **Tauri EXE 硬體偵測修復**：`hardware-info` 改為 PowerShell EncodedCommand 執行，並在 `Get-PhysicalDisk` 失敗時 fallback 到 `Win32_DiskDrive`，改善 HDD 資訊缺失。
+- **NVIDIA 探測穩健化**：`temperature-monitor` 改為 `execFile` + 多路徑尋找 `nvidia-smi.exe`，封裝環境下更容易取得 GPU 資訊。
+- **錯誤訊息去亂碼**：`nvidia-smi` 失敗時改顯示錯誤碼摘要（如 `ENOENT`），避免碼頁亂碼日誌。
+- **黑板落稿座標修正**：文字落稿改為完全跟隨 8 點框尺寸，並在指標換算時加入邊界 clamp，修正框與落稿不同步。
+
 ### 2026.03.30
 - **遠端 AI 聊天室**：支援區域網路互連 (19168 TCP)，雙方 AI 與使用者可進行多方通訊。
 - **模型共享 (Model Share)**：可將本機模型分享給遠端代理使用，由授權端決定是否接管。
@@ -377,6 +383,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.03.29`。
-
-<!-- Test edit by AI -->
+- 目前套件版本：`2026.04.01`。

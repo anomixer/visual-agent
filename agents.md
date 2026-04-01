@@ -514,3 +514,22 @@
 - **共享授權機制**：分享模型需經由接收端同意。接管後，客戶端全域 AI 呼叫皆透過提供者的 API 處理 (掛載 proxyToken 及過期校驗)。
 - **狀態標示**：主聊天模型徽章動態顯示 Shared 狀態，並具備取消連線 / 中斷分享機制。
 
+---
+
+## 📌 2026.04.01 - Tauri EXE 硬體探測與黑板座標修復
+
+### 硬體探測穩健化 (GPU / HDD)
+- `hardware-info.js` 改為使用 `powershell.exe -EncodedCommand` + `execFile`，降低 Tauri EXE 封裝環境下的引號與碼頁干擾。
+- 磁碟探測新增雙路徑：優先 `Get-PhysicalDisk`，失敗時自動 fallback 到 `Win32_DiskDrive`，避免 EXE 環境出現 HDD 資訊空白。
+- `temperature-monitor.js` 改為 `execFile` 執行 `nvidia-smi.exe`，並加入 NVSMI 常見安裝路徑 fallback，提升 NVIDIA 探測成功率。
+
+### nvidia-smi 錯誤訊息去亂碼
+- 將錯誤輸出簡化為穩定錯誤碼格式（如 `ENOENT`），不再直接輸出本地碼頁訊息，避免 `���O�����Υ~���R�O` 這類亂碼污染日誌。
+
+### 黑板座標與落稿一致性
+- `getChalkPoint()` 新增座標 clamp（0~1），避免游標移動到畫布邊界外時造成定位偏差。
+- `drawPlacedText()` 改為完全以 8 點框尺寸落稿，不再強制使用 `baseWidth/baseHeight` 擴張，修正「8 點框位置與最終文字落稿不一致」問題。
+
+### UI 編碼細節
+- 修復硬體面板溫度顯示字元，`�C` 改為 `°C`。
+

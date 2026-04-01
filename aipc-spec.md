@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (2026.03.29 Updated)
+# AI PC Agent — 實作需求規格書 (2026.04.01 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.03.29 Updated] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.04.01 Updated] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -310,3 +310,17 @@ SOPs 存放位置：
 - **多對話 (Multi-session)**：支援本機與遠端對話歷史分頁，以及獨立的 Pending (Thinking) 列。
 - **Model Sharing**：A 端同意接受 B 端分享之模型後，A 端 UI 將改用 B 端 API (利用 Session Token 驗證)。
 - **@mention 機制**：透過 `@` 啟動對象名單，點名遠端 AI 即可讓遠端模型介入回答。
+
+## 8. 2026.04.01 已修復問題 (Runtime Fixes)
+
+### 8.1 Tauri EXE GPU/HDD 偵測
+- `plugins/hardware-info.js` 改為以 PowerShell `EncodedCommand` 執行，避免封裝環境下引號/編碼導致的指令失敗。
+- 磁碟偵測新增 fallback：`Get-PhysicalDisk` 失敗時改讀 `Win32_DiskDrive`，確保 HDD/SSD 資訊能回傳。
+- `plugins/temperature-monitor.js` 改用 `execFile` 執行 `nvidia-smi.exe`，並加入 NVSMI 絕對路徑 fallback。
+
+### 8.2 nvidia-smi 亂碼訊息
+- 錯誤訊息改為以錯誤碼摘要（如 `ENOENT`），不直接吐出本地碼頁原文，避免中文亂碼污染 log。
+
+### 8.3 黑板 8 點框與落稿座標
+- `getChalkPoint()` 將座標正規化後 clamp 到 0~1，修正邊界滑動造成的座標漂移。
+- `drawPlacedText()` 改為以 8 點框尺寸直接落稿，不再額外擴張到 base size，確保「游標位置 / 8 點框 / 最終落稿」一致。
