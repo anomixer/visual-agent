@@ -339,3 +339,18 @@ SOPs 存放位置：
 - 文字框 8 點控制點在左右縮放時，邊界計算改為使用當前游標絕對位置（而非舊版位移累加），確保控制邊與游標貼齊。
 - 若縮放進行中遇到畫布 resize，必須同步更新 `textManipulation` 內的 `originPoint`、`originRect`、`anchorLeft/Top/Right/Bottom`，避免框體偏移。
 - 文字預覽在縮放過程中必須依 `pendingTextRect` 內部可用區域動態重算 `fontSize` 與 `lineHeight`，確保框體、預覽與最終落稿一致。
+
+### 8.7 Desktop Agent 工作流（SOP Beyond Install/Uninstall）
+- Runtime 必須支援「檢查環境 → 補足依賴 → 擷取資料 → 實際操作 → 回報結果」的多步代理流程。
+- 新增財報工作流規格：
+  - 觸發條件：使用者要求更新 `*.xlsx` 財報內容（例如 NVIDIA）。
+  - 先檢查試算表工具（Excel/LibreOffice/WPS）。
+  - 若無工具：引導使用者在「安裝 Office SOP」與「Google Sheets web」間做選擇。
+  - 若有 Excel：允許透過 COM 自動寫入工作表。
+  - 財報資料來源需附上可追溯網址（目前為 SEC API）。
+- 新增遊戲研究工作流規格：
+  - 觸發條件：攻略/教學/影片搜尋需求。
+  - 輸出格式需為 Markdown，並附 `Chalkboard 摘要草稿` 便於視覺呈現。
+- 協議擴充：
+  - `[ACTION:OPEN_FILE file_path="..."]`
+  - `[ACTION:OPEN_URL url="..."]`

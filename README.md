@@ -273,6 +273,11 @@ aipc-agent/
 - **黑板 8 點框跟手修正**：文字框左右縮放改為直接採用即時游標位置計算邊界，解決拖曳時框體偏左/偏右。
 - **拖曳中 resize 同步修正**：畫布尺寸改變時，會同步縮放 `textManipulation` 的原點與 anchors，避免 8 點框與游標脫鉤。
 - **字級隨框縮放**：文字框拉大/拉小時，`fontSize` 與 `lineHeight` 會依框體內可用區域動態重算，預覽與落稿一致。
+- **Desktop Agent 工作流 (SOP 強化)**：
+  - 新增財報代理流程：可偵測試算表環境、定位 `*.xlsx`、抓取 NVIDIA 最新財報摘要（SEC API），並在 Excel 可用時自動寫入活頁簿。
+  - 若缺少試算表工具，會分流詢問「安裝 Office 相容工具」或「改用 Google Sheets web」。
+  - 新增遊戲攻略/影片代理流程：自動網頁蒐集後回傳 Markdown 結果，並附 `Chalkboard 摘要草稿`。
+  - 新增 Agent action：`OPEN_FILE`、`OPEN_URL`。
 - **本機對話 Tab 化**：上方聊天模式改為本機多對話 tab + 遠端 tab；本機新增對話支援 `x` 關閉。
 - **新增對話按鈕位置調整**：`+` 移到聊天輸入工具列，位於「清除對話」左側。
 - **Chalkboard Resize 重繪強化**：resize 後會重算 `selectionRect / pendingTextRect` 與互動座標，並重建文字預覽，降低縮放糊化與偏移復發。

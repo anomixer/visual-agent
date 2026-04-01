@@ -8,7 +8,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const pkg = require('../package.json');
 const { loadAllSOPs } = require('./sop-parser');
 const { SOPExecutor } = require('./sop-executor');
@@ -764,6 +764,431 @@ function slugifyWingetPackage(input = '') {
 
 function escapeRegExp(text = '') {
     return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function runPowerShellCapture(command, timeoutMs = 15000) {
+    const wrapped = [
+        '$utf8NoBom = New-Object System.Text.UTF8Encoding($false)',
+        '[Console]::InputEncoding = $utf8NoBom',
+        '[Console]::OutputEncoding = $utf8NoBom',
+        '$OutputEncoding = $utf8NoBom',
+        '$ErrorActionPreference = "Stop"',
+        command,
+    ].join('; ');
+    const result = spawnSync('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy', 'Bypass',
+        '-Command', wrapped,
+    ], {
+        windowsHide: true,
+        encoding: 'utf8',
+        timeout: timeoutMs,
+    });
+    return {
+        success: result.status === 0 && !result.error,
+        status: result.status,
+        stdout: String(result.stdout || '').trim(),
+        stderr: String(result.stderr || '').trim(),
+        error: result.error ? result.error.message : '',
+    };
+}
+
+function runPowerShellJson(command, timeoutMs = 15000) {
+    const output = runPowerShellCapture(command, timeoutMs);
+    if (!output.success) return { success: false, error: output.error || output.stderr || 'PowerShell failed', data: null };
+    try {
+        return { success: true, data: JSON.parse(output.stdout), error: '' };
+    } catch (err) {
+        return { success: false, data: null, error: `JSON parse failed: ${err.message}` };
+    }
+}
+
+function escapePowerShellSingleQuoted(value = '') {
+    return String(value).replace(/'/g, "''");
+}
+
+function detectAgentFinanceIntent(message = '') {
+    const text = String(message || '');
+    const hasWorkbook = /\.xlsx\b/i.test(text);
+    const hasFinance = /(財報|earnings|financial report|quarterly results|季報|年報)/i.test(text);
+    const hasUpdateAction = /(更新|update|填入|填寫|整理|refresh|sync)/i.test(text);
+    return hasWorkbook && hasFinance && hasUpdateAction;
+}
+
+function detectGameResearchIntent(message = '') {
+    const text = String(message || '');
+    return /(攻略|教學|打法|build|walkthrough|guide|影片|youtube|video)/i.test(text)
+        && /(遊戲|game|steam|boss|關卡|任務|角色|配裝)/i.test(text);
+}
+
+function extractWorkbookTarget(message = '') {
+    const text = String(message || '').trim();
+    const absoluteMatch = text.match(/[A-Za-z]:\\[^"'<>|?*\r\n]+\.xlsx/);
+    if (absoluteMatch) return absoluteMatch[0].trim();
+
+    const quotedMatch = text.match(/["“”']([^"“”']+\.xlsx)["“”']/i);
+    if (quotedMatch) return quotedMatch[1].trim();
+
+    const genericMatch = text.match(/([^\s"'“”]+\.xlsx)\b/i);
+    if (genericMatch) return genericMatch[1].trim();
+
+    return '財報.xlsx';
+}
+
+function resolveWorkbookPath(target = '') {
+    const raw = String(target || '').trim();
+    if (!raw) return '';
+    if (path.isAbsolute(raw) && fs.existsSync(raw)) {
+        return raw;
+    }
+    const maybeRelative = path.resolve(process.cwd(), raw);
+    if (fs.existsSync(maybeRelative)) {
+        return maybeRelative;
+    }
+    const fileName = path.basename(raw);
+    const escapedName = escapePowerShellSingleQuoted(fileName);
+    const cmd = [
+        `$fileName = '${escapedName}'`,
+        '$roots = @(',
+        "  [Environment]::GetFolderPath('Desktop'),",
+        "  [Environment]::GetFolderPath('MyDocuments'),",
+        "  \"$env:USERPROFILE\\Downloads\"",
+        ') | Where-Object { $_ -and (Test-Path -LiteralPath $_) }',
+        '$hit = $null',
+        'foreach ($root in $roots) {',
+        '  $hit = Get-ChildItem -LiteralPath $root -Filter $fileName -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1',
+        '  if ($hit) { break }',
+        '}',
+        'if ($hit) { $hit.FullName }',
+    ].join('; ');
+    const found = runPowerShellCapture(cmd, 20000);
+    return found.success ? String(found.stdout || '').trim() : '';
+}
+
+function detectSpreadsheetEnvironment() {
+    const cmd = [
+        '$excel = Get-Command EXCEL.EXE -ErrorAction SilentlyContinue',
+        '$libre = Get-Command soffice.exe -ErrorAction SilentlyContinue',
+        '$wps = Get-Command et.exe -ErrorAction SilentlyContinue',
+        '$obj = [PSCustomObject]@{',
+        '  excel = [bool]$excel;',
+        '  libreoffice = [bool]$libre;',
+        '  wps = [bool]$wps;',
+        "  preferred = if ($excel) { 'excel' } elseif ($libre) { 'libreoffice' } elseif ($wps) { 'wps' } else { 'none' }",
+        '}',
+        '$obj | ConvertTo-Json -Compress',
+    ].join('; ');
+    const output = runPowerShellJson(cmd, 12000);
+    return output.success ? output.data : { excel: false, libreoffice: false, wps: false, preferred: 'none' };
+}
+
+function openFileWithDefaultApp(filePath = '') {
+    if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+    const escaped = escapePowerShellSingleQuoted(filePath);
+    return runPowerShellCapture(`Start-Process -FilePath '${escaped}'`, 8000);
+}
+
+function openUrlInDefaultBrowser(url = '') {
+    const target = String(url || '').trim();
+    if (!/^https?:\/\//i.test(target)) return { success: false, error: 'Invalid URL' };
+    const escaped = escapePowerShellSingleQuoted(target);
+    return runPowerShellCapture(`Start-Process -FilePath '${escaped}'`, 8000);
+}
+
+async function fetchNvidiaLatestFinancialSnapshot() {
+    const cik = '0001045810';
+    const headers = {
+        'User-Agent': 'aipc-agent/2026.04.01 (local desktop agent)',
+        'Accept': 'application/json',
+    };
+    const response = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) {
+        throw new Error(`SEC API failed (${response.status})`);
+    }
+    const json = await response.json();
+    const facts = json?.facts?.['us-gaap'] || {};
+    const revenueSeries = facts?.RevenueFromContractWithCustomerExcludingAssessedTax?.units?.USD
+        || facts?.Revenues?.units?.USD
+        || [];
+    const incomeSeries = facts?.NetIncomeLoss?.units?.USD || [];
+    const epsSeries = facts?.EarningsPerShareDiluted?.units?.USD || [];
+    const pickLatest = (series = []) => {
+        return [...series]
+            .filter((item) => item?.val !== undefined && item?.end)
+            .sort((a, b) => {
+                const aTime = Date.parse(a.end || a.filed || 0);
+                const bTime = Date.parse(b.end || b.filed || 0);
+                return bTime - aTime;
+            })[0] || null;
+    };
+    const revenue = pickLatest(revenueSeries);
+    const netIncome = pickLatest(incomeSeries);
+    const eps = pickLatest(epsSeries);
+    return {
+        company: 'NVIDIA',
+        periodEnd: revenue?.end || netIncome?.end || '',
+        filedAt: revenue?.filed || netIncome?.filed || '',
+        revenue: Number(revenue?.val || 0),
+        netIncome: Number(netIncome?.val || 0),
+        epsDiluted: eps?.val !== undefined ? Number(eps.val) : null,
+        source: 'SEC Company Facts API',
+        sourceUrl: `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`,
+    };
+}
+
+function formatUsdBillions(value = 0) {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount)) return 'N/A';
+    return `$${(amount / 1_000_000_000).toFixed(2)}B`;
+}
+
+function buildNvidiaSnapshotLines(snapshot = {}) {
+    const periodLabel = snapshot.periodEnd || 'N/A';
+    const filedLabel = snapshot.filedAt || 'N/A';
+    return [
+        `Period End: ${periodLabel}`,
+        `Filed Date: ${filedLabel}`,
+        `Revenue: ${formatUsdBillions(snapshot.revenue)}`,
+        `Net Income: ${formatUsdBillions(snapshot.netIncome)}`,
+        `Diluted EPS: ${snapshot.epsDiluted === null ? 'N/A' : snapshot.epsDiluted}`,
+        `Source: ${snapshot.source || 'N/A'}`,
+    ];
+}
+
+function updateWorkbookWithNvidiaSnapshot(filePath = '', snapshot = {}) {
+    const escapedPath = escapePowerShellSingleQuoted(filePath);
+    const lines = buildNvidiaSnapshotLines(snapshot)
+        .map((line) => `'${escapePowerShellSingleQuoted(line)}'`)
+        .join(', ');
+    const cmd = [
+        `$target = '${escapedPath}'`,
+        'if (-not (Test-Path -LiteralPath $target)) { throw "Workbook not found." }',
+        '$excel = $null',
+        'try {',
+        '  $excel = New-Object -ComObject Excel.Application',
+        '  $excel.Visible = $false',
+        '  $excel.DisplayAlerts = $false',
+        '  $wb = $excel.Workbooks.Open($target)',
+        '  $ws = $wb.Worksheets.Item(1)',
+        "  $ws.Range('A1').Value2 = 'NVIDIA Latest Earnings Update'",
+        `  $payload = @(${lines})`,
+        '  for ($i = 0; $i -lt $payload.Count; $i++) {',
+        "    $ws.Cells.Item($i + 2, 1).Value2 = $payload[$i]",
+        '  }',
+        "  $ws.Range('A1:A20').EntireColumn.AutoFit() | Out-Null",
+        '  $wb.Save()',
+        '  $wb.Close($true)',
+        "  [PSCustomObject]@{ success = $true; message = 'Workbook updated' } | ConvertTo-Json -Compress",
+        '} catch {',
+        "  [PSCustomObject]@{ success = $false; message = ($_ | Out-String).Trim() } | ConvertTo-Json -Compress",
+        '} finally {',
+        '  if ($excel -ne $null) {',
+        '    $excel.Quit()',
+        '    [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel)',
+        '  }',
+        '}',
+    ].join('; ');
+    return runPowerShellJson(cmd, 60000);
+}
+
+function decodeHtmlEntities(value = '') {
+    return String(value || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+}
+
+function normalizeDuckDuckGoUrl(url = '') {
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    if (/^\/l\/\?/.test(raw)) {
+        try {
+            const parsed = new URL(`https://duckduckgo.com${raw}`);
+            const target = parsed.searchParams.get('uddg');
+            if (target) return decodeURIComponent(target);
+        } catch {
+            return '';
+        }
+    }
+    if (raw.startsWith('//')) return `https:${raw}`;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    return '';
+}
+
+async function searchWebLinks(query = '', limit = 5) {
+    const q = String(query || '').trim();
+    if (!q) return [];
+    const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'User-Agent': 'aipc-agent/2026.04.01',
+            'Accept': 'text/html',
+        },
+        signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) {
+        throw new Error(`Web search failed (${response.status})`);
+    }
+    const html = await response.text();
+    const regex = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const results = [];
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+        const href = normalizeDuckDuckGoUrl(decodeHtmlEntities(match[1]));
+        const title = decodeHtmlEntities(match[2].replace(/<[^>]+>/g, '').trim());
+        if (!href || !title) continue;
+        results.push({ title, url: href });
+        if (results.length >= limit) break;
+    }
+    return results;
+}
+
+function extractGameTopic(message = '') {
+    const text = String(message || '').trim();
+    const cleaned = text
+        .replace(/請|幫我|找|一下|一些|關於|需要|想看|我要|給我|推薦|搜尋|search|find/gi, ' ')
+        .replace(/攻略|教學|影片|youtube|video|guide|walkthrough|build|打法|配裝/gi, ' ')
+        .replace(/遊戲|game/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return cleaned || 'latest popular games';
+}
+
+function findOfficeInstallSop(sops = []) {
+    const exact = sops.find((item) => item.id === 'rec_office');
+    if (exact) return exact;
+    return sops.find((item) => /office|libreoffice/i.test(`${item.id} ${item.name}`)) || null;
+}
+
+async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW', sops = []) {
+    const workbookTarget = extractWorkbookTarget(message);
+    const workbookPath = resolveWorkbookPath(workbookTarget);
+    const env = detectSpreadsheetEnvironment();
+    const officeSop = findOfficeInstallSop(sops);
+    if (!env.excel && !env.libreoffice && !env.wps) {
+        const installPrompt = officeSop
+            ? `[ACTION:ADD_TASK sop_id="${officeSop.id}"]`
+            : '';
+        const reply = locale === 'en-US'
+            ? `No spreadsheet app is detected. I can install Office-compatible tools first, or switch to Google Sheets web version.\n\n${installPrompt}`.trim()
+            : `目前未偵測到 Excel / LibreOffice / WPS。可先幫你安裝 Office 相容工具，或改用 Google Sheets 網頁版。\n\n${installPrompt}`.trim();
+        return {
+            success: true,
+            reply,
+            suggestions: locale === 'en-US'
+                ? ['Install Office-compatible app', 'Use Google Sheets web', 'Cancel']
+                : ['安裝 Office 相容工具', '改用 Google Sheets 網頁版', '先不用'],
+            task: false,
+            llmUsed: false,
+        };
+    }
+    if (!workbookPath) {
+        return {
+            success: true,
+            reply: locale === 'en-US'
+                ? `I cannot locate ${workbookTarget}. Please provide a full path (for example: C:\\Users\\USER\\Documents\\${workbookTarget}).`
+                : `我找不到 ${workbookTarget}。請提供完整路徑（例如：C:\\Users\\USER\\Documents\\${workbookTarget}）。`,
+            suggestions: locale === 'en-US'
+                ? ['Send full .xlsx path', 'Use Google Sheets web']
+                : ['提供完整 .xlsx 路徑', '改用 Google Sheets 網頁版'],
+            task: false,
+            llmUsed: false,
+        };
+    }
+
+    const snapshot = await fetchNvidiaLatestFinancialSnapshot();
+    const summary = buildNvidiaSnapshotLines(snapshot);
+    if (env.excel) {
+        const writeResult = updateWorkbookWithNvidiaSnapshot(workbookPath, snapshot);
+        if (writeResult.success && writeResult.data?.success) {
+            openFileWithDefaultApp(workbookPath);
+            return {
+                success: true,
+                reply: [
+                    locale === 'en-US'
+                        ? `Workbook updated: ${workbookPath}`
+                        : `已更新活頁簿：${workbookPath}`,
+                    '',
+                    ...summary.map((line) => `- ${line}`),
+                    '',
+                    snapshot.sourceUrl,
+                ].join('\n'),
+                suggestions: locale === 'en-US'
+                    ? ['Open workbook folder', 'Update another workbook']
+                    : ['開啟活頁簿所在資料夾', '更新另一個活頁簿'],
+                task: false,
+                llmUsed: false,
+            };
+        }
+    }
+
+    return {
+        success: true,
+        reply: [
+            locale === 'en-US'
+                ? `Detected workbook: ${workbookPath}. Automatic write requires Excel COM.`
+                : `已找到活頁簿：${workbookPath}。自動寫入目前需使用 Excel COM。`,
+            '',
+            locale === 'en-US' ? 'Latest NVIDIA snapshot:' : 'NVIDIA 最新財報摘要：',
+            ...summary.map((line) => `- ${line}`),
+            '',
+            snapshot.sourceUrl,
+        ].join('\n'),
+        suggestions: locale === 'en-US'
+            ? ['Install Excel-compatible app', 'Use Google Sheets web']
+            : ['安裝 Excel 相容工具', '改用 Google Sheets 網頁版'],
+        task: false,
+        llmUsed: false,
+    };
+}
+
+async function handleAgentGameResearchWorkflow(message = '', locale = 'zh-TW') {
+    const topic = extractGameTopic(message);
+    const guideResults = await searchWebLinks(`${topic} 攻略`, 5);
+    const videoResults = await searchWebLinks(`${topic} site:youtube.com`, 5);
+    if (!guideResults.length && !videoResults.length) {
+        return {
+            success: true,
+            reply: locale === 'en-US'
+                ? `I could not find results for "${topic}" right now.`
+                : `目前找不到「${topic}」的可用攻略或影片結果。`,
+            suggestions: locale === 'en-US'
+                ? ['Try another keyword', 'Search YouTube manually']
+                : ['換關鍵字再試', '改查 YouTube'],
+            task: false,
+            llmUsed: false,
+        };
+    }
+    const chalkboardBullets = guideResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    const reply = [
+        locale === 'en-US' ? `## Game Research: ${topic}` : `## 遊戲資料蒐集：${topic}`,
+        '',
+        locale === 'en-US' ? '### Guides' : '### 攻略',
+        ...(guideResults.length ? guideResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
+        '',
+        locale === 'en-US' ? '### Videos' : '### 影片',
+        ...(videoResults.length ? videoResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
+        '',
+        locale === 'en-US' ? '### Chalkboard Summary Draft' : '### Chalkboard 摘要草稿',
+        ...(chalkboardBullets.length ? chalkboardBullets.map((line) => `- ${line}`) : ['- N/A']),
+    ].join('\n');
+    return {
+        success: true,
+        reply,
+        suggestions: locale === 'en-US'
+            ? ['Find more videos', 'Search another game']
+            : ['再找更多影片', '搜尋另一款遊戲'],
+        task: false,
+        llmUsed: false,
+    };
 }
 
 
@@ -1678,6 +2103,18 @@ app.post('/api/chat', async (req, res) => {
     if (!message) return res.json({ success: false, error: 'Please enter a message' });
     const sops = loadAllSOPs(SOPS_DIR);
     const sopsWithState = await annotateSOPRuntimeState(sops);
+    try {
+        if (detectAgentFinanceIntent(message)) {
+            const agentResponse = await handleAgentFinanceWorkbookWorkflow(message, locale || 'zh-TW', sopsWithState);
+            if (agentResponse) return res.json(agentResponse);
+        }
+        if (detectGameResearchIntent(message)) {
+            const gameResponse = await handleAgentGameResearchWorkflow(message, locale || 'zh-TW');
+            if (gameResponse) return res.json(gameResponse);
+        }
+    } catch (agentErr) {
+        fileLog(`Agent workflow failed: ${agentErr.message}`);
+    }
     let suggestions = locale === 'en-US' ? ['Install Chrome', 'Clear Tasks', 'System Status'] : ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
     let llmErrorForFallback = null;
     // 1. 快速蒐集背景資訊
@@ -2050,6 +2487,22 @@ ${taskContext || '(empty)'}
                 if (actionStr.startsWith('SWITCH_MODEL')) {
                     const nameMatch = actionStr.match(/name="(.*?)"/);
                     if (nameMatch) llm.setCurrentModel(nameMatch[1]);
+                }
+
+                if (actionStr.startsWith('OPEN_FILE')) {
+                    const fileMatch = actionStr.match(/file_path="(.*?)"/);
+                    if (fileMatch) {
+                        openFileWithDefaultApp(fileMatch[1]);
+                        hasActionTaken = true;
+                    }
+                }
+
+                if (actionStr.startsWith('OPEN_URL')) {
+                    const urlMatch = actionStr.match(/url="(.*?)"/);
+                    if (urlMatch) {
+                        openUrlInDefaultBrowser(urlMatch[1]);
+                        hasActionTaken = true;
+                    }
                 }
 
 

@@ -543,3 +543,15 @@
 - 修正畫布 resize 當下若仍在拖曳文字框，會同步縮放 `textManipulation.originPoint / originRect / anchor`，避免拖曳中途視窗改變導致框與游標脫鉤。
 - 修正文字框縮放時字級不變問題：pending 文字預覽改為依框內可用區域動態計算 `fontSize / lineHeight`，落稿視覺與框體一致。
 
+### SOP 強化：Desktop Agent 工作流（第一版）
+- `/api/chat` 新增 Agent Workflow Router：命中特定任務時，優先走「技能流程」而非純 LLM 對話。
+- 新增 `財報.xlsx + NVIDIA` 自動流程：
+  - 檢查 Excel/LibreOffice/WPS 是否存在
+  - 尋找指定活頁簿路徑（Desktop/Documents/Downloads）
+  - 從 SEC Company Facts 抓 NVIDIA 最新財報關鍵數據
+  - 若有 Excel，透過 COM 自動寫入工作表並開啟檔案
+  - 若無試算表工具，回到「安裝 Office SOP 或改 Google Sheets」分流
+- 新增 `遊戲攻略/影片` 流程：自動做 Web 搜尋，回傳 Markdown 分組結果與 Chalkboard 摘要草稿。
+- 擴充動作協議：新增 `[ACTION:OPEN_FILE ...]`、`[ACTION:OPEN_URL ...]`。
+- 新增 Skills：`skills/desktop-agent.md`、`skills/game-research.md`。
+
