@@ -390,3 +390,10 @@ SOPs 存放位置：
   - 目標：桌面與 App 層級操作。
   - 預設先準備 VM sandbox（例如 VirtualBox）再執行任務，以降低對主機環境干擾。
   - 只有必要時才允許直接對主機進行操作。
+
+### 8.12 Skills / SOP Context 載入策略
+- 預設不得將全部 Skills/SOP 全量放入 system prompt。
+- Runtime 需依使用者當前請求進行相關性匹配，僅注入少量關鍵 Skill/SOP 摘要（on-demand context）。
+- 若無匹配 Skill/SOP：
+  - 優先使用 Browser Use 進行可信來源查詢；
+  - 或回傳可執行的手動指引與下一步建議。

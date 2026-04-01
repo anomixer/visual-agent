@@ -205,7 +205,8 @@ Your rules:
 - Conversation history: Please combine background task status and conversation history to accurately judge the user's intent. Ensure action tags correspond exactly to task IDs.`;
 
 /**
- * 載入所有 Skill 定義並組合為 System Prompt
+ * 組合 System Prompt
+ * 注意：Skills / SOPs 採「按需注入」，避免每輪都塞滿 context。
  */
 function buildFullSystemPrompt(locale = 'zh-TW', extraContext = '') {
     const base = (locale === 'en-US') ? BASE_SYSTEM_PROMPT_EN : BASE_SYSTEM_PROMPT_ZH;
@@ -213,16 +214,6 @@ function buildFullSystemPrompt(locale = 'zh-TW', extraContext = '') {
 
     if (extraContext) {
         fullPrompt += `${locale === 'en-US' ? '### Runtime Context' : '### 執行階段情境'}\n${String(extraContext).trim()}\n\n`;
-    }
-
-    // 掃描 AppData 中的 skills 目錄
-    const skillsDir = path.join(APP_DATA_DIR, 'skills');
-    if (fs.existsSync(skillsDir)) {
-        const files = fs.readdirSync(skillsDir).filter(f => f.endsWith('.md'));
-        files.forEach(file => {
-            const content = fs.readFileSync(path.join(skillsDir, file), 'utf-8');
-            fullPrompt += `### 技能定義 (${file}):\n${content}\n\n`;
-        });
     }
 
     return fullPrompt;

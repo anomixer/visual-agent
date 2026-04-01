@@ -576,3 +576,11 @@
 ### 內宇宙（Browser）用途明確化
 - Browser Use 定位為「資源取得 + 瀏覽器內編輯」層，供 AI 在 web 內完成搜尋、讀取、導覽與內容處理。
 
+### Skills/SOP 懶載入與技能庫擴充
+- `llm.js` 改為不在 system prompt 預先載入全部 Skills，降低 context 浪費。
+- `/api/chat` 新增按需匹配：根據使用者訊息動態挑選相關 Skill 與 SOP 摘要注入 Prompt。
+- 新增多個高頻 Skills：Photoshop、備份還原、安裝修復、Office/Excel、Browser research、網路/印表機、儲存與復原、虛擬化沙箱、開發工具、媒體編輯。
+- 新增多步驟 SOP：
+  - `sops/backup-user-files.md`
+  - `sops/restore-user-files.md`
+

@@ -290,6 +290,14 @@ aipc-agent/
 - **內宇宙 / 外宇宙**：
   - 內宇宙（Browser Use）：偏向瀏覽器內資源取得與編輯。
   - 外宇宙（Computer Use）：偏向桌面操作，預設先 VM sandbox（如 VirtualBox）再執行，減少對主機干擾。
+- **Skills/SOP 懶載入**：
+  - 不再於 system prompt 預載所有 Skills。
+  - 改為依對話內容動態挑選相關 Skill/SOP 摘要注入（on-demand context），降低 context size。
+- **新增技能庫（skills）**：
+  - Photoshop、Backup/Restore、App 安裝修復、Office/Excel、Browser research、Network/Printer、Storage recovery、VM sandbox、Developer tools、Media editing。
+- **新增 SOP（多步驟）**：
+  - `sops/backup-user-files.md`
+  - `sops/restore-user-files.md`
 - **本機對話 Tab 化**：上方聊天模式改為本機多對話 tab + 遠端 tab；本機新增對話支援 `x` 關閉。
 - **新增對話按鈕位置調整**：`+` 移到聊天輸入工具列，位於「清除對話」左側。
 - **Chalkboard Resize 重繪強化**：resize 後會重算 `selectionRect / pendingTextRect` 與互動座標，並重建文字預覽，降低縮放糊化與偏移復發。

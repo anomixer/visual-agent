@@ -52,6 +52,8 @@ let selectedLocalChatSessionId = localStorage.getItem('selected_local_chat_sessi
 let mentionCandidates = [];
 let activeMentionIndex = 0;
 let pendingModelShareSessionId = '';
+let chalkboardHintTimer = null;
+let chalkboardHintClickDismissHandler = null;
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -192,6 +194,7 @@ const modelShareSummary = $('#modelShareSummary');
 const modelShareDetails = $('#modelShareDetails');
 const btnAcceptModelShare = $('#btnAcceptModelShare');
 const btnRejectModelShare = $('#btnRejectModelShare');
+const chalkboardFloatHint = $('#chalkboardFloatHint');
 
 const PROVIDER_DEFAULTS = {
     'OpenAI': 'https://api.openai.com/v1',
@@ -909,7 +912,7 @@ const statusTasks = $('#statusTasks');
 const chatModelBadge = $('#chatModelBadge');
 
 const chalkboardState = {
-    tool: 'eraser',
+    tool: 'none',
     color: '#f5f1e8',
     size: 4,
     eraserSize: 28,
@@ -2235,6 +2238,10 @@ function startChalkStroke(event) {
 
     const point = getChalkPoint(event);
     const tool = chalkboardState.tool;
+    if (tool === 'none') {
+        updatePlacementGuide(point);
+        return;
+    }
 
     if (tool !== 'text' && chalkboardState.pendingText && chalkboardState.pendingTextRect) {
         commitPendingTextPlacement();
@@ -2642,6 +2649,7 @@ function activateChalkboard() {
     if (chalkboardState.hasInteracted) return false;
     chalkboardState.hasInteracted = true;
     chalkboardState.history = [];
+    chalkboardState.tool = 'none';
     clearChalkboardSurface();
     drawChalkboardHint();
     syncChalkboardUI();
@@ -2839,24 +2847,47 @@ function drawChalkboardWelcome() {
 function drawChalkboardHint() {
     if (chalkboardState.hintDrawn) return;
     chalkboardState.hintDrawn = true;
-    markChalkboardUserContent(false);
-    drawChalkText(t('chalkboardWelcome.hintTitle'), 34, 62, {
-        font: '700 30px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
-        color: '#f4efe2',
-        alpha: 0.94
-    });
-    drawWrappedChalkText(
-        t('chalkboardWelcome.hintBody'),
-        34,
-        108,
-        Math.max(280, chalkboardState.cssWidth - 68),
-        26,
-        {
-            font: '400 20px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
-            color: '#eef0df',
-            alpha: 0.88
+    showChalkboardFloatHint(`${t('chalkboardWelcome.hintTitle')} · ${t('chalkboardWelcome.hintBody')}`);
+}
+
+function showChalkboardFloatHint(message) {
+    if (!chalkboardFloatHint) return;
+    const text = String(message || '').trim();
+    if (!text) return;
+    chalkboardFloatHint.textContent = text;
+    chalkboardFloatHint.classList.add('visible');
+
+    if (chalkboardHintTimer) {
+        clearTimeout(chalkboardHintTimer);
+        chalkboardHintTimer = null;
+    }
+    if (chalkboardHintClickDismissHandler) {
+        window.removeEventListener('pointerdown', chalkboardHintClickDismissHandler, true);
+        chalkboardHintClickDismissHandler = null;
+    }
+
+    const hide = () => {
+        chalkboardFloatHint.classList.remove('visible');
+    };
+
+    chalkboardHintTimer = setTimeout(() => {
+        hide();
+        chalkboardHintTimer = null;
+    }, 3000);
+
+    const onceDismiss = () => {
+        if (chalkboardHintTimer) {
+            clearTimeout(chalkboardHintTimer);
+            chalkboardHintTimer = null;
         }
-    );
+        hide();
+        if (chalkboardHintClickDismissHandler) {
+            window.removeEventListener('pointerdown', chalkboardHintClickDismissHandler, true);
+            chalkboardHintClickDismissHandler = null;
+        }
+    };
+    chalkboardHintClickDismissHandler = onceDismiss;
+    window.addEventListener('pointerdown', chalkboardHintClickDismissHandler, true);
 }
 
 async function applyAgentChalkboardDraft(draft) {
@@ -2868,14 +2899,28 @@ async function applyAgentChalkboardDraft(draft) {
     if (!title && bullets.length === 0) return;
 
     try {
-        const normalized = await api('/api/chalkboard/draft', {
-            method: 'POST',
-            body: { title, bullets },
-        });
-        if (!normalized.success || !normalized.draft) return;
+        let normalizedDraft = { title, bullets };
+        try {
+            const normalized = await api('/api/chalkboard/draft', {
+                method: 'POST',
+                body: { title, bullets },
+            });
+            if (normalized.success && normalized.draft) {
+                normalizedDraft = normalized.draft;
+            }
+        } catch {
+            // fallback: still render locally even if draft API is unavailable
+        }
 
         openTab('chalkboard');
-        requestAnimationFrame(() => {
+        const renderDraft = (attempt = 0) => {
+            if (!chalkboardState.ctx || chalkboardState.cssWidth <= 0 || chalkboardState.cssHeight <= 0) {
+                if (attempt < 8) {
+                    setTimeout(() => renderDraft(attempt + 1), 120);
+                }
+                return;
+            }
+            resizeChalkboardCanvas();
             if (!chalkboardState.ctx) return;
             if (!chalkboardState.hasInteracted) {
                 activateChalkboard();
@@ -2891,19 +2936,21 @@ async function applyAgentChalkboardDraft(draft) {
             chalkboardState.textManipulation = null;
             pushChalkHistory();
             clearChalkboardSurface();
-            const finalTitle = String(normalized.draft.title || title || 'Chalkboard Draft').trim();
-            const finalBullets = Array.isArray(normalized.draft.bullets)
-                ? normalized.draft.bullets
+            const finalTitle = String(normalizedDraft.title || title || 'Chalkboard Draft').trim();
+            const finalBullets = Array.isArray(normalizedDraft.bullets)
+                ? normalizedDraft.bullets
                 : bullets;
+            showChalkboardFloatHint(finalTitle);
             const padX = 34;
             let cursorY = 62;
             drawChalkText(finalTitle, padX, cursorY, {
-                font: '700 30px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+                font: '700 28px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
                 color: '#f4efe2',
                 alpha: 0.95,
             });
-            cursorY += 44;
-            finalBullets.forEach((line, index) => {
+            cursorY += 40;
+            const linesToDraw = finalBullets.length > 0 ? finalBullets : [currentLocale === 'en-US' ? 'No bullet points. See chat panel for details.' : '暫無條列摘要，請看右側聊天內容。'];
+            linesToDraw.forEach((line, index) => {
                 const wrappedLines = drawWrappedChalkText(
                     `${index + 1}. ${line}`,
                     padX,
@@ -2920,10 +2967,36 @@ async function applyAgentChalkboardDraft(draft) {
             });
             markChalkboardUserContent(true);
             addUILog(currentLocale === 'en-US' ? 'Agent draft rendered on Chalkboard.' : '已將 Agent 摘要寫入 Chalkboard。', 'success');
-        });
+        };
+        requestAnimationFrame(() => renderDraft(0));
     } catch (err) {
         console.error('[Chalkboard Draft] failed:', err);
     }
+}
+
+function buildChalkboardDraftFromReply(text = '') {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+    const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) return null;
+
+    const heading = lines.find((line) => /^#{1,3}\s+/.test(line));
+    const title = heading ? heading.replace(/^#{1,3}\s+/, '').trim() : (lines[0].slice(0, 56) || 'AI Draft');
+    const bullets = lines
+        .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
+        .map((line) => line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '').trim())
+        .filter(Boolean)
+        .slice(0, 8);
+    if (bullets.length > 0) {
+        return { title, bullets };
+    }
+
+    const plain = lines.filter((line) => !/^#{1,3}\s+/.test(line)).slice(0, 5);
+    if (!plain.length) return null;
+    return {
+        title,
+        bullets: plain,
+    };
 }
 
 function drawWrappedChalkText(text, x, y, maxWidth, lineHeight, options) {
@@ -3353,6 +3426,10 @@ function hidePlacementGuide() {
 
 function updateChalkboardCursor() {
     if (!chalkboardCanvas) return;
+    if (chalkboardState.tool === 'none') {
+        chalkboardCanvas.style.cursor = 'crosshair';
+        return;
+    }
     if (chalkboardState.tool === 'select') {
         chalkboardCanvas.style.cursor = 'crosshair';
         return;
@@ -4668,8 +4745,9 @@ async function sendChat() {
                     touchLocalChatSession(currentLocalSession.id);
                 }
                 appendChatBubble('ai', data.reply, data.suggestions);
-                if (data.chalkboardDraft) {
-                    applyAgentChalkboardDraft(data.chalkboardDraft);
+                const autoDraft = data.chalkboardDraft || buildChalkboardDraftFromReply(data.reply);
+                if (autoDraft) {
+                    applyAgentChalkboardDraft(autoDraft);
                 }
                 if (data.modelSource?.type === 'remote-shared') {
                     appendChatBubble('system', `Shared model: ${data.modelSource.machineName || ''} / ${data.modelSource.agentName || ''} / ${data.modelSource.provider || ''} / ${data.modelSource.model || ''}`);

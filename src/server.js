@@ -238,6 +238,9 @@ let chatHistory = []; // 儲存最近 6 則對話：[{role: 'user', content: '..
 const localChatHistoryBySession = new Map();
 const sopStateCache = new Map();
 const SOP_STATE_TTL_MS = 30000;
+let skillDocsCache = [];
+let skillDocsCacheAt = 0;
+const SKILL_DOC_CACHE_TTL_MS = 30000;
 function buildChatHistoryForRequest(history, hasChalkboardAttachment) {
     if (!hasChalkboardAttachment || !Array.isArray(history) || history.length === 0) {
         return Array.isArray(history) ? history : [];
@@ -263,6 +266,132 @@ function buildChatHistoryForRequest(history, hasChalkboardAttachment) {
         filtered.push(entry);
     });
     return filtered;
+}
+
+function tokenizeForMatch(text = '') {
+    return String(text || '')
+        .toLowerCase()
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+        .split(/\s+/)
+        .filter((token) => token.length >= 2);
+}
+
+function loadSkillDocuments(forceRefresh = false) {
+    const now = Date.now();
+    if (!forceRefresh && skillDocsCache.length > 0 && (now - skillDocsCacheAt) < SKILL_DOC_CACHE_TTL_MS) {
+        return skillDocsCache;
+    }
+    const docs = [];
+    try {
+        if (!fs.existsSync(SKILLS_DIR)) {
+            skillDocsCache = [];
+            skillDocsCacheAt = now;
+            return skillDocsCache;
+        }
+        const files = fs.readdirSync(SKILLS_DIR).filter((name) => name.endsWith('.md'));
+        files.forEach((name) => {
+            const fullPath = path.join(SKILLS_DIR, name);
+            const content = fs.readFileSync(fullPath, 'utf8');
+            docs.push({
+                name,
+                content,
+                tokens: new Set(tokenizeForMatch(`${name} ${content.slice(0, 1200)}`)),
+            });
+        });
+    } catch (error) {
+        fileLog(`Skill document load failed: ${error.message}`);
+    }
+    skillDocsCache = docs;
+    skillDocsCacheAt = now;
+    return docs;
+}
+
+function scoreByTokenSet(tokenSet = new Set(), queryTokens = []) {
+    if (!queryTokens.length) return 0;
+    let score = 0;
+    queryTokens.forEach((token) => {
+        if (tokenSet.has(token)) {
+            score += 3;
+            return;
+        }
+        if (Array.from(tokenSet).some((item) => item.includes(token) || token.includes(item))) {
+            score += 1;
+        }
+    });
+    return score;
+}
+
+function compactMarkdownSnippet(content = '', maxChars = 620) {
+    return String(content || '')
+        .replace(/^#.*$/gm, '')
+        .replace(/^```[\s\S]*?```/gm, '')
+        .replace(/[*_`>#-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, maxChars);
+}
+
+function buildOnDemandSkillAndSopContext(message = '', sops = [], locale = 'zh-TW') {
+    const queryTokens = tokenizeForMatch(message).slice(0, 16);
+    if (!queryTokens.length) return '';
+
+    const skillDocs = loadSkillDocuments(false);
+    const rankedSkills = skillDocs
+        .map((doc) => ({
+            doc,
+            score: scoreByTokenSet(doc.tokens, queryTokens),
+        }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 4)
+        .map((item) => item.doc);
+
+    const rankedSops = (sops || [])
+        .map((sop) => {
+            const tokenSet = new Set(tokenizeForMatch(`${sop.id} ${sop.name} ${sop.category} ${sop.description || ''}`));
+            return {
+                sop,
+                score: scoreByTokenSet(tokenSet, queryTokens),
+            };
+        })
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map((item) => item.sop);
+
+    if (!rankedSkills.length && !rankedSops.length) {
+        return locale === 'en-US'
+            ? 'No direct internal skill/SOP match found. If needed, use Browser Use to fetch trusted references, then provide clear actionable steps.'
+            : '目前找不到直接匹配的內建 Skill/SOP。必要時請改用 Browser Use 搜尋可信來源，再給使用者可執行步驟。';
+    }
+
+    const skillLines = rankedSkills.map((doc, index) => {
+        const snippet = compactMarkdownSnippet(doc.content, 520);
+        return `${index + 1}. ${doc.name}: ${snippet}`;
+    });
+    const sopLines = rankedSops.map((sop, index) => (
+        `${index + 1}. ID=${sop.id}, Name=${sop.name}, Action=${sop.recommendedAction}, Category=${sop.category || 'N/A'}`
+    ));
+
+    const header = locale === 'en-US' ? '### On-Demand Skill/SOP Context' : '### 按需技能/SOP 情境';
+    const skillHeader = locale === 'en-US' ? 'Relevant Skills' : '相關 Skills';
+    const sopHeader = locale === 'en-US' ? 'Relevant SOPs' : '相關 SOPs';
+    const fallbackNote = locale === 'en-US'
+        ? 'If these are still insufficient, use Browser Use for web research or provide manual guidance.'
+        : '若上述仍不足，請使用 Browser Use 做網路研究，或直接給使用者手動操作指引。';
+
+    return [
+        header,
+        '',
+        `${skillHeader}:`,
+        ...(skillLines.length ? skillLines : ['- (none)']),
+        '',
+        `${sopHeader}:`,
+        ...(sopLines.length ? sopLines : ['- (none)']),
+        '',
+        fallbackNote,
+    ].join('\n');
 }
 
 
@@ -1419,6 +1548,10 @@ async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW'
                 '',
                 snapshot.sourceUrl,
             ].join('\n'),
+            chalkboardDraft: {
+                title: locale === 'en-US' ? 'NVIDIA Earnings Snapshot' : 'NVIDIA 財報摘要',
+                bullets: summary,
+            },
             suggestions: locale === 'en-US'
                 ? ['Open workbook folder', 'Update another workbook']
                 : ['開啟活頁簿所在資料夾', '更新另一個活頁簿'],
@@ -1442,6 +1575,10 @@ async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW'
             '',
             snapshot.sourceUrl,
         ].join('\n'),
+        chalkboardDraft: {
+            title: locale === 'en-US' ? 'NVIDIA Earnings Snapshot' : 'NVIDIA 財報摘要',
+            bullets: summary,
+        },
         suggestions: locale === 'en-US'
             ? ['Install Excel-compatible app', 'Use Google Sheets web']
             : ['安裝 Excel 相容工具', '改用 Google Sheets 網頁版'],
@@ -1468,6 +1605,7 @@ async function handleAgentGameResearchWorkflow(message = '', locale = 'zh-TW') {
         };
     }
     const chalkboardBullets = guideResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    const fallbackBullets = videoResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
     const reply = [
         locale === 'en-US' ? `## Game Research: ${topic}` : `## 遊戲資料蒐集：${topic}`,
         '',
@@ -1485,7 +1623,7 @@ async function handleAgentGameResearchWorkflow(message = '', locale = 'zh-TW') {
         reply,
         chalkboardDraft: {
             title: locale === 'en-US' ? `Game Research: ${topic}` : `遊戲資料蒐集：${topic}`,
-            bullets: chalkboardBullets,
+            bullets: chalkboardBullets.length > 0 ? chalkboardBullets : fallbackBullets,
         },
         suggestions: locale === 'en-US'
             ? ['Find more videos', 'Search another game']
@@ -2599,6 +2737,7 @@ app.post('/api/chat', async (req, res) => {
             const baseHistory = requestedHistory
                 || (localChatSessionId ? (localChatHistoryBySession.get(localChatSessionId) || []) : chatHistory);
             const requestHistory = buildChatHistoryForRequest(baseHistory, Boolean(chalkboardAttachment));
+            const onDemandGuidance = buildOnDemandSkillAndSopContext(message, sopsWithState, locale || 'zh-TW');
             const contextNote = `
 [[Current System Context]]
 1. Hardware Summary: ${hardwareSummary}
@@ -2612,6 +2751,9 @@ ${taskContext || '(empty)'}
 4. Current AI Model: ${llm.getCurrentModel()}
 
 5. Chalkboard sketch: ${chalkboardAttachment ? `Attached ${chalkboardAttachment.width || '?'}x${chalkboardAttachment.height || '?'} chalkboard snapshot - treat it as the user's visual draft. This image is the current reference; unless the user explicitly asks to compare, ignore previous images.` : 'No chalkboard snapshot attached this round.'}
+
+6. On-Demand Skill/SOP Guidance:
+${onDemandGuidance || '(no direct skill/sop match)'}
 
 `;
             // 2. 呼叫 LLM (附帶歷史紀錄)
@@ -2636,6 +2778,7 @@ ${taskContext || '(empty)'}
                     sharedModelSession
                         ? `Shared remote model is active on ${sharedModelSession.peer?.machineName || sharedModelSession.host} (${sharedModelSession.peer?.agentName || 'Remote AI'}).`
                         : 'Shared remote model is not active.',
+                    onDemandGuidance || '',
                 ].join('\n'),
             };
             if (chalkboardAttachment) {
@@ -3028,6 +3171,8 @@ ${taskContext || '(empty)'}
         if (/chrome|谷歌|瀏覽器/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_install_chrome');
         if (/ollama|llm|語言模型|ai引擎/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_install_ollama');
         if (/steam|steam|遊戲/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_steam');
+        if (/備份|backup|備分|同步檔案/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_backup_user_files');
+        if (/還原|restore|回復檔案/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_restore_user_files');
         if (matchedSOP) {
             taskAdded = {
                 id: `task_${Date.now()}`,

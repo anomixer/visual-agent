@@ -866,6 +866,33 @@ ol {
   touch-action: none;
 }
 
+.chalkboard-float-hint {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--chalkboard-frame) + 14px);
+  transform: translateX(-50%) translateY(-8px);
+  max-width: min(82%, 860px);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(14, 31, 21, 0.9);
+  color: rgba(244, 239, 226, 0.95);
+  font-family: "Segoe UI", "Microsoft JhengHei UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  z-index: 5;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.chalkboard-float-hint.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
 .chalk-placement-guide {
   position: absolute;
   box-sizing: border-box;
