@@ -2974,28 +2974,60 @@ async function applyAgentChalkboardDraft(draft) {
     }
 }
 
-function buildChalkboardDraftFromReply(text = '') {
-    const raw = String(text || '').trim();
-    if (!raw) return null;
-    const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (!lines.length) return null;
-
-    const heading = lines.find((line) => /^#{1,3}\s+/.test(line));
-    const title = heading ? heading.replace(/^#{1,3}\s+/, '').trim() : (lines[0].slice(0, 56) || 'AI Draft');
-    const bullets = lines
-        .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
-        .map((line) => line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '').trim())
-        .filter(Boolean)
-        .slice(0, 8);
-    if (bullets.length > 0) {
-        return { title, bullets };
+function extractChalkboardControlFromReply(text = '') {
+    const raw = String(text || '');
+    const marker = '##CHALKBOARD##';
+    const endMarker = '##ENDCHALKBOARD##';
+    const markerIndex = raw.indexOf(marker);
+    if (markerIndex < 0) {
+        return {
+            displayText: raw.trim(),
+            draft: null,
+        };
     }
 
-    const plain = lines.filter((line) => !/^#{1,3}\s+/.test(line)).slice(0, 5);
-    if (!plain.length) return null;
+    const before = raw.slice(0, markerIndex);
+    const afterMarker = raw.slice(markerIndex + marker.length);
+    const endIndex = afterMarker.indexOf(endMarker);
+    const blockText = (endIndex >= 0 ? afterMarker.slice(0, endIndex) : afterMarker).trim();
+    const after = endIndex >= 0 ? afterMarker.slice(endIndex + endMarker.length) : '';
+    const displayText = `${before}\n${after}`.replace(/\n{3,}/g, '\n\n').trim()
+        || (currentLocale === 'en-US' ? 'Key points were written to Chalkboard.' : '重點已寫到 Chalkboard。');
+
+    const rawLines = blockText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!rawLines.length) {
+        return { displayText, draft: null };
+    }
+
+    let title = '';
+    const bullets = [];
+    rawLines.forEach((line) => {
+        if (!title && /^title\s*:/i.test(line)) {
+            title = line.replace(/^title\s*:/i, '').trim();
+            return;
+        }
+        if (/^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
+            bullets.push(line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '').trim());
+            return;
+        }
+        if (!title) {
+            title = line.replace(/^#{1,3}\s+/, '').trim();
+        } else {
+            bullets.push(line);
+        }
+    });
+
+    const compactBullets = bullets
+        .map((line) => line.slice(0, 72))
+        .filter(Boolean)
+        .slice(0, 6);
+    const finalTitle = (title || (currentLocale === 'en-US' ? 'AI Chalkboard Notes' : 'AI 黑板重點')).slice(0, 52);
+    const draft = compactBullets.length > 0
+        ? { title: finalTitle, bullets: compactBullets }
+        : null;
     return {
-        title,
-        bullets: plain,
+        displayText,
+        draft,
     };
 }
 
@@ -4744,8 +4776,9 @@ async function sendChat() {
                     currentLocalSession.history = data.history;
                     touchLocalChatSession(currentLocalSession.id);
                 }
-                appendChatBubble('ai', data.reply, data.suggestions);
-                const autoDraft = data.chalkboardDraft || buildChalkboardDraftFromReply(data.reply);
+                const chalkControl = extractChalkboardControlFromReply(data.reply || '');
+                appendChatBubble('ai', chalkControl.displayText || data.reply, data.suggestions);
+                const autoDraft = chalkControl.draft;
                 if (autoDraft) {
                     applyAgentChalkboardDraft(autoDraft);
                 }

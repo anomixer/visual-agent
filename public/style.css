@@ -60,15 +60,15 @@
 
 /* Light theme override */
 :root.theme-light {
-  --bg-app: #f3f3f3;
-  --bg-titlebar: #dddddd;
-  --bg-sidebar: #f3f3f3;
-  --bg-panel: #ffffff;
-  --bg-editor: #ffffff;
-  --bg-log: #ffffff;
-  --bg-input: #ffffff;
-  --bg-card: #f8f8f8;
-  --bg-card-hover: #e8e8e8;
+  --bg-app: #f5f1e7;
+  --bg-titlebar: #e7e0d3;
+  --bg-sidebar: #f6f2e8;
+  --bg-panel: #fcf9f1;
+  --bg-editor: #fcf9f1;
+  --bg-log: #fbf7ee;
+  --bg-input: #fffdf7;
+  --bg-card: #f8f3e8;
+  --bg-card-hover: #efe8da;
   --bg-statusbar: #007acc;
   --bg-tab-active: #ffffff;
   --bg-tab: #ececec;
@@ -1005,7 +1005,7 @@ ol {
 }
 
 .chalk-tool.eraser {
-  width: 74px;
+  width: 62px;
   height: 34px;
   border-radius: 8px;
   background:
@@ -1026,7 +1026,7 @@ ol {
 
 .chalk-stick {
   width: 18px;
-  height: 54px;
+  height: 36px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.34);
   box-shadow:
@@ -2322,6 +2322,24 @@ ol {
 .markdown-body strong {
   color: var(--accent);
   font-weight: 600;
+}
+
+.markdown-body a {
+  color: #9ed0ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body a:hover {
+  color: #c3e4ff;
+}
+
+:root.theme-light .markdown-body a {
+  color: #0b5cad;
+}
+
+:root.theme-light .markdown-body a:hover {
+  color: #064886;
 }
 
 .markdown-body blockquote {

@@ -584,3 +584,22 @@
   - `sops/backup-user-files.md`
   - `sops/restore-user-files.md`
 
+## 📌 2026.04.02 — 回覆穩定性、黑板控制碼與版本同步
+
+### 版本
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.04.02`。
+
+### 對話與代理穩定性
+- 修正 AI 只輸出 action 控制碼時對話變空白的問題：後端現在會回填可讀摘要。
+- `Browser Use` / `Computer Use` 測試期放寬，移除 top-tier VLM 硬性阻擋訊息（保留 VM-safe 行為限制）。
+
+### 遊戲影片品質
+- 遊戲影片結果改為先正規化 YouTube watch URL，再做可播放檢查，減少失效影片。
+
+### Chalkboard 控制
+- 黑板渲染改為只處理 `##CHALKBOARD## ... ##ENDCHALKBOARD##` 區塊，避免一般回覆句句落板。
+- 黑板提示改為 popup hint；3 秒自動消失或滑鼠點擊即關閉。
+
+### 無 NVIDIA 機器降噪
+- `temperature-monitor` 在 `ENOENT`（無 `nvidia-smi`）時不再重複刷 log。
+

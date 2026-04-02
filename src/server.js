@@ -1476,6 +1476,78 @@ async function searchWebLinks(query = '', limit = 5) {
     return results;
 }
 
+function extractYouTubeVideoIdFromUrl(inputUrl = '') {
+    try {
+        const url = new URL(String(inputUrl || '').trim());
+        const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+        if (host === 'youtu.be') {
+            const id = url.pathname.replace(/^\/+/g, '').split('/')[0];
+            return id || '';
+        }
+        if (host.endsWith('youtube.com')) {
+            if (url.pathname === '/watch') {
+                return String(url.searchParams.get('v') || '').trim();
+            }
+            if (/^\/shorts\//.test(url.pathname)) {
+                return url.pathname.split('/')[2] || '';
+            }
+            if (/^\/embed\//.test(url.pathname)) {
+                return url.pathname.split('/')[2] || '';
+            }
+        }
+    } catch {
+        return '';
+    }
+    return '';
+}
+
+function normalizeYouTubeWatchUrl(inputUrl = '') {
+    const videoId = extractYouTubeVideoIdFromUrl(inputUrl);
+    if (!videoId) return '';
+    return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
+async function isYouTubeVideoPlayable(watchUrl = '') {
+    const normalized = normalizeYouTubeWatchUrl(watchUrl);
+    if (!normalized) return false;
+    try {
+        const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`;
+        const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: { 'User-Agent': 'aipc-agent/2026.04.02' },
+            signal: AbortSignal.timeout(10000),
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
+    const query = String(topic || '').trim();
+    if (!query) return [];
+    const candidates = await searchWebLinks(`${query} site:youtube.com/watch`, 16);
+    const unique = new Map();
+    candidates.forEach((item) => {
+        const watchUrl = normalizeYouTubeWatchUrl(item.url);
+        if (!watchUrl) return;
+        const id = extractYouTubeVideoIdFromUrl(watchUrl);
+        if (!id) return;
+        if (!unique.has(id)) {
+            unique.set(id, { title: item.title, url: watchUrl });
+        }
+    });
+
+    const playable = [];
+    for (const entry of unique.values()) {
+        const ok = await isYouTubeVideoPlayable(entry.url);
+        if (!ok) continue;
+        playable.push(entry);
+        if (playable.length >= limit) break;
+    }
+    return playable;
+}
+
 function extractGameTopic(message = '') {
     const text = String(message || '').trim();
     const cleaned = text
@@ -1590,7 +1662,7 @@ async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW'
 async function handleAgentGameResearchWorkflow(message = '', locale = 'zh-TW') {
     const topic = extractGameTopic(message);
     const guideResults = await searchWebLinks(`${topic} 攻略`, 5);
-    const videoResults = await searchWebLinks(`${topic} site:youtube.com`, 5);
+    const videoResults = await searchPlayableYouTubeVideos(topic, 5);
     if (!guideResults.length && !videoResults.length) {
         return {
             success: true,
@@ -2874,6 +2946,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             let hasActionTaken = false;
             let taskListChanged = false;
             let sopChanged = false;
+            const actionSummaries = [];
             if (hasSuggestions && isQuestioning) {
                 actions.length = 0; // 攔截待確認動作
             }
@@ -2941,6 +3014,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     if (fileMatch) {
                         openFileWithDefaultApp(fileMatch[1]);
                         hasActionTaken = true;
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Opened file: ${fileMatch[1]}`
+                                : `已開啟檔案：${fileMatch[1]}`
+                        );
                     }
                 }
 
@@ -2949,6 +3027,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     if (urlMatch) {
                         openUrlInDefaultBrowser(urlMatch[1]);
                         hasActionTaken = true;
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Opened URL: ${urlMatch[1]}`
+                                : `已開啟網址：${urlMatch[1]}`
+                        );
                     }
                 }
 
@@ -2956,12 +3039,30 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const mode = parseActionArg(actionStr, 'mode') || 'search';
                     const query = parseActionArg(actionStr, 'query');
                     const url = parseActionArg(actionStr, 'url');
-                    const capability = buildModelCapabilityProfile();
-                    if (capability.canUseAdvancedAgent) {
-                        await runBrowserUseOperation({ mode, query, url, limit: 5 });
-                        hasActionTaken = true;
-                    } else {
-                        fileLog(`BROWSER_USE blocked: top-tier VLM required (${capability.provider}/${capability.model})`);
+                    const browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
+                    hasActionTaken = true;
+                    if (browserResult?.success && mode === 'search') {
+                        const items = Array.isArray(browserResult.results) ? browserResult.results.slice(0, 3) : [];
+                        if (items.length > 0) {
+                            const lines = items.map((item, index) => `${index + 1}. ${item.title} - ${item.url}`);
+                            actionSummaries.push(
+                                (locale === 'en-US'
+                                    ? `Search results for "${query || message}":\n`
+                                    : `「${query || message}」搜尋結果：\n`) + lines.join('\n')
+                            );
+                        } else {
+                            actionSummaries.push(
+                                locale === 'en-US'
+                                    ? `Search completed, but no visible result items were parsed for "${query || message}".`
+                                    : `已完成搜尋，但沒有解析到可用結果（${query || message}）。`
+                            );
+                        }
+                    } else if (browserResult?.success) {
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Browser Use executed (${mode}).`
+                                : `已執行 Browser Use（${mode}）。`
+                        );
                     }
                 }
 
@@ -2970,13 +3071,28 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const filePath = parseActionArg(actionStr, 'file_path');
                     const url = parseActionArg(actionStr, 'url');
                     const sopId = parseActionArg(actionStr, 'sop_id');
-                    const capability = buildModelCapabilityProfile();
-                    if (capability.canUseAdvancedAgent) {
-                        runComputerUseOperation({ mode, filePath, url, sopId }, sopsWithState);
-                        hasActionTaken = true;
-                        taskListChanged = true;
+                    const computerResult = runComputerUseOperation({ mode, filePath, url, sopId }, sopsWithState);
+                    hasActionTaken = true;
+                    taskListChanged = true;
+                    if (computerResult?.success) {
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Computer Use executed (${mode}).`
+                                : `已執行 Computer Use（${mode}）。`
+                        );
+                        if (computerResult?.taskId) {
+                            actionSummaries.push(
+                                locale === 'en-US'
+                                    ? `Created task: ${computerResult.taskId}`
+                                    : `已建立任務：${computerResult.taskId}`
+                            );
+                        }
                     } else {
-                        fileLog(`COMPUTER_USE blocked: top-tier VLM required (${capability.provider}/${capability.model})`);
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Computer Use failed (${mode}): ${computerResult?.error || 'unknown error'}`
+                                : `Computer Use 失敗（${mode}）：${computerResult?.error || '未知錯誤'}`
+                        );
                     }
                 }
 
@@ -3039,10 +3155,15 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             if (hasActionTaken) saveTasks();
             // 4. 更新對話紀錄
             const cleanReply = llmReply.replace(/\[ACTION:.*?\]/g, '').replace(/\[SUGGEST:.*?\]/g, '').trim();
+            const finalReply = cleanReply || actionSummaries.join('\n\n') || (
+                locale === 'en-US'
+                    ? 'Done. I executed the requested action.'
+                    : '已執行指定動作。'
+            );
             const trimmedHistory = [
                 ...baseHistory,
                 { role: 'user', content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message },
-                { role: 'assistant', content: chalkboardAttachment ? `${cleanReply}\n\n[This reply referenced the Chalkboard sketch]` : cleanReply },
+                { role: 'assistant', content: chalkboardAttachment ? `${finalReply}\n\n[This reply referenced the Chalkboard sketch]` : finalReply },
             ].slice(-6);
             if (localChatSessionId) {
                 localChatHistoryBySession.set(localChatSessionId, trimmedHistory);
@@ -3065,7 +3186,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             }
             return res.json({
                 success: true,
-                reply: cleanReply,
+                reply: finalReply,
                 suggestions: finalSuggestions,
                 task: taskListChanged,
                 sopChanged,
@@ -3233,13 +3354,6 @@ app.get('/api/agent/capability', (req, res) => {
 app.post('/api/agent/browser-use', async (req, res) => {
     try {
         const profile = buildModelCapabilityProfile();
-        if (!profile.canUseAdvancedAgent) {
-            return res.status(412).json({
-                success: false,
-                error: 'Top-tier VLM capability required for Browser Use.',
-                model: profile,
-            });
-        }
         const result = await runBrowserUseOperation(req.body || {});
         return res.json({ success: Boolean(result?.success), result, model: profile });
     } catch (error) {
@@ -3250,13 +3364,6 @@ app.post('/api/agent/browser-use', async (req, res) => {
 app.post('/api/agent/computer-use', async (req, res) => {
     try {
         const profile = buildModelCapabilityProfile();
-        if (!profile.canUseAdvancedAgent) {
-            return res.status(412).json({
-                success: false,
-                error: 'Top-tier VLM capability required for Computer Use.',
-                model: profile,
-            });
-        }
         const sops = await annotateSOPRuntimeState(loadAllSOPs(SOPS_DIR));
         const result = runComputerUseOperation(req.body || {}, sops);
         return res.json({ success: Boolean(result?.success), result, model: profile });

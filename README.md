@@ -265,6 +265,15 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.04.02
+- **版本更新**：套件版本更新為 `2026.04.02`。
+- **AI 空白回覆修復**：當回覆只含 action 控制碼時，後端會回填可讀摘要，不再出現空白訊息。
+- **Browser/Computer Use 測試放寬**：移除 `top-tier VLM` 的硬性阻擋訊息，保留 VM-safe 行為約束。
+- **遊戲影片連結可用性過濾**：YouTube 連結回傳前先做可播放檢查，降低失效影片比例。
+- **無 NVIDIA 顯卡降噪**：`ENOENT` 不再重複刷 `[TemperatureMonitor] nvidia-smi not available`。
+- **Chalkboard 控制碼渲染**：僅 `##CHALKBOARD## ... ##ENDCHALKBOARD##` 區塊會落板，避免每句回覆都畫黑板。
+- **UI 視覺修補**：粉筆與板擦尺寸調整、dark theme 連結可讀性提升、light theme 背景改乳白。
+
 ### 2026.04.01
 - **Tauri EXE 硬體偵測修復**：`hardware-info` 改為 PowerShell EncodedCommand 執行，並在 `Get-PhysicalDisk` 失敗時 fallback 到 `Win32_DiskDrive`，改善 HDD 資訊缺失。
 - **NVIDIA 探測穩健化**：`temperature-monitor` 改為 `execFile` + 多路徑尋找 `nvidia-smi.exe`，封裝環境下更容易取得 GPU 資訊。
@@ -414,4 +423,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.04.01`。
+- 目前套件版本：`2026.04.02`。

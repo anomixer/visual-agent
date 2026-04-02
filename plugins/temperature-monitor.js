@@ -9,6 +9,8 @@
 
 const { execFile } = require('child_process');
 const path = require('path');
+let lastUnavailableLogAt = 0;
+const UNAVAILABLE_LOG_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 
 function resolveNvidiaSmiCandidates() {
     const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
@@ -83,7 +85,15 @@ module.exports = async function(health) {
     }
 
     if (lastError) {
-        const errorCode = lastError.code || 'ERR';
-        console.log(`[TemperatureMonitor] nvidia-smi not available (${errorCode}).`);
+        if (String(lastError.code || '').toUpperCase() === 'ENOENT') {
+            // No NVIDIA stack on this machine is an expected state. Stay silent.
+            return;
+        }
+        const now = Date.now();
+        if ((now - lastUnavailableLogAt) >= UNAVAILABLE_LOG_COOLDOWN_MS) {
+            const errorCode = lastError.code || 'ERR';
+            console.log(`[TemperatureMonitor] nvidia-smi not available (${errorCode}).`);
+            lastUnavailableLogAt = now;
+        }
     }
 };
