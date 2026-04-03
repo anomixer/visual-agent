@@ -1132,6 +1132,56 @@ function renderMarkdown(text = '') {
     return output;
 }
 
+function linkifyPlainUrls(text = '') {
+    const src = String(text || '');
+    // Convert bare URLs to markdown links, but keep existing markdown links untouched.
+    const protectedText = src.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (m) => `__MDLINK__${btoa(unescape(encodeURIComponent(m)))}__`);
+    const linked = protectedText.replace(/(^|[\s(])((https?:\/\/)[^\s<>()]+)/gi, (m, prefix, url) => {
+        return `${prefix}[${url}](${url})`;
+    });
+    return linked.replace(/__MDLINK__([A-Za-z0-9+/=]+)__/g, (_, b64) => {
+        try {
+            return decodeURIComponent(escape(atob(b64)));
+        } catch {
+            return '';
+        }
+    });
+}
+
+async function openExternalUrl(url = '') {
+    const target = String(url || '').trim();
+    if (!/^https?:\/\//i.test(target)) return;
+    try {
+        const result = await api('/api/open-external-url', {
+            method: 'POST',
+            body: { url: target },
+        });
+        if (result?.success) return;
+    } catch {
+        // fallback below
+    }
+    try {
+        window.open(target, '_blank', 'noopener,noreferrer');
+    } catch {
+        // ignore
+    }
+}
+
+function bindExternalLinks(root) {
+    if (!root) return;
+    root.querySelectorAll('a[href]').forEach((anchor) => {
+        if (anchor.dataset.externalBound === '1') return;
+        anchor.dataset.externalBound = '1';
+        anchor.addEventListener('click', (event) => {
+            const href = String(anchor.getAttribute('href') || '').trim();
+            if (!/^https?:\/\//i.test(href)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            openExternalUrl(href);
+        });
+    });
+}
+
 function getMentionHighlightNames() {
     const session = getActiveRemoteSession();
     return [
@@ -4840,12 +4890,13 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
     if (isSystem) {
         div.innerHTML = `
             <div class="msg-bubble-wrapper">
-                <div class="msg-bubble markdown-body">${renderMarkdown(text)}</div>
+                <div class="msg-bubble markdown-body">${renderMarkdown(linkifyPlainUrls(text))}</div>
             </div>
         `;
+        bindExternalLinks(div);
     } else if (isAI) {
         // 設定 marked 選項 (若 library 已載入)
-        const htmlContent = highlightMentionsInHtml(renderMarkdown(text), options.highlightNames || getMentionHighlightNames());
+        const htmlContent = highlightMentionsInHtml(renderMarkdown(linkifyPlainUrls(text)), options.highlightNames || getMentionHighlightNames());
         
         let suggestionsHtml = '';
         if (suggestions && suggestions.length > 0) {
@@ -4872,6 +4923,7 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
                 ${suggestionsHtml}
             </div>
         `;
+        bindExternalLinks(div);
         div.querySelector('.btn-speak').addEventListener('click', () => speakText(text, div.querySelector('.btn-speak')));
         
         // 建議按鈕點擊事件
@@ -4886,11 +4938,12 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
             <div class="msg-avatar">👤</div>
             <div class="msg-bubble-wrapper">
                 ${options.senderLabel ? `<div class="remote-chat-author">${escapeHtml(options.senderLabel)}</div>` : ''}
-                <div class="msg-bubble markdown-body">${highlightMentionsInHtml(renderMarkdown(text), options.highlightNames || getMentionHighlightNames())}</div>
+                <div class="msg-bubble markdown-body">${highlightMentionsInHtml(renderMarkdown(linkifyPlainUrls(text)), options.highlightNames || getMentionHighlightNames())}</div>
                 ${options.imageDataUrl ? `<img class="remote-image" src="${options.imageDataUrl}" alt="shared screen">` : ''}
                 ${options.imageDataUrl ? `<div class="image-action-row"><button class="btn-inline-save" type="button">${t('remote.saveImage')}</button></div>` : ''}
             </div>
         `;
+        bindExternalLinks(div);
     }
     const avatarEl = div.querySelector('.msg-avatar');
     if (avatarEl && !isSystem) {

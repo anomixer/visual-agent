@@ -8,7 +8,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawnSync, spawn } = require('child_process');
 const pkg = require('../package.json');
 const { loadAllSOPs } = require('./sop-parser');
 const { SOPExecutor } = require('./sop-executor');
@@ -1433,11 +1433,22 @@ function decodeHtmlEntities(value = '') {
 function normalizeDuckDuckGoUrl(url = '') {
     const raw = String(url || '').trim();
     if (!raw) return '';
+    // Handle full DDG redirect URL: https://duckduckgo.com/l/?uddg=...
+    if (/^https?:\/\/(?:www\.)?duckduckgo\.com\/l\/\?/i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            const target = parsed.searchParams.get('uddg');
+            if (target) return target;
+        } catch {
+            return '';
+        }
+    }
     if (/^\/l\/\?/.test(raw)) {
         try {
             const parsed = new URL(`https://duckduckgo.com${raw}`);
             const target = parsed.searchParams.get('uddg');
-            if (target) return decodeURIComponent(target);
+            // URLSearchParams already decodes once; avoid double-decoding corruption.
+            if (target) return target;
         } catch {
             return '';
         }
@@ -1476,23 +1487,192 @@ async function searchWebLinks(query = '', limit = 5) {
     return results;
 }
 
+function looksLikeUnavailableHtml(text = '') {
+    const t = normalizeForScoring(text);
+    if (!t) return false;
+    return /(404 not found|page not found|content not available|this page isn't available|video unavailable|removed by uploader|private video|已移除|無法使用|找不到頁面)/i.test(t);
+}
+
+async function validatePlayableArticleUrl(inputUrl = '') {
+    const url = String(inputUrl || '').trim();
+    if (!/^https?:\/\//i.test(url)) return null;
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { 'User-Agent': 'aipc-agent/2026.04.02', 'Accept': 'text/html,*/*' },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(12000),
+        });
+        if (!response.ok) return null;
+        const finalUrl = response.url || url;
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (contentType && !contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
+            return null;
+        }
+        const body = await response.text();
+        const snippet = body.slice(0, 3000);
+        if (looksLikeUnavailableHtml(snippet)) return null;
+        return finalUrl;
+    } catch {
+        return null;
+    }
+}
+
+function normalizeForScoring(text = '') {
+    return String(text || '').toLowerCase();
+}
+
+function getHostnameFromUrl(inputUrl = '') {
+    try {
+        return new URL(String(inputUrl || '').trim()).hostname.replace(/^www\./i, '').toLowerCase();
+    } catch {
+        return '';
+    }
+}
+
+function isWhitelistedGuideHost(host = '') {
+    const h = String(host || '').toLowerCase();
+    if (!h) return false;
+    return /(ign\.com|rockstargames\.com|gta\.fandom\.com|fandom\.com|powerpyx\.com|gamepressure\.com|eurogamer\.net|polygon\.com|gamesradar\.com|steamcommunity\.com|reddit\.com|game8\.jp|gamersky\.com|gamer\.com\.tw|bahamut\.com\.tw|3dmgame\.com|bilibili\.com)/i.test(h);
+}
+
+function detectGameResearchIntentV2(message = '') {
+    const text = String(message || '');
+    const hasResearchKeyword = /(攻略|教學|打法|配裝|walkthrough|guide|tips|build|youtube|video|影片)/i.test(text);
+    const hasGameKeyword = /(遊戲|game|steam|boss|任務|關卡|gta|elden ring|black myth|wukong|stellar blade|劍星)/i.test(text);
+    return hasResearchKeyword && hasGameKeyword;
+}
+
+function extractGameTopicV2(message = '') {
+    const text = String(message || '').trim();
+    const cleaned = text
+        .replace(/請|幫我|幫忙|找|搜尋|查|一下|想看|推薦/gi, ' ')
+        .replace(/攻略|教學|打法|配裝|walkthrough|guide|tips|build|youtube|video|影片/gi, ' ')
+        .replace(/呢|嗎|吧|呀|啊|喔/gi, ' ')
+        .replace(/遊戲|game/gi, ' ')
+        .replace(/[?？!！,，.。:：;；"'「」『』（）()]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return cleaned || 'popular game';
+}
+
+function isBlockedLowValueHost(host = '') {
+    const h = String(host || '').toLowerCase();
+    if (!h) return true;
+    return /(pinterest\.|facebook\.|instagram\.|tiktok\.|dailymotion\.|9gag\.|bilibili\.com\/read)/i.test(h);
+}
+
+function isLikelyLowValueGuideTitle(title = '') {
+    const t = normalizeForScoring(title);
+    if (!t) return true;
+    return /(trailer|teaser|reaction|meme|funny|compilation|montage|clip|shorts?|speedrun only|soundtrack|ost)/i.test(t);
+}
+
+function scoreGuideResult(item = {}, topic = '') {
+    const title = String(item.title || '');
+    const url = String(item.url || '');
+    const host = getHostnameFromUrl(url);
+    const text = normalizeForScoring(`${title} ${url}`);
+    const topicText = normalizeForScoring(topic);
+    let score = 0;
+
+    if (/(攻略|教學|walkthrough|guide|tips|beginner|mission|build|賺錢|心得)/i.test(text)) score += 4;
+    if (topicText && text.includes(topicText)) score += 3;
+    if (/(ign\.com|fandom\.com|game8\.jp|powerpyx\.com|rockstargames\.com|steamcommunity\.com|reddit\.com)/i.test(host)) score += 2;
+    if (isLikelyLowValueGuideTitle(title)) score -= 4;
+    if (/youtube\.com|youtu\.be/i.test(host)) score -= 3;
+    return score;
+}
+
+function rankGuideResults(results = [], topic = '', limit = 5) {
+    const uniqueByUrl = new Map();
+    for (const item of (results || [])) {
+        const url = String(item?.url || '').trim();
+        const title = String(item?.title || '').trim();
+        const host = getHostnameFromUrl(url);
+        if (!url || !title) continue;
+        if (!/^https?:\/\//i.test(url)) continue;
+        if (isBlockedLowValueHost(host)) continue;
+        if (!isWhitelistedGuideHost(host)) continue;
+        if (!uniqueByUrl.has(url)) {
+            uniqueByUrl.set(url, { title, url });
+        }
+    }
+
+    const ranked = [...uniqueByUrl.values()]
+        .map((item) => ({ ...item, _score: scoreGuideResult(item, topic) }))
+        .filter((item) => item._score >= 1)
+        .sort((a, b) => b._score - a._score);
+
+    const seenHost = new Set();
+    const diversified = [];
+    for (const item of ranked) {
+        const host = getHostnameFromUrl(item.url) || item.url;
+        if (seenHost.has(host)) continue;
+        seenHost.add(host);
+        diversified.push({ title: item.title, url: item.url });
+        if (diversified.length >= limit) break;
+    }
+    return diversified;
+}
+
+async function searchGameGuideArticles(topic = '', limit = 5) {
+    const q = String(topic || '').trim();
+    if (!q) return [];
+    const year = new Date().getFullYear();
+    const prevYear = year - 1;
+    const queries = [
+        `${q} 攻略 教學 任務 ${year}`,
+        `${q} walkthrough guide tips ${year}`,
+        `${q} walkthrough guide tips ${prevYear}`,
+        `${q} beginner guide missions`,
+    ];
+
+    const merged = [];
+    for (const query of queries) {
+        try {
+            const results = await searchWebLinks(query, 10);
+            merged.push(...results);
+        } catch {
+            // ignore single query failure
+        }
+    }
+    const ranked = rankGuideResults(merged, q, 24);
+    const usable = [];
+    const fallback = [];
+    for (const item of ranked) {
+        if (fallback.length < limit) fallback.push({ title: item.title, url: item.url });
+        const finalUrl = await validatePlayableArticleUrl(item.url);
+        if (!finalUrl) continue;
+        usable.push({ title: item.title, url: finalUrl });
+        if (usable.length >= limit) break;
+    }
+    if (usable.length > 0) return usable;
+    // Fallback: return ranked links even if runtime validation failed (some sites block bot fetch).
+    return fallback.slice(0, limit);
+}
+
 function extractYouTubeVideoIdFromUrl(inputUrl = '') {
     try {
         const url = new URL(String(inputUrl || '').trim());
         const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+        const normalizeId = (value = '') => {
+            const id = String(value || '').trim();
+            return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : '';
+        };
         if (host === 'youtu.be') {
             const id = url.pathname.replace(/^\/+/g, '').split('/')[0];
-            return id || '';
+            return normalizeId(id);
         }
         if (host.endsWith('youtube.com')) {
             if (url.pathname === '/watch') {
-                return String(url.searchParams.get('v') || '').trim();
+                return normalizeId(url.searchParams.get('v') || '');
             }
             if (/^\/shorts\//.test(url.pathname)) {
-                return url.pathname.split('/')[2] || '';
+                return normalizeId(url.pathname.split('/')[2] || '');
             }
             if (/^\/embed\//.test(url.pathname)) {
-                return url.pathname.split('/')[2] || '';
+                return normalizeId(url.pathname.split('/')[2] || '');
             }
         }
     } catch {
@@ -1509,7 +1689,7 @@ function normalizeYouTubeWatchUrl(inputUrl = '') {
 
 async function isYouTubeVideoPlayable(watchUrl = '') {
     const normalized = normalizeYouTubeWatchUrl(watchUrl);
-    if (!normalized) return false;
+    if (!normalized) return null;
     try {
         const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`;
         const response = await fetch(endpoint, {
@@ -1517,20 +1697,76 @@ async function isYouTubeVideoPlayable(watchUrl = '') {
             headers: { 'User-Agent': 'aipc-agent/2026.04.02' },
             signal: AbortSignal.timeout(10000),
         });
-        return response.ok;
+        if (!response.ok) return null;
+        const data = await response.json().catch(() => ({}));
+        return {
+            ok: true,
+            url: normalized,
+            title: String(data?.title || '').trim(),
+            authorName: String(data?.author_name || '').trim(),
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function isYouTubeWatchPagePlayable(watchUrl = '') {
+    const normalized = normalizeYouTubeWatchUrl(watchUrl);
+    if (!normalized) return false;
+    try {
+        const response = await fetch(normalized, {
+            method: 'GET',
+            headers: { 'User-Agent': 'aipc-agent/2026.04.02', 'Accept': 'text/html,*/*' },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(12000),
+        });
+        if (!response.ok) return false;
+        const html = (await response.text()).slice(0, 15000);
+        if (looksLikeUnavailableHtml(html)) return false;
+        if (/private video|video unavailable|playback on other websites has been disabled/i.test(html)) return false;
+        return true;
     } catch {
         return false;
     }
 }
 
+function isLikelyLowValueVideoTitle(title = '') {
+    const t = normalizeForScoring(title);
+    if (!t) return true;
+    return /(official trailer|trailer|teaser|reaction|meme|funny|compilation|montage|clip|shorts?|music video|ost|soundtrack|live stream|livestream|speedrun|all cutscenes|movie)/i.test(t);
+}
+
+function scoreVideoResult(item = {}, topic = '') {
+    const title = normalizeForScoring(item.title || '');
+    const author = normalizeForScoring(item.authorName || '');
+    const topicText = normalizeForScoring(topic);
+    let score = 0;
+    if (/(攻略|教學|walkthrough|guide|tips|beginner|mission|賺錢|100%|解說)/i.test(title)) score += 5;
+    if (topicText && title.includes(topicText)) score += 3;
+    if (/(wiki|guide|gaming|攻略|教學)/i.test(author)) score += 1;
+    if (isLikelyLowValueVideoTitle(item.title)) score -= 5;
+    return score;
+}
+
+function containsTopicToken(title = '', topic = '') {
+    const t = normalizeForScoring(title);
+    const q = normalizeForScoring(topic);
+    if (!t || !q) return false;
+    const tokens = q.split(/\s+/).map((x) => x.trim()).filter((x) => x.length >= 2);
+    if (!tokens.length) return false;
+    return tokens.some((token) => t.includes(token));
+}
+
 async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
     const query = String(topic || '').trim();
     if (!query) return [];
-    const candidates = await searchWebLinks(`${query} site:youtube.com/watch`, 16);
+    const candidates = await searchWebLinks(`${query} 攻略 教學 walkthrough guide site:youtube.com/watch`, 24);
     const unique = new Map();
     candidates.forEach((item) => {
         const watchUrl = normalizeYouTubeWatchUrl(item.url);
+        const host = getHostnameFromUrl(watchUrl);
         if (!watchUrl) return;
+        if (isBlockedLowValueHost(host)) return;
         const id = extractYouTubeVideoIdFromUrl(watchUrl);
         if (!id) return;
         if (!unique.has(id)) {
@@ -1539,13 +1775,33 @@ async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
     });
 
     const playable = [];
+    const fallback = [];
     for (const entry of unique.values()) {
-        const ok = await isYouTubeVideoPlayable(entry.url);
-        if (!ok) continue;
-        playable.push(entry);
-        if (playable.length >= limit) break;
+        if (isLikelyLowValueVideoTitle(entry.title)) continue;
+        if (!containsTopicToken(entry.title, query)) continue;
+        if (fallback.length < limit) fallback.push({ title: entry.title, url: entry.url });
+        const playableMeta = await isYouTubeVideoPlayable(entry.url);
+        if (!playableMeta?.ok) continue;
+        const finalTitle = playableMeta.title || entry.title;
+        if (isLikelyLowValueVideoTitle(finalTitle)) continue;
+        if (!containsTopicToken(finalTitle, query)) continue;
+        const pagePlayable = await isYouTubeWatchPagePlayable(entry.url);
+        if (!pagePlayable) continue;
+        playable.push({
+            title: finalTitle,
+            url: entry.url,
+            authorName: playableMeta.authorName || '',
+            _score: scoreVideoResult({ title: finalTitle, authorName: playableMeta.authorName || '' }, query),
+        });
     }
-    return playable;
+    const rankedPlayable = playable
+        .filter((item) => item._score >= 1)
+        .sort((a, b) => b._score - a._score)
+        .slice(0, limit)
+        .map((item) => ({ title: item.title, url: item.url }));
+    if (rankedPlayable.length > 0) return rankedPlayable;
+    // Fallback: return strict-filtered candidates when YouTube verification endpoints are blocked.
+    return fallback.slice(0, limit);
 }
 
 function extractGameTopic(message = '') {
@@ -1714,6 +1970,122 @@ function buildWingetSopMarkdown(packageInfo = {}) {
     });
 }
 
+async function handleAgentGameResearchWorkflowV2(message = '', locale = 'zh-TW') {
+    const topic = extractGameTopicV2(message);
+    const guideResults = await searchGameGuideArticles(topic, 5);
+    const videoResults = await searchPlayableYouTubeVideos(topic, 5);
+
+    if (!guideResults.length && !videoResults.length) {
+        return {
+            success: true,
+            reply: locale === 'en-US'
+                ? `I could not find high-quality results for "${topic}" right now.`
+                : `目前找不到「${topic}」可用且高品質的攻略資源。`,
+            suggestions: locale === 'en-US'
+                ? ['Try another keyword', 'Search manually in browser']
+                : ['換關鍵字再試', '改由瀏覽器手動搜尋'],
+            task: false,
+            llmUsed: false,
+        };
+    }
+
+    const chalkboardBullets = guideResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    const fallbackBullets = videoResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    const reply = [
+        locale === 'en-US' ? `## Game Research: ${topic}` : `## 遊戲資料蒐集：${topic}`,
+        '',
+        locale === 'en-US'
+            ? '_Filtered: removed trailers/reactions/invalid links; prioritized practical guides._'
+            : '_已過濾：排除預告片、反應片、失效連結；優先實用攻略。_',
+        '',
+        locale === 'en-US' ? '### Guides' : '### 攻略文章',
+        ...(guideResults.length ? guideResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
+        '',
+        locale === 'en-US' ? '### Videos' : '### YouTube 教學影片',
+        ...(videoResults.length ? videoResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
+        '',
+        locale === 'en-US' ? '### Chalkboard Summary Draft' : '### Chalkboard 摘要草稿',
+        ...(chalkboardBullets.length ? chalkboardBullets.map((line) => `- ${line}`) : ['- N/A']),
+    ].join('\n');
+
+    return {
+        success: true,
+        reply,
+        chalkboardDraft: {
+            title: locale === 'en-US' ? `Game Research: ${topic}` : `遊戲資料蒐集：${topic}`,
+            bullets: chalkboardBullets.length > 0 ? chalkboardBullets : fallbackBullets,
+        },
+        suggestions: locale === 'en-US'
+            ? ['Find more videos', 'Search another game']
+            : ['再找更多影片', '改查其他遊戲'],
+        task: false,
+        llmUsed: false,
+    };
+}
+
+
+async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW') {
+    const topic = extractGameTopicV2(message);
+    const guideResults = await searchGameGuideArticles(topic, 5);
+    const videoResults = await searchPlayableYouTubeVideos(topic, 5);
+
+    if (!guideResults.length && !videoResults.length) {
+        return {
+            success: true,
+            reply: locale === 'en-US'
+                ? `I could not find high-quality results for "${topic}" right now.`
+                : `目前找不到「${topic}」可用且高品質的攻略資源。`,
+            suggestions: locale === 'en-US'
+                ? ['Try another keyword', 'Search manually in browser']
+                : ['換關鍵字再試', '改由瀏覽器手動搜尋'],
+            task: false,
+            llmUsed: false,
+        };
+    }
+
+    const chalkboardBullets = guideResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    const fallbackBullets = videoResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    const boardLines = (chalkboardBullets.length > 0 ? chalkboardBullets : fallbackBullets).slice(0, 6);
+    const chalkboardControlBlock = [
+        '##CHALKBOARD##',
+        `title: ${locale === 'en-US' ? `Game Research: ${topic}` : `遊戲攻略：${topic}`}`,
+        ...boardLines.map((line) => `- ${line}`),
+        '##ENDCHALKBOARD##',
+    ].join('\n');
+
+    const reply = [
+        locale === 'en-US' ? `## Game Research: ${topic}` : `## 遊戲資料蒐集：${topic}`,
+        '',
+        locale === 'en-US'
+            ? '_Filtered: removed trailers/reactions/invalid links; prioritized practical guides._'
+            : '_已過濾：排除預告片、反應片與失效連結，優先實用攻略。_',
+        '',
+        locale === 'en-US' ? '### Guides' : '### 攻略文章',
+        ...(guideResults.length ? guideResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
+        '',
+        locale === 'en-US' ? '### Videos' : '### YouTube 教學影片',
+        ...(videoResults.length ? videoResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
+        '',
+        locale === 'en-US' ? '### Chalkboard Summary Draft' : '### Chalkboard 摘要草稿',
+        ...(boardLines.length ? boardLines.map((line) => `- ${line}`) : ['- N/A']),
+        '',
+        chalkboardControlBlock,
+    ].join('\n');
+
+    return {
+        success: true,
+        reply,
+        chalkboardDraft: {
+            title: locale === 'en-US' ? `Game Research: ${topic}` : `遊戲資料蒐集：${topic}`,
+            bullets: boardLines,
+        },
+        suggestions: locale === 'en-US'
+            ? ['Find more videos', 'Search another game']
+            : ['再找更多影片', '改查其他遊戲'],
+        task: false,
+        llmUsed: false,
+    };
+}
 
 function createWingetSopFile(packageInfo = {}) {
     return createStoreSopFile(packageInfo, {
@@ -1795,6 +2167,32 @@ app.get('/api/meta', (req, res) => {
         name: pkg.name || 'aipc-agent',
         version: APP_VERSION,
     });
+});
+
+app.post('/api/open-external-url', (req, res) => {
+    try {
+        const raw = String(req.body?.url || '').trim();
+        if (!raw) return res.status(400).json({ success: false, error: 'Missing url' });
+        let parsed;
+        try {
+            parsed = new URL(raw);
+        } catch {
+            return res.status(400).json({ success: false, error: 'Invalid url' });
+        }
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return res.status(400).json({ success: false, error: 'Unsupported protocol' });
+        }
+
+        const child = spawn('rundll32.exe', ['url.dll,FileProtocolHandler', parsed.toString()], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+        });
+        child.unref();
+        return res.json({ success: true });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 app.get('/api/remote/profile', (req, res) => {
@@ -2622,8 +3020,8 @@ app.post('/api/chat', async (req, res) => {
             const agentResponse = await handleAgentFinanceWorkbookWorkflow(message, locale || 'zh-TW', sopsWithState);
             if (agentResponse) return res.json(agentResponse);
         }
-        if (detectGameResearchIntent(message)) {
-            const gameResponse = await handleAgentGameResearchWorkflow(message, locale || 'zh-TW');
+        if (detectGameResearchIntentV2(message)) {
+            const gameResponse = await handleAgentGameResearchWorkflowV3(message, locale || 'zh-TW');
             if (gameResponse) return res.json(gameResponse);
         }
     } catch (agentErr) {
