@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (2026.04.04 Updated)
+# AI PC Agent — 實作需求規格書 (2026.04.07 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.04.04 Updated] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.04.07 Updated] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -311,7 +311,7 @@ SOPs 存放位置：
 - **Model Sharing**：A 端同意接受 B 端分享之模型後，A 端 UI 將改用 B 端 API (利用 Session Token 驗證)。
 - **@mention 機制**：透過 `@` 啟動對象名單，點名遠端 AI 即可讓遠端模型介入回答。
 
-## 8. 2026.04.04 已修復問題 (Runtime Fixes)
+## 8. 2026.04.07 已修復問題 (Runtime Fixes)
 
 ### 8.1 Tauri EXE GPU/HDD 偵測
 - `plugins/hardware-info.js` 改為以 PowerShell `EncodedCommand` 執行，避免封裝環境下引號/編碼導致的指令失敗。

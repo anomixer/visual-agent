@@ -584,10 +584,10 @@
   - `sops/backup-user-files.md`
   - `sops/restore-user-files.md`
 
-## 📌 2026.04.04 — 回覆穩定性、黑板控制碼與版本同步
+## 📌 2026.04.07 — 回覆穩定性、黑板控制碼與版本同步
 
 ### 版本
-- `package.json` / `package-lock.json` 版本同步更新為 `2026.04.04`。
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.04.07`。
 
 ### 對話與代理穩定性
 - 修正 AI 只輸出 action 控制碼時對話變空白的問題：後端現在會回填可讀摘要。
