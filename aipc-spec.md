@@ -400,5 +400,5 @@ SOPs 存放位置：
 
 ### 8.13 Browser Runtime 依賴
 - Browser tab 與 Browser Use 預設使用 Playwright Chromium session。
-- `build.bat` 與首次安裝流程必須自動補齊 Chromium runtime，避免 EXE 打包後 Browser tab 缺元件。
-- 若 Chromium 尚未就緒，Runtime 需回傳明確修復指引，不得默默失敗。
+- Chromium 不再打包進 MSI / EXE，改由 `install-playwright-chromium` SOP 事後補裝。
+- 若 Chromium 尚未就緒，Runtime 需回傳明確修復指引與 SOP ID，不得默默失敗。

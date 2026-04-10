@@ -44,15 +44,9 @@ const aipcDir = path.join(appDataDir, 'aipc-agent');
 if (!fs.existsSync(aipcDir)) {
     fs.mkdirSync(aipcDir, { recursive: true });
 }
-const bundledBrowserDir = path.join(__dirname, '..', 'src-tauri', 'resources', 'playwright-browsers');
 const appDataBrowserDir = path.join(aipcDir, 'playwright-browsers');
-let playwrightBrowserInstallPromise = null;
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
-    if (fs.existsSync(appDataBrowserDir)) {
-        process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
-    } else if (fs.existsSync(bundledBrowserDir)) {
-        process.env.PLAYWRIGHT_BROWSERS_PATH = bundledBrowserDir;
-    }
+    process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
 }
 
 
@@ -130,7 +124,6 @@ function syncBundledAssets() {
     try {
         const bundledSopsDir = path.join(__dirname, '..', 'sops');
         const bundledSkillsDir = path.join(__dirname, '..', 'skills');
-        const bundledPlaywrightDir = path.join(__dirname, '..', 'src-tauri', 'resources', 'playwright-browsers');
         const syncIfChanged = (src, dest) => {
             if (!fs.existsSync(src)) return;
             if (!fs.existsSync(dest)) {
@@ -178,11 +171,6 @@ function syncBundledAssets() {
                 const dest = path.join(PLUGINS_DIR, file);
                 syncIfChanged(src, dest);
             });
-        }
-
-        if (fs.existsSync(bundledPlaywrightDir) && !fs.existsSync(appDataBrowserDir)) {
-            fs.cpSync(bundledPlaywrightDir, appDataBrowserDir, { recursive: true, force: true });
-            process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
         }
 
 
@@ -1305,7 +1293,7 @@ function isPlaywrightAvailable() {
 }
 
 function hasPlaywrightBrowserBinary() {
-    const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || appDataBrowserDir || bundledBrowserDir;
+    const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || appDataBrowserDir;
     try {
         return fs.existsSync(browserPath) && fs.readdirSync(browserPath).length > 0;
     } catch {
@@ -1313,54 +1301,14 @@ function hasPlaywrightBrowserBinary() {
     }
 }
 
-async function ensurePlaywrightChromiumInstalled() {
-    if (!isPlaywrightAvailable()) {
-        throw new Error('Playwright not installed. Run npm.cmd install to enable Browser tab.');
-    }
-
-    if (hasPlaywrightBrowserBinary()) {
-        return true;
-    }
-
-    if (playwrightBrowserInstallPromise) {
-        return playwrightBrowserInstallPromise;
-    }
-
-    playwrightBrowserInstallPromise = (async () => {
-        const targetDir = appDataBrowserDir;
-        try {
-            if (!fs.existsSync(targetDir)) {
-                fs.mkdirSync(targetDir, { recursive: true });
-            }
-            process.env.PLAYWRIGHT_BROWSERS_PATH = targetDir;
-            const result = spawnSync('npx', ['playwright', 'install', 'chromium'], {
-                cwd: path.join(__dirname, '..'),
-                encoding: 'utf8',
-                windowsHide: true,
-                shell: true,
-                env: {
-                    ...process.env,
-                    PLAYWRIGHT_BROWSERS_PATH: targetDir,
-                },
-            });
-            if (result.status !== 0) {
-                throw new Error((result.stderr || result.stdout || 'Playwright Chromium install failed').trim());
-            }
-            return true;
-        } finally {
-            playwrightBrowserInstallPromise = null;
-        }
-    })();
-
-    return playwrightBrowserInstallPromise;
-}
-
 async function ensureBrowserSession() {
     if (!isPlaywrightAvailable()) {
         throw new Error('Playwright not installed. Run npm.cmd install to enable Browser tab.');
     }
     if (!hasPlaywrightBrowserBinary()) {
-        await ensurePlaywrightChromiumInstalled();
+        const err = new Error('Browser unavailable: Playwright Chromium not installed. Run the Playwright Chromium install SOP.');
+        err.sopId = 'install_playwright_chromium';
+        throw err;
     }
     if (browserSession.page && !browserSession.page.isClosed()) {
         return browserSession.page;
@@ -1416,7 +1364,7 @@ async function captureBrowserSnapshot(page) {
 
 async function runBrowserUseOperation(params = {}) {
     const mode = String(params.mode || '').toLowerCase();
-    if (mode === 'open') {
+        if (mode === 'open') {
         const targetUrl = normalizeNavigateUrl(params.url || '');
         if (!targetUrl) return { success: false, mode, error: 'Missing URL' };
         if (params.external === true) {
@@ -4722,12 +4670,6 @@ app.listen(PORT, async () => {
     } catch (e) {
         fileLog(`LLM Check Failed: ${e.message}`);
         console.log(`  🔴 LLM status check failed\n`);
-    }
-
-    if (!hasPlaywrightBrowserBinary()) {
-        ensurePlaywrightChromiumInstalled()
-            .then(() => fileLog('Playwright Chromium ready.'))
-            .catch((error) => fileLog(`Playwright Chromium preload failed: ${error.message}`));
     }
 
 

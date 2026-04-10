@@ -113,6 +113,12 @@ http://localhost:3210
 - Anthropic Claude 使用原生認證與原生 `/v1/messages`。
 - Customer Provider 支援 API Key 與 OAuth 2.0 Client Credentials。
 
+### Browser Runtime
+
+- Browser tab 使用 Playwright Chromium。
+- 若第一次啟動顯示 Browser 不可用，請執行 `install-playwright-chromium` SOP 補裝。
+- 這樣可避免把 Chromium 綁進 MSI / EXE，安裝包會維持較小。
+
 ---
 
 ## 打包為 EXE

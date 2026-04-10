@@ -609,6 +609,7 @@
 - 搜尋結果回覆需整理成可執行答案，並在需要時附 Chalkboard 摘要模板。
 
 ### Playwright Chromium 自動安裝
-- `build.bat` 在 `npm install` 後會自動執行 `npx playwright install chromium`。
-- 目的：讓首次建置 EXE 時就完成 Browser tab 所需的 Chromium 元件，不必另外手動補裝。
+- Chromium 已改為事後補裝，不再塞進 MSI / EXE bundle。
+- Browser tab 若缺 Chromium，會引導執行 `install-playwright-chromium` SOP 來補裝。
+- 目的：讓安裝包維持小體積，並把 browser runtime 安裝留給工作流處理。
 
