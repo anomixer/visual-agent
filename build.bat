@@ -68,6 +68,16 @@ if errorlevel 1 (
 )
 echo  [OK] npm packages ready
 
+echo.
+echo  [2b] Installing Playwright Chromium...
+call npx playwright install chromium
+if errorlevel 1 (
+    echo  [ERROR] Playwright Chromium install failed.
+    echo  [FIX]   Check network access and try again.
+    pause & exit /b 1
+)
+echo  [OK] Playwright Chromium ready
+
 :: ─────────────────────────────────────────────────────────
 :: STEP 3 — pkg (bundle Node server -> .exe)
 :: ─────────────────────────────────────────────────────────
