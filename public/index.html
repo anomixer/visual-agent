@@ -107,8 +107,9 @@
       <div class="title-bar-center">
         <div class="llm-status" id="llmStatus" title="設定 AI 引擎" style="cursor:pointer;">
           <span class="llm-dot" id="llmDot"></span>
-          <span class="llm-label"><span id="llmLabel"></span>
+          <span class="llm-label"><span id="llmLabel"></span></span>
         </div>
+        <span class="chat-model-badge title-model-badge" id="chatModelBadge" style="display:none; cursor:pointer;" title="切換模型">AI 模型</span>
       </div>
 
       <div class="title-bar-right">
@@ -373,7 +374,6 @@
             </div>
             <div class="chat-panel-actions">
               <span class="remote-session-status" id="remoteSessionStatus">未連線</span>
-              <span class="chat-model-badge" id="chatModelBadge" style="display:none; cursor:pointer;" title="切換模型">AI 模型</span>
             </div>
           </div>
           <div class="chat-pane active" id="localChatPane">

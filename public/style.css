@@ -184,6 +184,11 @@ ol {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
+}
+
+.title-model-badge {
+  -webkit-app-region: no-drag;
 }
 
 .title-bar-right {
