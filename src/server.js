@@ -44,7 +44,7 @@ const aipcDir = path.join(appDataDir, 'aipc-agent');
 if (!fs.existsSync(aipcDir)) {
     fs.mkdirSync(aipcDir, { recursive: true });
 }
-const bundledBrowserDir = path.join(__dirname, '..', '.playwright-browsers');
+const bundledBrowserDir = path.join(__dirname, '..', 'src-tauri', 'resources', 'playwright-browsers');
 const appDataBrowserDir = path.join(aipcDir, 'playwright-browsers');
 let playwrightBrowserInstallPromise = null;
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
@@ -130,7 +130,7 @@ function syncBundledAssets() {
     try {
         const bundledSopsDir = path.join(__dirname, '..', 'sops');
         const bundledSkillsDir = path.join(__dirname, '..', 'skills');
-        const bundledPlaywrightDir = path.join(__dirname, '..', '.playwright-browsers');
+        const bundledPlaywrightDir = path.join(__dirname, '..', 'src-tauri', 'resources', 'playwright-browsers');
         const syncIfChanged = (src, dest) => {
             if (!fs.existsSync(src)) return;
             if (!fs.existsSync(dest)) {

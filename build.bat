@@ -70,8 +70,9 @@ echo  [OK] npm packages ready
 
 echo.
 echo  [2b] Installing Playwright Chromium...
-set "PLAYWRIGHT_BROWSERS_PATH=%CD%\.playwright-browsers"
-if not exist ".playwright-browsers" mkdir ".playwright-browsers"
+set "PLAYWRIGHT_BROWSERS_PATH=%CD%\src-tauri\resources\playwright-browsers"
+if not exist "src-tauri\resources" mkdir "src-tauri\resources"
+if exist "src-tauri\resources\playwright-browsers" rmdir /s /q "src-tauri\resources\playwright-browsers"
 call npx playwright install chromium
 if errorlevel 1 (
     echo  [ERROR] Playwright Chromium install failed.
@@ -79,6 +80,7 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 echo  [OK] Playwright Chromium ready
+echo  [INFO] Chromium path: src-tauri\resources\playwright-browsers
 
 :: ─────────────────────────────────────────────────────────
 :: STEP 3 — pkg (bundle Node server -> .exe)
@@ -118,6 +120,7 @@ echo.
 echo  [INFO] Bundling via pkg . -^> sidecar binary...
 echo  [INFO] Output: src-tauri\binaries\server-!RUST_TARGET!.exe
 echo  [INFO] - This includes: src/**, public/**, skills/**
+echo  [INFO] - Chromium resource: src-tauri\resources\playwright-browsers
 echo.
 call npm exec -- pkg . --targets node18-win-x64 --output "src-tauri/binaries/server-!RUST_TARGET!.exe" --compress GZip
 if errorlevel 1 (
