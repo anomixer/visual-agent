@@ -68,7 +68,7 @@ cd aipc-agent
 npm install
 ```
 
-安裝完成後，請確保 Playwright Chromium 已下載；`build.bat` 會自動處理，若手動執行可用：
+安裝完成後，Playwright Chromium 也會一併處理；`build.bat` 會自動執行下載，若手動執行可用：
 
 ```powershell
 npx playwright install chromium

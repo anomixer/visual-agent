@@ -397,3 +397,8 @@ SOPs 存放位置：
 - 若無匹配 Skill/SOP：
   - 優先使用 Browser Use 進行可信來源查詢；
   - 或回傳可執行的手動指引與下一步建議。
+
+### 8.13 Browser Runtime 依賴
+- Browser tab 與 Browser Use 預設使用 Playwright Chromium session。
+- `build.bat` 與首次安裝流程必須自動補齊 Chromium runtime，避免 EXE 打包後 Browser tab 缺元件。
+- 若 Chromium 尚未就緒，Runtime 需回傳明確修復指引，不得默默失敗。

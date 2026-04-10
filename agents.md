@@ -608,3 +608,7 @@
 - Skill 內規定先清理使用者雜訊字串，再組查詢詞，避免把「改由瀏覽器手動搜尋」這類提示語當成真正關鍵字。
 - 搜尋結果回覆需整理成可執行答案，並在需要時附 Chalkboard 摘要模板。
 
+### Playwright Chromium 自動安裝
+- `build.bat` 在 `npm install` 後會自動執行 `npx playwright install chromium`。
+- 目的：讓首次建置 EXE 時就完成 Browser tab 所需的 Chromium 元件，不必另外手動補裝。
+
