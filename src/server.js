@@ -45,8 +45,24 @@ if (!fs.existsSync(aipcDir)) {
     fs.mkdirSync(aipcDir, { recursive: true });
 }
 const appDataBrowserDir = path.join(aipcDir, 'playwright-browsers');
-if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
-    process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
+const defaultPlaywrightBrowserDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright');
+
+function getPlaywrightBrowserDirCandidates() {
+    return [process.env.PLAYWRIGHT_BROWSERS_PATH, appDataBrowserDir, defaultPlaywrightBrowserDir]
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+}
+
+function resolvePlaywrightBrowserDir() {
+    for (const browserDir of getPlaywrightBrowserDirCandidates()) {
+        try {
+            if (fs.existsSync(browserDir)) {
+                const items = fs.readdirSync(browserDir);
+                if (items && items.length > 0) return browserDir;
+            }
+        } catch {}
+    }
+    return '';
 }
 
 
@@ -1293,19 +1309,18 @@ function isPlaywrightAvailable() {
 }
 
 function hasPlaywrightBrowserBinary() {
-    const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || appDataBrowserDir;
-    try {
-        return fs.existsSync(browserPath) && fs.readdirSync(browserPath).length > 0;
-    } catch {
-        return false;
-    }
+    return !!resolvePlaywrightBrowserDir();
 }
 
 async function ensureBrowserSession() {
     if (!isPlaywrightAvailable()) {
         throw new Error('Playwright not installed. Run npm.cmd install to enable Browser tab.');
     }
-    if (!hasPlaywrightBrowserBinary()) {
+    const browserDir = resolvePlaywrightBrowserDir();
+    if (browserDir) {
+        process.env.PLAYWRIGHT_BROWSERS_PATH = browserDir;
+    }
+    if (!browserDir) {
         const err = new Error('Browser unavailable: Playwright Chromium not installed. Run the install_playwright_chromium SOP.');
         err.sopId = 'install_playwright_chromium';
         throw err;
@@ -2394,6 +2409,7 @@ app.get('/api/meta', (req, res) => {
         success: true,
         name: pkg.name || 'aipc-agent',
         version: APP_VERSION,
+        browserAvailable: hasPlaywrightBrowserBinary(),
     });
 });
 

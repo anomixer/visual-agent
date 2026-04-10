@@ -616,3 +616,8 @@
 - ## ğŸ“Œ 2026.04.10 - Browser ç¼ºä»¶ä¸€éµè£œè£
 - Browser tab åµæ¸¬åˆ° Chromium ç¼ºå¤±æ™‚ï¼Œæœƒç›´æ¥æä¾›å®‰è£æŒ‰éˆ•ï¼Œä¸¦åŸ·è¡Œ `install-playwright-chromium` SOPã€‚
 - Browser runtime æ”¹ç‚ºå®‰è£å¾Œè£œè£ï¼Œä¸å†æŠŠ Chromium ç¶é€² EXE / MSI å®‰è£åŒ…ã€‚
+
+## ?? 2026.04.10 - Browser ¯Ê¥ó¤@Áä¸É¸Ë
+- Browser tab °»´ú¨ì Chromium ¯Ê¥¢®É¡A·|ª½±µ´£¨Ñ¦w¸Ë«ö¶s¡A¨Ã°õ¦æ install-playwright-chromium SOP¡C
+- Browser runtime §ï¬°¦w¸Ë«á¸É¸Ë¡A¤£¦A§â Chromium ¸j¶i EXE / MSI ¦w¸Ë¥]¡C
+- Chromium ¥¼¦w¸Ë«e¡A¤¤¤ß°Ï Browser tab ¥ıÁôÂÃ¡A¥\¯àªí ÀËµø ·|Åã¥Ü Browser (»İ¦w¸Ë)¡C

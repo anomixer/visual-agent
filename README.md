@@ -132,6 +132,8 @@ build.bat
 ### Browser fallback
 - When Browser tab shows `Browser unavailable`, a one-click button runs `install-playwright-chromium` SOP.
 - This keeps EXE/MSI small and lets npm/EXE users repair Chromium after install.
+- Before Chromium is installed, the Browser tab stays hidden in the center area and only appears after the install finishes.
+- After install, the app accepts both `%APPDATA%\aipc-agent\playwright-browsers` and the default Playwright `ms-playwright` path, then shows Browser automatically.
 
 此腳本會安裝所需環境並建置 Tauri 桌面版。產物位於：
 

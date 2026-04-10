@@ -4,3 +4,5 @@
 - When Browser is unavailable, the UI shows a one-click action that runs `install-playwright-chromium`.
 - The install workflow is SOP-based, so both npm and EXE users can repair Browser runtime after installation.
 - This keeps the installer smaller and avoids long packaging times.
+
+- Browser tab is hidden until Playwright Chromium is installed; the View menu shows Browser (»Ý¦w¸Ë) and can trigger the install SOP.

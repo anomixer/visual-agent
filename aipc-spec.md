@@ -405,3 +405,8 @@ SOPs 存放位置：
 - ## 2026.04.10 Browser fallback update
 - Browser unavailable state now exposes a one-click install action for `install-playwright-chromium`.
 - Chromium stays out of the EXE / MSI bundle and is repaired on demand via SOP.
+
+## 2026.04.10 Browser fallback update
+- Browser unavailable state exposes a one-click install action for install-playwright-chromium.
+- Chromium stays out of the EXE / MSI bundle and is repaired on demand via SOP.
+- Until Chromium is installed, the center Browser tab stays hidden and the View menu shows Browser (�ݦw��).

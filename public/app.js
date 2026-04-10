@@ -57,12 +57,13 @@ let chalkboardHintClickDismissHandler = null;
 
 // Tab State
 let activeTab = 'chalkboard';
-let openTabs = ['chalkboard', 'hardware', 'browser']; // Initially chalkboard/hardware/browser
+let openTabs = ['chalkboard', 'hardware']; // Browser tab appears after Chromium is installed
 let browserTabState = {
     started: false,
     currentUrl: '',
     snapshotTimer: null,
 };
+let browserRuntimeReady = false;
 
 // ── DOM ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -1248,6 +1249,45 @@ function setBrowserUnavailableStatus(errorMessage = '') {
         return;
     }
     setBrowserStatus(`Browser unavailable: ${message || 'unknown error'}`);
+}
+
+function syncBrowserTabAvailability(isReady) {
+    browserRuntimeReady = !!isReady;
+    const tabEl = $('#tab-browser');
+    if (tabEl) tabEl.classList.toggle('hidden', !browserRuntimeReady);
+    if (!browserRuntimeReady) {
+        openTabs = openTabs.filter((id) => id !== 'browser');
+        if (activeTab === 'browser') {
+            switchTab('chalkboard');
+        }
+    } else if (!openTabs.includes('browser')) {
+        openTabs.push('browser');
+    }
+}
+
+async function refreshBrowserRuntimeAvailability() {
+    try {
+        const data = await api('/api/meta');
+        if (data.success) syncBrowserTabAvailability(!!data.browserAvailable);
+    } catch (e) {
+        console.error('Refresh browser runtime failed', e);
+    }
+}
+
+async function runBrowserInstallWorkflow() {
+    let sop = getSopById('install_playwright_chromium');
+    if (!sop) {
+        await loadSops();
+        sop = getSopById('install_playwright_chromium');
+    }
+    if (!sop) {
+        setBrowserStatus('Browser unavailable: 找不到安裝 SOP');
+        return false;
+    }
+    setBrowserStatus('Running Playwright Chromium install SOP...');
+    await addAndExecuteSop(sop);
+    await refreshBrowserRuntimeAvailability();
+    return true;
 }
 
 function updateBrowserSnapshot(snapshotDataUrl = '', pageTitle = '', pageUrl = '') {
@@ -3755,6 +3795,7 @@ async function loadAppMeta() {
     if (data.success && statusVersion) {
         statusVersion.textContent = `AI PC Agent v${data.version || 'dev'}`;
     }
+    syncBrowserTabAvailability(!!data.browserAvailable);
 }
 
 function checkFirstRun() {
@@ -4863,6 +4904,9 @@ async function addAndExecuteRecommend(item) {
             appendChatBubble('ai', `🚀 ${t('task.startingProcess', { title: getActionTitle(localized.title, action) })}`);
             expandLog();
             await executeTask(newTask.id);
+            if (String(localized.id || '').trim() === 'install_playwright_chromium') {
+                await refreshBrowserRuntimeAvailability();
+            }
         }
     }
 }
@@ -6125,6 +6169,7 @@ function setupEventListeners() {
 
 // ── Tab Management ─────────────────────────────────────
 function switchTab(tabId) {
+    if (tabId === 'browser' && !browserRuntimeReady) return;
     if (!openTabs.includes(tabId)) return;
     activeTab = tabId;
     
@@ -6160,6 +6205,7 @@ function switchTab(tabId) {
 }
 
 function openTab(tabId) {
+    if (tabId === 'browser' && !browserRuntimeReady) return;
     if (!openTabs.includes(tabId)) {
         openTabs.push(tabId);
         const tabEl = $(`#tab-${tabId}`);
@@ -6198,7 +6244,7 @@ function toggleViewMenu(e) {
     const items = [
         { id: 'chalkboard', label: t('tabs.chalkboard'), icon: '🎨' },
         { id: 'hardware', label: t('tabs.hardware'), icon: '🌡️' },
-        { id: 'browser', label: 'Browser', icon: '🌐' },
+        { id: 'browser', label: browserRuntimeReady ? 'Browser' : 'Browser (需安裝)', icon: '??' },
         { id: 'todolist', label: t('tabs.todolist'), icon: '📋' }
     ];
 
@@ -6211,6 +6257,10 @@ function toggleViewMenu(e) {
             <span style="font-size:10px; opacity:0.6">${isOpen ? t('ui.opened') : ''}</span>
         `;
         div.onclick = () => {
+            if (item.id === 'browser' && !browserRuntimeReady) {
+                runBrowserInstallWorkflow().finally(() => menu.remove());
+                return;
+            }
             openTab(item.id);
             menu.remove();
         };
