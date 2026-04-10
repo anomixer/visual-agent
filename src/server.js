@@ -1803,6 +1803,27 @@ function rankGuideResults(results = [], topic = '', limit = 5) {
     return diversified;
 }
 
+function fallbackRankGuideResults(results = [], topic = '', limit = 5) {
+    const ranked = [];
+    for (const item of (results || [])) {
+        const url = String(item?.url || '').trim();
+        const title = String(item?.title || '').trim();
+        const host = getHostnameFromUrl(url);
+        if (!url || !title) continue;
+        if (!/^https?:\/\//i.test(url)) continue;
+        if (isBlockedLowValueHost(host)) continue;
+        ranked.push({
+            title,
+            url,
+            _score: scoreGuideResult({ title, url }, topic),
+        });
+    }
+    return ranked
+        .sort((a, b) => b._score - a._score)
+        .slice(0, limit)
+        .map(({ title, url }) => ({ title, url }));
+}
+
 async function searchGameGuideArticles(topic = '', limit = 5) {
     const q = String(topic || '').trim();
     if (!q) return [];
@@ -1836,7 +1857,8 @@ async function searchGameGuideArticles(topic = '', limit = 5) {
     }
     if (usable.length > 0) return usable;
     // Fallback: return ranked links even if runtime validation failed (some sites block bot fetch).
-    return fallback.slice(0, limit);
+    if (fallback.length > 0) return fallback.slice(0, limit);
+    return fallbackRankGuideResults(merged, q, limit);
 }
 
 function extractYouTubeVideoIdFromUrl(inputUrl = '') {
@@ -1988,7 +2010,8 @@ async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
         .map((item) => ({ title: item.title, url: item.url }));
     if (rankedPlayable.length > 0) return rankedPlayable;
     // Fallback: return strict-filtered candidates when YouTube verification endpoints are blocked.
-    return fallback.slice(0, limit);
+    if (fallback.length > 0) return fallback.slice(0, limit);
+    return unique.size ? [...unique.values()].slice(0, limit).map((item) => ({ title: item.title, url: item.url })) : [];
 }
 
 function extractGameTopic(message = '') {
@@ -2166,8 +2189,8 @@ async function handleAgentGameResearchWorkflowV2(message = '', locale = 'zh-TW')
         return {
             success: true,
             reply: locale === 'en-US'
-                ? `I could not find high-quality results for "${topic}" right now.`
-                : `目前找不到「${topic}」可用且高品質的攻略資源。`,
+                ? `I could not verify high-quality results for "${topic}" right now, but Browser search has already been used and I can refine the query.`
+                : `目前無法完整驗證「${topic}」的高品質攻略資源，但我已先用 Browser 搜尋過，可再縮小關鍵字。`,
             suggestions: locale === 'en-US'
                 ? ['Try another keyword', 'Search manually in browser']
                 : ['換關鍵字再試', '改由瀏覽器手動搜尋'],
