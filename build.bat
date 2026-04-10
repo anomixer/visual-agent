@@ -70,6 +70,8 @@ echo  [OK] npm packages ready
 
 echo.
 echo  [2b] Installing Playwright Chromium...
+set "PLAYWRIGHT_BROWSERS_PATH=%CD%\.playwright-browsers"
+if not exist ".playwright-browsers" mkdir ".playwright-browsers"
 call npx playwright install chromium
 if errorlevel 1 (
     echo  [ERROR] Playwright Chromium install failed.

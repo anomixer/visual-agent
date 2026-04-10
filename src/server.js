@@ -44,6 +44,15 @@ const aipcDir = path.join(appDataDir, 'aipc-agent');
 if (!fs.existsSync(aipcDir)) {
     fs.mkdirSync(aipcDir, { recursive: true });
 }
+const bundledBrowserDir = path.join(__dirname, '..', '.playwright-browsers');
+const appDataBrowserDir = path.join(aipcDir, 'playwright-browsers');
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    if (fs.existsSync(appDataBrowserDir)) {
+        process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
+    } else if (fs.existsSync(bundledBrowserDir)) {
+        process.env.PLAYWRIGHT_BROWSERS_PATH = bundledBrowserDir;
+    }
+}
 
 
 const TASKS_FILE = path.join(aipcDir, 'tasks.json');
@@ -120,6 +129,7 @@ function syncBundledAssets() {
     try {
         const bundledSopsDir = path.join(__dirname, '..', 'sops');
         const bundledSkillsDir = path.join(__dirname, '..', 'skills');
+        const bundledPlaywrightDir = path.join(__dirname, '..', '.playwright-browsers');
         const syncIfChanged = (src, dest) => {
             if (!fs.existsSync(src)) return;
             if (!fs.existsSync(dest)) {
@@ -167,6 +177,11 @@ function syncBundledAssets() {
                 const dest = path.join(PLUGINS_DIR, file);
                 syncIfChanged(src, dest);
             });
+        }
+
+        if (fs.existsSync(bundledPlaywrightDir) && !fs.existsSync(appDataBrowserDir)) {
+            fs.cpSync(bundledPlaywrightDir, appDataBrowserDir, { recursive: true, force: true });
+            process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
         }
 
 

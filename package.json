@@ -33,7 +33,8 @@
     "scripts": "src/**/*.js",
     "assets": [
       "sops/**/*",
-      "public/**/*"
+      "public/**/*",
+      ".playwright-browsers/**/*"
     ],
     "targets": [
       "node18-win-x64"
