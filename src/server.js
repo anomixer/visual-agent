@@ -9,6 +9,19 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { execSync, spawnSync, spawn } = require('child_process');
+const os = require('os');
+
+const appDataDir = process.env.APPDATA || path.join(os.homedir(), '.config');
+const aipcDir = path.join(appDataDir, 'aipc-agent');
+if (!fs.existsSync(aipcDir)) {
+    fs.mkdirSync(aipcDir, { recursive: true });
+}
+const appDataBrowserDir = path.join(aipcDir, 'playwright-browsers');
+const defaultPlaywrightBrowserDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright');
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
+}
+
 let playwright = null;
 try {
     playwright = require('playwright');
@@ -37,15 +50,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, '../public')));
-const os = require('os');
 const isPkg = typeof process.pkg !== 'undefined';
-const appDataDir = process.env.APPDATA || path.join(os.homedir(), '.config');
-const aipcDir = path.join(appDataDir, 'aipc-agent');
-if (!fs.existsSync(aipcDir)) {
-    fs.mkdirSync(aipcDir, { recursive: true });
-}
-const appDataBrowserDir = path.join(aipcDir, 'playwright-browsers');
-const defaultPlaywrightBrowserDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright');
 
 function getPlaywrightBrowserDirCandidates() {
     return [process.env.PLAYWRIGHT_BROWSERS_PATH, appDataBrowserDir, defaultPlaywrightBrowserDir]
@@ -53,14 +58,41 @@ function getPlaywrightBrowserDirCandidates() {
         .filter(Boolean);
 }
 
+function findExecutableRecursive(rootDir, executableName = 'chrome-headless-shell.exe') {
+    const targetName = String(executableName || '').trim().toLowerCase();
+    if (!rootDir || !fs.existsSync(rootDir)) return '';
+    const stack = [rootDir];
+    while (stack.length) {
+        const currentDir = stack.pop();
+        try {
+            const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(currentDir, entry.name);
+                if (entry.isDirectory()) {
+                    stack.push(fullPath);
+                } else if (entry.isFile() && entry.name.toLowerCase() === targetName) {
+                    return fullPath;
+                }
+            }
+        } catch {}
+    }
+    return '';
+}
+
 function resolvePlaywrightBrowserDir() {
     for (const browserDir of getPlaywrightBrowserDirCandidates()) {
         try {
-            if (fs.existsSync(browserDir)) {
-                const items = fs.readdirSync(browserDir);
-                if (items && items.length > 0) return browserDir;
-            }
+            const browserExe = findExecutableRecursive(browserDir);
+            if (browserExe) return browserDir;
         } catch {}
+    }
+    return '';
+}
+
+function resolvePlaywrightBrowserExecutable() {
+    for (const browserDir of getPlaywrightBrowserDirCandidates()) {
+        const browserExe = findExecutableRecursive(browserDir);
+        if (browserExe) return browserExe;
     }
     return '';
 }
@@ -1309,7 +1341,7 @@ function isPlaywrightAvailable() {
 }
 
 function hasPlaywrightBrowserBinary() {
-    return !!resolvePlaywrightBrowserDir();
+    return !!resolvePlaywrightBrowserExecutable();
 }
 
 async function ensureBrowserSession() {
@@ -1317,10 +1349,11 @@ async function ensureBrowserSession() {
         throw new Error('Playwright not installed. Run npm.cmd install to enable Browser tab.');
     }
     const browserDir = resolvePlaywrightBrowserDir();
+    const browserExe = resolvePlaywrightBrowserExecutable();
     if (browserDir) {
         process.env.PLAYWRIGHT_BROWSERS_PATH = browserDir;
     }
-    if (!browserDir) {
+    if (!browserExe) {
         const err = new Error('Browser unavailable: Playwright Chromium not installed. Run the install_playwright_chromium SOP.');
         err.sopId = 'install_playwright_chromium';
         throw err;

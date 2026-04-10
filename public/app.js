@@ -6244,7 +6244,7 @@ function toggleViewMenu(e) {
     const items = [
         { id: 'chalkboard', label: t('tabs.chalkboard'), icon: '🎨' },
         { id: 'hardware', label: t('tabs.hardware'), icon: '🌡️' },
-        { id: 'browser', label: browserRuntimeReady ? 'Browser' : 'Browser (需安裝)', icon: '??' },
+        { id: 'browser', label: browserRuntimeReady ? 'Browser' : 'Browser (install required)', icon: '??' },
         { id: 'todolist', label: t('tabs.todolist'), icon: '📋' }
     ];
 

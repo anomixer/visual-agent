@@ -16,8 +16,8 @@ Expected Result: Return True when Playwright Chromium browser binaries already e
 try {
     $browserDir = Join-Path $env:APPDATA 'aipc-agent\playwright-browsers'
     if (Test-Path $browserDir) {
-        $items = Get-ChildItem -Path $browserDir -ErrorAction SilentlyContinue
-        if ($items -and $items.Count -gt 0) {
+        $exe = Get-ChildItem -Path $browserDir -Recurse -Filter 'chrome-headless-shell.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($exe) {
             $true
         } else {
             $false
@@ -54,8 +54,8 @@ if ($LASTEXITCODE -ne 0) {
 try {
     $browserDir = Join-Path $env:APPDATA 'aipc-agent\playwright-browsers'
     if (Test-Path $browserDir) {
-        $items = Get-ChildItem -Path $browserDir -ErrorAction SilentlyContinue
-        if ($items -and $items.Count -gt 0) {
+        $exe = Get-ChildItem -Path $browserDir -Recurse -Filter 'chrome-headless-shell.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($exe) {
             $true
         } else {
             $false

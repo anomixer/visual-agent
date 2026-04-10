@@ -448,3 +448,5 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
 - 目前套件版本：`2026.04.10`。
+
+- Browser availability is now based on a real Chromium executable check, not just a folder. After install, it can switch to the Browser tab without a restart if the executable is found.

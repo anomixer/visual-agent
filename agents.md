@@ -621,3 +621,5 @@
 - Browser tab 偵測到 Chromium 缺失時，會直接提供安裝按鈕，並執行 install-playwright-chromium SOP。
 - Browser runtime 改為安裝後補裝，不再把 Chromium 綁進 EXE / MSI 安裝包。
 - Chromium 未安裝前，中心區 Browser tab 先隱藏，功能表 檢視 會顯示 Browser (需安裝)。
+
+- Browser availability now requires a real Chromium executable check. The tab stays hidden until the executable exists, then appears automatically without a restart.

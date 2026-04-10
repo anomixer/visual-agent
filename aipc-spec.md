@@ -410,3 +410,7 @@ SOPs 存放位置：
 - Browser unavailable state exposes a one-click install action for install-playwright-chromium.
 - Chromium stays out of the EXE / MSI bundle and is repaired on demand via SOP.
 - Until Chromium is installed, the center Browser tab stays hidden and the View menu shows Browser (�ݦw��).
+
+- Browser runtime detection must check for the actual Chromium executable, not only the browser cache folder.
+- Browser tab remains hidden until Chromium is present, then becomes visible automatically.
+- The install SOP should verify chrome-headless-shell.exe after download.
