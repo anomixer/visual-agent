@@ -9,6 +9,12 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { execSync, spawnSync, spawn } = require('child_process');
+let playwright = null;
+try {
+    playwright = require('playwright');
+} catch {
+    playwright = null;
+}
 const pkg = require('../package.json');
 const { loadAllSOPs } = require('./sop-parser');
 const { SOPExecutor } = require('./sop-executor');
@@ -234,6 +240,14 @@ remoteAgent.start();
 let todoList = [];
 let logs = [];
 let runningSOP = null;
+const browserSession = {
+    browser: null,
+    context: null,
+    page: null,
+    startedAt: '',
+    lastTitle: '',
+    lastUrl: '',
+};
 let chatHistory = []; // 儲存最近 6 則對話：[{role: 'user', content: '...'}, {role: 'assistant', content: '...'}]
 const localChatHistoryBySession = new Map();
 const sopStateCache = new Map();
@@ -1270,13 +1284,88 @@ function buildModelCapabilityProfile() {
     };
 }
 
+function isPlaywrightAvailable() {
+    return Boolean(playwright?.chromium);
+}
+
+async function ensureBrowserSession() {
+    if (!isPlaywrightAvailable()) {
+        throw new Error('Playwright not installed. Run npm.cmd install to enable Browser tab.');
+    }
+    if (browserSession.page && !browserSession.page.isClosed()) {
+        return browserSession.page;
+    }
+    if (!browserSession.browser) {
+        browserSession.browser = await playwright.chromium.launch({
+            headless: true,
+            args: ['--disable-blink-features=AutomationControlled'],
+        });
+    }
+    browserSession.context = await browserSession.browser.newContext({
+        viewport: { width: 1366, height: 900 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    });
+    browserSession.page = await browserSession.context.newPage();
+    browserSession.startedAt = new Date().toISOString();
+    return browserSession.page;
+}
+
+async function closeBrowserSession() {
+    try { await browserSession.page?.close(); } catch {}
+    try { await browserSession.context?.close(); } catch {}
+    try { await browserSession.browser?.close(); } catch {}
+    browserSession.page = null;
+    browserSession.context = null;
+    browserSession.browser = null;
+    browserSession.startedAt = '';
+    browserSession.lastTitle = '';
+    browserSession.lastUrl = '';
+}
+
+function normalizeNavigateUrl(input = '') {
+    const raw = String(input || '').trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    return `https://${raw}`;
+}
+
+async function captureBrowserSnapshot(page) {
+    const target = page || browserSession.page;
+    if (!target) throw new Error('Browser session not started');
+    const title = await target.title().catch(() => '');
+    const url = target.url ? target.url() : '';
+    const png = await target.screenshot({ fullPage: true, type: 'png' });
+    browserSession.lastTitle = title || browserSession.lastTitle;
+    browserSession.lastUrl = url || browserSession.lastUrl;
+    return {
+        title: title || '',
+        url: url || '',
+        snapshotDataUrl: `data:image/png;base64,${png.toString('base64')}`,
+    };
+}
+
 async function runBrowserUseOperation(params = {}) {
     const mode = String(params.mode || '').toLowerCase();
     if (mode === 'open') {
+        const targetUrl = normalizeNavigateUrl(params.url || '');
+        if (!targetUrl) return { success: false, mode, error: 'Missing URL' };
+        if (params.external === true) {
+            return {
+                success: openUrlInDefaultBrowser(targetUrl).success,
+                mode,
+                openedUrl: targetUrl,
+                external: true,
+            };
+        }
+        const page = await ensureBrowserSession();
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(60000, Number(params.timeoutMs) || 30000) });
+        const snap = await captureBrowserSnapshot(page);
         return {
-            success: openUrlInDefaultBrowser(params.url).success,
+            success: true,
             mode,
-            openedUrl: params.url || '',
+            openedUrl: targetUrl,
+            external: false,
+            ...snap,
         };
     }
     if (mode === 'search') {
@@ -1304,6 +1393,30 @@ async function runBrowserUseOperation(params = {}) {
             mode,
             url,
             title: decodeHtmlEntities((titleMatch?.[1] || '').trim()),
+        };
+    }
+    if (mode === 'navigate') {
+        const url = normalizeNavigateUrl(params.url || '');
+        if (!url) return { success: false, mode, error: 'Missing URL' };
+        const page = await ensureBrowserSession();
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: Math.min(60000, Number(params.timeoutMs) || 30000) });
+        const snap = await captureBrowserSnapshot(page);
+        return { success: true, mode, ...snap };
+    }
+    if (mode === 'snapshot') {
+        const page = await ensureBrowserSession();
+        const snap = await captureBrowserSnapshot(page);
+        return { success: true, mode, ...snap };
+    }
+    if (mode === 'extract_text') {
+        const page = await ensureBrowserSession();
+        const text = await page.evaluate(() => (document.body?.innerText || '').slice(0, 12000));
+        return {
+            success: true,
+            mode,
+            url: page.url(),
+            title: await page.title().catch(() => ''),
+            text: String(text || '').trim(),
         };
     }
     return { success: false, mode, error: 'Unsupported browser mode' };
@@ -1554,6 +1667,80 @@ function extractGameTopicV2(message = '') {
         .replace(/\s+/g, ' ')
         .trim();
     return cleaned || 'popular game';
+}
+
+function detectGameResearchIntentV3(message = '') {
+    const text = String(message || '');
+    const hasResearchKeyword = /(攻略|教學|打法|配裝|walkthrough|guide|tips|build|youtube|video|影片)/i.test(text);
+    const hasGameKeyword = /(遊戲|game|steam|boss|任務|關卡|gta|elden ring|black myth|wukong|stellar blade|劍星)/i.test(text);
+    return hasResearchKeyword && hasGameKeyword;
+}
+
+function extractGameTopicV3(message = '') {
+    const text = String(message || '').trim();
+    const cleaned = text
+        .replace(/(嗨|哈囉|hello|hi|hey|yo|你好|請問|麻煩|拜託|幫我|幫忙|幫|請|找|搜尋|查|一下|想看|推薦)/gi, ' ')
+        .replace(/(攻略|教學|打法|配裝|walkthrough|guide|tips|build|youtube|video|影片|search)/gi, ' ')
+        .replace(/(遊戲|game)/gi, ' ')
+        .replace(/(呢|嗎|吧|呀|啊|喔|哦)/gi, ' ')
+        .replace(/[?？!！,，.。:：;；"'「」『』（）()\[\]{}]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return cleaned || 'popular game';
+}
+
+function isManualBrowserSearchIntent(message = '') {
+    const text = String(message || '');
+    return /(改由瀏覽器手動搜尋|瀏覽器手動搜尋|手動搜尋|manual browser search|search manually in browser|continue in browser tab)/i.test(text);
+}
+
+function normalizeBrowserSearchQuery(raw = '') {
+    const cleaned = String(raw || '')
+        .replace(/\[.*?\]/g, ' ')
+        .replace(/(改由瀏覽器手動搜尋|瀏覽器手動搜尋|手動搜尋|改用瀏覽器|用瀏覽器|browser tab|browser|manual|search|continue in browser tab|換關鍵字再查|切到 browser 分頁繼續)/gi, ' ')
+        .replace(/(幫我|幫忙|請|找|搜尋|查|一下|呢|嗎|吧|呀|啊|喔|哦)/gi, ' ')
+        .replace(/[?？!！,，.。:：;；"'「」『』（）()\[\]{}]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!cleaned || cleaned.length < 2) return '';
+    return cleaned;
+}
+
+function composeBrowserSearchQuery(topic = '', sourceText = '') {
+    const base = normalizeBrowserSearchQuery(topic);
+    if (!base) return '';
+    const source = String(sourceText || '');
+    if (/(攻略|教學|打法|配裝|walkthrough|guide|tips|build|任務|關卡)/i.test(source)) {
+        return `${base} 攻略`;
+    }
+    if (/(安裝|install|setup|下載|download)/i.test(source)) {
+        return `${base} 安裝 教學`;
+    }
+    if (/(錯誤|error|失敗|無法|問題|排解|troubleshoot|fix)/i.test(source)) {
+        return `${base} 疑難排解`;
+    }
+    return base;
+}
+
+function inferBrowserSearchQuery(message = '', requestedHistory = []) {
+    const directTopic = extractGameTopicV3(message);
+    const direct = composeBrowserSearchQuery(directTopic, message);
+    if (direct) {
+        return direct;
+    }
+    const history = Array.isArray(requestedHistory) ? requestedHistory : [];
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+        const item = history[i];
+        if (item?.role !== 'user') continue;
+        const text = String(item?.content || '').replace(/\[.*?\]/g, ' ').trim();
+        if (!text || isManualBrowserSearchIntent(text)) continue;
+        const candidateTopic = extractGameTopicV3(text);
+        const candidate = composeBrowserSearchQuery(candidateTopic, text);
+        if (candidate) {
+            return candidate;
+        }
+    }
+    return '';
 }
 
 function isBlockedLowValueHost(host = '') {
@@ -2025,7 +2212,7 @@ async function handleAgentGameResearchWorkflowV2(message = '', locale = 'zh-TW')
 
 
 async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW') {
-    const topic = extractGameTopicV2(message);
+    const topic = extractGameTopicV3(message);
     const guideResults = await searchGameGuideArticles(topic, 5);
     const videoResults = await searchPlayableYouTubeVideos(topic, 5);
 
@@ -3016,11 +3203,51 @@ app.post('/api/chat', async (req, res) => {
     const sops = loadAllSOPs(SOPS_DIR);
     const sopsWithState = await annotateSOPRuntimeState(sops);
     try {
+        if (isManualBrowserSearchIntent(message)) {
+            const query = inferBrowserSearchQuery(message, requestedHistory) || 'GTA V 攻略';
+            const targetUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+            const browserResult = await runBrowserUseOperation({
+                mode: 'navigate',
+                url: targetUrl,
+                timeoutMs: 45000,
+            });
+            const linkPreview = await runBrowserUseOperation({
+                mode: 'search',
+                query,
+                limit: 5,
+            }).catch(() => ({ success: false, results: [] }));
+            const linkLines = (linkPreview?.results || [])
+                .slice(0, 3)
+                .map((item) => `- [${item.title}](${item.url})`);
+            const browserReply = locale === 'en-US'
+                ? [
+                    `I have opened Browser tab and searched: ${query}`,
+                    browserResult?.success ? '' : `Browser session warning: ${browserResult?.error || 'unknown'}`,
+                    linkLines.length ? '### Quick links' : '',
+                    ...linkLines,
+                ].filter(Boolean).join('\n')
+                : [
+                    `我已在 Browser 分頁啟動搜尋：${query}`,
+                    browserResult?.success ? '' : `Browser 啟動警告：${browserResult?.error || '未知錯誤'}`,
+                    linkLines.length ? '### 快速連結' : '',
+                    ...linkLines,
+                ].filter(Boolean).join('\n');
+            return res.json({
+                success: true,
+                reply: browserReply,
+                suggestions: locale === 'en-US'
+                    ? ['Search another keyword', 'Continue in Browser tab']
+                    : ['換關鍵字再查', '切到 Browser 分頁繼續'],
+                task: false,
+                llmUsed: false,
+                browser: browserResult || null,
+            });
+        }
         if (detectAgentFinanceIntent(message)) {
             const agentResponse = await handleAgentFinanceWorkbookWorkflow(message, locale || 'zh-TW', sopsWithState);
             if (agentResponse) return res.json(agentResponse);
         }
-        if (detectGameResearchIntentV2(message)) {
+        if (detectGameResearchIntentV3(message)) {
             const gameResponse = await handleAgentGameResearchWorkflowV3(message, locale || 'zh-TW');
             if (gameResponse) return res.json(gameResponse);
         }
@@ -3245,6 +3472,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     buildLocalAgentContext(activeRemoteSession || null),
                     `Available local IPv4 list: ${remoteState.localIps.join(', ') || 'N/A'}`,
                     `Remote chat service port: ${DEFAULT_REMOTE_PORT}`,
+                    'Built-in Browser tab is available and controlled by Playwright Chromium session APIs.',
+                    'When web tasks are needed, prefer Browser Use actions to drive Browser tab directly.',
                     sharedModelSession
                         ? `Shared remote model is active on ${sharedModelSession.peer?.machineName || sharedModelSession.host} (${sharedModelSession.peer?.agentName || 'Remote AI'}).`
                         : 'Shared remote model is not active.',
@@ -3730,6 +3959,73 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
         executeTaskId,
         llmUsed: false
     });
+});
+
+app.post('/api/browser/session/start', async (req, res) => {
+    try {
+        await ensureBrowserSession();
+        const snap = await captureBrowserSnapshot(browserSession.page);
+        res.json({
+            success: true,
+            startedAt: browserSession.startedAt,
+            playwrightAvailable: isPlaywrightAvailable(),
+            ...snap,
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message, playwrightAvailable: isPlaywrightAvailable() });
+    }
+});
+
+app.post('/api/browser/session/stop', async (req, res) => {
+    try {
+        await closeBrowserSession();
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/browser/session/navigate', async (req, res) => {
+    try {
+        const url = normalizeNavigateUrl(req.body?.url || '');
+        if (!url) return res.status(400).json({ success: false, error: 'Missing URL' });
+        const page = await ensureBrowserSession();
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        const snap = await captureBrowserSnapshot(page);
+        res.json({ success: true, ...snap });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/browser/session/action', async (req, res) => {
+    try {
+        const action = String(req.body?.action || '').toLowerCase();
+        const page = await ensureBrowserSession();
+        if (action === 'back') {
+            await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+        } else if (action === 'forward') {
+            await page.goForward({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+        } else if (action === 'reload') {
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+        } else {
+            return res.status(400).json({ success: false, error: 'Unsupported action' });
+        }
+        const snap = await captureBrowserSnapshot(page);
+        res.json({ success: true, ...snap });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/browser/session/snapshot', async (req, res) => {
+    try {
+        const page = await ensureBrowserSession();
+        const snap = await captureBrowserSnapshot(page);
+        res.json({ success: true, ...snap });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message, playwrightAvailable: isPlaywrightAvailable() });
+    }
 });
 
 app.get('/api/agent/capability', (req, res) => {
@@ -4281,6 +4577,17 @@ app.post('/api/llm/test', async (req, res) => {
 
 
 });
+
+process.on('SIGINT', async () => {
+    await closeBrowserSession();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    await closeBrowserSession();
+    process.exit(0);
+});
+
 app.listen(PORT, async () => {
     const startMsg = `AI PC Agent started! (PID: ${process.pid}, Path: ${process.execPath})`;
     console.log(`\n  🖥️  ${startMsg}`);

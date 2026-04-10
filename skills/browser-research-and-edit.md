@@ -3,15 +3,49 @@
 # Browser Research and Editing Skill
 
 ## Use When
-- User needs web research, documentation lookup, comparison, or web-form editing.
-- Task requires Browser Use (inner-universe) operations.
+- 使用者要查「攻略 / 教學 / 安裝方式 / 疑難排解 / 文件規格」且本地知識不足。
+- 使用者明確要求用 Browser、搜尋最新資料、或需要操作網頁。
+- 需要把整理後重點回覆給使用者（必要時同步到 Chalkboard）。
 
 ## Workflow
-1. Extract research intent and trusted domains if any.
-2. Use Browser Use search/open/fetch sequence.
-3. Summarize findings into actionable steps.
-4. If user wants, convert summary to chalkboard draft.
+1. 先整理需求
+- 抽出「主題、目標、平台、語言、限制條件」。
+- 若使用者句子含雜訊（例如「改由瀏覽器手動搜尋」），要先去除雜訊再組查詢字。
+
+2. 本地優先，找不到才用 Browser
+- 若內建 SOP / Skills 能直接解，先給可執行答案。
+- 若本地不足，立刻啟用 Browser Use（不要只叫使用者自己手動找）。
+
+3. Browser Use 搜尋與驗證
+- 建議流程：`search -> open/navigate -> fetch_title/extract_text -> 交叉比對`。
+- 優先來源：官方文件、官方社群、可信大型站點。
+- 排除低品質來源：標題與內容不符、無法存取、明顯過期、重導追蹤連結。
+
+4. 產出可用答案
+- 先給結論，再給 3-6 個可執行步驟。
+- 提供可點擊連結（Markdown link），不要丟長追蹤網址原文。
+- 若是攻略/影片，至少列出可用資源與用途（新手、進階、特定任務）。
+
+5. Chalkboard（可選）
+- 只有重點需要上黑板才輸出控制碼。
+- 內容要短，能在單一黑板完整顯示。
+
+## Output Contract
+- 不要只回「找不到」；必須說明「已做了哪些搜尋、下一步建議」。
+- 不要把建議按鈕文字當搜尋詞。
+- 如果使用者問的是同一主題延伸（例如「那劍星呢」），要承接上一輪語境。
 
 ## Rules
-- Prefer official docs and primary sources.
-- Include source links in final response.
+- 優先官方與一手來源，並附來源連結。
+- 若資訊不足，明確標註不確定性，給替代查法或補充問題。
+- 回答以繁中為主（除非使用者明確指定其他語言）。
+
+## Chalkboard Template
+```text
+##CHALKBOARD##
+Title: <主題短標題>
+- <重點 1>
+- <重點 2>
+- <重點 3>
+##ENDCHALKBOARD##
+```

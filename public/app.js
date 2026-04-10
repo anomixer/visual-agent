@@ -57,7 +57,12 @@ let chalkboardHintClickDismissHandler = null;
 
 // Tab State
 let activeTab = 'chalkboard';
-let openTabs = ['chalkboard', 'hardware']; // Initially chalkboard and hardware
+let openTabs = ['chalkboard', 'hardware', 'browser']; // Initially chalkboard/hardware/browser
+let browserTabState = {
+    started: false,
+    currentUrl: '',
+    snapshotTimer: null,
+};
 
 // ── DOM ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -195,6 +200,16 @@ const modelShareDetails = $('#modelShareDetails');
 const btnAcceptModelShare = $('#btnAcceptModelShare');
 const btnRejectModelShare = $('#btnRejectModelShare');
 const chalkboardFloatHint = $('#chalkboardFloatHint');
+const browserBackBtn = $('#browserBackBtn');
+const browserForwardBtn = $('#browserForwardBtn');
+const browserReloadBtn = $('#browserReloadBtn');
+const browserGoBtn = $('#browserGoBtn');
+const browserOpenExternalBtn = $('#browserOpenExternalBtn');
+const browserUrlInput = $('#browserUrlInput');
+const browserStatusText = $('#browserStatusText');
+const browserPageTitle = $('#browserPageTitle');
+const browserSnapshotImage = $('#browserSnapshotImage');
+const browserEmptyState = $('#browserEmptyState');
 
 const PROVIDER_DEFAULTS = {
     'OpenAI': 'https://api.openai.com/v1',
@@ -1180,6 +1195,102 @@ function bindExternalLinks(root) {
             openExternalUrl(href);
         });
     });
+}
+
+function setBrowserStatus(text = '') {
+    if (browserStatusText) browserStatusText.textContent = String(text || '').trim();
+}
+
+function updateBrowserSnapshot(snapshotDataUrl = '', pageTitle = '', pageUrl = '') {
+    if (browserPageTitle) browserPageTitle.textContent = pageTitle || '';
+    if (browserSnapshotImage) {
+        if (snapshotDataUrl) {
+            browserSnapshotImage.src = snapshotDataUrl;
+            browserSnapshotImage.style.display = 'block';
+            if (browserEmptyState) browserEmptyState.style.display = 'none';
+        } else {
+            browserSnapshotImage.removeAttribute('src');
+            browserSnapshotImage.style.display = 'none';
+            if (browserEmptyState) browserEmptyState.style.display = 'flex';
+        }
+    }
+    if (pageUrl) {
+        browserTabState.currentUrl = pageUrl;
+        if (browserUrlInput && document.activeElement !== browserUrlInput) {
+            browserUrlInput.value = pageUrl;
+        }
+    }
+}
+
+async function ensureBrowserSessionStarted() {
+    if (browserTabState.started) return true;
+    setBrowserStatus('Starting Playwright session...');
+    const result = await api('/api/browser/session/start', { method: 'POST', body: {} });
+    if (!result?.success) {
+        setBrowserStatus(`Browser unavailable: ${result?.error || 'unknown error'}`);
+        return false;
+    }
+    browserTabState.started = true;
+    setBrowserStatus('Browser session ready');
+    return true;
+}
+
+async function refreshBrowserSnapshot() {
+    if (!browserTabState.started) return;
+    const data = await api('/api/browser/session/snapshot');
+    if (!data?.success) {
+        setBrowserStatus(`Snapshot failed: ${data?.error || 'unknown error'}`);
+        return;
+    }
+    updateBrowserSnapshot(data.snapshotDataUrl || '', data.title || '', data.url || '');
+    setBrowserStatus(data.url ? `Viewing: ${data.url}` : 'Browser session ready');
+}
+
+function startBrowserSnapshotPolling() {
+    if (browserTabState.snapshotTimer) return;
+    browserTabState.snapshotTimer = setInterval(() => {
+        if (activeTab !== 'browser') return;
+        refreshBrowserSnapshot();
+    }, 2000);
+}
+
+function stopBrowserSnapshotPolling() {
+    if (!browserTabState.snapshotTimer) return;
+    clearInterval(browserTabState.snapshotTimer);
+    browserTabState.snapshotTimer = null;
+}
+
+async function browserNavigate(url = '') {
+    const target = String(url || '').trim();
+    if (!target) return;
+    const ok = await ensureBrowserSessionStarted();
+    if (!ok) return;
+    setBrowserStatus(`Navigating: ${target}`);
+    const data = await api('/api/browser/session/navigate', {
+        method: 'POST',
+        body: { url: target },
+    });
+    if (!data?.success) {
+        setBrowserStatus(`Navigate failed: ${data?.error || 'unknown error'}`);
+        return;
+    }
+    updateBrowserSnapshot(data.snapshotDataUrl || '', data.title || '', data.url || target);
+    setBrowserStatus(`Loaded: ${data.url || target}`);
+}
+
+async function browserAction(action = '') {
+    const ok = await ensureBrowserSessionStarted();
+    if (!ok) return;
+    const data = await api('/api/browser/session/action', {
+        method: 'POST',
+        body: { action },
+    });
+    if (!data?.success) {
+        setBrowserStatus(`${action} failed: ${data?.error || 'unknown error'}`);
+        return;
+    }
+    updateBrowserSnapshot(data.snapshotDataUrl || '', data.title || '', data.url || '');
+    setBrowserStatus(`Done: ${action}`);
 }
 
 function getMentionHighlightNames() {
@@ -4277,8 +4388,10 @@ function updateLocaleUI() {
     if (sidebarTabRecommend) sidebarTabRecommend.textContent = t('tabs.recommend');
     if (sidebarTabSops) sidebarTabSops.textContent = t('tabs.sops');
     const tabHardware = document.querySelector('#tab-hardware .tab-title');
+    const tabBrowser = document.querySelector('#tab-browser .tab-title');
     const tabTodo = document.querySelector('#tab-todolist .tab-title');
     if (tabHardware) tabHardware.textContent = t('tabs.hardware');
+    if (tabBrowser) tabBrowser.textContent = 'Browser';
     if (tabTodo) tabTodo.textContent = t('tabs.todolist');
     const logTab = document.querySelector('[data-bottom-tab="logs"]');
     const expsTab = document.querySelector('[data-bottom-tab="exps"]');
@@ -5942,6 +6055,20 @@ function setupEventListeners() {
         switchTab(tabId);
     });
 
+    browserGoBtn?.addEventListener('click', () => browserNavigate(browserUrlInput?.value || ''));
+    browserUrlInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            browserNavigate(browserUrlInput.value || '');
+        }
+    });
+    browserBackBtn?.addEventListener('click', () => browserAction('back'));
+    browserForwardBtn?.addEventListener('click', () => browserAction('forward'));
+    browserReloadBtn?.addEventListener('click', () => browserAction('reload'));
+    browserOpenExternalBtn?.addEventListener('click', () => {
+        if (browserTabState.currentUrl) openExternalUrl(browserTabState.currentUrl);
+    });
+
     // Menu Bar
     $('#menuView')?.addEventListener('click', toggleViewMenu);
     switchBottomTab(activeBottomTab);
@@ -5972,6 +6099,15 @@ function switchTab(tabId) {
     if (tabId === 'chalkboard') {
         requestAnimationFrame(() => resizeChalkboardCanvas());
     }
+    if (tabId === 'browser') {
+        ensureBrowserSessionStarted().then((ok) => {
+            if (!ok) return;
+            refreshBrowserSnapshot();
+            startBrowserSnapshotPolling();
+        });
+    } else {
+        stopBrowserSnapshotPolling();
+    }
 }
 
 function openTab(tabId) {
@@ -5997,6 +6133,9 @@ function closeTab(tabId) {
     if (tabId === 'hardware') {
         stopHardwarePolling();
     }
+    if (tabId === 'browser') {
+        stopBrowserSnapshotPolling();
+    }
 }
 
 // ── View Menu Logic ─────────────────────────────────────
@@ -6010,6 +6149,7 @@ function toggleViewMenu(e) {
     const items = [
         { id: 'chalkboard', label: t('tabs.chalkboard'), icon: '🎨' },
         { id: 'hardware', label: t('tabs.hardware'), icon: '🌡️' },
+        { id: 'browser', label: 'Browser', icon: '🌐' },
         { id: 'todolist', label: t('tabs.todolist'), icon: '📋' }
     ];
 

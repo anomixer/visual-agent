@@ -188,6 +188,11 @@
               <span class="tab-title">硬體狀態</span>
               <button class="tab-close">✕</button>
             </div>
+            <div class="tab-item" data-tab="browser" id="tab-browser">
+              <span class="tab-icon">🌐</span>
+              <span class="tab-title">Browser</span>
+              <button class="tab-close">✕</button>
+            </div>
             <div class="tab-item hidden" data-tab="todolist" id="tab-todolist">
               <span class="tab-icon">📋</span>
               <span class="tab-title">工作清單</span>
@@ -331,6 +336,27 @@
 
                 <div class="dashboard-footer">
                   <span id="hw-last-update">上次更新: --</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="tab-content" id="content-browser">
+              <div class="browser-body">
+                <div class="browser-toolbar">
+                  <button class="browser-btn" id="browserBackBtn" type="button" title="Back">←</button>
+                  <button class="browser-btn" id="browserForwardBtn" type="button" title="Forward">→</button>
+                  <button class="browser-btn" id="browserReloadBtn" type="button" title="Reload">↻</button>
+                  <input type="text" id="browserUrlInput" class="browser-url-input" placeholder="https://example.com">
+                  <button class="browser-btn primary" id="browserGoBtn" type="button">Go</button>
+                  <button class="browser-btn" id="browserOpenExternalBtn" type="button" title="Open in default browser">↗</button>
+                </div>
+                <div class="browser-status-row">
+                  <span class="browser-status" id="browserStatusText">Browser session idle</span>
+                  <span class="browser-title" id="browserPageTitle"></span>
+                </div>
+                <div class="browser-viewport" id="browserViewport">
+                  <img id="browserSnapshotImage" class="browser-snapshot" alt="Browser snapshot">
+                  <div class="browser-empty" id="browserEmptyState">No snapshot yet. Open a URL to start.</div>
                 </div>
               </div>
             </div>

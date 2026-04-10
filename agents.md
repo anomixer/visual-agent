@@ -584,10 +584,10 @@
   - `sops/backup-user-files.md`
   - `sops/restore-user-files.md`
 
-## 📌 2026.04.07 — 回覆穩定性、黑板控制碼與版本同步
+## 📌 2026.04.10 — 回覆穩定性、黑板控制碼與版本同步
 
 ### 版本
-- `package.json` / `package-lock.json` 版本同步更新為 `2026.04.07`。
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.04.10`。
 
 ### 對話與代理穩定性
 - 修正 AI 只輸出 action 控制碼時對話變空白的問題：後端現在會回填可讀摘要。
@@ -602,4 +602,9 @@
 
 ### 無 NVIDIA 機器降噪
 - `temperature-monitor` 在 `ENOENT`（無 `nvidia-smi`）時不再重複刷 log。
+
+### Browser Skill 強化
+- 新增/補強 `skills/browser-research-and-edit.md`，把 Browser Use 明確定義為「本地知識不足時的按需外查流程」。
+- Skill 內規定先清理使用者雜訊字串，再組查詢詞，避免把「改由瀏覽器手動搜尋」這類提示語當成真正關鍵字。
+- 搜尋結果回覆需整理成可執行答案，並在需要時附 Chalkboard 摘要模板。
 
