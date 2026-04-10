@@ -67,14 +67,8 @@ try {
     $false
 }
 ```
-## Uninstall
-```powershell
-Write-Host "Removing Playwright Chromium cache..."
-$browserDir = Join-Path $env:APPDATA 'aipc-agent\playwright-browsers'
-if (Test-Path $browserDir) {
-    Remove-Item -Path $browserDir -Recurse -Force -ErrorAction SilentlyContinue
-}
-```
+
+## Note
 4. Error Handling
 Error Code / Message,Possible Cause,AI Auto Fix
 npm.cmd not found,Node.js missing,1. Ask user to install Node.js 2. Retry SOP

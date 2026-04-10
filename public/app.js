@@ -1274,6 +1274,19 @@ async function refreshBrowserRuntimeAvailability() {
     }
 }
 
+async function waitForTaskCompletion(taskId, timeoutMs = 10 * 60 * 1000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+        await loadTodo();
+        const task = todoList.find((item) => String(item.id || '') === String(taskId || ''));
+        if (task && ['success', 'failed', 'skipped'].includes(task.status)) {
+            return task;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    return null;
+}
+
 async function runBrowserInstallWorkflow() {
     let sop = getSopById('install_playwright_chromium');
     if (!sop) {
@@ -1286,7 +1299,14 @@ async function runBrowserInstallWorkflow() {
     }
     setBrowserStatus('Running Playwright Chromium install SOP...');
     await addAndExecuteSop(sop);
+    const doneTask = await waitForTaskCompletion(todoList.find((task) => String(task.skillId || '') === 'install_playwright_chromium')?.id || '');
     await refreshBrowserRuntimeAvailability();
+    if (doneTask?.status === 'success' && browserRuntimeReady) {
+        openTab('browser');
+        await ensureBrowserSessionStarted();
+        await refreshBrowserSnapshot();
+        startBrowserSnapshotPolling();
+    }
     return true;
 }
 
@@ -6224,7 +6244,6 @@ function closeTab(tabId) {
     if (activeTab === tabId) {
         switchTab('chalkboard');
     }
-
     if (tabId === 'hardware') {
         stopHardwarePolling();
     }
@@ -6244,7 +6263,7 @@ function toggleViewMenu(e) {
     const items = [
         { id: 'chalkboard', label: t('tabs.chalkboard'), icon: '🎨' },
         { id: 'hardware', label: t('tabs.hardware'), icon: '🌡️' },
-        { id: 'browser', label: browserRuntimeReady ? 'Browser' : 'Browser (install required)', icon: '??' },
+        { id: 'browser', label: browserRuntimeReady ? 'Browser' : 'Browser (install required)', icon: '🌐' },
         { id: 'todolist', label: t('tabs.todolist'), icon: '📋' }
     ];
 
