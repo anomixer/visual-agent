@@ -402,3 +402,6 @@ SOPs 存放位置：
 - Browser tab 與 Browser Use 預設使用 Playwright Chromium session。
 - Chromium 不再打包進 MSI / EXE，改由 `install-playwright-chromium` SOP 事後補裝。
 - 若 Chromium 尚未就緒，Runtime 需回傳明確修復指引與 SOP ID，不得默默失敗。
+- ## 2026.04.10 Browser fallback update
+- Browser unavailable state now exposes a one-click install action for `install-playwright-chromium`.
+- Chromium stays out of the EXE / MSI bundle and is repaired on demand via SOP.

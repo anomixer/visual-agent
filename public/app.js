@@ -207,6 +207,7 @@ const browserGoBtn = $('#browserGoBtn');
 const browserOpenExternalBtn = $('#browserOpenExternalBtn');
 const browserUrlInput = $('#browserUrlInput');
 const browserStatusText = $('#browserStatusText');
+const browserStatusAction = $('#browserStatusAction');
 const browserPageTitle = $('#browserPageTitle');
 const browserSnapshotImage = $('#browserSnapshotImage');
 const browserEmptyState = $('#browserEmptyState');
@@ -1197,8 +1198,56 @@ function bindExternalLinks(root) {
     });
 }
 
-function setBrowserStatus(text = '') {
+function setBrowserStatus(text = '', actionEl = null) {
     if (browserStatusText) browserStatusText.textContent = String(text || '').trim();
+    if (browserStatusAction) {
+        browserStatusAction.innerHTML = '';
+        browserStatusAction.style.display = actionEl ? 'inline-flex' : 'none';
+        if (actionEl) browserStatusAction.appendChild(actionEl);
+    }
+}
+
+function getSopById(sopId = '') {
+    const target = String(sopId || '').trim();
+    if (!target) return null;
+    return sopsList.find((item) => String(item.id || '').trim() === target) || null;
+}
+
+function createBrowserInstallButton() {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'browser-btn primary';
+    button.textContent = '安裝 Chromium';
+    button.addEventListener('click', async () => {
+        button.disabled = true;
+        button.textContent = '安裝中...';
+        try {
+            let sop = getSopById('install_playwright_chromium');
+            if (!sop) {
+                await loadSops();
+                sop = getSopById('install_playwright_chromium');
+            }
+            if (!sop) {
+                setBrowserStatus('Browser unavailable: 找不到安裝 SOP');
+                return;
+            }
+            setBrowserStatus('Running Playwright Chromium install SOP...');
+            await addAndExecuteSop(sop);
+        } finally {
+            button.disabled = false;
+            button.textContent = '安裝 Chromium';
+        }
+    });
+    return button;
+}
+
+function setBrowserUnavailableStatus(errorMessage = '') {
+    const message = String(errorMessage || '').trim();
+    if (message.includes('install_playwright_chromium')) {
+        setBrowserStatus(`Browser unavailable: ${message}`, createBrowserInstallButton());
+        return;
+    }
+    setBrowserStatus(`Browser unavailable: ${message || 'unknown error'}`);
 }
 
 function updateBrowserSnapshot(snapshotDataUrl = '', pageTitle = '', pageUrl = '') {
@@ -1227,7 +1276,7 @@ async function ensureBrowserSessionStarted() {
     setBrowserStatus('Starting Playwright session...');
     const result = await api('/api/browser/session/start', { method: 'POST', body: {} });
     if (!result?.success) {
-        setBrowserStatus(`Browser unavailable: ${result?.error || 'unknown error'}`);
+        setBrowserUnavailableStatus(result?.error || 'unknown error');
         return false;
     }
     browserTabState.started = true;

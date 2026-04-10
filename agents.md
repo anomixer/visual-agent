@@ -613,3 +613,6 @@
 - Browser tab 若缺 Chromium，會引導執行 `install-playwright-chromium` SOP 來補裝。
 - 目的：讓安裝包維持小體積，並把 browser runtime 安裝留給工作流處理。
 
+- ## 📌 2026.04.10 - Browser 缺件一鍵補裝
+- Browser tab 偵測到 Chromium 缺失時，會直接提供安裝按鈕，並執行 `install-playwright-chromium` SOP。
+- Browser runtime 改為安裝後補裝，不再把 Chromium 綁進 EXE / MSI 安裝包。

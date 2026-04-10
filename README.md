@@ -129,6 +129,10 @@ http://localhost:3210
 build.bat
 ```
 
+### Browser fallback
+- When Browser tab shows `Browser unavailable`, a one-click button runs `install-playwright-chromium` SOP.
+- This keeps EXE/MSI small and lets npm/EXE users repair Chromium after install.
+
 此腳本會安裝所需環境並建置 Tauri 桌面版。產物位於：
 
 ```text

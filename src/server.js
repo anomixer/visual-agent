@@ -1306,7 +1306,7 @@ async function ensureBrowserSession() {
         throw new Error('Playwright not installed. Run npm.cmd install to enable Browser tab.');
     }
     if (!hasPlaywrightBrowserBinary()) {
-        const err = new Error('Browser unavailable: Playwright Chromium not installed. Run the Playwright Chromium install SOP.');
+        const err = new Error('Browser unavailable: Playwright Chromium not installed. Run the install_playwright_chromium SOP.');
         err.sopId = 'install_playwright_chromium';
         throw err;
     }
@@ -4013,7 +4013,12 @@ app.post('/api/browser/session/start', async (req, res) => {
             ...snap,
         });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message, playwrightAvailable: isPlaywrightAvailable() });
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            sopId: error?.sopId || '',
+            playwrightAvailable: isPlaywrightAvailable(),
+        });
     }
 });
 
