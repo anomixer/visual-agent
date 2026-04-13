@@ -623,3 +623,8 @@
 - Chromium 未安裝前，中心區 Browser tab 先隱藏，功能表 檢視 會顯示 Browser (需安裝)。
 
 - Browser availability now requires a real Chromium executable check. The tab stays hidden until the executable exists, then appears automatically without a restart.
+
+## 2026.04.13 Planner / Builder / Learn
+- Default behavior is now Planner first, Builder after user approval, Learn after completion.
+- Exp is the learning memory: store what worked, what failed, and the reusable pattern.
+- Repeated successful patterns can be promoted to Skills; stable multi-step flows can be promoted to SOPs.

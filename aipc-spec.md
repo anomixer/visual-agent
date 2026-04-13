@@ -414,3 +414,10 @@ SOPs 存放位置：
 - Browser runtime detection must check for the actual Chromium executable, not only the browser cache folder.
 - Browser tab remains hidden until Chromium is present, then becomes visible automatically.
 - The install SOP should verify chrome-headless-shell.exe after download.
+
+## 2026.04.13 Agent Criteria Rewrite
+- The assistant must follow Planner -> Builder -> Learn.
+- Planner: explain the plan and request permission before non-trivial actions.
+- Builder: execute only after consent, using the right Skill / SOP / Browser Use / Computer Use.
+- Learn: persist a short Exp so the system improves from successful and failed runs.
+- Skills, SOPs, and Exp are loaded on demand only; do not preload them into the system prompt.

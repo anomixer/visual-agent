@@ -220,13 +220,26 @@ Your rules:
   2. **Provide options (SUGGEST)**: When you decide to "provide suggestion/ask" (e.g., want me to help you install...?), you MUST provide a suggestion button \`[SUGGEST:...]\`, but in this reply \`[ACTION:...]\` tags are ABSOLUTELY FORBIDDEN.
 - Conversation history: Please combine background task status and conversation history to accurately judge the user's intent. Ensure action tags correspond exactly to task IDs.`;
 
+const AGENT_WORKFLOW_PROMPT_ZH = `- 先走 Planner：先整理使用者意圖、風險、下一步，不要直接執行。
+- 只有在使用者明確允許後，才進入 Builder。
+- Builder 階段才可呼叫 Skills / SOPs / Browser Use / Computer Use。
+- 任務完成後要寫入一筆短 Exp，記錄成功、失敗與可重用做法。
+- Skills、SOPs、Exp 都要按需載入，不要一開始就全部塞進 system prompt。`;
+
+const AGENT_WORKFLOW_PROMPT_EN = `- Start with Planner: summarize intent, risks, and the next step; do not execute immediately.
+- Only enter Builder after the user explicitly approves.
+- Builder may call Skills / SOPs / Browser Use / Computer Use.
+- After completion, write a short Exp entry with what worked, what failed, and what can be reused.
+- Load Skills, SOPs, and Exp on demand only; do not preload everything into the system prompt.`;
+
 /**
  * 組合 System Prompt
  * 注意：Skills / SOPs 採「按需注入」，避免每輪都塞滿 context。
  */
 function buildFullSystemPrompt(locale = 'zh-TW', extraContext = '') {
     const base = (locale === 'en-US') ? BASE_SYSTEM_PROMPT_EN : BASE_SYSTEM_PROMPT_ZH;
-    let fullPrompt = base + '\n\n';
+    const workflow = (locale === 'en-US') ? AGENT_WORKFLOW_PROMPT_EN : AGENT_WORKFLOW_PROMPT_ZH;
+    let fullPrompt = base + '\n\n### Workflow\n' + workflow + '\n\n';
 
     if (extraContext) {
         fullPrompt += `${locale === 'en-US' ? '### Runtime Context' : '### 執行階段情境'}\n${String(extraContext).trim()}\n\n`;

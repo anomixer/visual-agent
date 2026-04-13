@@ -450,3 +450,8 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 - 目前套件版本：`2026.04.10`。
 
 - Browser availability is now based on a real Chromium executable check, not just a folder. After install, it can switch to the Browser tab without a restart if the executable is found.
+
+### Planner / Builder / Learn
+- AI first returns a Planner response: summarize intent and propose next steps.
+- Builder mode only starts after explicit user approval.
+- After task completion, write a short Exp entry so the agent can learn from outcomes over time.
