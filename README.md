@@ -1,6 +1,6 @@
 # AI PC Agent
 
-> 本地優先、無命令列、具備感知能力的 Windows 系統管家  
+> 本地優先、無命令列、具備感知與自我進化能力的圖形化 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen)](https://nodejs.org/)
