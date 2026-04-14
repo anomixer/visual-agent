@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (2026.04.10 Updated)
+# AI PC Agent — 實作需求規格書 (2026.04.14 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.04.10 Updated] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.04.14 Updated] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -98,8 +98,8 @@ browser ──── public/index.html
                  │
                  │ PowerShell / API
                  ▼
-             sops/*.md        (SOP 腳本庫)
-             %APPDATA%\aipc-agent\  (tasks.json, sops/, plugins/)
+             sops/<slug>/SOP.md        (SOP 腳本庫)
+             %APPDATA%\aipc-agent\  (tasks.json, sops/<slug>/SOP.md, plugins/)
 ```
 - **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\aipc-agent\plugins\` 目慶，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
 
@@ -123,7 +123,28 @@ browser ──── public/index.html
 
 ---
 
-## 4. SOP 腳本格式
+## 4. SOP 與 Skills 腳本格式 (AgentSkills.io 相容)
+
+### 4.1 Skills 腳本規範
+Skills 的目錄架構與 `SKILL.md` 的語法，**嚴格遵守 [agentskills.io/specification](https://agentskills.io/specification)** 規範。
+這確保了我們寫的 Skills 不僅能在 AI PC Agent 本身運作，**也能與生態系中其他遵循同一標準的 AI Agent 互相相容與共享**。
+
+- 目錄格式：`skills/<slug>/SKILL.md`
+- Markdown 頂端必須具備合規的 YAML Frontmatter：
+  ```yaml
+  ---
+  name: tool-slug-name
+  description: 告訴 AI 何時該使用這個技能，以及這個技能的關鍵字
+  license: MIT
+  compatibility:
+    - windows
+  metadata:
+    tags: ["system", "tool"]
+  ---
+  ```
+
+### 4.2 SOP 腳本規範
+SOP 同樣延續目錄化精神 (`sops/<slug>/SOP.md`)，但內部為我們獨有的 Check / Install / Verify 三段式強固結構：
 
 ```markdown
 1. 基本資訊 (Metadata)
@@ -141,33 +162,34 @@ OS: Windows 10 / 11
 
 第一階段：環境檢測 (Check)
 指令 (PowerShell):
-```powershell
+` ` `powershell
 # 回傳 $true 表示已完成，跳過安裝
 $false
-```
+` ` `
 
 第二階段：安裝 (Install)
 指令 (PowerShell):
-```powershell
+` ` `powershell
 UI 顯示內容: 「人類可讀的進度說明」
 # 實際 PowerShell 指令
-```
+` ` `
 
 第三階段：驗證 (Verify)
 指令 (PowerShell):
-```powershell
+` ` `powershell
 # 回傳 $true 表示成功
 $true
-```
+` ` `
 
 4. 自動排錯邏輯 (Error Handling)
 錯誤代碼 / 訊息,可能原因,AI 自動修復行動
 0x80070005,沒有管理員權限,1. 請求以系統管理員身分執行
 ```
+*(為排版顯示，上述反引號中加入了空白，實際使用時需移除空白)*
 
-SOPs 存放位置：
-- 開發時：`sops/*.md`
-- 執行時：`%APPDATA%\aipc-agent\sops\*.md` (SOP 腳本庫)
+存放與掃描位置：
+- 開發時：`skills/<slug>/SKILL.md` / `sops/<slug>/SOP.md`
+- 執行時：`%APPDATA%\aipc-agent\skills\` / `%APPDATA%\aipc-agent\sops\`
 
 ---
 
@@ -398,26 +420,15 @@ SOPs 存放位置：
   - 優先使用 Browser Use 進行可信來源查詢；
   - 或回傳可執行的手動指引與下一步建議。
 
-### 8.13 Browser Runtime 依賴
+### 8.13 Browser Runtime 依賴與動態載入
 - Browser tab 與 Browser Use 預設使用 Playwright Chromium session。
-- Chromium 不再打包進 MSI / EXE，改由 `install-playwright-chromium` SOP 事後補裝。
-- 若 Chromium 尚未就緒，Runtime 需回傳明確修復指引與 SOP ID，不得默默失敗。
-- ## 2026.04.10 Browser fallback update
-- Browser unavailable state now exposes a one-click install action for `install-playwright-chromium`.
-- Chromium stays out of the EXE / MSI bundle and is repaired on demand via SOP.
+- Chromium 不再打包進 MSI / EXE，改由 UI 一鍵引導執行 `install-playwright-chromium` SOP 按需事後補裝。
+- 若 Chromium 尚未就緒，UI 將隱藏 Browser 分頁。
+- 安裝條件與完成偵測不再僅檢查資料夾，必須精確驗證實際的 `chrome-headless-shell.exe` 執行檔是否存在。
+- 一旦安裝完成，無需重啟程式，Browser 分頁即會自動顯示。
 
-## 2026.04.10 Browser fallback update
-- Browser unavailable state exposes a one-click install action for install-playwright-chromium.
-- Chromium stays out of the EXE / MSI bundle and is repaired on demand via SOP.
-- Until Chromium is installed, the center Browser tab stays hidden and the View menu shows Browser (�ݦw��).
-
-- Browser runtime detection must check for the actual Chromium executable, not only the browser cache folder.
-- Browser tab remains hidden until Chromium is present, then becomes visible automatically.
-- The install SOP should verify chrome-headless-shell.exe after download.
-
-## 2026.04.13 Agent Criteria Rewrite
-- The assistant must follow Planner -> Builder -> Learn.
-- Planner: explain the plan and request permission before non-trivial actions.
-- Builder: execute only after consent, using the right Skill / SOP / Browser Use / Computer Use.
-- Learn: persist a short Exp so the system improves from successful and failed runs.
-- Skills, SOPs, and Exp are loaded on demand only; do not preload them into the system prompt.
+### 8.14 Planner -> Builder -> Learn 工作流
+- **Planner (規劃)**: AI 在處理任何複雜需求前，會優先返回規劃（Planner）回應，向使用者總結意圖並提出後續執行的步驟。
+- **Builder (執行)**: 在獲得使用者的明確批准（Consent-First）後，系統才會調用對應的 SOP、Browser Use 或 Computer Use 進入執行階段。
+- **Learn (學習)**: 任務執行結束後，系統會記錄成功的途徑與遇到的錯誤，並撰寫簡短的 Exp（經驗日誌）保存為知識庫。當模式趨近穩定，則能昇華並封裝成新的 SKILL 或 SOP 永久留存。
+- **On-demand Context (按需載入)**: 確保所有 Skills、SOPs 與 Exp 僅在被情境命中時才動態載入至 System Prompt 內，減少資源消耗與干擾。

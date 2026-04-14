@@ -188,24 +188,38 @@ function syncBundledAssets() {
 
 
         };
-        // 同步 SOPs
+        // Sync SOPs - directory-per-SOP format: sops/<slug>/SOP.md
         if (fs.existsSync(bundledSopsDir)) {
-            const files = fs.readdirSync(bundledSopsDir).filter(f => f.endsWith('.md'));
-            files.forEach(file => {
-                const src = path.join(bundledSopsDir, file);
-                const dest = path.join(SOPS_DIR, file);
-                syncIfChanged(src, dest);
+            const entries = fs.readdirSync(bundledSopsDir, { withFileTypes: true });
+            entries.forEach(entry => {
+                if (entry.isDirectory()) {
+                    const srcFile = path.join(bundledSopsDir, entry.name, 'SOP.md');
+                    if (!fs.existsSync(srcFile)) return;
+                    const destDir = path.join(SOPS_DIR, entry.name);
+                    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+                    syncIfChanged(srcFile, path.join(destDir, 'SOP.md'));
+                }
             });
         }
 
 
-        // 同步 Skills
+        // Sync Skills - agentskills.io directory format: skills/<slug>/SKILL.md (only)
         if (fs.existsSync(bundledSkillsDir)) {
-            const files = fs.readdirSync(bundledSkillsDir).filter(f => f.endsWith('.md'));
-            files.forEach(file => {
-                const src = path.join(bundledSkillsDir, file);
-                const dest = path.join(SKILLS_DIR, file);
-                syncIfChanged(src, dest);
+            const entries = fs.readdirSync(bundledSkillsDir, { withFileTypes: true });
+            entries.forEach(entry => {
+                if (!entry.isDirectory()) return;
+                const srcSkillFile = path.join(bundledSkillsDir, entry.name, 'SKILL.md');
+                if (!fs.existsSync(srcSkillFile)) return;
+                const destDir = path.join(SKILLS_DIR, entry.name);
+                if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+                syncIfChanged(srcSkillFile, path.join(destDir, 'SKILL.md'));
+                ['scripts', 'references', 'assets'].forEach(sub => {
+                    const srcSub = path.join(bundledSkillsDir, entry.name, sub);
+                    if (!fs.existsSync(srcSub)) return;
+                    const destSub = path.join(destDir, sub);
+                    if (!fs.existsSync(destSub)) fs.mkdirSync(destSub, { recursive: true });
+                    fs.readdirSync(srcSub).forEach(f => syncIfChanged(path.join(srcSub, f), path.join(destSub, f)));
+                });
             });
         }
 
@@ -343,6 +357,10 @@ function tokenizeForMatch(text = '') {
         .filter((token) => token.length >= 2);
 }
 
+/**
+ * Load skill documents from SKILLS_DIR.
+ * Reads agentskills.io spec format only: skills/<slug>/SKILL.md
+ */
 function loadSkillDocuments(forceRefresh = false) {
     const now = Date.now();
     if (!forceRefresh && skillDocsCache.length > 0 && (now - skillDocsCacheAt) < SKILL_DOC_CACHE_TTL_MS) {
@@ -355,15 +373,31 @@ function loadSkillDocuments(forceRefresh = false) {
             skillDocsCacheAt = now;
             return skillDocsCache;
         }
-        const files = fs.readdirSync(SKILLS_DIR).filter((name) => name.endsWith('.md'));
-        files.forEach((name) => {
-            const fullPath = path.join(SKILLS_DIR, name);
-            const content = fs.readFileSync(fullPath, 'utf8');
-            docs.push({
-                name,
-                content,
-                tokens: new Set(tokenizeForMatch(`${name} ${content.slice(0, 1200)}`)),
-            });
+        const entries = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
+        entries.forEach((entry) => {
+            if (!entry.isDirectory()) return;
+            try {
+                const skillFile = path.join(SKILLS_DIR, entry.name, 'SKILL.md');
+                if (!fs.existsSync(skillFile)) return;
+                const content = fs.readFileSync(skillFile, 'utf8');
+                const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/m);
+                const fmText = fmMatch ? fmMatch[1] : '';
+                const nameMatch = fmText.match(/^name:\s*(.+)$/m);
+                const descMatch = fmText.match(/^description:\s*(.+)$/m);
+                const tagsMatch = fmText.match(/^\s+tags:\s*(.+)$/m);
+                const displayName = nameMatch ? nameMatch[1].trim() : entry.name;
+                const description = descMatch ? descMatch[1].trim() : '';
+                const tags = tagsMatch ? tagsMatch[1].trim() : '';
+                docs.push({
+                    name: displayName,
+                    content,
+                    tokens: new Set(tokenizeForMatch(
+                        `${displayName} ${description} ${tags} ${content.slice(0, 1200)}`
+                    )),
+                });
+            } catch (innerError) {
+                fileLog(`Skill load failed for '${entry.name}': ${innerError.message}`);
+            }
         });
     } catch (error) {
         fileLog(`Skill document load failed: ${error.message}`);

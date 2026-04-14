@@ -1,4 +1,4 @@
-# AI PC Agent 開發日誌
+﻿# AI PC Agent 開發日誌
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
@@ -524,14 +524,14 @@
 - `temperature-monitor.js` 改為 `execFile` 執行 `nvidia-smi.exe`，並加入 NVSMI 常見安裝路徑 fallback，提升 NVIDIA 探測成功率。
 
 ### nvidia-smi 錯誤訊息去亂碼
-- 將錯誤輸出簡化為穩定錯誤碼格式（如 `ENOENT`），不再直接輸出本地碼頁訊息，避免 `���O�����Υ~���R�O` 這類亂碼污染日誌。
+- 將錯誤輸出簡化為穩定錯誤碼格式（如 `ENOENT`），不再直接輸出本地碼頁訊息，避免 `程式不存在，已略過` 這類亂碼污染日誌。
 
 ### 黑板座標與落稿一致性
 - `getChalkPoint()` 新增座標 clamp（0~1），避免游標移動到畫布邊界外時造成定位偏差。
 - `drawPlacedText()` 改為完全以 8 點框尺寸落稿，不再強制使用 `baseWidth/baseHeight` 擴張，修正「8 點框位置與最終文字落稿不一致」問題。
 
 ### UI 編碼細節
-- 修復硬體面板溫度顯示字元，`�C` 改為 `°C`。
+- 修復硬體面板溫度顯示字元，`°C` 改為 `°C`。
 
 ### 本機聊天與黑板體驗補強
 - 右側聊天上方改為「本機多對話 tab + 遠端 tab」；本機對話新增後可在 tab 直接 `x` 關閉（保留至少一個）。
@@ -617,14 +617,43 @@
 - Browser tab 偵測到 Chromium 缺失時，會直接提供安裝按鈕，並執行 `install-playwright-chromium` SOP。
 - Browser runtime 改為安裝後補裝，不再把 Chromium 綁進 EXE / MSI 安裝包。
 
-## ?? 2026.04.10 - Browser �ʥ�@��ɸ�
-- Browser tab ������ Chromium �ʥ��ɡA�|�������Ѧw�˫��s�A�ð��� install-playwright-chromium SOP�C
-- Browser runtime �אּ�w�˫�ɸˡA���A�� Chromium �j�i EXE / MSI �w�˥]�C
-- Chromium ���w�˫e�A���߰� Browser tab �����áA�\��� �˵� �|��� Browser (�ݦw��)�C
-
 - Browser availability now requires a real Chromium executable check. The tab stays hidden until the executable exists, then appears automatically without a restart.
 
 ## 2026.04.13 Planner / Builder / Learn
 - Default behavior is now Planner first, Builder after user approval, Learn after completion.
 - Exp is the learning memory: store what worked, what failed, and the reusable pattern.
 - Repeated successful patterns can be promoted to Skills; stable multi-step flows can be promoted to SOPs.
+
+---
+
+## 📌 2026.04.14 — AgentSkills.io 規格遷移
+
+### Skills 目錄結構重構
+- 依照 [agentskills.io/specification](https://agentskills.io/specification) 規格，將 skills/*.md 改為 skills/<slug>/SKILL.md 目錄格式。
+- 每個 SKILL.md 頂部加入 YAML frontmatter：
+ame、description、license、compatibility、metadata（含 	ags）。
+- 
+ame 欄位必須符合父目錄名（小寫英數字 + 連字符），最長 64 字元。
+- description 針對 AI 發現 (discovery) 優化，明確描述「何時使用」並含關鍵字。
+- 舊的扁平 skills/*.md 保留作向後相容，server.js 會自動兼容兩種格式。
+
+### server.js 更新
+- syncBundledAssets()：改為同步目錄格式，自動同步 skills/<slug>/SKILL.md 及 scripts/、
+eferences/、assets/ 子目錄。
+- loadSkillDocuments()：優先讀取目錄格式 SKILL.md，解析 frontmatter 中的 
+ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fallback。
+
+### 亂碼修復
+- agents.md：修復 nvidia-smi ENOENT 行的 Big5 亂碼、°C 溫度符號、以及重複貼入的 Big5 亂碼 Browser 區段。
+- aipc-spec.md：修復「Browser (未安裝)」的 Big5 亂碼。
+
+### Planner / Builder / Learn 代理流程
+- **Planner**：AI 優先返回規劃回應，總結意圖並提出下一步建議。
+- **Builder**：在獲得使用者明確批准後才開始執行任務（Consent-First）。
+- **Learn**：任務完成後，撰寫簡短的 Exp 以便代理能從結果中學習並自我優化（重複成功的模式升級為 Skills，穩定的多步驟升級為 SOPs）。
+
+### Browser Runtime 動態載入
+- Browser tab 現在按需使用 Playwright Chromium，不再將 Chromium 打包入 EXE / MSI，保持安裝檔輕巧。
+- Browser 狀態取決於 Playwright cache 中的 \chrome-headless-shell.exe\ 是否存在。
+- 缺失時，UI提供一鍵執行 \install-playwright-chromium\ SOP，安裝完畢無需重啟即可出現 Browser tab。
+

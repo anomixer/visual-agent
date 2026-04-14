@@ -4349,13 +4349,17 @@ function createRecommendCard(item) {
     `;
 
     if (isActionable) {
-        card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
+        card.querySelector('.btn-add-todo')?.addEventListener('click', async (e) => {
             e.stopPropagation();
-            addRecommendToTodo({ ...localized, recommendedAction: action });
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try { await addRecommendToTodo({ ...localized, recommendedAction: action }); } finally { btn.disabled = false; }
         });
-        card.querySelector('.btn-run-now')?.addEventListener('click', (e) => {
+        card.querySelector('.btn-run-now')?.addEventListener('click', async (e) => {
             e.stopPropagation();
-            addAndExecuteRecommend({ ...localized, recommendedAction: action });
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try { await addAndExecuteRecommend({ ...localized, recommendedAction: action }); } finally { btn.disabled = false; }
         });
     }
     return card;
@@ -4460,13 +4464,17 @@ function createSopCard(sop) {
     `;
 
     if (isActionable) {
-        card.querySelector('.btn-add-todo')?.addEventListener('click', (e) => {
+        card.querySelector('.btn-add-todo')?.addEventListener('click', async (e) => {
             e.stopPropagation();
-            addSopToTodo({ ...sop, recommendedAction: action });
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try { await addSopToTodo({ ...sop, recommendedAction: action }); } finally { btn.disabled = false; }
         });
         card.querySelector('.btn-run-now')?.addEventListener('click', async (e) => {
             e.stopPropagation();
-            await addAndExecuteSop({ ...sop, recommendedAction: action });
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            try { await addAndExecuteSop({ ...sop, recommendedAction: action }); } finally { btn.disabled = false; }
         });
     }
     return card;

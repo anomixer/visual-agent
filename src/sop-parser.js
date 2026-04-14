@@ -213,7 +213,8 @@ function parseSOPFile(filePath) {
 }
 
 /**
- * Scans the sops directory and parses all markdown SOP files.
+ * Scans the sops directory and parses all SOP files.
+ * Primary format: sops/<slug>/SOP.md  (directory-per-SOP)
  * @param {string} sopsDir Path to the sops directory.
  * @returns {object[]} Parsed SOP objects.
  */
@@ -224,16 +225,28 @@ function loadAllSOPs(sopsDir) {
         throw new Error(`SOPs directory not found: ${resolvedDir}`);
     }
 
-    const files = fs.readdirSync(resolvedDir).filter((f) => f.endsWith('.md'));
-    const parsed = files.map((f) => parseSOPFile(path.join(resolvedDir, f)));
+    const sopFiles = [];
+    const entries = fs.readdirSync(resolvedDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+        if (entry.isDirectory()) {
+            // Primary format: sops/<slug>/SOP.md
+            const sopFile = path.join(resolvedDir, entry.name, 'SOP.md');
+            if (fs.existsSync(sopFile)) {
+                sopFiles.push(sopFile);
+            }
+        }
+        // Flat .md files at root are no longer loaded (new format only)
+    }
+
+    const parsed = sopFiles.map((f) => parseSOPFile(f));
     const deduped = new Map();
 
     const scoreFile = (sop) => {
         const name = (sop.sourceFile || '').toLowerCase();
         let score = 0;
         if (!name.includes('copy')) score += 10;
-        if (!name.includes('副本')) score += 10;
-        if (name === `${sop.id}.md`) score += 5;
+        if (name.endsWith('sop.md')) score += 5;
         return score;
     };
 
@@ -242,7 +255,6 @@ function loadAllSOPs(sopsDir) {
             deduped.set(`${sop.sourceFile}:${Math.random()}`, sop);
             continue;
         }
-
         const existing = deduped.get(sop.id);
         if (!existing || scoreFile(sop) > scoreFile(existing)) {
             deduped.set(sop.id, sop);

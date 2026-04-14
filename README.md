@@ -259,24 +259,40 @@ aipc-agent/
 │   ├── hardware-info.js
 │   └── temperature-monitor.js
 ├── skills/
-│   ├── manager.md
-│   ├── ollama.md
-│   ├── winget-store.md
-│   ├── microsoft-store.md
-│   └── github-releases.md
+│   ├── app-install-and-repair/SKILL.md
+│   ├── backup-restore/SKILL.md
+│   ├── browser-research-and-edit/SKILL.md
+│   ├── desktop-agent/SKILL.md
+│   ├── developer-tools-assistant/SKILL.md
+│   ├── game-research/SKILL.md
+│   ├── github-releases/SKILL.md
+│   ├── manager/SKILL.md
+│   ├── media-editing-assistant/SKILL.md
+│   ├── microsoft-store/SKILL.md
+│   ├── office-excel-assistant/SKILL.md
+│   ├── ollama/SKILL.md
+│   ├── photoshop-workflow/SKILL.md
+│   ├── virtualization-sandbox/SKILL.md
+│   ├── windows-network-troubleshoot/SKILL.md
+│   ├── windows-printer-troubleshoot/SKILL.md
+│   ├── windows-storage-recovery/SKILL.md
+│   └── winget-store/SKILL.md
 ├── sops/
-│   ├── backup-system.md
-│   ├── check-drivers.md
-│   ├── install-chrome.md
-│   ├── install-language-en-us.md
-│   ├── install-language-ja.md
-│   ├── install-language-zh-cn.md
-│   ├── install-language-zh-tw.md
-│   ├── install-office.md
-│   ├── install-ollama.md
-│   ├── install-steam.md
-│   ├── pull-llm-model.md
-│   └── remove-copilot.md
+│   ├── backup-system/SOP.md
+│   ├── backup-user-files/SOP.md
+│   ├── check-drivers/SOP.md
+│   ├── install-chrome/SOP.md
+│   ├── install-language-en-us/SOP.md
+│   ├── install-language-ja/SOP.md
+│   ├── install-language-zh-cn/SOP.md
+│   ├── install-language-zh-tw/SOP.md
+│   ├── install-office/SOP.md
+│   ├── install-ollama/SOP.md
+│   ├── install-playwright-chromium/SOP.md
+│   ├── install-steam/SOP.md
+│   ├── pull-llm-model/SOP.md
+│   ├── remove-copilot/SOP.md
+│   └── restore-user-files/SOP.md
 ├── src-tauri/
 ├── agents.md
 ├── aipc-spec.md
@@ -288,6 +304,13 @@ aipc-agent/
 ---
 
 ## 近期更新
+
+### 2026.04.14
+- **AgentSkills.io 規格遷移**：全面升級 `skills` 與 `sops` 目錄結構，支援 `<slug>/SKILL.md` 及 `<slug>/SOP.md`。支援 YAML Frontmatter 提供更豐富的中繼資料與精準按需載入 (On-demand Context)。
+- **版本更新**：套件版本更新為 `2026.04.14`。
+- **UI 互動體驗**：完善任務卡片的按鈕防抖與鎖定機制（Disabled state），給予即時的操作回饋。
+- **Agent 工作流**：確立 Planner -> Builder -> Learn 流程。
+- **Browser Runtime**：Playwright Chromium 改為啟動後按需安裝，成功載入後自動顯示 Browser 分頁，不需重啟程式。
 
 ### 2026.04.10
 - **版本更新**：套件版本更新為 `2026.04.10`。
@@ -447,11 +470,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.04.10`。
-
-- Browser availability is now based on a real Chromium executable check, not just a folder. After install, it can switch to the Browser tab without a restart if the executable is found.
-
-### Planner / Builder / Learn
-- AI first returns a Planner response: summarize intent and propose next steps.
-- Builder mode only starts after explicit user approval.
-- After task completion, write a short Exp entry so the agent can learn from outcomes over time.
+- 目前套件版本：`2026.04.14`。

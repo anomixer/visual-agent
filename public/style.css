@@ -612,6 +612,13 @@ ol {
   color: #fff;
 }
 
+.btn-add-todo:disabled,
+.btn-run-now:disabled {
+  opacity: 0.38;
+  cursor: wait;
+  pointer-events: none;
+}
+
 /* ── CENTER Column ────────────────────────────────────────────── */
 .center-col {
   flex: 1;
