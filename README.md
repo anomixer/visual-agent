@@ -68,12 +68,6 @@ cd aipc-agent
 npm install
 ```
 
-安裝完成後，Playwright Chromium 也會一併處理；`build.bat` 會自動執行下載，若手動執行可用：
-
-```powershell
-npx playwright install chromium
-```
-
 若 PowerShell 擋下 script execution：
 
 ```powershell
@@ -89,7 +83,7 @@ setx npm_config_offline false
 ### 3. 啟動開發伺服器
 
 ```powershell
-npm run start
+npm start
 ```
 
 ### 4. 開啟介面
@@ -129,17 +123,18 @@ http://localhost:3210
 build.bat
 ```
 
-### Browser fallback
-- When Browser tab shows `Browser unavailable`, a one-click button runs `install-playwright-chromium` SOP.
-- This keeps EXE/MSI small and lets npm/EXE users repair Chromium after install.
-- Before Chromium is installed, the Browser tab stays hidden in the center area and only appears after the install finishes.
-- After install, the app accepts both `%APPDATA%\aipc-agent\playwright-browsers` and the default Playwright `ms-playwright` path, then shows Browser automatically.
-
 此腳本會安裝所需環境並建置 Tauri 桌面版。產物位於：
 
 ```text
 src-tauri\target\release\bundle\nsis\
 ```
+
+### 瀏覽器插件安裝
+
+- 當「瀏覽器」標籤顯示「瀏覽器不可用」時，按一下按鈕即可執行 install-playwright-chromium 單操作程式。
+- 在安裝 Chromium 之前，「瀏覽器」標籤會隱藏在中間區域，僅在安裝完成後才會顯示。
+- 安裝完成後，應用程式會同時接受 %APPDATA%\aipc-agent\playwright-browsers 和 Playwright 的預設路徑 ms-playwright，然後自動顯示「瀏覽器」標籤。
+
 
 ---
 
@@ -164,12 +159,12 @@ src-tauri\target\release\bundle\nsis\
 
 ## 檔案格式規格
 
+- `skills/<slug>/SKILL.md`
+  第一行固定為 `---`，然後 `name: <slug>` ，遵循 [agentskills.io](https://agentskills.io) 格式製作
 - `sops/*.md`
   第一行固定為 `# AI PC Agent SOP File v1`
 - `exps/exp-yyyymmdd.md`
   第一行固定為 `# AI PC Agent Experience Log - yyyymmdd`
-- `skills/*.md`
-  第一行固定為 `# AI PC Agent Skill File v1`
 - `plugins/*.js`
   第一行固定為 `// AI PC Agent Plugin File v1`
 
