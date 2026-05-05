@@ -61,6 +61,7 @@ let queuedRemoteChalkboardMessage = null;
 const appliedRemoteChalkboardMessageIds = new Set();
 const appliedRemoteDraftMessageIds = new Set();
 const remoteSessionsOpenedOnChalkboard = new Set();
+const notifiedRemoteDisconnectSessionIds = new Set();
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -352,6 +353,7 @@ const I18N = {
             modelShareProviding: '正在分享我的模型',
             modelShareUsing: '正在使用對方模型',
             modelShareExpires: '共享到期：{time}',
+            peerDisconnected: '對方已斷線',
         },
         exps: {
             searchPlaceholder: '搜尋經驗、關鍵字...',
@@ -669,6 +671,7 @@ const I18N = {
             modelShareProviding: 'Providing my model',
             modelShareUsing: 'Using peer model',
             modelShareExpires: 'Shared until: {time}',
+            peerDisconnected: 'Peer disconnected',
         },
         exps: {
             searchPlaceholder: 'Search experiences, keywords...',
@@ -1897,6 +1900,12 @@ function renderRemoteMessages() {
             }
         );
     });
+    if (session.status === 'disconnected') {
+        appendChatBubble('system', t('remote.peerDisconnected'), [], {
+            container: remoteChatMessages,
+            forceSystem: true,
+        });
+    }
     if (getThinkingIdForMode('remote')) {
         appendThinking(remoteChatMessages, getThinkingIdForMode('remote'));
     }
@@ -2040,10 +2049,22 @@ function renderRemoteSessionControls() {
 }
 
 async function loadRemoteProfileAndState() {
+    const previousSessions = new Map((remoteState.sessions || []).map((session) => [session.id, session]));
     const data = await api('/api/remote/state');
     if (!data.success) return;
     remoteState = data;
     remoteProfile = data.profile;
+    (remoteState.sessions || []).forEach((session) => {
+        const wasDisconnected = previousSessions.get(session.id)?.status === 'disconnected';
+        if (session.status !== 'disconnected' || wasDisconnected || notifiedRemoteDisconnectSessionIds.has(session.id)) return;
+        notifiedRemoteDisconnectSessionIds.add(session.id);
+        const peerName = session.peer?.machineName || session.peer?.userName || session.host || '';
+        const text = peerName ? `${t('remote.peerDisconnected')}：${peerName}` : t('remote.peerDisconnected');
+        appendChatBubble('system', text, [], {
+            container: activeChatMode === 'remote' ? remoteChatMessages : chatMessages,
+            forceSystem: true,
+        });
+    });
     if (remoteAgentNameInput) remoteAgentNameInput.value = data.profile?.agentName || '';
     if (remoteUserNameInput) remoteUserNameInput.value = data.profile?.userName || '';
     renderRemoteSessionControls();
