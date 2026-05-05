@@ -319,8 +319,9 @@ const I18N = {
             connect: '連線',
             saveProfile: '儲存名稱',
             disconnect: '中斷',
-            shareScreen: '分享畫面',
-            shareModel: '分享模型',
+            shareScreen: '傳送畫面',
+            shareScreenConfirm: '對方將能查看你分享的畫面內容。\n\n注意：別分享機敏資訊。',
+            shareModel: '',
             hostPlaceholder: '輸入對方 IP，例如 192.168.1.88',
             agentPlaceholder: 'AI 名稱',
             userPlaceholder: '使用者名稱',
@@ -341,8 +342,8 @@ const I18N = {
             connectSuccess: '已送出連線請求，等待對方允許',
             connectFailed: '遠端連線失敗：{error}',
             noSession: '請先建立或選擇遠端連線',
-            screenShared: '畫面已分享給對方',
-            screenFailed: '畫面分享失敗：{error}',
+            screenShared: '畫面已傳送給對方',
+            screenFailed: '畫面傳送失敗：{error}',
             saveImage: '另存圖片',
             imageSaved: '共享畫面已儲存：{fileName}',
             modeUser: '以我發送',
@@ -637,8 +638,9 @@ const I18N = {
             connect: 'Connect',
             saveProfile: 'Save Names',
             disconnect: 'Disconnect',
-            shareScreen: 'Share Screen',
-            shareModel: 'Share Model',
+            shareScreen: 'Send Screen',
+            shareScreenConfirm: 'The peer will be able to view the screen image you send.\n\nWarning: do not share sensitive information.',
+            shareModel: '',
             hostPlaceholder: 'Enter peer IP, e.g. 192.168.1.88',
             agentPlaceholder: 'AI Name',
             userPlaceholder: 'User Name',
@@ -659,8 +661,8 @@ const I18N = {
             connectSuccess: 'Connection request sent. Waiting for approval.',
             connectFailed: 'Remote connection failed: {error}',
             noSession: 'Please create or select a remote session first',
-            screenShared: 'Screen shared to remote peer',
-            screenFailed: 'Screen sharing failed: {error}',
+            screenShared: 'Screen image sent to remote peer',
+            screenFailed: 'Screen send failed: {error}',
             saveImage: 'Save Image',
             imageSaved: 'Shared image saved: {fileName}',
             modeUser: 'Send as Me',
@@ -1472,18 +1474,7 @@ function getSortedRemoteSessions() {
 }
 
 function getSharedModelSession() {
-    const sessions = getSortedRemoteSessions().filter((item) => {
-        if (!(item.status === 'active' && item.modelShare?.status === 'active' && item.modelShare?.role === 'consumer')) {
-            return false;
-        }
-        const expiresAtMs = Date.parse(String(item.modelShare?.expiresAt || ''));
-        return Number.isNaN(expiresAtMs) || expiresAtMs <= 0 || Date.now() <= expiresAtMs;
-    });
-    if (selectedRemoteSessionId) {
-        const selected = sessions.find((item) => item.id === selectedRemoteSessionId);
-        if (selected) return selected;
-    }
-    return sessions[0] || null;
+    return null;
 }
 
 function ensureRemoteSessionQuickList() {
@@ -1758,9 +1749,7 @@ function getRemoteConnectButtonText(session = null) {
 }
 
 function getModelShareButtonText(session = null) {
-    const status = session?.modelShare?.status || 'idle';
-    if (status === 'pending' || status === 'active') return t('remote.stopModelShare');
-    return t('remote.shareModel');
+    return '';
 }
 
 function buildRemoteHintText(session = null) {
@@ -1768,20 +1757,9 @@ function buildRemoteHintText(session = null) {
     const host = session.peer?.ip || session.host || '';
     const machine = session.peer?.machineName || session.host || '';
     const user = session.peer?.userName || '';
-    const model = session.modelShare?.status || 'idle';
-    const role = session.modelShare?.role || 'none';
-    const expiresAt = session.modelShare?.expiresAt || '';
 
     if (session.status === 'pending_approval') {
         return t('remote.connectingTo', { host }) + ' ' + t('remote.waitingResponse');
-    }
-    if (model === 'pending') {
-        return t('remote.sharingModelTo', { host }) + ' ' + t('remote.waitingResponse');
-    }
-    if (model === 'active') {
-        const shareStatus = role === 'provider' ? t('remote.modelShareProviding') : t('remote.modelShareUsing');
-        const expiryText = expiresAt ? ` / ${t('remote.modelShareExpires', { time: expiresAt })}` : '';
-        return `${machine} / ${user} / ${host} / ${shareStatus}${expiryText}`;
     }
     return `${machine} / ${user} / ${host}`;
 }
@@ -1834,25 +1812,8 @@ function renderRemotePopup() {
 }
 
 function renderModelSharePopup() {
-    const pending = (remoteState.sessions || []).find((session) => session.modelShare?.status === 'pending' && session.modelShare?.role === 'consumer');
-    if (!pending) {
-        pendingModelShareSessionId = '';
-        modelShareOverlay?.classList.remove('visible');
-        return;
-    }
-
-    pendingModelShareSessionId = pending.id;
-    if (modelShareTitle) modelShareTitle.textContent = t('remote.modelShareTitle');
-    if (modelShareSummary) modelShareSummary.textContent = t('remote.modelShareSummary');
-    if (modelShareDetails) {
-        modelShareDetails.textContent = t('remote.modelShareDetails', {
-            machineName: pending.peer?.machineName || 'Unknown',
-            userName: pending.peer?.userName || 'Unknown',
-            agentName: pending.peer?.agentName || 'Unknown',
-            modelInfo: formatRemoteModelInfo(pending),
-        });
-    }
-    modelShareOverlay?.classList.add('visible');
+    pendingModelShareSessionId = '';
+    modelShareOverlay?.classList.remove('visible');
 }
 
 function formatRemoteSender(message = {}) {
@@ -1880,7 +1841,7 @@ function renderRemoteMessages() {
             return;
         }
         const remoteText = message.type === 'screen_share'
-            ? (message.caption || (currentLocale === 'en-US' ? 'Screen shared' : '已分享畫面'))
+            ? (message.caption || (currentLocale === 'en-US' ? 'Screen image sent' : '已傳送畫面'))
             : message.text;
         const chalkControl = message.type === 'chat_message' ? extractChalkboardControlFromReply(remoteText || '') : { displayText: remoteText, draft: null };
         if (chalkControl.draft && !appliedRemoteDraftMessageIds.has(message.id)) {
@@ -2007,11 +1968,8 @@ function renderRemoteSessionControls() {
     localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
     remoteSessionSelect.innerHTML = sessions.length
         ? sessions.map((session) => {
-            const shareLabel = session.modelShare?.status === 'active'
-                ? (session.modelShare?.role === 'consumer' ? ' · Shared' : ' · Provider')
-                : '';
             const peerUser = session.peer?.userName ? ` / ${session.peer.userName}` : '';
-            const label = `${session.peer?.machineName || session.host || session.id}${peerUser} · ${getRemoteStatusText(session)}${shareLabel}`;
+            const label = `${session.peer?.machineName || session.host || session.id}${peerUser} · ${getRemoteStatusText(session)}`;
             return `<option value="${session.id}" ${session.id === selectedRemoteSessionId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
         }).join('')
         : '<option value="">No session</option>';
@@ -2020,11 +1978,8 @@ function renderRemoteSessionControls() {
         quickListEl.innerHTML = sessions.map((session) => {
             const activeClass = session.id === selectedRemoteSessionId ? 'active' : '';
             const pendingClass = session.status === 'pending_approval' ? 'pending' : '';
-            const sharedClass = session.modelShare?.status === 'active'
-                ? (session.modelShare?.role === 'consumer' ? 'shared' : 'shared provider')
-                : '';
             const label = session.peer?.machineName || session.host || session.id;
-            return `<button type="button" class="remote-session-chip ${activeClass} ${pendingClass} ${sharedClass}" data-session-id="${session.id}">${escapeHtml(label)}</button>`;
+            return `<button type="button" class="remote-session-chip ${activeClass} ${pendingClass}" data-session-id="${session.id}">${escapeHtml(label)}</button>`;
         }).join('');
         quickListEl.querySelectorAll('.remote-session-chip').forEach((button) => {
             button.addEventListener('click', () => {
@@ -2039,8 +1994,7 @@ function renderRemoteSessionControls() {
     remoteSessionStatus.textContent = getRemoteStatusText(activeSession);
     remoteChatHint.textContent = buildRemoteHintText(activeSession);
     if (btnRemoteConnect) btnRemoteConnect.textContent = getRemoteConnectButtonText(activeSession);
-    if (btnShareModel) btnShareModel.textContent = getModelShareButtonText(activeSession);
-    if (btnShareModel) btnShareModel.disabled = !activeSession || activeSession.status !== 'active';
+    if (btnShareModel) btnShareModel.style.display = 'none';
     if (btnShareScreen) btnShareScreen.disabled = !activeSession || activeSession.status !== 'active';
     if (btnDisconnectRemote) btnDisconnectRemote.style.display = 'none';
     updateChatModelBadgeDisplay(window.__lastLLMStatus || null);
@@ -2088,10 +2042,12 @@ function resolveRemoteTargets(messageText = '') {
         if (item.role === 'Remote User') targets.add('remote-user');
     });
     if (!targets.size) {
-        if ((remoteSendMode?.value || 'user') === 'local-ai') {
-            targets.add('local-ai');
+        if (/(只問|只叫|only|just).{0,8}(遠端|remote)/i.test(lowerText)) {
             targets.add('remote-ai');
+        } else if (/(只問|只叫|only|just).{0,8}(本地|本機|local)/i.test(lowerText)) {
+            targets.add('local-ai');
         } else {
+            targets.add('local-ai');
             targets.add('remote-ai');
         }
     }
@@ -4714,7 +4670,7 @@ function updateLocaleUI() {
     if (btnSaveRemoteProfile) btnSaveRemoteProfile.textContent = t('remote.saveProfile');
     if (btnDisconnectRemote) btnDisconnectRemote.style.display = 'none';
     if (btnShareScreen) btnShareScreen.textContent = t('remote.shareScreen');
-    if (btnShareModel) btnShareModel.textContent = getModelShareButtonText(getActiveRemoteSession());
+    if (btnShareModel) btnShareModel.style.display = 'none';
     if (remoteChatHint) remoteChatHint.textContent = buildRemoteHintText(getActiveRemoteSession());
     if (remoteSendMode?.options?.[0]) remoteSendMode.options[0].text = t('remote.modeUser');
     if (remoteSendMode?.options?.[1]) remoteSendMode.options[1].text = t('remote.modeLocalAi');
@@ -4722,10 +4678,6 @@ function updateLocaleUI() {
     if (remoteRequestSummary) remoteRequestSummary.textContent = t('remote.requestSummary');
     if (btnAcceptRemoteRequest) btnAcceptRemoteRequest.textContent = t('remote.accept');
     if (btnRejectRemoteRequest) btnRejectRemoteRequest.textContent = t('remote.reject');
-    if (modelShareTitle) modelShareTitle.textContent = t('remote.modelShareTitle');
-    if (modelShareSummary) modelShareSummary.textContent = t('remote.modelShareSummary');
-    if (btnAcceptModelShare) btnAcceptModelShare.textContent = t('remote.accept');
-    if (btnRejectModelShare) btnRejectModelShare.textContent = t('remote.reject');
     
     // Update experience search placeholder
     if (expSearchInput) expSearchInput.placeholder = t('exps.searchPlaceholder');
@@ -5183,17 +5135,17 @@ async function sendChat() {
     iconStop?.classList.remove('hidden');
 
     try {
-        const localSharedModelSession = currentMode === 'local' ? getSharedModelSession() : null;
         const data = currentMode === 'remote'
             ? await (async () => {
                 const targets = resolveRemoteTargets(msg);
                 if (targets.includes('local-ai')) {
+                    const localAiTarget = targets.includes('remote-ai') ? 'remote-ai' : 'remote-user';
                     return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
                         method: 'POST',
                         body: {
                             text: msg,
                             mode: 'local-ai',
-                            target: targets.includes('remote-user') && !targets.includes('remote-ai') ? 'remote-user' : 'remote-ai',
+                            target: localAiTarget,
                             locale: currentLocale,
                         },
                         signal: requestAbortController.signal
@@ -5219,8 +5171,8 @@ async function sendChat() {
                     message: msg,
                     chalkboard: chalkboardAttachment,
                     locale: currentLocale,
-                    preferRemoteModel: !!localSharedModelSession,
-                    remoteSessionId: localSharedModelSession?.id || '',
+                    preferRemoteModel: false,
+                    remoteSessionId: '',
                     localChatSessionId: currentLocalSession?.id || '',
                     history: currentLocalSession?.history || [],
                 },
@@ -5573,6 +5525,7 @@ async function shareRemoteScreen() {
     }
 
     try {
+        if (!confirm(t('remote.shareScreenConfirm'))) return;
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         const video = document.createElement('video');
         video.srcObject = stream;
@@ -5588,7 +5541,7 @@ async function shareRemoteScreen() {
             method: 'POST',
             body: {
                 imageDataUrl,
-                caption: currentLocale === 'en-US' ? 'Shared current screen' : '分享目前畫面',
+                caption: currentLocale === 'en-US' ? 'Sent current screen image' : '傳送目前畫面',
             }
         });
         if (data.success) {
@@ -6203,7 +6156,7 @@ function setupEventListeners() {
     btnClearChat?.addEventListener('click', clearChatMessages);
     btnRemoteConnect?.addEventListener('click', connectRemotePeer);
     btnSaveRemoteProfile?.addEventListener('click', saveRemoteProfile);
-    btnShareModel?.addEventListener('click', requestModelShare);
+    if (btnShareModel) btnShareModel.style.display = 'none';
     btnShareScreen?.addEventListener('click', shareRemoteScreen);
     btnDisconnectRemote?.addEventListener('click', disconnectRemoteSession);
     remoteSessionSelect?.addEventListener('change', () => {
@@ -6215,8 +6168,6 @@ function setupEventListeners() {
     remoteSendMode?.addEventListener('change', updateMentionMenu);
     btnAcceptRemoteRequest?.addEventListener('click', () => respondRemoteRequest(true));
     btnRejectRemoteRequest?.addEventListener('click', () => respondRemoteRequest(false));
-    btnAcceptModelShare?.addEventListener('click', () => respondModelShare(true));
-    btnRejectModelShare?.addEventListener('click', () => respondModelShare(false));
     btnLang?.addEventListener('click', toggleLocale);
 
     // Sidebar Search

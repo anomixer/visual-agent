@@ -423,8 +423,7 @@
                   <option value="user">以我發送</option>
                   <option value="local-ai">以本機 AI 發送</option>
                 </select>
-                <button class="btn-secondary remote-btn" id="btnShareModel" type="button">分享模型</button>
-                <button class="btn-secondary remote-btn" id="btnShareScreen" type="button">分享畫面</button>
+                <button class="btn-secondary remote-btn" id="btnShareScreen" type="button">傳送畫面</button>
                 <button class="btn-secondary remote-btn" id="btnDisconnectRemote" type="button">中斷</button>
               </div>
               <div class="remote-chat-hint" id="remoteChatHint">等待遠端連線。Port: 19168</div>
@@ -669,25 +668,6 @@
       </div>
     </div>
   </div>
-
-  <div class="modal-overlay" id="modelShareOverlay">
-    <div class="modal remote-request-modal">
-      <div class="modal-header">
-        <h3 id="modelShareTitle">分享模型請求</h3>
-      </div>
-      <div class="modal-body">
-        <div class="provider-help-card">
-          <div class="provider-help-title" id="modelShareSummary">對方想改用您本機的 AI API</div>
-          <div class="provider-help-text" id="modelShareDetails"></div>
-        </div>
-        <div class="provider-actions">
-          <button class="btn-secondary" id="btnRejectModelShare">拒絕</button>
-          <button class="btn-primary" id="btnAcceptModelShare">允許</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script src="app.js"></script>
 </body>
 </html>

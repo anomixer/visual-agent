@@ -296,6 +296,8 @@ const remoteAgent = new RemoteAgentService({
                         `You are replying inside a remote support chat over TCP port ${DEFAULT_REMOTE_PORT}.`,
                         'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
                         'If asked what model you are using, answer with the exact current provider and model shown above.',
+                        'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
+                        'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
                         'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
                     ].join('\n'),
                 },
@@ -2629,6 +2631,9 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                         buildLocalAgentContext(currentSession),
                         'You are speaking as the local AI agent inside a peer-to-peer support chat.',
                         'The current requester is the local human user on this machine.',
+                        target === 'remote-ai'
+                            ? 'The remote AI will receive your message next. Provide concise complementary notes, facts to check, or a division-of-labor suggestion. Do not compete with the remote AI for the final answer.'
+                            : 'Answer the local human directly and concisely.',
                         'If asked what model you are using, answer with the exact current provider and model from the system context.',
                         'Keep the answer concise and practical.',
                     ].join('\n'),
@@ -2690,6 +2695,7 @@ app.post('/api/remote/session/:sessionId/share-screen', (req, res) => {
 });
 
 app.post('/api/remote/session/:sessionId/model-share/request', (req, res) => {
+    return res.status(410).json({ success: false, error: 'Model sharing has been removed. Use remote AI collaboration instead.' });
     try {
         const profile = getRemoteProfile();
         const session = remoteAgent.requestModelShare(req.params.sessionId, {
@@ -2709,6 +2715,7 @@ app.post('/api/remote/session/:sessionId/model-share/request', (req, res) => {
 });
 
 app.post('/api/remote/session/:sessionId/model-share/respond', (req, res) => {
+    return res.status(410).json({ success: false, error: 'Model sharing has been removed. Use remote AI collaboration instead.' });
     try {
         const profile = getRemoteProfile();
         const session = remoteAgent.respondModelShare(req.params.sessionId, !!req.body?.accept, {
@@ -2722,6 +2729,7 @@ app.post('/api/remote/session/:sessionId/model-share/respond', (req, res) => {
 });
 
 app.post('/api/remote/session/:sessionId/model-share/cancel', (req, res) => {
+    return res.status(410).json({ success: false, error: 'Model sharing has been removed. Use remote AI collaboration instead.' });
     try {
         const profile = getRemoteProfile();
         const session = remoteAgent.cancelModelShare(req.params.sessionId, {
@@ -2760,6 +2768,7 @@ app.post('/api/remote/session/:sessionId/chalkboard-sync', (req, res) => {
 });
 
 app.post('/api/remote/model-proxy/chat', async (req, res) => {
+    return res.status(410).json({ success: false, error: 'Remote model proxy has been removed. Use remote AI collaboration instead.' });
     try {
         const sessionId = String(req.body?.sessionId || '').trim();
         const message = String(req.body?.message || '').trim();
