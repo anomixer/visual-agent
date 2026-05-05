@@ -266,6 +266,10 @@ const remoteAgent = new RemoteAgentService({
             if (message.type !== 'chat_message') return;
             if (message.target !== 'remote-ai') return;
             const profile = getRemoteProfile();
+            remoteAgent.sendAiStatus(session.id, {
+                status: 'thinking',
+                senderLabel: profile.agentName,
+            });
             const history = session.messages
                 .filter((item) => item.type === 'chat_message')
                 .slice(-6)
@@ -307,6 +311,16 @@ const remoteAgent = new RemoteAgentService({
             fileLog(`Remote AI reply failed: ${error.message}`);
             try {
                 remoteAgent.sendSystemMessage(session.id, `Remote AI failed to reply: ${error.message}`);
+            } catch {
+                // ignore
+            }
+        } finally {
+            try {
+                const profile = getRemoteProfile();
+                remoteAgent.sendAiStatus(session.id, {
+                    status: 'idle',
+                    senderLabel: profile.agentName,
+                });
             } catch {
                 // ignore
             }
@@ -2577,6 +2591,7 @@ app.post('/api/remote/session/:sessionId/respond', (req, res) => {
 });
 
 app.post('/api/remote/session/:sessionId/message', async (req, res) => {
+    let localAiThinkingSessionId = '';
     try {
         const sessionId = req.params.sessionId;
         const text = String(req.body?.text || '').trim();
@@ -2592,6 +2607,11 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
         let outboundText = text;
         if (mode === 'local-ai') {
             const profile = getRemoteProfile();
+            localAiThinkingSessionId = sessionId;
+            remoteAgent.sendAiStatus(sessionId, {
+                status: 'thinking',
+                senderLabel: profile.agentName,
+            });
             const remoteState = remoteAgent.getState();
             const currentSession = remoteState.sessions.find((item) => item.id === sessionId);
             const history = (currentSession?.messages || [])
@@ -2617,6 +2637,11 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
             );
             senderType = 'ai';
             senderLabel = profile.agentName;
+            remoteAgent.sendAiStatus(sessionId, {
+                status: 'idle',
+                senderLabel: profile.agentName,
+            });
+            localAiThinkingSessionId = '';
         }
 
         const message = remoteAgent.sendChatMessage(sessionId, {
@@ -2628,6 +2653,16 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
         touchRemoteState();
         res.json({ success: true, message });
     } catch (error) {
+        if (localAiThinkingSessionId) {
+            try {
+                remoteAgent.sendAiStatus(localAiThinkingSessionId, {
+                    status: 'idle',
+                    senderLabel: getRemoteProfile().agentName,
+                });
+            } catch {
+                // ignore
+            }
+        }
         res.status(400).json({ success: false, error: error.message });
     }
 });

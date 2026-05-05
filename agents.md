@@ -657,3 +657,28 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 - Browser 狀態取決於 Playwright cache 中的 \chrome-headless-shell.exe\ 是否存在。
 - 缺失時，UI提供一鍵執行 \install-playwright-chromium\ SOP，安裝完畢無需重啟即可出現 Browser tab。
 
+---
+
+## 📌 2026.05.05 — 遠端模型共享與 Chalkboard 協作同步
+
+### 版本
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.05.05`。
+
+### 遠端模型共享
+- 模型分享請求視窗新增 `AI 模型` 欄位，顯示對方目前 Provider / Model。
+- 接受共享模型後，中央區域會自動切到 Chalkboard tab，方便立即協作。
+- Chat 模型徽章在使用遠端共享模型時，會顯示遠端 AI 與模型資訊。
+
+### 遠端連線提示
+- 遠端連線請求視窗補上說明文字：接受後雙方與 AI 對話可互通。
+
+### Chalkboard 雙向同步
+- 遠端連線啟用時，Chalkboard 會以 `chalkboard_state` 事件同步雙方畫面。
+- 本機使用者、遠端使用者或 AI 寫入 Chalkboard 後，對方都能看到最新黑板。
+- 同步改為 idle 約 1 秒後送出；若任一方正在畫、拖圖、放文字或操作文字框，會暫停傳送與套用遠端畫面，避免互相覆蓋。
+
+### 遠端 AI 思考狀態
+- 新增 `ai_status` 遠端事件。
+- 自家 AI 推理時顯示 `本地 AI: 思考中`；對方 AI 推理時顯示 `遠端 <AI名稱>: 思考中`。
+- 推理結束或錯誤時會回到 `待命`，狀態列樣式加粗並固定顯示。
+

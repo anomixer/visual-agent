@@ -56,6 +56,8 @@ let chalkboardHintTimer = null;
 let chalkboardHintClickDismissHandler = null;
 let suppressRemoteChalkboardSync = false;
 let remoteChalkboardSyncTimer = null;
+let remoteChalkboardApplyTimer = null;
+let queuedRemoteChalkboardMessage = null;
 const appliedRemoteChalkboardMessageIds = new Set();
 const appliedRemoteDraftMessageIds = new Set();
 const remoteSessionsOpenedOnChalkboard = new Set();
@@ -301,7 +303,7 @@ const I18N = {
             connectionError: '對話連線發生錯誤。',
             localSessionNew: '新增對話',
             localSessionDefault: '本機對話',
-            pendingRowLocal: '本機 AI',
+            pendingRowLocal: '本地 AI',
             pendingRowRemote: '遠端 AI',
             pendingIdle: '待命',
             pendingBusy: '思考中',
@@ -1630,9 +1632,15 @@ function updateSendButtonState() {
 function updatePendingStatusRow() {
     const row = ensureChatPendingStatusRow();
     if (!row) return;
+    const session = getActiveRemoteSession();
+    const aiStatus = session?.aiStatus || {};
+    const localBusy = isModePending('local') || aiStatus.localAi === 'thinking';
+    const remoteBusy = isModePending('remote') || aiStatus.remoteAi === 'thinking';
+    const localLabel = currentLocale === 'en-US' ? 'Local AI' : '本地 AI';
+    const remoteLabel = currentLocale === 'en-US' ? 'Remote AI' : '遠端 AI';
     row.innerHTML = `
-        <div class="chat-pending-pill ${isModePending('local') ? 'busy' : ''}">${escapeHtml(t('chat.pendingRowLocal'))}: ${escapeHtml(isModePending('local') ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
-        <div class="chat-pending-pill ${isModePending('remote') ? 'busy' : ''}">${escapeHtml(t('chat.pendingRowRemote'))}: ${escapeHtml(isModePending('remote') ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
+        <div class="chat-pending-pill ${localBusy ? 'busy' : ''}">${escapeHtml(localLabel)}: ${escapeHtml(localBusy ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
+        <div class="chat-pending-pill ${remoteBusy ? 'busy' : ''}">${escapeHtml(remoteLabel)}: ${escapeHtml(remoteBusy ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
     `;
 }
 
@@ -2027,6 +2035,7 @@ function renderRemoteSessionControls() {
     if (btnShareScreen) btnShareScreen.disabled = !activeSession || activeSession.status !== 'active';
     if (btnDisconnectRemote) btnDisconnectRemote.style.display = 'none';
     updateChatModelBadgeDisplay(window.__lastLLMStatus || null);
+    updatePendingStatusRow();
     renderRemoteMessages();
 }
 
@@ -2139,8 +2148,12 @@ function scheduleRemoteChalkboardSync(hasContent = true) {
     if (remoteChalkboardSyncTimer) clearTimeout(remoteChalkboardSyncTimer);
     remoteChalkboardSyncTimer = setTimeout(() => {
         remoteChalkboardSyncTimer = null;
+        if (isChalkboardInteractionBusy()) {
+            scheduleRemoteChalkboardSync(chalkboardState.hasUserContent);
+            return;
+        }
         sendRemoteChalkboardSnapshot(hasContent);
-    }, 450);
+    }, 1000);
 }
 
 async function sendRemoteChalkboardSnapshot(hasContent = true) {
@@ -2164,6 +2177,11 @@ async function sendRemoteChalkboardSnapshot(hasContent = true) {
 function applyRemoteChalkboardState(message = {}) {
     if (!message?.id || appliedRemoteChalkboardMessageIds.has(message.id)) return;
     if (!message.imageDataUrl || !message.imageDataUrl.startsWith('data:image/')) return;
+    if (isChalkboardInteractionBusy()) {
+        queuedRemoteChalkboardMessage = message;
+        scheduleQueuedRemoteChalkboardApply();
+        return;
+    }
     appliedRemoteChalkboardMessageIds.add(message.id);
 
     const img = new Image();
@@ -2191,6 +2209,30 @@ function applyRemoteChalkboardState(message = {}) {
         applyImage(0);
     };
     img.src = message.imageDataUrl;
+}
+
+function isChalkboardInteractionBusy() {
+    return Boolean(
+        chalkboardState.drawing ||
+        chalkboardState.pendingShapePreview ||
+        chalkboardState.textManipulation ||
+        chalkboardState.pendingText ||
+        chalkboardState.pendingImage
+    );
+}
+
+function scheduleQueuedRemoteChalkboardApply() {
+    if (remoteChalkboardApplyTimer) clearTimeout(remoteChalkboardApplyTimer);
+    remoteChalkboardApplyTimer = setTimeout(() => {
+        remoteChalkboardApplyTimer = null;
+        if (isChalkboardInteractionBusy()) {
+            scheduleQueuedRemoteChalkboardApply();
+            return;
+        }
+        const message = queuedRemoteChalkboardMessage;
+        queuedRemoteChalkboardMessage = null;
+        if (message) applyRemoteChalkboardState(message);
+    }, 1000);
 }
 
 function getNormalizedRect(start, end) {

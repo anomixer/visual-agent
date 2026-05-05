@@ -1960,16 +1960,19 @@ ol {
 .chat-pending-status-row {
   display: flex;
   gap: 8px;
-  padding: 6px 12px 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .chat-pending-pill {
-  font-size: 10px;
-  padding: 3px 8px;
+  font-size: 11px;
+  padding: 4px 9px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);
+  font-weight: 600;
 }
 
 .chat-pending-pill.busy {

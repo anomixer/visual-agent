@@ -48,6 +48,16 @@ function buildIdleModelShare() {
     };
 }
 
+function buildIdleAiStatus() {
+    return {
+        localAi: 'idle',
+        localAiLabel: '',
+        remoteAi: 'idle',
+        remoteAiLabel: '',
+        updatedAt: '',
+    };
+}
+
 class RemoteAgentService {
     constructor(options = {}) {
         this.port = Number(options.port) || DEFAULT_PORT;
@@ -194,6 +204,18 @@ class RemoteAgentService {
             return;
         }
 
+        if (payload.type === 'ai_status') {
+            session.aiStatus = {
+                ...(session.aiStatus || buildIdleAiStatus()),
+                remoteAi: payload.status === 'thinking' ? 'thinking' : 'idle',
+                remoteAiLabel: payload.senderLabel || session.peer?.agentName || session.peer?.machineName || 'Remote AI',
+                updatedAt: payload.createdAt || new Date().toISOString(),
+            };
+            session.lastEventAt = new Date().toISOString();
+            this.onStateChanged();
+            return;
+        }
+
         if (payload.type === 'chat_message' || payload.type === 'screen_share' || payload.type === 'system_message' || payload.type === 'chalkboard_state') {
             const message = {
                 id: payload.id || createId('msg'),
@@ -246,6 +268,7 @@ class RemoteAgentService {
                 modelShareEnabled: false,
             },
             modelShare: buildIdleModelShare(),
+            aiStatus: buildIdleAiStatus(),
             messages: [],
         };
         this.sessions.set(sessionId, session);
@@ -272,6 +295,7 @@ class RemoteAgentService {
                         modelShareEnabled: false,
                     },
                     modelShare: buildIdleModelShare(),
+                    aiStatus: buildIdleAiStatus(),
                     messages: [],
                 };
                 this.sessions.set(sessionId, session);
@@ -433,6 +457,26 @@ class RemoteAgentService {
         this.sendRaw(session.socket, message);
         this.onStateChanged();
         return message;
+    }
+
+    sendAiStatus(sessionId, payload = {}) {
+        const session = this.requireActiveSession(sessionId);
+        const status = payload.status === 'thinking' ? 'thinking' : 'idle';
+        const createdAt = new Date().toISOString();
+        session.aiStatus = {
+            ...(session.aiStatus || buildIdleAiStatus()),
+            localAi: status,
+            localAiLabel: payload.senderLabel || session.local?.agentName || 'Local AI',
+            updatedAt: createdAt,
+        };
+        this.sendRaw(session.socket, {
+            type: 'ai_status',
+            status,
+            senderLabel: payload.senderLabel || session.local?.agentName || 'Local AI',
+            createdAt,
+        });
+        this.onStateChanged();
+        return this.toClientSession(session);
     }
 
     requestModelShare(sessionId, payload = {}) {
@@ -603,6 +647,7 @@ class RemoteAgentService {
             peer: session.peer || null,
             capabilities: session.capabilities || { modelShareEnabled: false },
             modelShare: session.modelShare || { status: 'idle' },
+            aiStatus: session.aiStatus || buildIdleAiStatus(),
             messages: session.messages.slice(-120),
         };
     }
