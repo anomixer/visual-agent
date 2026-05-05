@@ -42,6 +42,7 @@ function buildIdleModelShare() {
         cancelledBy: '',
         provider: null,
         consumer: null,
+        modelInfo: null,
         note: '',
         lastStatus: '',
     };
@@ -146,6 +147,7 @@ class RemoteAgentService {
                 proxyToken: payload.proxyToken || '',
                 provider: payload.provider || session.peer || null,
                 consumer: payload.consumer || session.local || null,
+                modelInfo: payload.modelInfo || payload.provider?.modelInfo || null,
                 note: payload.note || '',
             };
             this.emitSystemMessage(session, 'system', `${session.modelShare.requestedBy} wants to share ${session.peer?.agentName || session.peer?.machineName || 'their AI'} with this machine.`);
@@ -165,6 +167,7 @@ class RemoteAgentService {
                 expiresAt: payload.accept ? (payload.expiresAt || session.modelShare?.expiresAt || '') : '',
                 provider: payload.provider || session.local || session.modelShare?.provider || null,
                 consumer: payload.accept ? (payload.consumer || session.peer || session.modelShare?.consumer || null) : null,
+                modelInfo: payload.modelInfo || session.modelShare?.modelInfo || null,
             };
             this.emitSystemMessage(session, 'system', payload.accept
                 ? `${session.modelShare.respondedBy} accepted your shared model.`
@@ -191,7 +194,7 @@ class RemoteAgentService {
             return;
         }
 
-        if (payload.type === 'chat_message' || payload.type === 'screen_share' || payload.type === 'system_message') {
+        if (payload.type === 'chat_message' || payload.type === 'screen_share' || payload.type === 'system_message' || payload.type === 'chalkboard_state') {
             const message = {
                 id: payload.id || createId('msg'),
                 type: payload.type,
@@ -201,6 +204,9 @@ class RemoteAgentService {
                 text: payload.text || '',
                 imageDataUrl: payload.imageDataUrl || '',
                 caption: payload.caption || '',
+                width: Number(payload.width) || 0,
+                height: Number(payload.height) || 0,
+                hasContent: payload.hasContent !== false,
                 target: payload.target || 'remote-user',
                 createdAt: payload.createdAt || new Date().toISOString(),
             };
@@ -405,6 +411,30 @@ class RemoteAgentService {
         return message;
     }
 
+    sendChalkboardState(sessionId, payload = {}) {
+        const session = this.requireActiveSession(sessionId);
+        const message = {
+            id: createId('chalk'),
+            type: 'chalkboard_state',
+            direction: 'outgoing',
+            senderType: payload.senderType || 'user',
+            senderLabel: payload.senderLabel || '',
+            text: '',
+            imageDataUrl: payload.imageDataUrl || '',
+            caption: payload.caption || '',
+            width: Number(payload.width) || 0,
+            height: Number(payload.height) || 0,
+            hasContent: payload.hasContent !== false,
+            target: 'remote-user',
+            createdAt: new Date().toISOString(),
+        };
+        session.messages.push(message);
+        session.lastEventAt = message.createdAt;
+        this.sendRaw(session.socket, message);
+        this.onStateChanged();
+        return message;
+    }
+
     requestModelShare(sessionId, payload = {}) {
         const session = this.requireActiveSession(sessionId);
         const proxyToken = crypto.randomBytes(24).toString('hex');
@@ -420,6 +450,7 @@ class RemoteAgentService {
             expiresAt,
             provider: payload.provider || session.local || null,
             consumer: payload.consumer || session.peer || null,
+            modelInfo: payload.modelInfo || null,
             note: payload.note || '',
         };
         this.sendRaw(session.socket, {
@@ -430,6 +461,7 @@ class RemoteAgentService {
             expiresAt: session.modelShare.expiresAt,
             provider: session.modelShare.provider,
             consumer: session.modelShare.consumer,
+            modelInfo: session.modelShare.modelInfo,
             note: session.modelShare.note,
         });
         this.onStateChanged();
@@ -458,6 +490,7 @@ class RemoteAgentService {
             expiresAt: accept ? (session.modelShare.expiresAt || '') : '',
             provider: session.modelShare.provider || session.peer || null,
             consumer: accept ? (session.local || null) : null,
+            modelInfo: session.modelShare.modelInfo || null,
         });
         this.onStateChanged();
         return this.toClientSession(session);

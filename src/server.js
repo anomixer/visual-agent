@@ -162,6 +162,18 @@ function getRemoteProfile() {
     };
 }
 
+function getLocalModelShareInfo() {
+    const provider = llm.getCurrentProvider() || 'Unknown';
+    const model = llm.getCurrentModel() || 'Unknown';
+    const visionModel = llm.getCurrentVisionModel() || '';
+    return {
+        provider,
+        model,
+        visionModel,
+        label: [provider, model].filter(Boolean).join(' / ') || 'Unknown',
+    };
+}
+
 function touchRemoteState() {
     remoteStateTick = Date.now();
 }
@@ -2647,6 +2659,11 @@ app.post('/api/remote/session/:sessionId/model-share/request', (req, res) => {
         const profile = getRemoteProfile();
         const session = remoteAgent.requestModelShare(req.params.sessionId, {
             requestedBy: `${profile.userName} @ ${profile.machineName}`,
+            provider: {
+                ...profile,
+                modelInfo: getLocalModelShareInfo(),
+            },
+            modelInfo: getLocalModelShareInfo(),
             note: String(req.body?.note || '').trim(),
         });
         touchRemoteState();
@@ -2678,6 +2695,30 @@ app.post('/api/remote/session/:sessionId/model-share/cancel', (req, res) => {
         });
         touchRemoteState();
         res.json({ success: true, session });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/remote/session/:sessionId/chalkboard-sync', (req, res) => {
+    try {
+        const imageDataUrl = String(req.body?.imageDataUrl || '').trim();
+        const hasContent = req.body?.hasContent !== false;
+        if (!imageDataUrl.startsWith('data:image/')) {
+            return res.status(400).json({ success: false, error: 'Invalid image data' });
+        }
+        const profile = getRemoteProfile();
+        const message = remoteAgent.sendChalkboardState(req.params.sessionId, {
+            senderType: String(req.body?.senderType || 'user').trim() || 'user',
+            senderLabel: String(req.body?.senderLabel || profile.userName).trim() || profile.userName,
+            imageDataUrl,
+            caption: String(req.body?.caption || '').trim(),
+            width: Number(req.body?.width) || 0,
+            height: Number(req.body?.height) || 0,
+            hasContent,
+        });
+        touchRemoteState();
+        res.json({ success: true, message });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }

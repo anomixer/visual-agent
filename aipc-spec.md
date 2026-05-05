@@ -162,24 +162,24 @@ OS: Windows 10 / 11
 
 第一階段：環境檢測 (Check)
 指令 (PowerShell):
-` ` `powershell
+```powershell
 # 回傳 $true 表示已完成，跳過安裝
 $false
-` ` `
+```
 
 第二階段：安裝 (Install)
 指令 (PowerShell):
-` ` `powershell
+```powershell
 UI 顯示內容: 「人類可讀的進度說明」
 # 實際 PowerShell 指令
-` ` `
+```
 
 第三階段：驗證 (Verify)
 指令 (PowerShell):
-` ` `powershell
+```powershell
 # 回傳 $true 表示成功
 $true
-` ` `
+```
 
 4. 自動排錯邏輯 (Error Handling)
 錯誤代碼 / 訊息,可能原因,AI 自動修復行動

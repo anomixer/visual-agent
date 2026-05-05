@@ -54,6 +54,11 @@ let activeMentionIndex = 0;
 let pendingModelShareSessionId = '';
 let chalkboardHintTimer = null;
 let chalkboardHintClickDismissHandler = null;
+let suppressRemoteChalkboardSync = false;
+let remoteChalkboardSyncTimer = null;
+const appliedRemoteChalkboardMessageIds = new Set();
+const appliedRemoteDraftMessageIds = new Set();
+const remoteSessionsOpenedOnChalkboard = new Set();
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -327,7 +332,7 @@ const I18N = {
             modelShareRequested: '已送出分享模型請求，等待對方回應',
             modelShareActive: '共享模型已啟用，本機 AI 對話會暫時改走對方模型',
             modelShareRejected: '模型分享已被拒絕',
-            modelShareDetails: '機器名稱：{machineName}\n使用者名稱：{userName}\nAI 名稱：{agentName}\n說明：是否接受對方分享他的 AI 模型給您使用？接受後，本機所有 AI 對話 API 會暫時改呼叫對方 API。',
+            modelShareDetails: '機器名稱：{machineName}\n使用者名稱：{userName}\nAI 名稱：{agentName}\nAI 模型：{modelInfo}\n說明：是否接受對方分享他的 AI 模型給您使用？接受後，本機所有 AI 對話 API 會暫時改呼叫對方 API。',
             requestAccepted: '您已接受對話。請開始聊天或支援',
             profileSaved: '遠端身份設定已儲存',
             connectSuccess: '已送出連線請求，等待對方允許',
@@ -644,7 +649,7 @@ const I18N = {
             modelShareRequested: 'Model share request sent. Waiting for response.',
             modelShareActive: 'Shared model is active. Local AI chats now use the peer model.',
             modelShareRejected: 'Model sharing was rejected.',
-            modelShareDetails: 'Machine: {machineName}\nUser: {userName}\nAI: {agentName}\nNote: accept the peer model as a temporary shared model? If accepted, all local AI chat API calls will go through the peer API.',
+            modelShareDetails: 'Machine: {machineName}\nUser: {userName}\nAI: {agentName}\nAI Model: {modelInfo}\nNote: accept the peer model as a temporary shared model? If accepted, all local AI chat API calls will go through the peer API.',
             requestAccepted: 'You accepted the conversation. Start chatting or supporting now.',
             profileSaved: 'Remote identity saved',
             connectSuccess: 'Connection request sent. Waiting for approval.',
@@ -1635,14 +1640,15 @@ function updateChatModelBadgeDisplay(lastStatus = null) {
     if (!chatModelBadge) return;
     const sharedSession = getSharedModelSession();
     const currentModel = lastStatus?.modelName || chatModelBadge.dataset.baseModel || '';
+    const sharedModelInfo = sharedSession ? formatRemoteModelInfo(sharedSession) : '';
     const sharedText = sharedSession
-        ? `${sharedSession.peer?.agentName || sharedSession.peer?.machineName || sharedSession.host} model (Shared)`
+        ? `${sharedSession.peer?.agentName || sharedSession.peer?.machineName || sharedSession.host} / ${sharedModelInfo} (Shared)`
         : '';
     const badgeText = sharedText || currentModel || t('chat.modelBadge');
     chatModelBadge.textContent = badgeText;
     chatModelBadge.style.display = (sharedText || (lastStatus?.modelReady && currentModel)) ? 'inline-block' : 'none';
     chatModelBadge.title = sharedSession
-        ? `${t('remote.modelShareUsing')} · ${sharedSession.peer?.machineName || ''} / ${sharedSession.peer?.agentName || ''}${sharedSession.modelShare?.expiresAt ? ` / ${t('remote.modelShareExpires', { time: sharedSession.modelShare.expiresAt })}` : ''}`
+        ? `${t('remote.modelShareUsing')} · ${sharedSession.peer?.machineName || ''} / ${sharedSession.peer?.agentName || ''} / ${sharedModelInfo}${sharedSession.modelShare?.expiresAt ? ` / ${t('remote.modelShareExpires', { time: sharedSession.modelShare.expiresAt })}` : ''}`
         : t('chat.switchModel');
 }
 
@@ -1789,6 +1795,13 @@ function switchChatMode(mode) {
     updateSendButtonState();
 }
 
+function formatRemoteModelInfo(session = {}) {
+    const info = session.modelShare?.modelInfo || session.modelShare?.provider?.modelInfo || session.peer?.modelInfo || null;
+    if (!info) return 'Unknown';
+    if (typeof info === 'string') return info || 'Unknown';
+    return info.label || [info.provider, info.model].filter(Boolean).join(' / ') || info.model || 'Unknown';
+}
+
 function renderRemotePopup() {
     const pending = remoteState.pendingApprovals?.[0];
     if (!pending) {
@@ -1825,6 +1838,7 @@ function renderModelSharePopup() {
             machineName: pending.peer?.machineName || 'Unknown',
             userName: pending.peer?.userName || 'Unknown',
             agentName: pending.peer?.agentName || 'Unknown',
+            modelInfo: formatRemoteModelInfo(pending),
         });
     }
     modelShareOverlay?.classList.add('visible');
@@ -1850,11 +1864,21 @@ function renderRemoteMessages() {
     }
 
     session.messages.forEach((message) => {
+        if (message.type === 'chalkboard_state') {
+            applyRemoteChalkboardState(message);
+            return;
+        }
+        const remoteText = message.type === 'screen_share'
+            ? (message.caption || (currentLocale === 'en-US' ? 'Screen shared' : '已分享畫面'))
+            : message.text;
+        const chalkControl = message.type === 'chat_message' ? extractChalkboardControlFromReply(remoteText || '') : { displayText: remoteText, draft: null };
+        if (chalkControl.draft && !appliedRemoteDraftMessageIds.has(message.id)) {
+            appliedRemoteDraftMessageIds.add(message.id);
+            applyAgentChalkboardDraft(chalkControl.draft);
+        }
         appendChatBubble(
             message.senderType === 'system' ? 'system' : (message.senderType === 'ai' ? 'ai' : 'user'),
-            message.type === 'screen_share'
-                ? (message.caption || (currentLocale === 'en-US' ? 'Screen shared' : '已分享畫面'))
-                : message.text,
+            chalkControl.displayText || remoteText,
             [],
             {
                 container: remoteChatMessages,
@@ -2016,6 +2040,11 @@ async function loadRemoteProfileAndState() {
     renderRemoteSessionControls();
     renderRemotePopup();
     renderModelSharePopup();
+    const activeSession = getActiveRemoteSession();
+    if (activeSession?.status === 'active' && !remoteSessionsOpenedOnChalkboard.has(activeSession.id)) {
+        remoteSessionsOpenedOnChalkboard.add(activeSession.id);
+        openTab('chalkboard');
+    }
 }
 
 function resolveRemoteTargets(messageText = '') {
@@ -2052,6 +2081,9 @@ function debounce(fn, delay) {
 
 function markChalkboardUserContent(hasContent = true) {
     chalkboardState.hasUserContent = Boolean(hasContent);
+    if (hasContent || chalkboardState.hasInteracted) {
+        scheduleRemoteChalkboardSync(Boolean(hasContent));
+    }
 }
 
 function buildChalkboardChatAttachment() {
@@ -2075,6 +2107,90 @@ function buildChalkboardChatAttachment() {
         width: exportCanvas.width,
         height: exportCanvas.height
     };
+}
+
+function buildRemoteChalkboardPayload(hasContent = true) {
+    if (!chalkboardCanvas || !chalkboardState.ctx) return null;
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = chalkboardCanvas.width;
+    exportCanvas.height = chalkboardCanvas.height;
+    const exportCtx = exportCanvas.getContext('2d');
+    if (!exportCtx) return null;
+
+    exportCtx.fillStyle = '#173b2f';
+    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    if (hasContent) {
+        exportCtx.drawImage(chalkboardCanvas, 0, 0);
+    }
+
+    return {
+        imageDataUrl: exportCanvas.toDataURL('image/png'),
+        width: exportCanvas.width,
+        height: exportCanvas.height,
+        hasContent,
+    };
+}
+
+function scheduleRemoteChalkboardSync(hasContent = true) {
+    if (suppressRemoteChalkboardSync) return;
+    const session = getActiveRemoteSession();
+    if (!session || session.status !== 'active') return;
+    if (remoteChalkboardSyncTimer) clearTimeout(remoteChalkboardSyncTimer);
+    remoteChalkboardSyncTimer = setTimeout(() => {
+        remoteChalkboardSyncTimer = null;
+        sendRemoteChalkboardSnapshot(hasContent);
+    }, 450);
+}
+
+async function sendRemoteChalkboardSnapshot(hasContent = true) {
+    const session = getActiveRemoteSession();
+    const payload = buildRemoteChalkboardPayload(hasContent);
+    if (!session || !payload) return;
+    try {
+        await api(`/api/remote/session/${session.id}/chalkboard-sync`, {
+            method: 'POST',
+            body: {
+                ...payload,
+                senderLabel: remoteProfile?.userName || '',
+                caption: currentLocale === 'en-US' ? 'Chalkboard updated' : 'Chalkboard 已更新',
+            }
+        });
+    } catch (error) {
+        console.warn('[Remote Chalkboard] sync failed:', error.message);
+    }
+}
+
+function applyRemoteChalkboardState(message = {}) {
+    if (!message?.id || appliedRemoteChalkboardMessageIds.has(message.id)) return;
+    if (!message.imageDataUrl || !message.imageDataUrl.startsWith('data:image/')) return;
+    appliedRemoteChalkboardMessageIds.add(message.id);
+
+    const img = new Image();
+    img.onload = () => {
+        openTab('chalkboard');
+        const applyImage = (attempt = 0) => {
+            if (!chalkboardState.ctx || chalkboardState.cssWidth <= 0 || chalkboardState.cssHeight <= 0) {
+                if (attempt < 8) setTimeout(() => applyImage(attempt + 1), 120);
+                return;
+            }
+            suppressRemoteChalkboardSync = true;
+            cancelPendingChalkPreview(false);
+            hidePendingTextBox();
+            clearSelectionBox();
+            chalkboardState.hasInteracted = true;
+            chalkboardState.hintDrawn = true;
+            chalkboardState.history = [];
+            clearChalkboardSurface();
+            chalkboardState.ctx.drawImage(img, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+            chalkboardState.hasUserContent = message.hasContent !== false;
+            syncChalkboardUI();
+            suppressRemoteChalkboardSync = false;
+            showChalkboardFloatHint(currentLocale === 'en-US' ? 'Remote Chalkboard updated' : '遠端 Chalkboard 已同步');
+        };
+        applyImage(0);
+    };
+    img.src = message.imageDataUrl;
 }
 
 function getNormalizedRect(start, end) {
@@ -5381,6 +5497,7 @@ async function respondModelShare(accept) {
     pendingModelShareSessionId = '';
     if (data.success) {
         addUILog(accept ? t('remote.modelShareActive') : t('remote.modelShareRejected'), accept ? 'success' : 'warn');
+        if (accept) openTab('chalkboard');
         await loadRemoteProfileAndState();
     }
 }
