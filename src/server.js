@@ -162,18 +162,6 @@ function getRemoteProfile() {
     };
 }
 
-function getLocalModelShareInfo() {
-    const provider = llm.getCurrentProvider() || 'Unknown';
-    const model = llm.getCurrentModel() || 'Unknown';
-    const visionModel = llm.getCurrentVisionModel() || '';
-    return {
-        provider,
-        model,
-        visionModel,
-        label: [provider, model].filter(Boolean).join(' / ') || 'Unknown',
-    };
-}
-
 function touchRemoteState() {
     remoteStateTick = Date.now();
 }
@@ -291,7 +279,6 @@ const remoteAgent = new RemoteAgentService({
                         `Remote peer IP: ${session.peer?.ip || session.host || 'Unknown'}`,
                         `Current AI provider: ${llm.getCurrentProvider() || 'Unknown'}`,
                         `Current AI model: ${llm.getCurrentModel() || 'Unknown'}`,
-                        `Model sharing status for this session: ${session.modelShare?.status || 'idle'}`,
                         `The current requester is: ${message.senderType === 'ai' ? 'the remote AI agent' : 'the remote human user'} (${message.senderLabel || 'Unknown'}).`,
                         `You are replying inside a remote support chat over TCP port ${DEFAULT_REMOTE_PORT}.`,
                         'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
@@ -853,9 +840,6 @@ function buildTaskTitle(sop, action = 'install') {
 
 function buildLocalAgentContext(sessionSummary = null) {
     const profile = getRemoteProfile();
-    const sharedProvider = sessionSummary?.status === 'active' && sessionSummary?.modelShare?.status === 'active' && sessionSummary?.modelShare?.role === 'consumer'
-        ? (sessionSummary.modelShare.provider || sessionSummary.peer || null)
-        : null;
     const lines = [
         `Current AI agent name: ${profile.agentName}`,
         `Current machine name: ${profile.machineName}`,
@@ -870,14 +854,6 @@ function buildLocalAgentContext(sessionSummary = null) {
         lines.push(`Connected remote user name: ${sessionSummary.peer.userName || 'Unknown'}`);
         lines.push(`Connected remote AI name: ${sessionSummary.peer.agentName || 'Unknown'}`);
         lines.push(`Connected remote IP: ${sessionSummary.peer.ip || sessionSummary.host || 'Unknown'}`);
-        lines.push(`Remote model sharing status: ${sessionSummary.modelShare?.status || 'idle'}`);
-        lines.push(`Remote model sharing role: ${sessionSummary.modelShare?.role || 'none'}`);
-    }
-
-    if (sharedProvider) {
-        lines.push(`Shared model provider machine: ${sharedProvider.machineName || 'Unknown'}`);
-        lines.push(`Shared model provider AI: ${sharedProvider.agentName || 'Unknown'}`);
-        lines.push(`Shared model token expires at: ${sessionSummary.modelShare?.expiresAt || 'Unknown'}`);
     }
 
     return lines.join('\n');
@@ -886,60 +862,6 @@ function buildLocalAgentContext(sessionSummary = null) {
 function getRemoteSessionById(sessionId = '') {
     return remoteAgent.getSession(sessionId) || null;
 }
-
-function getSharedModelSession(preferredSessionId = '') {
-    const sessions = remoteAgent.getState().sessions
-        .filter((item) => {
-            if (!(item.status === 'active' && item.modelShare?.status === 'active' && item.modelShare?.role === 'consumer')) {
-                return false;
-            }
-            const expiresAtMs = Date.parse(String(item.modelShare?.expiresAt || ''));
-            return Number.isNaN(expiresAtMs) || expiresAtMs <= 0 || Date.now() <= expiresAtMs;
-        })
-        .sort((a, b) => new Date(b.lastEventAt || 0).getTime() - new Date(a.lastEventAt || 0).getTime());
-    if (preferredSessionId) {
-        const preferred = sessions.find((item) => item.id === preferredSessionId);
-        if (preferred) return preferred;
-    }
-    return sessions[0] || null;
-}
-
-async function proxyChatToSharedRemoteModel({ session, message, history = [], systemContext = '', locale = 'zh-TW', chalkboardAttachment = null }) {
-    const peerHost = session?.peer?.ip || session?.host;
-    const proxyToken = session?.modelShare?.proxyToken || '';
-    if (!peerHost) {
-        throw new Error('Shared model session is missing peer IP.');
-    }
-    if (!proxyToken) {
-        throw new Error('Shared model session is missing authorization token.');
-    }
-
-    const response = await fetch(`http://${peerHost}:3210/api/remote/model-proxy/chat`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-AIPC-Model-Share-Token': proxyToken,
-        },
-        body: JSON.stringify({
-            sessionId: session.id,
-            message,
-            history,
-            locale,
-            systemContext,
-            chalkboard: chalkboardAttachment || null,
-            token: proxyToken,
-        }),
-        signal: AbortSignal.timeout(180000),
-    });
-
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Remote shared model failed (${response.status}): ${text.slice(0, 160)}`);
-    }
-
-    return response.json();
-}
-
 
 function hasLikelySopForMessage(message = '', sops = []) {
     const text = String(message || '').toLowerCase();
@@ -2696,51 +2618,14 @@ app.post('/api/remote/session/:sessionId/share-screen', (req, res) => {
 
 app.post('/api/remote/session/:sessionId/model-share/request', (req, res) => {
     return res.status(410).json({ success: false, error: 'Model sharing has been removed. Use remote AI collaboration instead.' });
-    try {
-        const profile = getRemoteProfile();
-        const session = remoteAgent.requestModelShare(req.params.sessionId, {
-            requestedBy: `${profile.userName} @ ${profile.machineName}`,
-            provider: {
-                ...profile,
-                modelInfo: getLocalModelShareInfo(),
-            },
-            modelInfo: getLocalModelShareInfo(),
-            note: String(req.body?.note || '').trim(),
-        });
-        touchRemoteState();
-        res.json({ success: true, session });
-    } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
-    }
 });
 
 app.post('/api/remote/session/:sessionId/model-share/respond', (req, res) => {
     return res.status(410).json({ success: false, error: 'Model sharing has been removed. Use remote AI collaboration instead.' });
-    try {
-        const profile = getRemoteProfile();
-        const session = remoteAgent.respondModelShare(req.params.sessionId, !!req.body?.accept, {
-            respondedBy: `${profile.userName} @ ${profile.machineName}`,
-        });
-        touchRemoteState();
-        res.json({ success: true, session });
-    } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
-    }
 });
 
 app.post('/api/remote/session/:sessionId/model-share/cancel', (req, res) => {
     return res.status(410).json({ success: false, error: 'Model sharing has been removed. Use remote AI collaboration instead.' });
-    try {
-        const profile = getRemoteProfile();
-        const session = remoteAgent.cancelModelShare(req.params.sessionId, {
-            cancelledBy: `${profile.userName} @ ${profile.machineName}`,
-            reason: String(req.body?.reason || '').trim() || 'Model sharing stopped by local user.',
-        });
-        touchRemoteState();
-        res.json({ success: true, session });
-    } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
-    }
 });
 
 app.post('/api/remote/session/:sessionId/chalkboard-sync', (req, res) => {
@@ -2769,76 +2654,6 @@ app.post('/api/remote/session/:sessionId/chalkboard-sync', (req, res) => {
 
 app.post('/api/remote/model-proxy/chat', async (req, res) => {
     return res.status(410).json({ success: false, error: 'Remote model proxy has been removed. Use remote AI collaboration instead.' });
-    try {
-        const sessionId = String(req.body?.sessionId || '').trim();
-        const message = String(req.body?.message || '').trim();
-        const locale = String(req.body?.locale || 'zh-TW');
-        const history = Array.isArray(req.body?.history) ? req.body.history : [];
-        const systemContext = String(req.body?.systemContext || '').trim();
-        const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
-        const providedToken = String(req.headers['x-aipc-model-share-token'] || req.body?.token || '').trim();
-
-        if (!sessionId || !message) {
-            return res.status(400).json({ success: false, error: 'Missing sessionId or message' });
-        }
-
-        const session = getRemoteSessionById(sessionId);
-        if (!session || session.status !== 'active') {
-            return res.status(403).json({ success: false, error: 'Session is not active' });
-        }
-        if (session.modelShare?.status !== 'active' || session.modelShare?.role !== 'provider') {
-            return res.status(403).json({ success: false, error: 'Model share is not active' });
-        }
-        const expiresAtMs = Date.parse(String(session.modelShare?.expiresAt || ''));
-        if (!Number.isNaN(expiresAtMs) && expiresAtMs > 0 && Date.now() > expiresAtMs) {
-            return res.status(403).json({ success: false, error: 'Shared model token expired' });
-        }
-        const expectedToken = String(session.modelShare?.proxyToken || '');
-        const providedBuffer = Buffer.from(providedToken);
-        const expectedBuffer = Buffer.from(expectedToken);
-        if (!providedToken || !expectedToken || providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-            return res.status(403).json({ success: false, error: 'Invalid shared model token' });
-        }
-
-        const chatOptions = {
-            systemContext: [
-                buildLocalAgentContext(session),
-                systemContext,
-                'You are answering through a remote shared-model request.',
-                'Be concise and practical.',
-            ].filter(Boolean).join('\n'),
-            chalkboardAttachment,
-        };
-        if (chalkboardAttachment) {
-            const preferredVisionModel = llm.getCurrentVisionModel();
-            if (preferredVisionModel) {
-                chatOptions.modelOverride = preferredVisionModel;
-            } else if (!llm.modelSupportsVision(llm.getCurrentModel())) {
-                const visionModel = await llm.getVisionCapableModel();
-                if (visionModel) chatOptions.modelOverride = visionModel;
-            }
-        }
-
-        const reply = await llm.chatWithLLM(
-            message,
-            history,
-            chatOptions,
-            locale
-        );
-
-        return res.json({
-            success: true,
-            reply,
-            provider: llm.getCurrentProvider(),
-            model: llm.getCurrentModel(),
-            machineName: getRemoteProfile().machineName,
-            agentName: getRemoteProfile().agentName,
-            sessionId,
-            expiresAt: session.modelShare?.expiresAt || '',
-        });
-    } catch (error) {
-        return res.status(500).json({ success: false, error: error.message });
-    }
 });
 
 app.post('/api/remote/save-image-file', (req, res) => {
@@ -3403,8 +3218,6 @@ app.get('/api/task/:taskId/status', (req, res) => {
 // POST /api/chat 處理對話輸入（LLM 優先，fallback 到關鍵字比對）
 app.post('/api/chat', async (req, res) => {
     const { message, locale } = req.body;
-    const preferRemoteModel = !!req.body?.preferRemoteModel;
-    const remoteSessionId = String(req.body?.remoteSessionId || '').trim();
     const localChatSessionId = String(req.body?.localChatSessionId || '').trim();
     const requestedHistory = Array.isArray(req.body?.history) ? req.body.history : null;
     const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
@@ -3675,7 +3488,6 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             let llmReply;
             const remoteState = remoteAgent.getState();
             const activeRemoteSession = remoteState.sessions.find((item) => item.status === 'active');
-            const sharedModelSession = preferRemoteModel ? getSharedModelSession(remoteSessionId) : null;
             const chatOptions = {
                 systemContext: [
                     buildLocalAgentContext(activeRemoteSession || null),
@@ -3683,9 +3495,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     `Remote chat service port: ${DEFAULT_REMOTE_PORT}`,
                     'Built-in Browser tab is available and controlled by Playwright Chromium session APIs.',
                     'When web tasks are needed, prefer Browser Use actions to drive Browser tab directly.',
-                    sharedModelSession
-                        ? `Shared remote model is active on ${sharedModelSession.peer?.machineName || sharedModelSession.host} (${sharedModelSession.peer?.agentName || 'Remote AI'}).`
-                        : 'Shared remote model is not active.',
+                    'Remote model proxy is removed. Use remote chat collaboration when another AI should help.',
                     onDemandGuidance || '',
                 ].join('\n'),
             };
@@ -3723,36 +3533,12 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     sessionId: '',
                     expiresAt: '',
                 };
-                if (sharedModelSession) {
-                    const remoteResult = await proxyChatToSharedRemoteModel({
-                        session: sharedModelSession,
-                        message: composedMessage,
-                        history: requestHistory,
-                        systemContext: chatOptions.systemContext,
-                        locale,
-                        chalkboardAttachment,
-                    });
-                    if (!remoteResult?.success) {
-                        throw new Error(remoteResult?.error || 'Remote shared model failed');
-                    }
-                    llmReply = remoteResult.reply;
-                    modelSource = {
-                        type: 'remote-shared',
-                        provider: remoteResult.provider,
-                        model: remoteResult.model,
-                        machineName: remoteResult.machineName,
-                        agentName: remoteResult.agentName,
-                        sessionId: remoteResult.sessionId || sharedModelSession.id,
-                        expiresAt: remoteResult.expiresAt || sharedModelSession.modelShare?.expiresAt || '',
-                    };
-                } else {
-                    llmReply = await llm.chatWithLLM(
-                        composedMessage,
-                        requestHistory,
-                        chatOptions,
-                        locale
-                    );
-                }
+                llmReply = await llm.chatWithLLM(
+                    composedMessage,
+                    requestHistory,
+                    chatOptions,
+                    locale
+                );
                 req.__modelSource = modelSource;
             } catch (visionErr) {
                 if (!chalkboardAttachment) throw visionErr;

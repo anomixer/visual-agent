@@ -439,15 +439,14 @@ $true
 - Runtime 版本號更新為 `2026.05.05`，來源仍以 `package.json` 維持單一真相。
 
 ### 9.2 遠端模型共享資訊
-- `model_share_request` 必須攜帶 `modelInfo`，至少包含 `provider`、`model` 與可顯示的 `label`。
-- 接收端的模型分享確認視窗必須顯示：機器名稱、使用者名稱、AI 名稱、AI 模型與共享說明。
-- 使用遠端共享模型時，Chat 模型徽章需顯示遠端 AI 與模型資訊。
+- `2026.05.05` 曾要求 `model_share_request` 攜帶 `modelInfo` 並在確認視窗顯示模型資訊。
+- 此功能已於 `2026.05.06` 移除；保留舊協定欄位僅作相容，不再提供 UI 入口或模型接管。
 
 ### 9.3 Chalkboard 協作同步
 - 遠端會話新增 `chalkboard_state` 訊息，用於傳送目前 Chalkboard 快照。
 - 任一方使用者或 AI 改寫 Chalkboard 後，另一方必須能看到同步結果。
 - 同步需採 idle debounce：黑板有繪製、拖曳、文字框、圖片放置等互動時暫停傳送與套用，互動停止約 1 秒後才同步最新畫面。
-- 遠端連線建立或接受模型共享後，中間區域應自動切到 Chalkboard tab。
+- 遠端連線建立後，中間區域應自動切到 Chalkboard tab。
 
 ### 9.4 遠端 AI 思考狀態
 - 遠端協定新增 `ai_status` 訊息，狀態值為 `thinking` 或 `idle`。
