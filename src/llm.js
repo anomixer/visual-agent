@@ -758,7 +758,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
             method: 'POST',
             headers,
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(180000),
+            signal: AbortSignal.timeout(300000),
         });
         if (!res.ok) {
             const errText = await res.text();
@@ -832,11 +832,11 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
             method: 'POST',
             headers,
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(180000), // 延長至 3 分鐘，配合「思考型」或地端加載較慢的模型
+            signal: AbortSignal.timeout(300000), // 延長至 3 分鐘，配合「思考型」或地端加載較慢的模型
         });
     } catch (fetchErr) {
         if (fetchErr.name === 'TimeoutError' || fetchErr.message.includes('timeout')) {
-            throw new Error(`AI engine timed out (waited 3 minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
+            throw new Error(`AI engine timed out (waited 5 minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
         }
         throw fetchErr;
     }

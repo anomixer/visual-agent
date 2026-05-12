@@ -45,6 +45,7 @@ let activeChatMode = 'local';
 let remoteProfile = null;
 let remoteState = { sessions: [], pendingApprovals: [], localIps: [], port: 19168 };
 let selectedRemoteSessionId = localStorage.getItem('selected_remote_session_id') || '';
+
 let remoteStateInterval = null;
 let pendingRemoteRequestId = '';
 let localChatSessions = [];
@@ -1801,6 +1802,13 @@ function renderRemoteMessages() {
             }
         );
     });
+
+
+
+
+
+
+
     if (session.status === 'disconnected') {
         appendChatBubble('system', t('remote.peerDisconnected'), [], {
             container: remoteChatMessages,
@@ -5045,6 +5053,7 @@ async function sendChat() {
     chatInput.value = '';
     chatInput.style.height = '';
 
+
     if (activeChatMode === 'remote') {
         appendChatBubble('user', msg, [], {
             container: remoteChatMessages,
@@ -5120,6 +5129,7 @@ async function sendChat() {
         if (data.success) {
             setThinkingIdForMode(currentMode, '');
             if (currentMode === 'remote') {
+
                 await loadRemoteProfileAndState();
             } else {
                 $$('.suggestions-container').forEach(el => el.remove());
@@ -5146,12 +5156,14 @@ async function sendChat() {
                 }
             }
         } else {
+            setThinkingIdForMode(currentMode, '');
             appendChatBubble(currentMode === 'remote' ? 'system' : 'ai', currentLocale === 'en-US' ? 'Sorry, something went wrong. Please try again.' : '抱歉，出現了一點問題，請再試一次。', [], {
                 container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
                 forceSystem: currentMode === 'remote',
             });
         }
     } catch (err) {
+
         removeThinking(thinkId);
         setThinkingIdForMode(currentMode, '');
         if (err.name === 'AbortError') {
@@ -5416,7 +5428,6 @@ async function shareRemoteScreen() {
     }
 
     try {
-        if (!confirm(t('remote.shareScreenConfirm'))) return;
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         const video = document.createElement('video');
         video.srcObject = stream;

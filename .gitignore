@@ -34,3 +34,12 @@ Thumbs.db
 
 # Local Tasks and Configs
 tasks.json
+
+# Temporary and Scratch Files
+*.bak
+*.tmp
+*.temp
+*.patch
+*.diff
+*patch.js
+*backup*

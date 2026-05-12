@@ -285,6 +285,8 @@ const remoteAgent = new RemoteAgentService({
                         'If asked what model you are using, answer with the exact current provider and model shown above.',
                         'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
                         'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
+                        `IMPORTANT: All hardware info (CPU/RAM/disk/free space) belongs to THIS machine (${profile.machineName}). When answering questions about disk space or system resources, always specify which machine: "On ${profile.machineName}: ..."`,
+                        (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const health = getSystemHealth(); const volumeList = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : []; const diskFreePart = volumeList.length > 0 ? volumeList.map(v => `${v.name} ${Math.round(v.free / 1024 / 1024 / 1024)}GB / ${Math.round(v.size / 1024 / 1024 / 1024)}GB free`).join('; ') : 'Unknown'; return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                         'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
                     ].join('\n'),
                 },
@@ -2532,6 +2534,14 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
         if (mode === 'local-ai') {
             const profile = getRemoteProfile();
             localAiThinkingSessionId = sessionId;
+            // Bug1 Fix: 先把 user 的原始訊息存進 session.messages，polling 才能立刻顯示
+            remoteAgent.sendChatMessage(sessionId, {
+                senderType: 'user',
+                senderLabel: getRemoteProfile().userName,
+                text: text,
+                target: target,
+            });
+            touchRemoteState(); // 立刻更新 tick 讓前端 polling 拿到
             remoteAgent.sendAiStatus(sessionId, {
                 status: 'thinking',
                 senderLabel: profile.agentName,
@@ -2551,6 +2561,8 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                 {
                     systemContext: [
                         buildLocalAgentContext(currentSession),
+                        `IMPORTANT - ALL hardware info below is from LOCAL machine (${profile.machineName}), NOT from the remote peer. Always prefix free-space / hardware answers with the machine name.`,
+                        (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const health = getSystemHealth(); const volumeList = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : []; const diskFreePart = volumeList.length > 0 ? volumeList.map(v => `${v.name} ${Math.round(v.free / 1024 / 1024 / 1024)}GB / ${Math.round(v.size / 1024 / 1024 / 1024)}GB free`).join('; ') : 'Unknown'; return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                         'You are speaking as the local AI agent inside a peer-to-peer support chat.',
                         'The current requester is the local human user on this machine.',
                         target === 'remote-ai'
