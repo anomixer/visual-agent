@@ -285,6 +285,7 @@ const remoteAgent = new RemoteAgentService({
                         'If asked what model you are using, answer with the exact current provider and model shown above.',
                         'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
                         'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
+                        'When using ##CHALKBOARD##, coordinate with Local AI! You are the Remote AI: use "position: right" and "clear: false" to avoid erasing teammate content.',
                         `IMPORTANT: All hardware info (CPU/RAM/disk/free space) belongs to THIS machine (${profile.machineName}). When answering questions about disk space or system resources, always specify which machine: "On ${profile.machineName}: ..."`,
                         (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const health = getSystemHealth(); const volumeList = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : []; const diskFreePart = volumeList.length > 0 ? volumeList.map(v => `${v.name} ${Math.round(v.free / 1024 / 1024 / 1024)}GB / ${Math.round(v.size / 1024 / 1024 / 1024)}GB free`).join('; ') : 'Unknown'; return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                         'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
@@ -2569,6 +2570,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                             ? 'The remote AI will receive your message next. Provide concise complementary notes, facts to check, or a division-of-labor suggestion. Do not compete with the remote AI for the final answer.'
                             : 'Answer the local human directly and concisely.',
                         'If asked what model you are using, answer with the exact current provider and model from the system context.',
+                        'When using ##CHALKBOARD##, coordinate with Remote AI! You are the Local AI: use "position: left" and "clear: false" to avoid erasing teammate content.',
                         'Keep the answer concise and practical.',
                     ].join('\n'),
                 },

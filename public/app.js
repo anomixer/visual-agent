@@ -3286,13 +3286,28 @@ async function applyAgentChalkboardDraft(draft) {
             chalkboardState.pendingTextPreviewUrl = null;
             chalkboardState.textManipulation = null;
             pushChalkHistory();
-            clearChalkboardSurface();
+            const clear = normalizedDraft.clear !== false;
+            if (clear) {
+                clearChalkboardSurface();
+            }
+
             const finalTitle = String(normalizedDraft.title || title || 'Chalkboard Draft').trim();
             const finalBullets = Array.isArray(normalizedDraft.bullets)
                 ? normalizedDraft.bullets
                 : bullets;
             showChalkboardFloatHint(finalTitle);
-            const padX = 34;
+
+            const pos = normalizedDraft.position || 'full';
+            let padX = 34;
+            let maxWidth = Math.max(280, chalkboardState.cssWidth - 68);
+
+            if (pos === 'right') {
+                padX = chalkboardState.cssWidth / 2 + 20;
+                maxWidth = Math.max(200, chalkboardState.cssWidth / 2 - 40);
+            } else if (pos === 'left') {
+                maxWidth = Math.max(200, chalkboardState.cssWidth / 2 - 40);
+            }
+
             let cursorY = 62;
             drawChalkText(finalTitle, padX, cursorY, {
                 font: '700 28px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
@@ -3306,7 +3321,7 @@ async function applyAgentChalkboardDraft(draft) {
                     `${index + 1}. ${line}`,
                     padX,
                     cursorY,
-                    Math.max(280, chalkboardState.cssWidth - 68),
+                    maxWidth,
                     28,
                     {
                         font: '600 22px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
@@ -3352,9 +3367,19 @@ function extractChalkboardControlFromReply(text = '') {
 
     let title = '';
     const bullets = [];
+    let position = 'full';
+    let clear = true;
     rawLines.forEach((line) => {
         if (!title && /^title\s*:/i.test(line)) {
             title = line.replace(/^title\s*:/i, '').trim();
+            return;
+        }
+        if (/^position\s*:/i.test(line)) {
+            position = line.replace(/^position\s*:/i, '').trim().toLowerCase();
+            return;
+        }
+        if (/^clear\s*:/i.test(line)) {
+            clear = line.replace(/^clear\s*:/i, '').trim().toLowerCase() !== 'false';
             return;
         }
         if (/^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
