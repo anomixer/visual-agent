@@ -706,3 +706,27 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 - System prompt 放寬：使用者可聊一般知識、創作、生活與非電腦維護話題。
 - 只有明確涉及系統操作、軟體、SOP、自動化或本 App 功能時，AI 才主動導向 SOP / 安裝 / Agent 工作流。
 
+---
+
+## 📌 2026.05.13 — 遠端協作、Chat UI、Skills 清單與 Action 回報修正
+
+### 遠端雙 AI / Chalkboard
+- AI 需主動使用 Chalkboard 呈現計畫、比較、查詢摘要與多步驟結果。
+- 遠端協作時，本地 AI 使用 `position: left`，遠端 AI 使用 `position: right`，雙方皆使用 `clear: false` 避免覆蓋。
+- 遠端對話需以實際 Windows user name 稱呼對方，AI 自稱以自己的 PC name 表示。
+
+### 遠端硬體查詢
+- 使用者詢問「本機 / 自己電腦」free space、磁碟、RAM、CPU、GPU 時，預設交由本地 AI 回答。
+- AI 回覆硬體資訊時必須標明該資訊屬於哪一台 PC。
+
+### Chat UI
+- 本機聊天底部工具列順序改為：新增對話、附上 Chalkboard、清除對話。
+- 麥克風改放在送出鈕上方。
+- 本機對話 tab 採橢圓 chip，右上角提供小型 `x` 關閉。
+- 遠端連線設定改為可收合抽屜；遠端工具列加入附上檔案與掛電話中斷按鈕。
+- 遠端身份欄位編輯時不再被輪詢立即還原，只有改動後才啟用「儲存名稱」。
+
+### Skills / Action
+- 左側新增 Skills 清單，來源為 `skills/<slug>/SKILL.md`。
+- Action parser 支援 `[ACTION:...]` 與裸 `Action=Computer_Use...` 格式。
+- Browser Use / Computer Use 執行後必須回傳成功或失敗摘要，避免 UI 沒動靜。

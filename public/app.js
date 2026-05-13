@@ -19,6 +19,7 @@ const API = 'http://localhost:3210';
 let todoList = [];
 let recommendList = [];
 let sopsList = [];
+let skillsList = [];
 let pollingInterval = null;
 let chatAbortController = null;
 let localChatAbortController = null;
@@ -43,6 +44,7 @@ let expSopFilter = '';
 let currentLocale = localStorage.getItem('ui_locale') || 'zh-TW';
 let activeChatMode = 'local';
 let remoteProfile = null;
+let remoteProfileDirty = false;
 let remoteState = { sessions: [], pendingApprovals: [], localIps: [], port: 19168 };
 let selectedRemoteSessionId = localStorage.getItem('selected_remote_session_id') || '';
 
@@ -53,6 +55,7 @@ let selectedLocalChatSessionId = localStorage.getItem('selected_local_chat_sessi
 let mentionCandidates = [];
 let activeMentionIndex = 0;
 let pendingModelShareSessionId = '';
+let remoteToolbarCollapsed = localStorage.getItem('remote_toolbar_collapsed') === '1';
 let chalkboardHintTimer = null;
 let chalkboardHintClickDismissHandler = null;
 let suppressRemoteChalkboardSync = false;
@@ -82,6 +85,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 const sidebar = $('#sidebar');
 const recommendListContainer = $('#recommendListContainer');
 const sopListContainer = $('#sopListContainer');
+const skillListContainer = $('#skillListContainer');
 const sidebarTabs = $('#sidebarTabs');
 const centerCol = document.querySelector('.center-col');
 const chatCol = document.querySelector('.chat-col');
@@ -93,6 +97,7 @@ const todoEmpty = $('#todoEmpty');
 const todoCount = $('#todoCount');
 const recCount = $('#recCount');
 const sopCount = $('#sopCount');
+const skillCount = $('#skillCount');
 const logEntries = $('#logEntries');
 const expEntries = $('#expEntries');
 const expSearchInput = $('#expSearchInput');
@@ -121,9 +126,14 @@ const remoteSessionSelect = $('#remoteSessionSelect');
 const remoteSendMode = $('#remoteSendMode');
 const remoteChatHint = $('#remoteChatHint');
 const remoteSessionQuickList = $('#remoteSessionQuickList');
+const remoteChatToolbar = $('#remoteChatToolbar');
+const btnRemoteToolbarToggle = $('#btnRemoteToolbarToggle');
+const remoteToolbarBody = $('#remoteToolbarBody');
 const btnRemoteConnect = $('#btnRemoteConnect');
 const btnSaveRemoteProfile = $('#btnSaveRemoteProfile');
 const btnShareScreen = $('#btnShareScreen');
+const btnRemoteAttachFile = $('#btnRemoteAttachFile');
+const remoteFileInput = $('#remoteFileInput');
 const btnDisconnectRemote = $('#btnDisconnectRemote');
 const recSearchInput = $('#recSearchInput');
 const btnTheme = $('#btnTheme');
@@ -314,6 +324,8 @@ const I18N = {
             saveProfile: '儲存名稱',
             disconnect: '中斷',
             shareScreen: '傳送畫面',
+            attachFile: '附上檔案',
+            connectionSettings: '連線設定',
             shareScreenConfirm: '對方將能查看你分享的畫面內容。\n\n注意：別分享機敏資訊。',
             hostPlaceholder: '輸入對方 IP，例如 192.168.1.88',
             agentPlaceholder: 'AI 名稱',
@@ -339,6 +351,8 @@ const I18N = {
             remoteUserTarget: '遠端使用者',
             connectDetails: '機器名稱：{machineName}\n使用者名稱：{userName}\nAI 名稱：{agentName}\nIP：{ip}\n說明：是否接受對方連線？接受後，你們雙方與 AI 對話就能互通有無。',
             peerDisconnected: '對方已斷線',
+            fileAttached: '已附上檔案：{fileName}',
+            fileTooLarge: '檔案太大，請選擇 256KB 以下文字檔',
         },
         exps: {
             searchPlaceholder: '搜尋經驗、關鍵字...',
@@ -492,10 +506,13 @@ const I18N = {
             recommendLoading: '推薦清單載入中...',
             recommendEmpty: '找不到相符的項目',
             sopLoading: 'SOP 清單載入中...',
+            skillLoading: 'Skills 清單載入中...',
             sopEmpty: '找不到相符的 SOP',
+            skillEmpty: '找不到相符的 Skill',
             installedHeader: '── 已就緒 / 已安裝 ──',
             recommendPlaceholder: '搜尋推薦項目...',
             sopPlaceholder: '搜尋 SOP 名稱、ID 或分類...',
+            skillPlaceholder: '搜尋 Skill 名稱、描述或標籤...',
             readyBadge: '✅ 已安裝',
             uninstallBadge: '🗑 可解除安裝',
             actionable: '⚡ 可{action} (SOP)',
@@ -623,6 +640,8 @@ const I18N = {
             saveProfile: 'Save Names',
             disconnect: 'Disconnect',
             shareScreen: 'Send Screen',
+            attachFile: 'Attach File',
+            connectionSettings: 'Connection Settings',
             shareScreenConfirm: 'The peer will be able to view the screen image you send.\n\nWarning: do not share sensitive information.',
             hostPlaceholder: 'Enter peer IP, e.g. 192.168.1.88',
             agentPlaceholder: 'AI Name',
@@ -648,6 +667,8 @@ const I18N = {
             remoteUserTarget: 'Remote User',
             connectDetails: 'Machine: {machineName}\nUser: {userName}\nAI: {agentName}\nIP: {ip}\nNote: accept this peer connection? If accepted, both sides and their AI chats can communicate.',
             peerDisconnected: 'Peer disconnected',
+            fileAttached: 'Attached file: {fileName}',
+            fileTooLarge: 'File too large. Choose a text file under 256KB.',
         },
         exps: {
             searchPlaceholder: 'Search experiences, keywords...',
@@ -801,10 +822,13 @@ const I18N = {
             recommendLoading: 'Loading recommendations...',
             recommendEmpty: 'No matching items found',
             sopLoading: 'Loading SOP list...',
+            skillLoading: 'Loading Skills...',
             sopEmpty: 'No matching SOP found',
+            skillEmpty: 'No matching Skills found',
             installedHeader: '-- Ready / Installed --',
             recommendPlaceholder: 'Search recommendations...',
             sopPlaceholder: 'Search SOP name, ID, or category...',
+            skillPlaceholder: 'Search Skill name, description, or tags...',
             readyBadge: '✅ Installed',
             uninstallBadge: '🗑 Uninstall available',
             actionable: '⚡ {action} available (SOP)',
@@ -1717,14 +1741,36 @@ function buildRemoteHintText(session = null) {
     return `${machine} / ${user} / ${host}`;
 }
 
+function syncRemoteProfileDirty(isDirty = remoteProfileDirty) {
+    remoteProfileDirty = Boolean(isDirty);
+    if (btnSaveRemoteProfile) {
+        btnSaveRemoteProfile.disabled = !remoteProfileDirty;
+    }
+}
+
+function updateRemoteToolbarToggle() {
+    if (!remoteChatToolbar || !btnRemoteToolbarToggle) return;
+    remoteChatToolbar.classList.toggle('collapsed', remoteToolbarCollapsed);
+    btnRemoteToolbarToggle.setAttribute('aria-expanded', String(!remoteToolbarCollapsed));
+    btnRemoteToolbarToggle.textContent = `${t('remote.connectionSettings')} ${remoteToolbarCollapsed ? '▼' : '▲'}`;
+}
+
+function toggleRemoteToolbar() {
+    remoteToolbarCollapsed = !remoteToolbarCollapsed;
+    localStorage.setItem('remote_toolbar_collapsed', remoteToolbarCollapsed ? '1' : '0');
+    updateRemoteToolbarToggle();
+}
+
 function switchChatMode(mode) {
     activeChatMode = mode === 'remote' ? 'remote' : 'local';
     hideMentionMenu();
     localChatPane?.classList.toggle('active', activeChatMode === 'local');
     remoteChatPane?.classList.toggle('active', activeChatMode === 'remote');
-    if (btnMic) btnMic.style.display = activeChatMode === 'local' ? '' : 'none';
     if (btnChalkAttach) btnChalkAttach.style.display = activeChatMode === 'local' ? '' : 'none';
-    if (btnClearChat) btnClearChat.title = activeChatMode === 'local' ? t('chat.clear') : t('remote.disconnect');
+    if (btnClearChat) btnClearChat.style.display = activeChatMode === 'local' ? '' : 'none';
+    btnRemoteAttachFile?.classList.toggle('visible', activeChatMode === 'remote');
+    btnDisconnectRemote?.classList.toggle('visible', activeChatMode === 'remote');
+    if (btnClearChat) btnClearChat.title = t('chat.clear');
     chatInput.placeholder = activeChatMode === 'local'
         ? t('chat.placeholder')
         : (getActiveRemoteSession()
@@ -1943,7 +1989,7 @@ function renderRemoteSessionControls() {
     remoteChatHint.textContent = buildRemoteHintText(activeSession);
     if (btnRemoteConnect) btnRemoteConnect.textContent = getRemoteConnectButtonText(activeSession);
     if (btnShareScreen) btnShareScreen.disabled = !activeSession || activeSession.status !== 'active';
-    if (btnDisconnectRemote) btnDisconnectRemote.style.display = 'none';
+    btnDisconnectRemote?.classList.toggle('visible', activeChatMode === 'remote');
     updateChatModelBadgeDisplay(window.__lastLLMStatus || null);
     updatePendingStatusRow();
     renderRemoteMessages();
@@ -1966,8 +2012,13 @@ async function loadRemoteProfileAndState() {
             forceSystem: true,
         });
     });
-    if (remoteAgentNameInput) remoteAgentNameInput.value = data.profile?.agentName || '';
-    if (remoteUserNameInput) remoteUserNameInput.value = data.profile?.userName || '';
+    if (!remoteProfileDirty && document.activeElement !== remoteAgentNameInput && remoteAgentNameInput) {
+        remoteAgentNameInput.value = data.profile?.agentName || '';
+    }
+    if (!remoteProfileDirty && document.activeElement !== remoteUserNameInput && remoteUserNameInput) {
+        remoteUserNameInput.value = data.profile?.userName || '';
+    }
+    syncRemoteProfileDirty(remoteProfileDirty);
     renderRemoteSessionControls();
     renderRemotePopup();
     const activeSession = getActiveRemoteSession();
@@ -1988,9 +2039,13 @@ function resolveRemoteTargets(messageText = '') {
         if (item.role === 'Remote User') targets.add('remote-user');
     });
     if (!targets.size) {
+        const asksOwnMachine = /(自己|本機|本地|我的電腦|我這台|this pc|my pc|local machine|free space|disk space|磁碟|硬碟|容量|剩餘空間|ram|記憶體|cpu|gpu)/i.test(lowerText)
+            && !/(對方|遠端|remote|peer|另一台|別台)/i.test(lowerText);
         if (/(只問|只叫|only|just).{0,8}(遠端|remote)/i.test(lowerText)) {
             targets.add('remote-ai');
         } else if (/(只問|只叫|only|just).{0,8}(本地|本機|local)/i.test(lowerText)) {
+            targets.add('local-ai');
+        } else if (asksOwnMachine) {
             targets.add('local-ai');
         } else {
             targets.add('local-ai');
@@ -3890,7 +3945,7 @@ async function init() {
     setupSpeechRecognition();
 
     // 並行載入資料，不要等待啟動畫面
-    await Promise.all([loadTodo(), loadRecommend(), loadSops(), loadExps(), loadRemoteProfileAndState()]);
+    await Promise.all([loadTodo(), loadRecommend(), loadSops(), loadSkills(), loadExps(), loadRemoteProfileAndState()]);
     renderLocalSessionControls();
     renderLocalChatMessages();
     updatePendingStatusRow();
@@ -3987,6 +4042,18 @@ async function loadSops() {
     }
 }
 
+async function loadSkills() {
+    try {
+        const data = await api('/api/skills');
+        if (data.success && Array.isArray(data.skills)) {
+            skillsList = data.skills;
+            renderSidebarTab();
+        }
+    } catch (e) {
+        console.error('Load skills failed', e);
+    }
+}
+
 let sidebarRefreshTimer = null;
 function refreshSidebarDataSoon() {
     if (sidebarRefreshTimer) clearTimeout(sidebarRefreshTimer);
@@ -3994,6 +4061,7 @@ function refreshSidebarDataSoon() {
         sidebarRefreshTimer = null;
         loadRecommend();
         loadSops();
+        loadSkills();
     }, 250);
 }
 
@@ -4474,6 +4542,7 @@ function createRecommendCard(item) {
 function renderSidebarTab() {
     renderRecommendList();
     renderSopList();
+    renderSkillList();
     syncSidebarTabUI();
 }
 
@@ -4483,10 +4552,13 @@ function syncSidebarTabUI() {
     });
     recommendListContainer?.classList.toggle('active', activeSidebarTab === 'recommend');
     sopListContainer?.classList.toggle('active', activeSidebarTab === 'sops');
+    skillListContainer?.classList.toggle('active', activeSidebarTab === 'skills');
     if (recSearchInput) {
         recSearchInput.placeholder = activeSidebarTab === 'recommend'
             ? t('sidebar.recommendPlaceholder')
-            : t('sidebar.sopPlaceholder');
+            : activeSidebarTab === 'skills'
+                ? t('sidebar.skillPlaceholder')
+                : t('sidebar.sopPlaceholder');
     }
 }
 
@@ -4586,6 +4658,60 @@ function createSopCard(sop) {
     return card;
 }
 
+function renderSkillList() {
+    if (!skillListContainer) return;
+    skillListContainer.innerHTML = '';
+    if (skillCount) skillCount.textContent = String(skillsList.length);
+
+    if (!skillsList.length) {
+        skillListContainer.innerHTML = `<div class="sidebar-empty">${t('sidebar.skillLoading')}</div>`;
+        return;
+    }
+
+    const filtered = skillsList.filter((skill) => {
+        if (!recSearchQuery) return true;
+        const searchStr = `${skill.name || ''} ${skill.slug || ''} ${skill.description || ''} ${skill.tags || ''}`.toLowerCase();
+        return searchStr.includes(recSearchQuery);
+    });
+
+    if (skillCount) skillCount.textContent = String(filtered.length);
+    if (!filtered.length) {
+        skillListContainer.appendChild(createSidebarEmptyState(t('sidebar.skillEmpty')));
+        return;
+    }
+
+    const groups = {};
+    filtered.forEach((skill) => {
+        const cat = skill.category || t('sidebar.otherCategory');
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(skill);
+    });
+
+    Object.entries(groups).forEach(([cat, items]) => {
+        skillListContainer.appendChild(createSidebarSectionHeader(cat));
+        items.forEach((skill) => {
+            skillListContainer.appendChild(createSkillCard(skill));
+        });
+    });
+}
+
+function createSkillCard(skill) {
+    const card = document.createElement('div');
+    card.className = 'recommend-card skill-card';
+    const tags = Array.isArray(skill.tags) ? skill.tags.join(', ') : (skill.tags || '');
+    card.innerHTML = `
+        <div class="recommend-card-top">
+          <div class="recommend-title">${escapeHtml(skill.name || skill.slug || t('task.unnamedItem'))}</div>
+        </div>
+        <div class="recommend-desc">${escapeHtml(skill.description || '')}</div>
+        <div class="recommend-meta">
+          <span class="recommend-category">${escapeHtml(skill.slug || '')}</span>
+          ${tags ? `<span class="recommend-skill-badge">${escapeHtml(tags)}</span>` : ''}
+        </div>
+    `;
+    return card;
+}
+
 function updateLocaleUI() {
     document.documentElement.lang = currentLocale;
     if (btnLang) {
@@ -4609,8 +4735,10 @@ function updateLocaleUI() {
     if (btnToggleChat) btnToggleChat.title = t('titlebar.toggleChat');
     const sidebarTabRecommend = document.querySelector('.sidebar-tab[data-sidebar-tab="recommend"] span');
     const sidebarTabSops = document.querySelector('.sidebar-tab[data-sidebar-tab="sops"] span');
+    const sidebarTabSkills = document.querySelector('.sidebar-tab[data-sidebar-tab="skills"] span');
     if (sidebarTabRecommend) sidebarTabRecommend.textContent = t('tabs.recommend');
     if (sidebarTabSops) sidebarTabSops.textContent = t('tabs.sops');
+    if (sidebarTabSkills) sidebarTabSkills.textContent = '🧩 Skills';
     const tabHardware = document.querySelector('#tab-hardware .tab-title');
     const tabBrowser = document.querySelector('#tab-browser .tab-title');
     const tabTodo = document.querySelector('#tab-todolist .tab-title');
@@ -4632,15 +4760,17 @@ function updateLocaleUI() {
     if (btnMic) btnMic.title = t('chat.mic');
     if (btnChalkAttach) btnChalkAttach.title = t('chat.attachChalkboard');
     if (btnNewLocalSession) btnNewLocalSession.title = t('chat.localSessionNew');
-    if (btnClearChat) btnClearChat.title = activeChatMode === 'local' ? t('chat.clear') : t('remote.disconnect');
+    if (btnRemoteAttachFile) btnRemoteAttachFile.title = t('remote.attachFile');
+    if (btnClearChat) btnClearChat.title = t('chat.clear');
+    if (btnDisconnectRemote) btnDisconnectRemote.title = t('remote.disconnect');
     if (remoteSessionStatus) remoteSessionStatus.textContent = getRemoteStatusText(getActiveRemoteSession());
     if (remoteHostInput) remoteHostInput.placeholder = t('remote.hostPlaceholder');
     if (remoteAgentNameInput) remoteAgentNameInput.placeholder = t('remote.agentPlaceholder');
     if (remoteUserNameInput) remoteUserNameInput.placeholder = t('remote.userPlaceholder');
     if (btnRemoteConnect) btnRemoteConnect.textContent = getRemoteConnectButtonText(getActiveRemoteSession());
     if (btnSaveRemoteProfile) btnSaveRemoteProfile.textContent = t('remote.saveProfile');
-    if (btnDisconnectRemote) btnDisconnectRemote.style.display = 'none';
     if (btnShareScreen) btnShareScreen.textContent = t('remote.shareScreen');
+    updateRemoteToolbarToggle();
     if (remoteChatHint) remoteChatHint.textContent = buildRemoteHintText(getActiveRemoteSession());
     if (remoteSendMode?.options?.[0]) remoteSendMode.options[0].text = t('remote.modeUser');
     if (remoteSendMode?.options?.[1]) remoteSendMode.options[1].text = t('remote.modeLocalAi');
@@ -5388,6 +5518,7 @@ async function saveRemoteProfile() {
     });
     if (data.success) {
         remoteProfile = data.profile;
+        syncRemoteProfileDirty(false);
         addUILog(t('remote.profileSaved'), 'success');
         await loadRemoteProfileAndState();
     }
@@ -5480,6 +5611,31 @@ async function shareRemoteScreen() {
     } catch (error) {
         appendChatBubble('system', t('remote.screenFailed', { error: error.message }), [], { container: remoteChatMessages, forceSystem: true });
     }
+}
+
+async function attachRemoteFile(file) {
+    const session = getActiveRemoteSession();
+    if (!session) {
+        appendChatBubble('system', t('remote.noSession'), [], { container: remoteChatMessages, forceSystem: true });
+        return;
+    }
+    if (!file) return;
+    if (file.size > 256 * 1024) {
+        appendChatBubble('system', t('remote.fileTooLarge'), [], { container: remoteChatMessages, forceSystem: true });
+        return;
+    }
+    const text = await file.text();
+    const preview = text.slice(0, 12000);
+    const payload = [
+        t('remote.fileAttached', { fileName: file.name }),
+        '',
+        '```text',
+        preview,
+        '```',
+    ].join('\n');
+    chatInput.value = payload;
+    switchChatMode('remote');
+    await sendChat();
 }
 
 // ════════════════════════════════════════════════════════
@@ -6070,6 +6226,12 @@ function setupEventListeners() {
     // Mic
     btnMic?.addEventListener('click', () => isRecording ? stopRecording() : startRecording());
     btnNewLocalSession?.addEventListener('click', () => {
+        if (activeChatMode === 'remote') {
+            remoteToolbarCollapsed = false;
+            updateRemoteToolbarToggle();
+            remoteHostInput?.focus();
+            return;
+        }
         const next = createLocalChatSession(`${t('chat.localSessionDefault')} ${localChatSessions.length + 1}`);
         localChatSessions.unshift(next);
         selectedLocalChatSessionId = next.id;
@@ -6084,7 +6246,17 @@ function setupEventListeners() {
     btnRemoteConnect?.addEventListener('click', connectRemotePeer);
     btnSaveRemoteProfile?.addEventListener('click', saveRemoteProfile);
     btnShareScreen?.addEventListener('click', shareRemoteScreen);
+    btnRemoteAttachFile?.addEventListener('click', () => remoteFileInput?.click());
+    remoteFileInput?.addEventListener('change', async () => {
+        const file = remoteFileInput.files?.[0] || null;
+        remoteFileInput.value = '';
+        await attachRemoteFile(file);
+    });
     btnDisconnectRemote?.addEventListener('click', disconnectRemoteSession);
+    btnRemoteToolbarToggle?.addEventListener('click', toggleRemoteToolbar);
+    [remoteAgentNameInput, remoteUserNameInput].forEach((input) => {
+        input?.addEventListener('input', () => syncRemoteProfileDirty(true));
+    });
     remoteSessionSelect?.addEventListener('change', () => {
         selectedRemoteSessionId = remoteSessionSelect.value;
         localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
@@ -6127,6 +6299,8 @@ function setupEventListeners() {
     btnChalkAttach?.addEventListener('click', toggleChalkboardAttachment);
     btnExpsExport?.addEventListener('click', exportExps);
     syncChalkAttachButton();
+    updateRemoteToolbarToggle();
+    syncRemoteProfileDirty(false);
 
     // AI Provider 點擊打開設定
     llmStatus?.addEventListener('click', openProviderSettings);

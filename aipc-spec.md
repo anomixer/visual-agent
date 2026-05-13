@@ -473,6 +473,30 @@ $true
 - 若使用者明確指定 `@本地 AI` 或 `@遠端 AI`，則只呼叫指定 AI。
 - AI 對 AI 訊息應視為隊友筆記，遠端 AI 負責產出最終回覆，不應互相爭辯或重複搶答。
 
+## 11. 2026.05.13 遠端協作與工具列規格
+
+### 11.1 版本
+- Runtime 版本號更新為 `2026.05.13`。
+
+### 11.2 Chalkboard 分工
+- AI 應主動將計畫、比較、查詢摘要與多步驟結果寫入 Chalkboard。
+- 本地 AI 使用 `position: left`；遠端 AI 使用 `position: right`；遠端協作時預設 `clear:false`。
+
+### 11.3 遠端硬體查詢
+- 遠端聊天室中若使用者詢問「自己 / 本機」硬體、磁碟或 free space，需由本地 AI 回答。
+- 回覆必須明確標示 PC name，避免把對方電腦資訊誤當本機資訊。
+
+### 11.4 Chat UI
+- 本機工具列順序為：新增對話、附上 Chalkboard、清除對話；麥克風位於送出鈕上方。
+- 本機對話 tab 為 chip 樣式，右上角可關閉。
+- 遠端連線設定為可收合抽屜；遠端工具列提供新增對話、附上檔案、掛電話中斷。
+- 遠端身份欄位只在使用者修改後才啟用儲存，不得被 polling 立即還原。
+
+### 11.5 Skills 與 Action
+- Sidebar 必須提供 Skills 清單，來源為 `skills/<slug>/SKILL.md`。
+- Action parser 必須支援 `[ACTION:...]` 與 `Action=Computer_Use...`。
+- Browser Use / Computer Use 執行後必須回傳可見摘要。
+
 ### 10.5 斷線提示
 - 遠端 session 進入 `disconnected` 時，本地聊天窗需顯示「對方已斷線」。
 

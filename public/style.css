@@ -402,6 +402,8 @@ ol {
   display: flex;
   gap: 6px;
   width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .sidebar-tab {
@@ -1828,6 +1830,9 @@ ol {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  position: relative;
+  border-radius: 999px;
+  padding-right: 22px;
 }
 
 .local-chat-tab-title {
@@ -1841,6 +1846,9 @@ ol {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: absolute;
+  right: 4px;
+  top: 2px;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -1910,6 +1918,30 @@ ol {
   border-bottom: 1px solid var(--border-panel);
   background: var(--bg-sidebar);
   padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.remote-chat-toolbar.collapsed .remote-toolbar-body {
+  display: none;
+}
+
+.remote-toolbar-toggle {
+  align-self: flex-start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+}
+
+.remote-toolbar-toggle:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.remote-toolbar-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2554,7 +2586,8 @@ ol {
 .input-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 6px;
   margin-bottom: 6px;
 }
 
@@ -2598,14 +2631,35 @@ ol {
 }
 
 .input-hint {
+  margin-left: auto;
   font-size: 10px;
   color: var(--text-muted);
+}
+
+.remote-only {
+  display: none;
+}
+
+.remote-only.visible {
+  display: flex;
 }
 
 .input-row {
   display: flex;
   gap: 6px;
   align-items: flex-end;
+}
+
+.send-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.send-mic-btn {
+  width: 34px;
 }
 
 #chatInput {

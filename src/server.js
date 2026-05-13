@@ -265,7 +265,9 @@ const remoteAgent = new RemoteAgentService({
                     role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
                     content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
                 }));
-            const aiReply = await llm.chatWithLLM(
+            const aiReply = isLocalHardwareStatusQuestion(message.text || '')
+                ? buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW')
+                : await llm.chatWithLLM(
                 message.text || '',
                 history,
                 {
@@ -280,6 +282,7 @@ const remoteAgent = new RemoteAgentService({
                         `Current AI provider: ${llm.getCurrentProvider() || 'Unknown'}`,
                         `Current AI model: ${llm.getCurrentModel() || 'Unknown'}`,
                         `The current requester is: ${message.senderType === 'ai' ? 'the remote AI agent' : 'the remote human user'} (${message.senderLabel || 'Unknown'}).`,
+                        `Address people by their explicit Windows user names. Do not say generic "使用者你好". Refer to yourself as ${profile.machineName}, and refer to the peer as ${session.peer?.machineName || 'remote PC'}.`,
                         `You are replying inside a remote support chat over TCP port ${DEFAULT_REMOTE_PORT}.`,
                         'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
                         'If asked what model you are using, answer with the exact current provider and model shown above.',
@@ -402,15 +405,24 @@ function loadSkillDocuments(forceRefresh = false) {
                 const fmText = fmMatch ? fmMatch[1] : '';
                 const nameMatch = fmText.match(/^name:\s*(.+)$/m);
                 const descMatch = fmText.match(/^description:\s*(.+)$/m);
-                const tagsMatch = fmText.match(/^\s+tags:\s*(.+)$/m);
-                const displayName = nameMatch ? nameMatch[1].trim() : entry.name;
-                const description = descMatch ? descMatch[1].trim() : '';
-                const tags = tagsMatch ? tagsMatch[1].trim() : '';
+                const categoryMatch = fmText.match(/^category:\s*(.+)$/m);
+                const tagsBlockMatch = fmText.match(/^tags:\s*\r?\n((?:\s+-\s*.+\r?\n?)+)/m);
+                const tagsInlineMatch = fmText.match(/^tags:\s*(.+)$/m);
+                const displayName = nameMatch ? nameMatch[1].trim().replace(/^["']|["']$/g, '') : entry.name;
+                const description = descMatch ? descMatch[1].trim().replace(/^["']|["']$/g, '') : '';
+                const tags = tagsBlockMatch
+                    ? tagsBlockMatch[1].split(/\r?\n/).map((line) => line.replace(/^\s+-\s*/, '').trim()).filter(Boolean)
+                    : (tagsInlineMatch ? tagsInlineMatch[1].trim().replace(/^\[|\]$/g, '').split(',').map((tag) => tag.trim()).filter(Boolean) : []);
+                const category = categoryMatch ? categoryMatch[1].trim().replace(/^["']|["']$/g, '') : 'Skills';
                 docs.push({
+                    slug: entry.name,
                     name: displayName,
+                    description,
+                    tags,
+                    category,
                     content,
                     tokens: new Set(tokenizeForMatch(
-                        `${displayName} ${description} ${tags} ${content.slice(0, 1200)}`
+                        `${displayName} ${description} ${tags.join(' ')} ${category} ${content.slice(0, 1200)}`
                     )),
                 });
             } catch (innerError) {
@@ -850,6 +862,7 @@ function buildLocalAgentContext(sessionSummary = null) {
         `Current machine IP: ${profile.ip}`,
         `Current AI provider: ${llm.getCurrentProvider() || 'Unknown'}`,
         `Current AI model: ${llm.getCurrentModel() || 'Unknown'}`,
+        `Identity rule: address the local human as ${profile.userName}; refer to yourself as ${profile.machineName}. Do not use generic "使用者你好".`,
     ];
 
     if (sessionSummary?.peer) {
@@ -860,6 +873,38 @@ function buildLocalAgentContext(sessionSummary = null) {
     }
 
     return lines.join('\n');
+}
+
+function isLocalHardwareStatusQuestion(text = '') {
+    return /(free\s*space|disk\s*space|磁碟|硬碟|容量|剩餘空間|ram|記憶體|cpu|gpu|顯卡|硬體)/i.test(String(text || ''));
+}
+
+function buildLocalHardwareStatusReply(locale = 'zh-TW') {
+    const profile = getRemoteProfile();
+    const health = getSystemHealth();
+    const ramTotal = Math.round(os.totalmem() / 1024 / 1024 / 1024);
+    const ramFree = Math.round(os.freemem() / 1024 / 1024 / 1024);
+    const volumes = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : [];
+    const diskLines = volumes.length
+        ? volumes.map((v) => {
+            const name = v.name || v.deviceId || 'Disk';
+            const free = Math.round(Number(v.free || 0) / 1024 / 1024 / 1024);
+            const size = Math.round(Number(v.size || 0) / 1024 / 1024 / 1024);
+            return `${name}: ${free}GB free / ${size}GB total`;
+        })
+        : ['Disk free space: Unknown'];
+    if (locale === 'en-US') {
+        return [
+            `On ${profile.machineName}:`,
+            `- RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, ${ramFree}GB free`,
+            ...diskLines.map((line) => `- ${line}`),
+        ].join('\n');
+    }
+    return [
+        `${profile.machineName} 這台電腦：`,
+        `- RAM：已用 ${ramTotal - ramFree}GB / 總共 ${ramTotal}GB，剩餘 ${ramFree}GB`,
+        ...diskLines.map((line) => `- ${line}`),
+    ].join('\n');
 }
 
 function getRemoteSessionById(sessionId = '') {
@@ -1305,6 +1350,20 @@ function parseActionArg(actionStr = '', key = '') {
     const regex = new RegExp(`${key}="(.*?)"`);
     const match = String(actionStr || '').match(regex);
     return match ? match[1] : '';
+}
+
+function normalizeActionString(action = '') {
+    const raw = String(action || '').trim();
+    if (!raw) return '';
+    const commandMatch = raw.match(/^([A-Za-z_]+)([\s(][\s\S]*)?$/);
+    const commandPart = commandMatch ? commandMatch[1] : raw;
+    const restPart = commandMatch ? (commandMatch[2] || '') : '';
+    const command = commandPart
+        .replace(/[^a-z0-9_]/gi, '')
+        .replace(/([a-z])([A-Z])/g, '$1_$2')
+        .toUpperCase();
+    const rest = restPart.trim().replace(/^\((.*)\)$/s, '$1');
+    return [command, rest].filter(Boolean).join(' ');
 }
 
 function buildModelCapabilityProfile() {
@@ -2556,7 +2615,9 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                     role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
                     content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
                 }));
-            outboundText = await llm.chatWithLLM(
+            outboundText = isLocalHardwareStatusQuestion(text)
+                ? buildLocalHardwareStatusReply(locale)
+                : await llm.chatWithLLM(
                 text,
                 history,
                 {
@@ -2565,6 +2626,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                         `IMPORTANT - ALL hardware info below is from LOCAL machine (${profile.machineName}), NOT from the remote peer. Always prefix free-space / hardware answers with the machine name.`,
                         (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const health = getSystemHealth(); const volumeList = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : []; const diskFreePart = volumeList.length > 0 ? volumeList.map(v => `${v.name} ${Math.round(v.free / 1024 / 1024 / 1024)}GB / ${Math.round(v.size / 1024 / 1024 / 1024)}GB free`).join('; ') : 'Unknown'; return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                         'You are speaking as the local AI agent inside a peer-to-peer support chat.',
+                        `Address the local human as ${profile.userName}, not generic "使用者". Refer to yourself as ${profile.machineName}. Refer to the peer as ${currentSession?.peer?.machineName || 'remote PC'}.`,
                         'The current requester is the local human user on this machine.',
                         target === 'remote-ai'
                             ? 'The remote AI will receive your message next. Provide concise complementary notes, facts to check, or a division-of-labor suggestion. Do not compete with the remote AI for the final answer.'
@@ -2857,6 +2919,22 @@ app.get('/api/sops', async (req, res) => {
 
 
 });
+
+app.get('/api/skills', (req, res) => {
+    try {
+        const skills = loadSkillDocuments(true).map((skill) => ({
+            slug: skill.slug || skill.name,
+            name: skill.name,
+            description: skill.description || '',
+            tags: skill.tags || [],
+            category: skill.category || 'Skills',
+        }));
+        res.json({ success: true, skills });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // GET /api/todo  取得 To-Do List
 app.get('/api/todo', (req, res) => {
     res.json({ success: true, todoList });
@@ -3567,11 +3645,15 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
             // 3. 解析與安全過濾
-            const actionRegex = /\[ACTION:(.*?)\]/g;
+            const actionRegex = /\[(?:ACTION\s*[:=]\s*|Action\s*=\s*)(.*?)\]/gi;
             const actions = [];
             let match;
             while ((match = actionRegex.exec(llmReply)) !== null) {
-                actions.push(match[1]);
+                actions.push(normalizeActionString(match[1]));
+            }
+            const bareActionRegex = /(?:^|\n)\s*Action\s*=\s*([A-Za-z_]+[^\r\n]*)/gi;
+            while ((match = bareActionRegex.exec(llmReply)) !== null) {
+                actions.push(normalizeActionString(match[1]));
             }
 
 
@@ -3699,6 +3781,12 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                 ? `Browser Use executed (${mode}).`
                                 : `已執行 Browser Use（${mode}）。`
                         );
+                    } else {
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Browser Use failed (${mode}): ${browserResult?.error || 'unknown error'}`
+                                : `Browser Use 失敗（${mode}）：${browserResult?.error || '未知錯誤'}`
+                        );
                     }
                 }
 
@@ -3790,8 +3878,15 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
             if (hasActionTaken) saveTasks();
             // 4. 更新對話紀錄
-            const cleanReply = llmReply.replace(/\[ACTION:.*?\]/g, '').replace(/\[SUGGEST:.*?\]/g, '').trim();
-            const finalReply = cleanReply || actionSummaries.join('\n\n') || (
+            const cleanReply = llmReply
+                .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
+                .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
+                .replace(/\[SUGGEST:.*?\]/g, '')
+                .trim();
+            const finalReply = [
+                cleanReply,
+                actionSummaries.length ? actionSummaries.join('\n\n') : '',
+            ].filter(Boolean).join('\n\n') || (
                 locale === 'en-US'
                     ? 'Done. I executed the requested action.'
                     : '已執行指定動作。'

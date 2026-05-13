@@ -163,6 +163,10 @@
               <span>📚 SOP 清單</span>
               <span class="badge" id="sopCount">0</span>
             </button>
+            <button class="sidebar-tab" type="button" data-sidebar-tab="skills">
+              <span>🧩 Skills</span>
+              <span class="badge" id="skillCount">0</span>
+            </button>
           </div>
         </div>
         <div class="sidebar-search">
@@ -171,6 +175,7 @@
         <div class="sidebar-content">
           <div class="sidebar-body active" id="recommendListContainer"></div>
           <div class="sidebar-body" id="sopListContainer"></div>
+          <div class="sidebar-body" id="skillListContainer"></div>
         </div>
       </aside>
 
@@ -407,24 +412,26 @@
             <div class="chat-messages" id="chatMessages"></div>
           </div>
           <div class="chat-pane" id="remoteChatPane">
-            <div class="remote-chat-toolbar">
-              <div class="remote-connect-row">
-                <input type="text" id="remoteHostInput" class="remote-input" placeholder="輸入對方 IP，例如 192.168.1.88">
-                <button class="btn-secondary remote-btn" id="btnRemoteConnect" type="button">連線</button>
-              </div>
-              <div class="remote-profile-row">
-                <input type="text" id="remoteAgentNameInput" class="remote-input" placeholder="AI 名稱">
-                <input type="text" id="remoteUserNameInput" class="remote-input" placeholder="使用者名稱">
-                <button class="btn-secondary remote-btn" id="btnSaveRemoteProfile" type="button">儲存名稱</button>
-              </div>
-              <div class="remote-session-row">
-                <select id="remoteSessionSelect" class="remote-input"></select>
-                <select id="remoteSendMode" class="remote-input remote-select">
-                  <option value="user">以我發送</option>
-                  <option value="local-ai">以本機 AI 發送</option>
-                </select>
-                <button class="btn-secondary remote-btn" id="btnShareScreen" type="button" title="注意：別分享機敏資訊">傳送畫面</button>
-                <button class="btn-secondary remote-btn" id="btnDisconnectRemote" type="button">中斷</button>
+            <div class="remote-chat-toolbar" id="remoteChatToolbar">
+              <button class="remote-toolbar-toggle" id="btnRemoteToolbarToggle" type="button" aria-expanded="true">連線設定 ▲</button>
+              <div class="remote-toolbar-body" id="remoteToolbarBody">
+                <div class="remote-connect-row">
+                  <input type="text" id="remoteHostInput" class="remote-input" placeholder="輸入對方 IP，例如 192.168.1.88">
+                  <button class="btn-secondary remote-btn" id="btnRemoteConnect" type="button">連線</button>
+                </div>
+                <div class="remote-profile-row">
+                  <input type="text" id="remoteAgentNameInput" class="remote-input" placeholder="AI 名稱">
+                  <input type="text" id="remoteUserNameInput" class="remote-input" placeholder="使用者名稱">
+                  <button class="btn-secondary remote-btn" id="btnSaveRemoteProfile" type="button" disabled>儲存名稱</button>
+                </div>
+                <div class="remote-session-row">
+                  <select id="remoteSessionSelect" class="remote-input"></select>
+                  <select id="remoteSendMode" class="remote-input remote-select">
+                    <option value="user">以我發送</option>
+                    <option value="local-ai">以本機 AI 發送</option>
+                  </select>
+                  <button class="btn-secondary remote-btn" id="btnShareScreen" type="button" title="注意：別分享機敏資訊">傳送畫面</button>
+                </div>
               </div>
               <div class="remote-chat-hint" id="remoteChatHint">等待遠端連線。Port: 19168</div>
             </div>
@@ -434,9 +441,9 @@
 
         <div class="chat-input-area">
           <div class="input-toolbar">
-            <button class="input-btn" id="btnMic" title="語音輸入">
+            <button class="input-btn" id="btnNewLocalSession" title="新增對話">
               <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
-                <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd" />
+                <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z"/>
               </svg>
             </button>
             <button class="input-btn" id="btnChalkAttach" title="附上 Chalkboard" aria-pressed="false">
@@ -444,14 +451,20 @@
                 <path d="M5 3a2 2 0 00-2 2v7a2 2 0 002 2h3l3.4 3.06A1 1 0 0013 16.3V14h2a2 2 0 002-2V5a2 2 0 00-2-2H5zm1 3h8a1 1 0 110 2H6a1 1 0 010-2zm0 3h5a1 1 0 110 2H6a1 1 0 110-2z"/>
               </svg>
             </button>
-            <button class="input-btn" id="btnNewLocalSession" title="新增對話">
+            <button class="input-btn remote-only" id="btnRemoteAttachFile" title="附上檔案">
               <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
-                <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z"/>
+                <path fill-rule="evenodd" d="M8 3a4 4 0 00-4 4v7a5 5 0 0010 0V7a1 1 0 10-2 0v7a3 3 0 11-6 0V7a2 2 0 114 0v7a1 1 0 11-2 0V8a1 1 0 10-2 0v6a3 3 0 106 0V7a4 4 0 00-4-4z" clip-rule="evenodd"/>
               </svg>
             </button>
+            <input type="file" id="remoteFileInput" style="display:none">
             <button class="input-btn" id="btnClearChat" title="清除對話">
               <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
                 <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+              </svg>
+            </button>
+            <button class="input-btn remote-only" id="btnDisconnectRemote" title="中斷">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+                <path d="M3.2 8.4c3.9-3.2 9.7-3.2 13.6 0 .5.4.7 1.1.4 1.7l-.8 1.7c-.3.7-1.1 1-1.8.7l-2.1-.9a1.5 1.5 0 01-.9-1.2l-.1-.7a7.6 7.6 0 00-3 0l-.1.7c-.1.5-.4 1-.9 1.2l-2.1.9c-.7.3-1.5 0-1.8-.7l-.8-1.7c-.3-.6-.1-1.3.4-1.7z"/>
               </svg>
             </button>
             <span class="input-hint">Enter 送出 · Shift+Enter 換行</span>
@@ -459,14 +472,21 @@
           <div class="mention-menu" id="mentionMenu"></div>
           <div class="input-row">
             <textarea id="chatInput" rows="3" placeholder="告訴我你需要什麼... 例如「幫我移除 Copilot」" autocomplete="off"></textarea>
-            <button class="btn-send" id="btnSend" title="送出">
-              <svg class="icon-send" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
-                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-              </svg>
-              <svg class="icon-stop hidden" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
-                <rect x="4" y="4" width="12" height="12" rx="2" />
-              </svg>
-            </button>
+            <div class="send-stack">
+              <button class="input-btn send-mic-btn" id="btnMic" title="語音輸入">
+                <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+                  <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd" />
+                </svg>
+              </button>
+              <button class="btn-send" id="btnSend" title="送出">
+                <svg class="icon-send" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+                  <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                </svg>
+                <svg class="icon-stop hidden" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+                  <rect x="4" y="4" width="12" height="12" rx="2" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
