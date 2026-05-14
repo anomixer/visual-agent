@@ -393,6 +393,26 @@ class RemoteAgentService {
         return message;
     }
 
+    appendLocalChatMessage(sessionId, payload = {}) {
+        const session = this.requireActiveSession(sessionId);
+        const message = {
+            id: createId('msg'),
+            type: 'chat_message',
+            direction: 'local',
+            senderType: payload.senderType || 'user',
+            senderLabel: payload.senderLabel || '',
+            text: payload.text || '',
+            imageDataUrl: '',
+            caption: '',
+            target: payload.target || 'remote-user',
+            createdAt: new Date().toISOString(),
+        };
+        session.messages.push(message);
+        session.lastEventAt = message.createdAt;
+        this.onStateChanged();
+        return message;
+    }
+
     sendScreenShare(sessionId, payload = {}) {
         const session = this.requireActiveSession(sessionId);
         const message = {

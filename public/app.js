@@ -1820,6 +1820,12 @@ function formatRemoteSender(message = {}) {
     return message.senderLabel || (message.senderType === 'ai' ? (currentLocale === 'en-US' ? 'AI' : 'AI') : (currentLocale === 'en-US' ? 'User' : '使用者'));
 }
 
+function shouldRenderRemoteMessage(message = {}) {
+    if (!message || message.type !== 'chat_message') return true;
+    if (message.target !== 'remote-ai') return true;
+    return message.senderType !== 'ai';
+}
+
 function renderRemoteMessages() {
     if (!remoteChatMessages) return;
     const shouldStick = isContainerPinnedToBottom(remoteChatMessages);
@@ -1837,6 +1843,9 @@ function renderRemoteMessages() {
     session.messages.forEach((message) => {
         if (message.type === 'chalkboard_state') {
             applyRemoteChalkboardState(message);
+            return;
+        }
+        if (!shouldRenderRemoteMessage(message)) {
             return;
         }
         const remoteText = message.type === 'screen_share'

@@ -105,6 +105,7 @@ const SKILLS_DIR = path.join(aipcDir, 'skills');
 const PLUGINS_DIR = path.join(aipcDir, 'plugins');
 const EXPS_DIR = path.join(aipcDir, 'exps');
 let remoteStateTick = Date.now();
+const remoteAiReplyQueues = new Map();
 if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
 if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
 if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
@@ -149,6 +150,19 @@ function saveRemoteProfile(profile = {}) {
     };
     fs.writeFileSync(REMOTE_PROFILE_FILE, JSON.stringify(merged, null, 2), 'utf8');
     return merged;
+}
+
+function enqueueRemoteAiReply(sessionId, task) {
+    const previous = remoteAiReplyQueues.get(sessionId) || Promise.resolve();
+    const next = previous
+        .catch(() => {})
+        .then(() => task());
+    remoteAiReplyQueues.set(sessionId, next.finally(() => {
+        if (remoteAiReplyQueues.get(sessionId) === next) {
+            remoteAiReplyQueues.delete(sessionId);
+        }
+    }));
+    return next;
 }
 
 function getRemoteProfile() {
@@ -249,78 +263,80 @@ const remoteAgent = new RemoteAgentService({
     port: DEFAULT_REMOTE_PORT,
     onStateChanged: () => touchRemoteState(),
     onError: (error) => fileLog(`Remote Agent Error: ${error.message}`),
-    onMessage: async (session, message, payload) => {
-        try {
-            if (message.type !== 'chat_message') return;
-            if (message.target !== 'remote-ai') return;
-            const profile = getRemoteProfile();
-            remoteAgent.sendAiStatus(session.id, {
-                status: 'thinking',
-                senderLabel: profile.agentName,
-            });
-            const history = session.messages
-                .filter((item) => item.type === 'chat_message')
-                .slice(-6)
-                .map((item) => ({
-                    role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
-                    content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
-                }));
-            const localHardwareContext = await getSystemHealth();
-            const aiReply = isLocalHardwareStatusQuestion(message.text || '')
-                ? await buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW')
-                : await llm.chatWithLLM(
-                message.text || '',
-                history,
-                {
-                    systemContext: [
-                        `Current AI agent name: ${profile.agentName}`,
-                        `Current machine name: ${profile.machineName}`,
-                        `Current Windows user name: ${profile.userName}`,
-                        `Current machine IP: ${profile.ip}`,
-                        `Remote peer machine: ${session.peer?.machineName || 'Unknown'}`,
-                        `Remote peer user: ${session.peer?.userName || 'Unknown'}`,
-                        `Remote peer IP: ${session.peer?.ip || session.host || 'Unknown'}`,
-                        `Current AI provider: ${llm.getCurrentProvider() || 'Unknown'}`,
-                        `Current AI model: ${llm.getCurrentModel() || 'Unknown'}`,
-                        `The current requester is: ${message.senderType === 'ai' ? 'the remote AI agent' : 'the remote human user'} (${message.senderLabel || 'Unknown'}).`,
-                        `Address people by their explicit Windows user names. Do not say generic "使用者你好". Refer to yourself as ${profile.machineName}, and refer to the peer as ${session.peer?.machineName || 'remote PC'}.`,
-                        `You are replying inside a remote support chat over TCP port ${DEFAULT_REMOTE_PORT}.`,
-                        'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
-                        'If asked what model you are using, answer with the exact current provider and model shown above.',
-                        'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
-                        'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
-                        'When using ##CHALKBOARD##, coordinate with Local AI! You are the Remote AI: use "position: right" and "clear: false" to avoid erasing teammate content.',
-                        `IMPORTANT: All hardware info (CPU/RAM/disk/free space) belongs to THIS machine (${profile.machineName}). When answering questions about disk space or system resources, always specify which machine: "On ${profile.machineName}: ..."`,
-                        (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const diskFreePart = formatDiskFreePart(localHardwareContext); return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
-                        'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
-                    ].join('\n'),
-                },
-                payload?.locale || session.peer?.locale || 'zh-TW'
-            );
-            remoteAgent.sendChatMessage(session.id, {
-                senderType: 'ai',
-                senderLabel: profile.agentName,
-                text: aiReply,
-                target: 'remote-user',
-            });
-        } catch (error) {
-            fileLog(`Remote AI reply failed: ${error.message}`);
-            try {
-                remoteAgent.sendSystemMessage(session.id, `Remote AI failed to reply: ${error.message}`);
-            } catch {
-                // ignore
-            }
-        } finally {
+    onMessage: (session, message, payload) => {
+        if (message.type !== 'chat_message') return;
+        if (message.target !== 'remote-ai') return;
+        enqueueRemoteAiReply(session.id, async () => {
             try {
                 const profile = getRemoteProfile();
                 remoteAgent.sendAiStatus(session.id, {
-                    status: 'idle',
+                    status: 'thinking',
                     senderLabel: profile.agentName,
                 });
-            } catch {
-                // ignore
+                const history = session.messages
+                    .filter((item) => item.type === 'chat_message')
+                    .slice(-6)
+                    .map((item) => ({
+                        role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
+                        content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
+                    }));
+                const localHardwareContext = await getSystemHealth();
+                const aiReply = isLocalHardwareStatusQuestion(message.text || '')
+                    ? await buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW')
+                    : await llm.chatWithLLM(
+                    message.text || '',
+                    history,
+                    {
+                        systemContext: [
+                            `Current AI agent name: ${profile.agentName}`,
+                            `Current machine name: ${profile.machineName}`,
+                            `Current Windows user name: ${profile.userName}`,
+                            `Current machine IP: ${profile.ip}`,
+                            `Remote peer machine: ${session.peer?.machineName || 'Unknown'}`,
+                            `Remote peer user: ${session.peer?.userName || 'Unknown'}`,
+                            `Remote peer IP: ${session.peer?.ip || session.host || 'Unknown'}`,
+                            `Current AI provider: ${llm.getCurrentProvider() || 'Unknown'}`,
+                            `Current AI model: ${llm.getCurrentModel() || 'Unknown'}`,
+                            `The current requester is: ${message.senderType === 'ai' ? 'the remote AI agent' : 'the remote human user'} (${message.senderLabel || 'Unknown'}).`,
+                            `Address people by their explicit Windows user names. Do not say generic "使用者你好". Refer to yourself as ${profile.machineName}, and refer to the peer as ${session.peer?.machineName || 'remote PC'}.`,
+                            `You are replying inside a remote support chat over TCP port ${DEFAULT_REMOTE_PORT}.`,
+                            'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
+                            'If asked what model you are using, answer with the exact current provider and model shown above.',
+                            'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
+                            'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
+                            'When using ##CHALKBOARD##, coordinate with Local AI! You are the Remote AI: use "position: right" and "clear: false" to avoid erasing teammate content.',
+                            `IMPORTANT: All hardware info (CPU/RAM/disk/free space) belongs to THIS machine (${profile.machineName}). When answering questions about disk space or system resources, always specify which machine: "On ${profile.machineName}: ..."`,
+                            (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const diskFreePart = formatDiskFreePart(localHardwareContext); return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
+                            'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
+                        ].join('\n'),
+                    },
+                    payload?.locale || session.peer?.locale || 'zh-TW'
+                );
+                remoteAgent.sendChatMessage(session.id, {
+                    senderType: 'ai',
+                    senderLabel: profile.agentName,
+                    text: aiReply,
+                    target: 'remote-user',
+                });
+            } catch (error) {
+                fileLog(`Remote AI reply failed: ${error.message}`);
+                try {
+                    remoteAgent.sendSystemMessage(session.id, `Remote AI failed to reply: ${error.message}`);
+                } catch {
+                    // ignore
+                }
+            } finally {
+                try {
+                    const profile = getRemoteProfile();
+                    remoteAgent.sendAiStatus(session.id, {
+                        status: 'idle',
+                        senderLabel: profile.agentName,
+                    });
+                } catch {
+                    // ignore
+                }
             }
-        }
+        });
     }
 });
 remoteAgent.start();
@@ -2619,14 +2635,12 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
         if (mode === 'local-ai') {
             const profile = getRemoteProfile();
             localAiThinkingSessionId = sessionId;
-            // Bug1 Fix: 先把 user 的原始訊息存進 session.messages，polling 才能立刻顯示
-            remoteAgent.sendChatMessage(sessionId, {
+            remoteAgent.appendLocalChatMessage(sessionId, {
                 senderType: 'user',
                 senderLabel: getRemoteProfile().userName,
-                text: text,
-                target: target,
+                text,
+                target,
             });
-            touchRemoteState(); // 立刻更新 tick 讓前端 polling 拿到
             remoteAgent.sendAiStatus(sessionId, {
                 status: 'thinking',
                 senderLabel: profile.agentName,
@@ -2634,7 +2648,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
             const remoteState = remoteAgent.getState();
             const currentSession = remoteState.sessions.find((item) => item.id === sessionId);
             const history = (currentSession?.messages || [])
-                .filter((item) => item.type === 'chat_message')
+                .filter((item) => item.type === 'chat_message' && item.target !== 'remote-ai')
                 .slice(-6)
                 .map((item) => ({
                     role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
