@@ -1756,6 +1756,10 @@ function syncRemoteProfileDirty(isDirty = remoteProfileDirty) {
     }
 }
 
+function isRemoteProfileEditing() {
+    return document.activeElement === remoteAgentNameInput || document.activeElement === remoteUserNameInput;
+}
+
 function updateRemoteToolbarToggle() {
     if (!remoteChatToolbar || !btnRemoteToolbarToggle) return;
     remoteChatToolbar.classList.toggle('collapsed', remoteToolbarCollapsed);
@@ -1839,14 +1843,17 @@ function renderRemoteMessages() {
             ? (message.caption || (currentLocale === 'en-US' ? 'Screen image sent' : '已傳送畫面'))
             : message.text;
         const chalkControl = message.type === 'chat_message' ? extractChalkboardControlFromReply(remoteText || '') : { displayText: remoteText, draft: null };
+        const suggestionControl = message.type === 'chat_message'
+            ? extractSuggestionsFromReply(chalkControl.displayText || remoteText || '')
+            : { displayText: chalkControl.displayText || remoteText, suggestions: [] };
         if (chalkControl.draft && !appliedRemoteDraftMessageIds.has(message.id)) {
             appliedRemoteDraftMessageIds.add(message.id);
             applyAgentChalkboardDraft(chalkControl.draft);
         }
         appendChatBubble(
             message.senderType === 'system' ? 'system' : (message.senderType === 'ai' ? 'ai' : 'user'),
-            chalkControl.displayText || remoteText,
-            [],
+            suggestionControl.displayText || chalkControl.displayText || remoteText,
+            suggestionControl.suggestions,
             {
                 container: remoteChatMessages,
                 senderLabel: formatRemoteSender(message),
@@ -2033,10 +2040,10 @@ async function loadRemoteProfileAndState() {
             forceSystem: true,
         });
     });
-    if (!remoteProfileDirty && document.activeElement !== remoteAgentNameInput && remoteAgentNameInput) {
+    if (!remoteProfileDirty && !isRemoteProfileEditing() && remoteAgentNameInput) {
         remoteAgentNameInput.value = data.profile?.agentName || '';
     }
-    if (!remoteProfileDirty && document.activeElement !== remoteUserNameInput && remoteUserNameInput) {
+    if (!remoteProfileDirty && !isRemoteProfileEditing() && remoteUserNameInput) {
         remoteUserNameInput.value = data.profile?.userName || '';
     }
     syncRemoteProfileDirty(remoteProfileDirty);
@@ -2197,7 +2204,7 @@ function applyRemoteChalkboardState(message = {}) {
             clearSelectionBox();
             chalkboardState.hasInteracted = true;
             chalkboardState.hintDrawn = true;
-            chalkboardState.history = [];
+            pushChalkHistory();
             clearChalkboardSurface();
             chalkboardState.ctx.drawImage(img, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
             chalkboardState.hasUserContent = message.hasContent !== false;
@@ -4062,6 +4069,25 @@ async function loadSops() {
     } catch (e) {
         console.error('Load sops failed', e);
     }
+}
+
+function extractSuggestionsFromReply(text = '') {
+    const raw = String(text || '');
+    const match = raw.match(/\[SUGGEST:(.*?)\]/);
+    if (!match) {
+        return {
+            displayText: raw.trim(),
+            suggestions: [],
+        };
+    }
+    const suggestions = match[1]
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    return {
+        displayText: raw.replace(/\[SUGGEST:.*?\]/g, '').replace(/\n{3,}/g, '\n\n').trim(),
+        suggestions,
+    };
 }
 
 async function loadSkills() {

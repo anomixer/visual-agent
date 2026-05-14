@@ -265,8 +265,9 @@ const remoteAgent = new RemoteAgentService({
                     role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
                     content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
                 }));
+            const localHardwareContext = await getSystemHealth();
             const aiReply = isLocalHardwareStatusQuestion(message.text || '')
-                ? buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW')
+                ? await buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW')
                 : await llm.chatWithLLM(
                 message.text || '',
                 history,
@@ -290,7 +291,7 @@ const remoteAgent = new RemoteAgentService({
                         'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
                         'When using ##CHALKBOARD##, coordinate with Local AI! You are the Remote AI: use "position: right" and "clear: false" to avoid erasing teammate content.',
                         `IMPORTANT: All hardware info (CPU/RAM/disk/free space) belongs to THIS machine (${profile.machineName}). When answering questions about disk space or system resources, always specify which machine: "On ${profile.machineName}: ..."`,
-                        (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const health = getSystemHealth(); const volumeList = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : []; const diskFreePart = volumeList.length > 0 ? volumeList.map(v => `${v.name} ${Math.round(v.free / 1024 / 1024 / 1024)}GB / ${Math.round(v.size / 1024 / 1024 / 1024)}GB free`).join('; ') : 'Unknown'; return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
+                        (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const diskFreePart = formatDiskFreePart(localHardwareContext); return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                         'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
                     ].join('\n'),
                 },
@@ -879,20 +880,12 @@ function isLocalHardwareStatusQuestion(text = '') {
     return /(free\s*space|disk\s*space|磁碟|硬碟|容量|剩餘空間|ram|記憶體|cpu|gpu|顯卡|硬體)/i.test(String(text || ''));
 }
 
-function buildLocalHardwareStatusReply(locale = 'zh-TW') {
+async function buildLocalHardwareStatusReply(locale = 'zh-TW') {
     const profile = getRemoteProfile();
-    const health = getSystemHealth();
+    const health = await getSystemHealth();
     const ramTotal = Math.round(os.totalmem() / 1024 / 1024 / 1024);
     const ramFree = Math.round(os.freemem() / 1024 / 1024 / 1024);
-    const volumes = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : [];
-    const diskLines = volumes.length
-        ? volumes.map((v) => {
-            const name = v.name || v.deviceId || 'Disk';
-            const free = Math.round(Number(v.free || 0) / 1024 / 1024 / 1024);
-            const size = Math.round(Number(v.size || 0) / 1024 / 1024 / 1024);
-            return `${name}: ${free}GB free / ${size}GB total`;
-        })
-        : ['Disk free space: Unknown'];
+    const diskLines = buildDiskLinesFromHealth(health, locale);
     if (locale === 'en-US') {
         return [
             `On ${profile.machineName}:`,
@@ -1114,6 +1107,13 @@ function openFileWithDefaultApp(filePath = '') {
     if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
     const escaped = escapePowerShellSingleQuoted(filePath);
     return runPowerShellCapture(`Start-Process -FilePath '${escaped}'`, 8000);
+}
+
+function openFileWithArguments(filePath = '', argumentsText = '') {
+    if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+    const escapedPath = escapePowerShellSingleQuoted(filePath);
+    const escapedArgs = escapePowerShellSingleQuoted(argumentsText || '');
+    return runPowerShellCapture(`Start-Process -FilePath '${escapedPath}' -ArgumentList '${escapedArgs}'`, 8000);
 }
 
 function openUrlInDefaultBrowser(url = '') {
@@ -1350,6 +1350,27 @@ function parseActionArg(actionStr = '', key = '') {
     const regex = new RegExp(`${key}="(.*?)"`);
     const match = String(actionStr || '').match(regex);
     return match ? match[1] : '';
+}
+
+function formatDiskFreePart(health = null) {
+    const volumeList = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : [];
+    if (!volumeList.length) return 'Unknown';
+    return volumeList
+        .map((v) => `${v.name || v.label || 'Disk'} ${Math.round((Number(v.free) || 0) / 1024 / 1024 / 1024)}GB / ${Math.round((Number(v.size) || 0) / 1024 / 1024 / 1024)}GB free`)
+        .join('; ');
+}
+
+function buildDiskLinesFromHealth(health = null, locale = 'zh-TW') {
+    const volumes = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : [];
+    if (!volumes.length) {
+        return [locale === 'en-US' ? 'Disk free space: Unknown' : '磁碟剩餘空間：Unknown'];
+    }
+    return volumes.map((v) => {
+        const name = v.name || v.label || v.deviceId || 'Disk';
+        const free = Math.round((Number(v.free) || 0) / 1024 / 1024 / 1024);
+        const size = Math.round((Number(v.size) || 0) / 1024 / 1024 / 1024);
+        return `${name}: ${free}GB free / ${size}GB total`;
+    });
 }
 
 function normalizeActionString(action = '') {
@@ -1609,7 +1630,11 @@ function runComputerUseOperation(params = {}, sopsWithState = []) {
                 error: 'Direct host file open blocked. Use prepare_vm_sandbox first or set vmSafeByDefault=false explicitly.',
             };
         }
-        const result = openFileWithDefaultApp(params.filePath || params.file_path || '');
+        const filePath = params.filePath || params.file_path || params.path || '';
+        const args = params.arguments || params.args || '';
+        const result = args
+            ? openFileWithArguments(filePath, args)
+            : openFileWithDefaultApp(filePath);
         return { success: result.success, mode, detail: result.stderr || result.error || '' };
     }
     if (mode === 'open_url') {
@@ -2615,8 +2640,9 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                     role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
                     content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
                 }));
+            const localHardwareContext = await getSystemHealth();
             outboundText = isLocalHardwareStatusQuestion(text)
-                ? buildLocalHardwareStatusReply(locale)
+                ? await buildLocalHardwareStatusReply(locale)
                 : await llm.chatWithLLM(
                 text,
                 history,
@@ -2624,7 +2650,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                     systemContext: [
                         buildLocalAgentContext(currentSession),
                         `IMPORTANT - ALL hardware info below is from LOCAL machine (${profile.machineName}), NOT from the remote peer. Always prefix free-space / hardware answers with the machine name.`,
-                        (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const health = getSystemHealth(); const volumeList = Array.isArray(health?.disk?.volumes) ? health.disk.volumes : []; const diskFreePart = volumeList.length > 0 ? volumeList.map(v => `${v.name} ${Math.round(v.free / 1024 / 1024 / 1024)}GB / ${Math.round(v.size / 1024 / 1024 / 1024)}GB free`).join('; ') : 'Unknown'; return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
+                        (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const diskFreePart = formatDiskFreePart(localHardwareContext); return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                         'You are speaking as the local AI agent inside a peer-to-peer support chat.',
                         `Address the local human as ${profile.userName}, not generic "使用者". Refer to yourself as ${profile.machineName}. Refer to the peer as ${currentSession?.peer?.machineName || 'remote PC'}.`,
                         'The current requester is the local human user on this machine.',
@@ -3805,10 +3831,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
                 if (actionStr.startsWith('COMPUTER_USE')) {
                     const mode = parseActionArg(actionStr, 'mode');
-                    const filePath = parseActionArg(actionStr, 'file_path');
+                    const filePath = parseActionArg(actionStr, 'file_path') || parseActionArg(actionStr, 'path');
+                    const args = parseActionArg(actionStr, 'arguments') || parseActionArg(actionStr, 'args');
                     const url = parseActionArg(actionStr, 'url');
                     const sopId = parseActionArg(actionStr, 'sop_id');
-                    const computerResult = runComputerUseOperation({ mode, filePath, url, sopId }, sopsWithState);
+                    const computerResult = runComputerUseOperation({ mode, filePath, path: filePath, arguments: args, url, sopId }, sopsWithState);
                     hasActionTaken = true;
                     taskListChanged = true;
                     if (computerResult?.success) {
