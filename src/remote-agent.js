@@ -570,6 +570,20 @@ class RemoteAgentService {
         this.markDisconnected(session, 'local_disconnect');
     }
 
+    forgetSession(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return { success: true };
+        if (session.status === 'active') {
+            throw new Error('Active remote session cannot be deleted. Disconnect it first.');
+        }
+        if (session.socket && !session.socket.destroyed) {
+            session.socket.destroy();
+        }
+        this.sessions.delete(sessionId);
+        this.onStateChanged();
+        return { success: true };
+    }
+
     requireActiveSession(sessionId) {
         const session = this.sessions.get(sessionId);
         if (!session) throw new Error('Session not found');

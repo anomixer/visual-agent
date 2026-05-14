@@ -2781,6 +2781,19 @@ app.post('/api/remote/session/:sessionId/disconnect', (req, res) => {
         res.status(400).json({ success: false, error: error.message });
     }
 });
+
+app.delete('/api/remote/session/:sessionId', (req, res) => {
+    try {
+        remoteAgent.forgetSession(req.params.sessionId);
+        touchRemoteState();
+        res.json({
+            success: true,
+            sessions: remoteAgent.getState().sessions,
+        });
+    } catch (error) {
+        res.status(400).json({ success: false, error: error.message });
+    }
+});
 // Default recommend list
 // 推薦清單基本資料（按優先順序排列，AI 引擎放最前面）
 const RECOMMEND_BASE = [

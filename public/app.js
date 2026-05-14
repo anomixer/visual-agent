@@ -323,6 +323,9 @@ const I18N = {
             connect: '連線',
             saveProfile: '儲存名稱',
             disconnect: '中斷',
+            disconnectConfirm: '確定要中斷目前遠端連線嗎？',
+            deleteRemoteSessionConfirm: '確定要刪除此遠端對話 tab 嗎？',
+            keepActiveRemoteSession: '目前連線中的遠端 tab 不能刪除，請先中斷連線。',
             shareScreen: '傳送畫面',
             attachFile: '附上檔案',
             connectionSettings: '連線設定',
@@ -453,6 +456,7 @@ const I18N = {
                 cut: '剪下',
                 paste: '貼上',
                 clear: '清空',
+                clearConfirm: '確定要清空黑板內容嗎？此動作無法直接復原。',
                 undo: 'Undo',
                 upload: '上傳圖片',
                 save: '存成圖片',
@@ -639,6 +643,9 @@ const I18N = {
             connect: 'Connect',
             saveProfile: 'Save Names',
             disconnect: 'Disconnect',
+            disconnectConfirm: 'Disconnect the current remote session?',
+            deleteRemoteSessionConfirm: 'Delete this remote chat tab?',
+            keepActiveRemoteSession: 'The active remote tab cannot be deleted. Disconnect it first.',
             shareScreen: 'Send Screen',
             attachFile: 'Attach File',
             connectionSettings: 'Connection Settings',
@@ -769,6 +776,7 @@ const I18N = {
                 cut: 'Cut',
                 paste: 'Paste',
                 clear: 'Clear',
+                clearConfirm: 'Clear the Chalkboard? This cannot be directly undone.',
                 undo: 'Undo',
                 upload: 'Upload Image',
                 save: 'Save Image',
@@ -1972,8 +1980,14 @@ function renderRemoteSessionControls() {
         quickListEl.innerHTML = sessions.map((session) => {
             const activeClass = session.id === selectedRemoteSessionId ? 'active' : '';
             const pendingClass = session.status === 'pending_approval' ? 'pending' : '';
+            const canClose = session.status !== 'active';
             const label = session.peer?.machineName || session.host || session.id;
-            return `<button type="button" class="remote-session-chip ${activeClass} ${pendingClass}" data-session-id="${session.id}">${escapeHtml(label)}</button>`;
+            return `
+                <button type="button" class="remote-session-chip ${activeClass} ${pendingClass}" data-session-id="${session.id}">
+                    <span class="remote-session-chip-title">${escapeHtml(label)}</span>
+                    ${canClose ? `<span class="remote-session-chip-close" data-remote-close-id="${session.id}" title="Close">×</span>` : ''}
+                </button>
+            `;
         }).join('');
         quickListEl.querySelectorAll('.remote-session-chip').forEach((button) => {
             button.addEventListener('click', () => {
@@ -1981,6 +1995,13 @@ function renderRemoteSessionControls() {
                 localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
                 renderRemoteSessionControls();
                 switchChatMode('remote');
+            });
+        });
+        quickListEl.querySelectorAll('[data-remote-close-id]').forEach((closeBtn) => {
+            closeBtn.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                await deleteRemoteSessionTab(closeBtn.dataset.remoteCloseId || '');
             });
         });
     }
@@ -2992,6 +3013,7 @@ function undoChalkAction() {
 
 function clearChalkboard() {
     if (!chalkboardState.ctx || !chalkboardCanvas) return;
+    if (!confirm(t('chalkboard.tools.clearConfirm'))) return;
     chalkboardState.hasInteracted = true;
     chalkboardState.hintDrawn = false;
     pushChalkHistory();
@@ -5566,6 +5588,7 @@ async function respondRemoteRequest(accept) {
 async function disconnectRemoteSession() {
     const session = getActiveRemoteSession();
     if (!session) return;
+    if (!confirm(t('remote.disconnectConfirm'))) return;
     const reason = session.status === 'pending_approval'
         ? 'Connection cancelled by local user.'
         : 'Disconnected by local user.';
@@ -5573,6 +5596,33 @@ async function disconnectRemoteSession() {
         method: 'POST',
         body: { reason }
     });
+    await loadRemoteProfileAndState();
+}
+
+async function deleteRemoteSessionTab(sessionId = '') {
+    const session = (remoteState.sessions || []).find((item) => item.id === sessionId);
+    if (!session) return;
+    if (session.status === 'active') {
+        appendChatBubble('system', t('remote.keepActiveRemoteSession'), [], {
+            container: remoteChatMessages,
+            forceSystem: true,
+        });
+        return;
+    }
+    if (!confirm(t('remote.deleteRemoteSessionConfirm'))) return;
+    const data = await api(`/api/remote/session/${sessionId}`, { method: 'DELETE' });
+    if (!data.success) {
+        appendChatBubble('system', data.error || 'Delete failed', [], {
+            container: remoteChatMessages,
+            forceSystem: true,
+        });
+        return;
+    }
+    if (selectedRemoteSessionId === sessionId) {
+        const next = (data.sessions || []).find((item) => item.status === 'active') || (data.sessions || [])[0] || null;
+        selectedRemoteSessionId = next?.id || '';
+        localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
+    }
     await loadRemoteProfileAndState();
 }
 

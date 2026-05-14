@@ -2020,6 +2020,34 @@ ol {
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-secondary);
   font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 160px;
+}
+
+.remote-session-chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-session-chip-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.remote-session-chip-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
 }
 
 .remote-session-chip.active {
