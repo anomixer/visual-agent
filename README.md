@@ -40,6 +40,28 @@ AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可�
 
 ---
 
+## Remote Directive Protocol
+
+- Structured suggestion buttons:
+
+```text
+[SUGGEST: button_text="🟢 Install VS Code" action="install_sop" sop_id="vscode_install"]
+```
+
+- Preferred action tags:
+
+```text
+[ACTION:ADD_TASK sop_id="..."]
+[ACTION:EXECUTE_TASK task_id="..."]
+[ACTION:INSTALL_SOP sop_id="..."]
+[ACTION:COMPUTER_USE mode="prepare_vm_sandbox|open_file|open_url|install_sop" ...]
+[ACTION:BROWSER_USE mode="search|open|navigate|fetch_title|extract_text|snapshot" ...]
+```
+
+- When both Local AI and Remote AI are relevant, Local AI should answer first and Remote AI may follow up later. The user should not be blocked waiting for both sides.
+
+---
+
 ## 環境需求
 
 | 項目 | 需求 |
@@ -299,6 +321,13 @@ aipc-agent/
 ---
 
 ## 近期更新
+
+### 2026.05.14
+- **遠端 Directive Protocol 標準化**：遠端 AI 建議按鈕統一採用結構化格式 `[SUGGEST: button_text="..." action="install_sop|add_task|execute_task|computer_use" ...]`，避免 UI 只顯示原始字串或點擊無效。
+- **遠端 Action 直通執行**：遠端 AI 若回覆 `[ACTION:INSTALL_SOP ...]`、`[ACTION:ADD_TASK ...]`、`[ACTION:EXECUTE_TASK ...]` 或 `COMPUTER_USE`，前端現在會解析並在本機真正執行，不再只顯示文字。
+- **遠端協作不阻塞**：當同時需要本地 AI 與遠端 AI 時，改為本地 AI 先回覆、遠端 AI 背景補充，減少兩邊互等造成的卡死體感。
+- **Remote Chat 降閃爍**：遠端聊天室改用 render signature 跳過無變更重繪，降低 suggestion 按鈕與訊息列表每 2 秒閃爍的問題。
+- **遠端 AI 排隊回覆**：同一個 remote session 的 remote-AI 任務現在會依序排隊，避免上一題晚回、下一題插隊，導致重複回答或答非所問。
 
 ### 2026.05.13
 - **版本更新**：套件版本更新為 `2026.05.13`。

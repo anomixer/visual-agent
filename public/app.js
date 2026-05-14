@@ -64,8 +64,10 @@ let remoteChalkboardApplyTimer = null;
 let queuedRemoteChalkboardMessage = null;
 const appliedRemoteChalkboardMessageIds = new Set();
 const appliedRemoteDraftMessageIds = new Set();
+const handledRemoteAiActionMessageIds = new Set();
 const remoteSessionsOpenedOnChalkboard = new Set();
 const notifiedRemoteDisconnectSessionIds = new Set();
+let lastRemoteRenderSignature = '';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -1826,6 +1828,20 @@ function shouldRenderRemoteMessage(message = {}) {
     return message.senderType !== 'ai';
 }
 
+function buildRemoteRenderSignature(session = null) {
+    if (!session) return 'no-session';
+    const lastMessage = Array.isArray(session.messages) && session.messages.length > 0 ? session.messages[session.messages.length - 1] : null;
+    return [
+        session.id || '',
+        session.status || '',
+        session.messages?.length || 0,
+        lastMessage?.id || '',
+        session.aiStatus?.localAi || '',
+        session.aiStatus?.remoteAi || '',
+        session.aiStatus?.updatedAt || '',
+    ].join('|');
+}
+
 function renderRemoteMessages() {
     if (!remoteChatMessages) return;
     const shouldStick = isContainerPinnedToBottom(remoteChatMessages);
@@ -1855,13 +1871,35 @@ function renderRemoteMessages() {
         const suggestionControl = message.type === 'chat_message'
             ? extractSuggestionsFromReply(chalkControl.displayText || remoteText || '')
             : { displayText: chalkControl.displayText || remoteText, suggestions: [] };
+        const actionDirectives = message.type === 'chat_message'
+            ? extractActionDirectivesFromReply(suggestionControl.displayText || chalkControl.displayText || remoteText || '')
+            : [];
+        if (message.senderType === 'ai' && actionDirectives.length > 0 && !handledRemoteAiActionMessageIds.has(message.id)) {
+            handledRemoteAiActionMessageIds.add(message.id);
+            actionDirectives.forEach((directive) => {
+                handleDirectiveAction(directive).then((result) => {
+                    if (!result?.summary) return;
+                    appendChatBubble('system', result.summary, [], {
+                        container: remoteChatMessages,
+                        forceSystem: true,
+                    });
+                }).catch((error) => {
+                    appendChatBubble('system', error.message || 'Remote AI action failed', [], {
+                        container: remoteChatMessages,
+                        forceSystem: true,
+                    });
+                });
+            });
+        }
         if (chalkControl.draft && !appliedRemoteDraftMessageIds.has(message.id)) {
             appliedRemoteDraftMessageIds.add(message.id);
             applyAgentChalkboardDraft(chalkControl.draft);
         }
         appendChatBubble(
             message.senderType === 'system' ? 'system' : (message.senderType === 'ai' ? 'ai' : 'user'),
-            suggestionControl.displayText || chalkControl.displayText || remoteText,
+            (suggestionControl.displayText || chalkControl.displayText || remoteText)
+                .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gs, '')
+                .trim(),
             suggestionControl.suggestions,
             {
                 container: remoteChatMessages,
@@ -2029,7 +2067,11 @@ function renderRemoteSessionControls() {
     btnDisconnectRemote?.classList.toggle('visible', activeChatMode === 'remote');
     updateChatModelBadgeDisplay(window.__lastLLMStatus || null);
     updatePendingStatusRow();
-    renderRemoteMessages();
+    const renderSignature = buildRemoteRenderSignature(activeSession);
+    if (renderSignature !== lastRemoteRenderSignature) {
+        lastRemoteRenderSignature = renderSignature;
+        renderRemoteMessages();
+    }
 }
 
 async function loadRemoteProfileAndState() {
@@ -4082,21 +4124,65 @@ async function loadSops() {
 
 function extractSuggestionsFromReply(text = '') {
     const raw = String(text || '');
-    const match = raw.match(/\[SUGGEST:(.*?)\]/);
+    const match = raw.match(/\[SUGGEST:(.*?)\]/s);
     if (!match) {
         return {
             displayText: raw.trim(),
             suggestions: [],
         };
     }
-    const suggestions = match[1]
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean);
+    const body = String(match[1] || '').trim();
+    const attrLabel = body.match(/button_text="(.*?)"/);
+    const attrAction = body.match(/action="(.*?)"/);
+    const attrSopId = body.match(/sop_id="(.*?)"/);
+    const attrTaskId = body.match(/task_id="(.*?)"/);
+    const attrMode = body.match(/mode="(.*?)"/);
+    let suggestions;
+    if (attrLabel) {
+        suggestions = [{
+            label: attrLabel[1],
+            action: attrAction ? attrAction[1] : '',
+            sopId: attrSopId ? attrSopId[1] : '',
+            taskId: attrTaskId ? attrTaskId[1] : '',
+            mode: attrMode ? attrMode[1] : '',
+        }];
+    } else {
+        suggestions = body
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .map((label) => ({ label, action: '', sopId: '', taskId: '', mode: '' }));
+    }
     return {
         displayText: raw.replace(/\[SUGGEST:.*?\]/g, '').replace(/\n{3,}/g, '\n\n').trim(),
         suggestions,
     };
+}
+
+function extractActionDirectivesFromReply(text = '') {
+    const raw = String(text || '');
+    const directives = [];
+    const regex = /\[(?:ACTION\s*[:=]\s*|Action\s*=\s*)(.*?)\]/g;
+    let match;
+    while ((match = regex.exec(raw)) !== null) {
+        const body = String(match[1] || '').trim();
+        const nameMatch = body.match(/^([A-Za-z_]+)/);
+        if (!nameMatch) continue;
+        const getArg = (key) => {
+            const m = body.match(new RegExp(`${key}="(.*?)"`));
+            return m ? m[1] : '';
+        };
+        directives.push({
+            type: nameMatch[1].toUpperCase(),
+            sopId: getArg('sop_id'),
+            taskId: getArg('task_id'),
+            mode: getArg('mode'),
+            path: getArg('path') || getArg('file_path'),
+            url: getArg('url'),
+            arguments: getArg('arguments') || getArg('args'),
+        });
+    }
+    return directives;
 }
 
 async function loadSkills() {
@@ -4109,6 +4195,99 @@ async function loadSkills() {
     } catch (e) {
         console.error('Load skills failed', e);
     }
+}
+
+async function queueSopTaskById(sopId = '', executeNow = false) {
+    const target = sopsList.find((item) => item.id === sopId);
+    if (!target) throw new Error(`SOP not found: ${sopId}`);
+    const action = target.recommendedAction || 'install';
+    const existingTask = [...todoList].reverse().find((item) => item.skillId === target.id && item.action === action && ['pending', 'running'].includes(item.status));
+    if (existingTask) {
+        if (executeNow && existingTask.status === 'pending') {
+            await executeTask(existingTask.id);
+        }
+        return existingTask;
+    }
+    const data = await api('/api/todo', {
+        method: 'POST',
+        body: {
+            title: target.name,
+            description: target.description || '',
+            category: target.category || 'Maintenance',
+            skillId: target.id,
+            action,
+        }
+    });
+    if (!data.success) throw new Error(data.error || 'Failed to create task');
+    todoList = data.todoList || todoList;
+    renderTodoList();
+    const task = data.task || todoList[todoList.length - 1];
+    if (executeNow && task?.id) {
+        await executeTask(task.id);
+    }
+    return task;
+}
+
+async function handleDirectiveAction(action = {}) {
+    const normalized = String(action?.action || action?.type || '').trim().toLowerCase();
+    if (normalized === 'install_sop') {
+        const task = await queueSopTaskById(action.sopId, true);
+        if (task?.id) await loadTodo();
+        return {
+            success: true,
+            summary: currentLocale === 'en-US'
+                ? `Started SOP task: ${task?.title || action.sopId}`
+                : `已開始 SOP 任務：${task?.title || action.sopId}`,
+        };
+    }
+    if (normalized === 'add_task') {
+        const task = await queueSopTaskById(action.sopId, false);
+        await loadTodo();
+        return {
+            success: true,
+            summary: currentLocale === 'en-US'
+                ? `Added task: ${task?.title || action.sopId}`
+                : `已加入任務：${task?.title || action.sopId}`,
+        };
+    }
+    if (normalized === 'execute_task' && action.taskId) {
+        const targetTask = todoList.find((item) => item.id === action.taskId);
+        if (!targetTask) throw new Error(`Task not found: ${action.taskId}`);
+        await executeTask(action.taskId);
+        return {
+            success: true,
+            summary: currentLocale === 'en-US'
+                ? `Started task: ${targetTask.title}`
+                : `已開始任務：${targetTask.title}`,
+        };
+    }
+    if (normalized === 'computer_use') {
+        const result = await api('/api/agent/computer-use', {
+            method: 'POST',
+            body: {
+                mode: action.mode || '',
+                sopId: action.sopId || '',
+                path: action.path || '',
+                filePath: action.path || '',
+                url: action.url || '',
+                arguments: action.arguments || '',
+                vmSafeByDefault: false,
+            }
+        });
+        if (result?.success && result?.result?.taskId) {
+            await executeTask(result.result.taskId);
+        }
+        if (!result?.success) {
+            throw new Error(result?.error || result?.result?.error || 'Computer Use failed');
+        }
+        return {
+            success: true,
+            summary: currentLocale === 'en-US'
+                ? `Computer Use executed${result?.result?.mode ? ` (${result.result.mode})` : ''}.`
+                : `已執行 Computer Use${result?.result?.mode ? `（${result.result.mode}）` : ''}。`,
+        };
+    }
+    throw new Error(`Unsupported directive action: ${normalized || 'unknown'}`);
 }
 
 let sidebarRefreshTimer = null;
@@ -5296,8 +5475,38 @@ async function sendChat() {
         const data = currentMode === 'remote'
             ? await (async () => {
                 const targets = resolveRemoteTargets(msg);
+                if (targets.includes('local-ai') && targets.includes('remote-ai')) {
+                    api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
+                        method: 'POST',
+                        body: {
+                            text: msg,
+                            mode: 'user',
+                            target: 'remote-ai',
+                            locale: currentLocale,
+                        }
+                    }).catch((error) => {
+                        appendChatBubble('system', `Remote AI follow-up failed: ${error.message}`, [], {
+                            container: remoteChatMessages,
+                            forceSystem: true,
+                        });
+                    });
+                    appendChatBubble('system', currentLocale === 'en-US' ? 'Local AI is replying first. Remote AI will follow up when ready.' : '先由本地 AI 回覆，遠端 AI 準備好後再補充。', [], {
+                        container: remoteChatMessages,
+                        forceSystem: true,
+                    });
+                    return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
+                        method: 'POST',
+                        body: {
+                            text: msg,
+                            mode: 'local-ai',
+                            target: 'remote-user',
+                            locale: currentLocale,
+                        },
+                        signal: requestAbortController.signal
+                    });
+                }
                 if (targets.includes('local-ai')) {
-                    const localAiTarget = targets.includes('remote-ai') ? 'remote-ai' : 'remote-user';
+                    const localAiTarget = 'remote-user';
                     return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
                         method: 'POST',
                         body: {
@@ -5424,7 +5633,10 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
         if (suggestions && suggestions.length > 0) {
             suggestionsHtml = `
                 <div class="suggestions-container">
-                    ${suggestions.map(s => `<button class="btn-suggest">${escapeHtml(s)}</button>`).join('')}
+                    ${suggestions.map((s) => {
+                        const item = typeof s === 'string' ? { label: s, action: '', sopId: '', taskId: '', mode: '' } : s;
+                        return `<button class="btn-suggest" data-action="${escapeHtml(item.action || '')}" data-sop-id="${escapeHtml(item.sopId || '')}" data-task-id="${escapeHtml(item.taskId || '')}" data-mode="${escapeHtml(item.mode || '')}">${escapeHtml(item.label || '')}</button>`;
+                    }).join('')}
                 </div>`;
         }
 
@@ -5450,7 +5662,28 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
         
         // 建議按鈕點擊事件
         div.querySelectorAll('.btn-suggest').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
+                const action = btn.dataset.action || '';
+                if (action) {
+                    btn.disabled = true;
+                    try {
+                        const result = await handleDirectiveAction({
+                            action,
+                            sopId: btn.dataset.sopId || '',
+                            taskId: btn.dataset.taskId || '',
+                            mode: btn.dataset.mode || '',
+                        });
+                        if (result?.summary) {
+                            appendChatBubble('system', result.summary, [], {
+                                container,
+                                forceSystem: true,
+                            });
+                        }
+                    } finally {
+                        btn.disabled = false;
+                    }
+                    return;
+                }
                 chatInput.value = btn.textContent;
                 sendChat();
             });

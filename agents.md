@@ -708,6 +708,23 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ---
 
+## 📌 2026.05.14 — 遠端 Directive Protocol 與協作節奏重構
+
+### 遠端 Directive Protocol 標準化
+- **SUGGEST 結構化**：遠端 AI 建議按鈕改為固定輸出格式 `[SUGGEST: button_text="..." action="install_sop|add_task|execute_task|computer_use" sop_id="..." task_id="..." mode="..."]`。
+- **ACTION 命名收斂**：建議 AI 優先使用 `ADD_TASK`、`EXECUTE_TASK`、`INSTALL_SOP`、`COMPUTER_USE`、`BROWSER_USE`，避免混用舊括號格式或未定義欄位。
+- **遠端前端執行器**：`public/app.js` 新增 directive 解析與執行流程；遠端 AI 回覆中的 `INSTALL_SOP` / `ADD_TASK` / `EXECUTE_TASK` / `COMPUTER_USE` 現在會在本機真正觸發。
+
+### 遠端聊天 UI 與 Suggestion
+- **按鈕不再是原始字串**：修正 `[SUGGEST: button_text="..." ...]` 先前只顯示整串屬性字串的問題，現在會渲染成真正可點按鈕。
+- **Remote Chat 降閃爍**：遠端聊天室加入 render signature，若 session 狀態與最後訊息未改變，就跳過整塊重繪，降低按鈕與訊息列表每 2 秒閃爍。
+- **AI-to-AI 內部便條隱藏**：目標為 `remote-ai` 的 AI 內部協作訊息不再直接顯示給使用者，避免誤認為 AI 重複回答。
+
+### 遠端 Orchestration 重構
+- **快者先回**：當訊息同時需要本地 AI 與遠端 AI 時，改為本地 AI 先回使用者，遠端 AI 轉為背景補充，不再要求使用者等待雙方都完成。
+- **Per-session Queue**：遠端 AI 自動回覆改為每個 session 依序排隊，避免上一題晚回、下一題插隊，造成「查得怎麼樣」時才回答前一題。
+- **本地歷史保留、遠端單發**：`local-ai` 協作模式下，使用者原話只保留在本機 session 歷史，不再同時送去遠端 AI 與本地 AI 整理稿，降低雙重觸發與重複回答機率。
+
 ## 📌 2026.05.13 — 遠端協作、Chat UI、Skills 清單與 Action 回報修正
 
 ### 遠端雙 AI / Chalkboard

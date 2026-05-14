@@ -3767,6 +3767,29 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     if (idMatch) executeTaskId = idMatch[1];
                 }
 
+                if (actionStr.startsWith('INSTALL_SOP')) {
+                    const idMatch = actionStr.match(/sop_id="(.*?)"/);
+                    if (idMatch) {
+                        const mSop = sopsWithState.find((s) => s.id === idMatch[1]);
+                        if (mSop) {
+                            const task = {
+                                id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                                title: buildTaskTitle(mSop, mSop.recommendedAction),
+                                description: 'Scheduled by AI Agent',
+                                skillId: mSop.id,
+                                action: mSop.recommendedAction,
+                                category: mSop.category || 'Maintenance',
+                                status: 'pending', progress: 0, logs: [],
+                                createdAt: new Date().toISOString()
+                            };
+                            todoList.push(task);
+                            hasActionTaken = true;
+                            taskListChanged = true;
+                            executeTaskId = task.id;
+                        }
+                    }
+                }
+
 
                 if (actionStr === 'CLEAR_ALL') {
                     todoList = [];
