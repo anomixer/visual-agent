@@ -1420,6 +1420,37 @@ function normalizeActionString(action = '') {
     return [command, rest].filter(Boolean).join(' ');
 }
 
+function parseStructuredSuggestions(reply = '', locale = 'zh-TW', fallbackSuggestions = []) {
+    const raw = String(reply || '');
+    const matches = [...raw.matchAll(/\[SUGGEST:(.*?)\]/gs)];
+    if (!matches.length) return Array.isArray(fallbackSuggestions) ? fallbackSuggestions : [];
+    const structured = matches.map((match) => {
+        const body = String(match[1] || '').trim();
+        const getArg = (key) => {
+            const m = body.match(new RegExp(`${key}="(.*?)"`));
+            return m ? m[1] : '';
+        };
+        const label = getArg('button_text');
+        if (label) {
+            return {
+                label,
+                action: getArg('action'),
+                sopId: getArg('sop_id'),
+                taskId: getArg('task_id'),
+                mode: getArg('mode'),
+            };
+        }
+        return { label: body, action: '', sopId: '', taskId: '', mode: '' };
+    }).filter((item) => item.label);
+    if (!structured.length) {
+        return Array.isArray(fallbackSuggestions) ? fallbackSuggestions : [];
+    }
+    if (locale === 'en-US' && structured.some((item) => /[\u4e00-\u9fff]/.test(item.label || ''))) {
+        return Array.isArray(fallbackSuggestions) ? fallbackSuggestions : [];
+    }
+    return structured;
+}
+
 function buildModelCapabilityProfile() {
     const model = llm.getCurrentModel();
     const provider = llm.getCurrentProvider();
@@ -3999,20 +4030,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             } else {
                 chatHistory = trimmedHistory;
             }
-            const suggestMatch = llmReply.match(/\[SUGGEST:(.*?)\]/);
-            // In en-US mode, if [SUGGEST:...] contains Chinese characters, discard it and use locale-aware defaults
-            let finalSuggestions;
-            if (suggestMatch) {
-                const suggestText = suggestMatch[1];
-                const hasChinese = /[\u4e00-\u9fff]/.test(suggestText);
-                if (locale === 'en-US' && hasChinese) {
-                    finalSuggestions = suggestions; // use locale-aware defaults defined at line 1167
-                } else {
-                    finalSuggestions = suggestText.split(',').map(s => s.trim());
-                }
-            } else {
-                finalSuggestions = suggestions;
-            }
+            const finalSuggestions = parseStructuredSuggestions(llmReply, locale, suggestions);
             return res.json({
                 success: true,
                 reply: finalReply,

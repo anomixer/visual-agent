@@ -55,6 +55,7 @@ let selectedLocalChatSessionId = localStorage.getItem('selected_local_chat_sessi
 let mentionCandidates = [];
 let activeMentionIndex = 0;
 let remotePendingRoles = { local: false, remote: false };
+let browserInstallQueued = false;
 let pendingModelShareSessionId = '';
 let remoteToolbarCollapsed = localStorage.getItem('remote_toolbar_collapsed') === '1';
 let chalkboardHintTimer = null;
@@ -166,6 +167,7 @@ const chalkSizeButtons = $$('.chalk-size');
 const chalkSaveButton = $('#chalkSaveButton');
 const chalkClearButton = $('#chalkClearButton');
 const chalkUndoButton = $('#chalkUndoButton');
+const chalkRedoButton = $('#chalkRedoButton');
 const chalkCopyButton = $('#chalkCopyButton');
 const chalkCutButton = $('#chalkCutButton');
 const chalkPasteButton = $('#chalkPasteButton');
@@ -983,6 +985,7 @@ const chalkboardState = {
     },
     textToolResolver: null,
     history: [],
+    future: [],
     hasUserContent: false
 };
 
@@ -1235,10 +1238,13 @@ function createBrowserInstallButton() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'browser-btn primary';
-    button.textContent = '安裝 Chromium';
+    button.textContent = browserInstallQueued ? 'Added to task' : 'Install Chromium';
+    button.disabled = browserInstallQueued;
     button.addEventListener('click', async () => {
+        if (browserInstallQueued) return;
+        browserInstallQueued = true;
         button.disabled = true;
-        button.textContent = '安裝中...';
+        button.textContent = 'Added to task';
         try {
             let sop = getSopById('install_playwright_chromium');
             if (!sop) {
@@ -1246,14 +1252,17 @@ function createBrowserInstallButton() {
                 sop = getSopById('install_playwright_chromium');
             }
             if (!sop) {
-                setBrowserStatus('Browser unavailable: 找不到安裝 SOP');
+                browserInstallQueued = false;
+                setBrowserStatus('Browser unavailable: install SOP not found');
                 return;
             }
             setBrowserStatus('Running Playwright Chromium install SOP...');
             await addAndExecuteSop(sop);
-        } finally {
+        } catch (error) {
+            browserInstallQueued = false;
             button.disabled = false;
-            button.textContent = '安裝 Chromium';
+            button.textContent = 'Install Chromium';
+            throw error;
         }
     });
     return button;
@@ -1285,7 +1294,12 @@ function syncBrowserTabAvailability(isReady) {
 async function refreshBrowserRuntimeAvailability() {
     try {
         const data = await api('/api/meta');
-        if (data.success) syncBrowserTabAvailability(!!data.browserAvailable);
+        if (data.success) {
+            syncBrowserTabAvailability(!!data.browserAvailable);
+            if (data.browserAvailable) {
+                browserInstallQueued = false;
+            }
+        }
     } catch (e) {
         console.error('Refresh browser runtime failed', e);
     }
@@ -1305,19 +1319,33 @@ async function waitForTaskCompletion(taskId, timeoutMs = 10 * 60 * 1000) {
 }
 
 async function runBrowserInstallWorkflow() {
+    if (browserInstallQueued) {
+        setBrowserStatus('Browser install task already queued.');
+        return false;
+    }
+    browserInstallQueued = true;
     let sop = getSopById('install_playwright_chromium');
     if (!sop) {
         await loadSops();
         sop = getSopById('install_playwright_chromium');
     }
     if (!sop) {
-        setBrowserStatus('Browser unavailable: 找不到安裝 SOP');
+        browserInstallQueued = false;
+        setBrowserStatus('Browser unavailable: install SOP not found');
         return false;
     }
     setBrowserStatus('Running Playwright Chromium install SOP...');
-    await addAndExecuteSop(sop);
+    try {
+        await addAndExecuteSop(sop);
+    } catch (error) {
+        browserInstallQueued = false;
+        throw error;
+    }
     const doneTask = await waitForTaskCompletion(todoList.find((task) => String(task.skillId || '') === 'install_playwright_chromium')?.id || '');
     await refreshBrowserRuntimeAvailability();
+    if (doneTask?.status !== 'success') {
+        browserInstallQueued = false;
+    }
     if (doneTask?.status === 'success' && browserRuntimeReady) {
         openTab('browser');
         await ensureBrowserSessionStarted();
@@ -2569,6 +2597,7 @@ function setupChalkboard() {
     chalkSaveButton?.addEventListener('click', saveChalkboardImage);
     chalkClearButton?.addEventListener('click', clearChalkboard);
     chalkUndoButton?.addEventListener('click', undoChalkAction);
+    chalkRedoButton?.addEventListener('click', redoChalkAction);
     chalkCopyButton?.addEventListener('click', () => copySelectionToClipboard(false));
     chalkCutButton?.addEventListener('click', () => copySelectionToClipboard(true));
     chalkPasteButton?.addEventListener('click', pasteClipboardImage);
@@ -2623,7 +2652,8 @@ function syncChalkboardUI() {
 
     chalkSaveButton && (chalkSaveButton.disabled = toolsLocked);
     chalkClearButton && (chalkClearButton.disabled = toolsLocked);
-    chalkUndoButton && (chalkUndoButton.disabled = toolsLocked);
+    chalkUndoButton && (chalkUndoButton.disabled = toolsLocked || !chalkboardState.history.length);
+    chalkRedoButton && (chalkRedoButton.disabled = toolsLocked || !chalkboardState.future.length);
     chalkCopyButton && (chalkCopyButton.disabled = toolsLocked || !chalkboardState.selectionRect);
     chalkCutButton && (chalkCutButton.disabled = toolsLocked || !chalkboardState.selectionRect);
     chalkPasteButton && (chalkPasteButton.disabled = toolsLocked);
@@ -3091,10 +3121,38 @@ function undoChalkAction() {
 
     const snapshot = chalkboardState.history.pop();
     if (!snapshot) return;
+    pushChalkFuture();
 
     clearChalkboardSurface();
     chalkboardState.ctx.drawImage(snapshot, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
     markChalkboardUserContent(chalkboardState.history.length > 0);
+}
+
+function redoChalkAction() {
+    cancelPendingChalkPreview(false);
+    hidePlacementGuide();
+    hidePendingTextBox();
+    clearSelectionBox();
+    chalkboardState.pendingText = null;
+    chalkboardState.pendingTextRect = null;
+    chalkboardState.pendingTextSnapshot = null;
+    chalkboardState.pendingTextPreviewUrl = null;
+    chalkboardState.textManipulation = null;
+
+    const snapshot = chalkboardState.future.pop();
+    if (!snapshot) return;
+
+    const currentSnapshot = createCanvasSnapshot();
+    if (currentSnapshot) {
+        chalkboardState.history.push(currentSnapshot);
+        if (chalkboardState.history.length > 30) {
+            chalkboardState.history.shift();
+        }
+    }
+
+    clearChalkboardSurface();
+    chalkboardState.ctx.drawImage(snapshot, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+    markChalkboardUserContent(true);
 }
 
 function clearChalkboard() {
@@ -3185,9 +3243,26 @@ function pushChalkHistory(snapshot = null) {
     const recordCtx = record.getContext('2d');
     recordCtx.drawImage(source, 0, 0);
     chalkboardState.history.push(record);
+    chalkboardState.future = [];
 
     if (chalkboardState.history.length > 30) {
         chalkboardState.history.shift();
+    }
+}
+
+function pushChalkFuture(snapshot = null) {
+    const source = snapshot || createCanvasSnapshot();
+    if (!source) return;
+
+    const record = document.createElement('canvas');
+    record.width = source.width;
+    record.height = source.height;
+    const recordCtx = record.getContext('2d');
+    recordCtx.drawImage(source, 0, 0);
+    chalkboardState.future.push(record);
+
+    if (chalkboardState.future.length > 30) {
+        chalkboardState.future.shift();
     }
 }
 
@@ -5321,6 +5396,8 @@ function updateLocaleUI() {
     
     const chalkUndoButton = document.getElementById('chalkUndoButton');
     if (chalkUndoButton) chalkUndoButton.title = t('chalkboard.tools.undo');
+    const chalkRedoButton = document.getElementById('chalkRedoButton');
+    if (chalkRedoButton) chalkRedoButton.title = currentLocale === 'en-US' ? 'Redo' : '重做';
     
     const chalkUploadButton = document.getElementById('chalkUploadButton');
     if (chalkUploadButton) chalkUploadButton.title = t('chalkboard.tools.upload');
@@ -5970,6 +6047,12 @@ async function disconnectRemoteSession() {
         method: 'POST',
         body: { reason }
     });
+    if (session.status === 'pending_approval') {
+        appendChatBubble('system', currentLocale === 'en-US' ? 'Connection invitation cancelled.' : '連線邀請已取消。', [], {
+            container: remoteChatMessages,
+            forceSystem: true,
+        });
+    }
     await loadRemoteProfileAndState();
 }
 
@@ -6926,7 +7009,7 @@ function toggleViewMenu(e) {
     const items = [
         { id: 'chalkboard', label: t('tabs.chalkboard'), icon: '🎨' },
         { id: 'hardware', label: t('tabs.hardware'), icon: '🌡️' },
-        { id: 'browser', label: browserRuntimeReady ? 'Browser' : 'Browser (install required)', icon: '🌐' },
+        { id: 'browser', label: browserRuntimeReady ? 'Browser' : (browserInstallQueued ? 'Browser (Added to task)' : 'Browser (install required)'), icon: '🌐' },
         { id: 'todolist', label: t('tabs.todolist'), icon: '📋' }
     ];
 

@@ -3,6 +3,9 @@ const os = require('os');
 const crypto = require('crypto');
 
 const DEFAULT_PORT = 19168;
+const PENDING_SESSION_TIMEOUT_MS = 60 * 1000;
+const REJECT_BAN_WINDOW_MS = 10 * 60 * 1000;
+const REJECT_BAN_COUNT = 3;
 
 function createId(prefix = 'id') {
     return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -67,6 +70,8 @@ class RemoteAgentService {
         this.server = null;
         this.sessions = new Map();
         this.socketToSessionId = new WeakMap();
+        this.rejectHistory = new Map();
+        this.banList = new Map();
     }
 
     start() {
@@ -123,6 +128,7 @@ class RemoteAgentService {
         if (!session) return;
 
         if (payload.type === 'hello_ack') {
+            this.clearPendingTimeout(session);
             session.peer = { ...(session.peer || {}), ...(payload.profile || {}) };
             session.local = { ...(session.local || {}), ...(payload.acceptedBy || {}) };
             session.capabilities = {
@@ -138,11 +144,26 @@ class RemoteAgentService {
         }
 
         if (payload.type === 'hello_reject') {
+            this.clearPendingTimeout(session);
             session.status = 'rejected';
             session.lastEventAt = new Date().toISOString();
             this.emitSystemMessage(session, 'system', payload.reason || 'Remote peer rejected the connection.');
             socket.end();
             this.onStateChanged();
+            return;
+        }
+
+        if (payload.type === 'hello_cancel') {
+            this.clearPendingTimeout(session);
+            this.emitSystemMessage(session, 'system', payload.reason || 'Peer cancelled the connection invitation.');
+            this.markDisconnected(session, 'remote_cancelled');
+            return;
+        }
+
+        if (payload.type === 'hello_timeout') {
+            this.clearPendingTimeout(session);
+            this.emitSystemMessage(session, 'system', payload.reason || 'Connection invitation timed out.');
+            this.markDisconnected(session, 'timed_out');
             return;
         }
 
@@ -254,7 +275,18 @@ class RemoteAgentService {
     }
 
     handleHello(socket, payload) {
+        this.pruneRejectHistory();
         const sessionId = payload.sessionId || createId('session');
+        const host = normalizeIp(socket.remoteAddress);
+        const bannedUntil = this.banList.get(host) || 0;
+        if (bannedUntil > Date.now()) {
+            this.sendRaw(socket, {
+                type: 'hello_reject',
+                reason: 'Connection temporarily blocked due to repeated rejected invitations. Try again later.',
+            });
+            socket.end();
+            return;
+        }
         const session = {
             id: sessionId,
             direction: 'incoming',
@@ -262,7 +294,7 @@ class RemoteAgentService {
             createdAt: new Date().toISOString(),
             lastEventAt: new Date().toISOString(),
             socket,
-            host: normalizeIp(socket.remoteAddress),
+            host,
             port: socket.remotePort || this.port,
             local: null,
             peer: {
@@ -281,6 +313,7 @@ class RemoteAgentService {
         };
         this.sessions.set(sessionId, session);
         this.socketToSessionId.set(socket, sessionId);
+        this.schedulePendingTimeout(session);
         this.onStateChanged();
     }
 
@@ -309,6 +342,7 @@ class RemoteAgentService {
                 this.sessions.set(sessionId, session);
                 this.socketToSessionId.set(socket, sessionId);
                 this.attachOutgoingSocket(socket);
+                this.schedulePendingTimeout(session);
                 this.sendRaw(socket, {
                     type: 'hello',
                     sessionId,
@@ -354,9 +388,11 @@ class RemoteAgentService {
         const session = this.sessions.get(sessionId);
         if (!session) throw new Error('Session not found');
         if (session.status !== 'pending_approval') throw new Error('Session is no longer pending');
+        this.clearPendingTimeout(session);
 
         session.local = localProfile;
         if (!accept) {
+            this.recordRejectedInvitation(session.host);
             session.status = 'rejected';
             this.sendRaw(session.socket, { type: 'hello_reject', reason: 'Connection rejected by remote user.' });
             session.socket.end();
@@ -600,11 +636,21 @@ class RemoteAgentService {
     disconnectSession(sessionId, reason = 'Disconnected by local user.') {
         const session = this.sessions.get(sessionId);
         if (!session) return;
+        this.clearPendingTimeout(session);
         if (session.socket && !session.socket.destroyed) {
-            this.sendRaw(session.socket, { type: 'disconnect', reason });
+            if (session.status === 'pending_approval') {
+                this.sendRaw(session.socket, {
+                    type: 'hello_cancel',
+                    reason: session.direction === 'outgoing'
+                        ? 'Peer cancelled the connection invitation.'
+                        : 'Connection invitation cancelled.',
+                });
+            } else {
+                this.sendRaw(session.socket, { type: 'disconnect', reason });
+            }
             session.socket.end();
         }
-        this.markDisconnected(session, 'local_disconnect');
+        this.markDisconnected(session, session.status === 'pending_approval' ? 'local_cancelled' : 'local_disconnect');
     }
 
     forgetSession(sessionId) {
@@ -629,6 +675,7 @@ class RemoteAgentService {
     }
 
     markDisconnected(session, reason = 'disconnected') {
+        this.clearPendingTimeout(session);
         session.status = 'disconnected';
         session.disconnectedAt = new Date().toISOString();
         session.lastEventAt = session.disconnectedAt;
@@ -640,6 +687,67 @@ class RemoteAgentService {
             cancelledBy: 'System',
         };
         this.onStateChanged();
+    }
+
+    schedulePendingTimeout(session) {
+        this.clearPendingTimeout(session);
+        session.pendingExpiresAt = new Date(Date.now() + PENDING_SESSION_TIMEOUT_MS).toISOString();
+        session.pendingTimer = setTimeout(() => {
+            if (!this.sessions.has(session.id) || session.status !== 'pending_approval') return;
+            try {
+                if (session.socket && !session.socket.destroyed) {
+                    this.sendRaw(session.socket, {
+                        type: 'hello_timeout',
+                        reason: 'Connection invitation timed out.',
+                    });
+                    session.socket.end();
+                }
+            } catch {
+                // ignore
+            }
+            this.emitSystemMessage(session, 'system', 'Connection invitation timed out.');
+            this.markDisconnected(session, 'timed_out');
+        }, PENDING_SESSION_TIMEOUT_MS);
+    }
+
+    clearPendingTimeout(session) {
+        if (session?.pendingTimer) {
+            clearTimeout(session.pendingTimer);
+            session.pendingTimer = null;
+        }
+        if (session) {
+            session.pendingExpiresAt = '';
+        }
+    }
+
+    pruneRejectHistory() {
+        const now = Date.now();
+        for (const [host, timestamps] of this.rejectHistory.entries()) {
+            const fresh = timestamps.filter((ts) => now - ts < REJECT_BAN_WINDOW_MS);
+            if (fresh.length) {
+                this.rejectHistory.set(host, fresh);
+            } else {
+                this.rejectHistory.delete(host);
+            }
+        }
+        for (const [host, bannedUntil] of this.banList.entries()) {
+            if (bannedUntil <= now) {
+                this.banList.delete(host);
+            }
+        }
+    }
+
+    recordRejectedInvitation(host = '') {
+        const key = normalizeIp(host);
+        if (!key) return;
+        this.pruneRejectHistory();
+        const now = Date.now();
+        const timestamps = [...(this.rejectHistory.get(key) || []), now]
+            .filter((ts) => now - ts < REJECT_BAN_WINDOW_MS);
+        this.rejectHistory.set(key, timestamps);
+        if (timestamps.length >= REJECT_BAN_COUNT) {
+            this.banList.set(key, now + REJECT_BAN_WINDOW_MS);
+        }
     }
 
     emitSystemMessage(session, senderType, text) {
