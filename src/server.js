@@ -300,11 +300,12 @@ const remoteAgent = new RemoteAgentService({
                             `The current requester is: ${message.senderType === 'ai' ? 'the remote AI agent' : 'the remote human user'} (${message.senderLabel || 'Unknown'}).`,
                             `Address people by their explicit Windows user names. Do not say generic "使用者你好". Refer to yourself as ${profile.machineName}, and refer to the peer as ${session.peer?.machineName || 'remote PC'}.`,
                             `You are replying inside a remote support chat over TCP port ${DEFAULT_REMOTE_PORT}.`,
-                            'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
-                            'If asked what model you are using, answer with the exact current provider and model shown above.',
-                            'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
-                            'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
-                            'When using ##CHALKBOARD##, coordinate with Local AI! You are the Remote AI: use "position: right" and "clear: false" to avoid erasing teammate content.',
+                        'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
+                        'If asked what model you are using, answer with the exact current provider and model shown above.',
+                        'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
+                        'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
+                        buildLatestChalkboardContext(session, payload?.locale || session.peer?.locale || 'zh-TW'),
+                        'When using ##CHALKBOARD##, coordinate with Local AI! You are the Remote AI: use "position: right" and "clear: false" to avoid erasing teammate content.',
                             `IMPORTANT: All hardware info (CPU/RAM/disk/free space) belongs to THIS machine (${profile.machineName}). When answering questions about disk space or system resources, always specify which machine: "On ${profile.machineName}: ..."`,
                             (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const diskFreePart = formatDiskFreePart(localHardwareContext); return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                             'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
@@ -1387,6 +1388,22 @@ function buildDiskLinesFromHealth(health = null, locale = 'zh-TW') {
         const size = Math.round((Number(v.size) || 0) / 1024 / 1024 / 1024);
         return `${name}: ${free}GB free / ${size}GB total`;
     });
+}
+
+function buildLatestChalkboardContext(session = null, locale = 'zh-TW') {
+    const latest = [...(session?.messages || [])]
+        .reverse()
+        .find((item) => item.type === 'chalkboard_state' && item.imageDataUrl);
+    if (!latest) {
+        return locale === 'en-US'
+            ? 'No recent Chalkboard sync has been received in this session.'
+            : '此連線目前沒有最近的 Chalkboard 同步紀錄。';
+    }
+    const sender = latest.senderLabel || (latest.direction === 'incoming' ? 'Remote peer' : 'Local peer');
+    const caption = String(latest.caption || '').trim();
+    return locale === 'en-US'
+        ? `Latest Chalkboard sync: updated by ${sender} at ${latest.createdAt || 'unknown time'}. ${caption || 'Review the latest synced Chalkboard state before answering if the task depends on shared notes.'}`
+        : `最新 Chalkboard 同步：由 ${sender} 於 ${latest.createdAt || '未知時間'} 更新。${caption || '若回答依賴共同筆記，請先參考最新同步過來的 Chalkboard 狀態。'}`;
 }
 
 function normalizeActionString(action = '') {
@@ -2625,6 +2642,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
         const mode = String(req.body?.mode || 'user').trim();
         const target = String(req.body?.target || 'remote-user').trim();
         const locale = String(req.body?.locale || 'zh-TW');
+        const skipUserEcho = !!req.body?.skipUserEcho;
         if (!text) {
             return res.status(400).json({ success: false, error: 'Missing text' });
         }
@@ -2635,12 +2653,14 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
         if (mode === 'local-ai') {
             const profile = getRemoteProfile();
             localAiThinkingSessionId = sessionId;
-            remoteAgent.appendLocalChatMessage(sessionId, {
-                senderType: 'user',
-                senderLabel: getRemoteProfile().userName,
-                text,
-                target,
-            });
+            if (!skipUserEcho) {
+                remoteAgent.sendChatMessage(sessionId, {
+                    senderType: 'user',
+                    senderLabel: getRemoteProfile().userName,
+                    text,
+                    target,
+                });
+            }
             remoteAgent.sendAiStatus(sessionId, {
                 status: 'thinking',
                 senderLabel: profile.agentName,
@@ -2671,6 +2691,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                         target === 'remote-ai'
                             ? 'The remote AI will receive your message next. Provide concise complementary notes, facts to check, or a division-of-labor suggestion. Do not compete with the remote AI for the final answer.'
                             : 'Answer the local human directly and concisely.',
+                        buildLatestChalkboardContext(currentSession, locale),
                         'If asked what model you are using, answer with the exact current provider and model from the system context.',
                         'When using ##CHALKBOARD##, coordinate with Remote AI! You are the Local AI: use "position: left" and "clear: false" to avoid erasing teammate content.',
                         'Keep the answer concise and practical.',

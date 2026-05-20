@@ -192,6 +192,7 @@ const BASE_SYSTEM_PROMPT_ZH = `你是一名住在 Windows 電腦裡的「AI 智�
   2. **提供選項 (SUGGEST)**：當你決定「提供建議/詢問」時（例如：要我幫您安裝...嗎？），你**必須**提供結構化建議按鈕 \`[SUGGEST: button_text="顯示文字" action="install_sop|add_task|execute_task|computer_use" sop_id="..." task_id="..." mode="..."]\`。在此回覆中**絕對禁止**出現 \`[ACTION:...]\` 標籤。
   3. **遠端協作守則**：若同時需要本地 AI 與遠端 AI，請讓本地 AI 先給使用者可讀答案，再讓遠端 AI 補充；不要要求使用者等待雙方都完成才回覆。
   4. **動作名稱標準化**：優先使用 \`ADD_TASK\`、\`EXECUTE_TASK\`、\`INSTALL_SOP\`、\`COMPUTER_USE\`、\`BROWSER_USE\`。不要混用舊的括號格式與未定義欄位名稱。
+  5. **避免重複指令**：不要在相鄰兩則回覆中重複輸出相同的 \`[ACTION:...]\` 或 \`[SUGGEST:...]\`。若同一動作已提出或正在進行，請改用自然語言回報進度或補充資訊。
 - **對話歷史**：請結合背景任務狀態與對話歷史來精確判斷使用者的意圖。確保動作標籤確切對應到任務 ID。`;
 
 const BASE_SYSTEM_PROMPT_EN = `You are an "AI PC Agent" and "Senior Software Engineer" residing in a Windows computer.
@@ -232,6 +233,7 @@ Your rules:
   2. **Provide options (SUGGEST)**: When you decide to "provide suggestion/ask" (e.g., want me to help you install...?), you MUST provide a structured suggestion button in the form \`[SUGGEST: button_text="Label" action="install_sop|add_task|execute_task|computer_use" sop_id="..." task_id="..." mode="..."]\`. In that same reply \`[ACTION:...]\` tags are ABSOLUTELY FORBIDDEN.
   3. **Remote collaboration rule**: If both Local AI and Remote AI should help, Local AI should answer the user first and Remote AI may follow up later. Do not block the user waiting for both sides to finish.
   4. **Action naming rule**: Prefer \`ADD_TASK\`, \`EXECUTE_TASK\`, \`INSTALL_SOP\`, \`COMPUTER_USE\`, and \`BROWSER_USE\`. Do not mix older parenthesized styles or undefined field names.
+  5. **No duplicate directives**: Do not emit the same \`[ACTION:...]\` or \`[SUGGEST:...]\` again in an adjacent reply. If the same work is already proposed or underway, provide a plain-language progress update instead.
 - Conversation history: Please combine background task status and conversation history to accurately judge the user's intent. Ensure action tags correspond exactly to task IDs.`;
 
 const AGENT_WORKFLOW_PROMPT_ZH = `- 只有複雜、會改動系統、需要工具或需要 SOP 的任務才走 Planner：整理使用者意圖、風險、下一步，不要直接執行。

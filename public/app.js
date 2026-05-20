@@ -54,6 +54,7 @@ let localChatSessions = [];
 let selectedLocalChatSessionId = localStorage.getItem('selected_local_chat_session_id') || '';
 let mentionCandidates = [];
 let activeMentionIndex = 0;
+let remotePendingRoles = { local: false, remote: false };
 let pendingModelShareSessionId = '';
 let remoteToolbarCollapsed = localStorage.getItem('remote_toolbar_collapsed') === '1';
 let chalkboardHintTimer = null;
@@ -65,8 +66,10 @@ let queuedRemoteChalkboardMessage = null;
 const appliedRemoteChalkboardMessageIds = new Set();
 const appliedRemoteDraftMessageIds = new Set();
 const handledRemoteAiActionMessageIds = new Set();
+const recentRemoteDirectiveExecutions = new Map();
 const remoteSessionsOpenedOnChalkboard = new Set();
 const notifiedRemoteDisconnectSessionIds = new Set();
+const REMOTE_DIRECTIVE_DEDUP_WINDOW_MS = 8000;
 let lastRemoteRenderSignature = '';
 
 // Tab State
@@ -1601,6 +1604,13 @@ function setThinkingIdForMode(mode = 'local', id = '') {
     }
 }
 
+function setRemotePendingRoles(nextRoles = {}) {
+    remotePendingRoles = {
+        local: !!nextRoles.local,
+        remote: !!nextRoles.remote,
+    };
+}
+
 function isModePending(mode = 'local') {
     return Boolean(mode === 'remote' ? remoteChatAbortController : localChatAbortController);
 }
@@ -1626,8 +1636,8 @@ function updatePendingStatusRow() {
     if (!row) return;
     const session = getActiveRemoteSession();
     const aiStatus = session?.aiStatus || {};
-    const localBusy = isModePending('local') || aiStatus.localAi === 'thinking';
-    const remoteBusy = isModePending('remote') || aiStatus.remoteAi === 'thinking';
+    const localBusy = isModePending('local') || remotePendingRoles.local || aiStatus.localAi === 'thinking';
+    const remoteBusy = remotePendingRoles.remote || aiStatus.remoteAi === 'thinking';
     const localLabel = currentLocale === 'en-US' ? 'Local AI' : '本地 AI';
     const remoteLabel = currentLocale === 'en-US' ? 'Remote AI' : '遠端 AI';
     row.innerHTML = `
@@ -1876,14 +1886,32 @@ function renderRemoteMessages() {
             : [];
         if (message.senderType === 'ai' && actionDirectives.length > 0 && !handledRemoteAiActionMessageIds.has(message.id)) {
             handledRemoteAiActionMessageIds.add(message.id);
+            addUILog(currentLocale === 'en-US'
+                ? `Remote AI directive received [msg:${message.id || 'unknown'}] (${actionDirectives.map((item) => buildDirectiveDebugLabel(item)).join(', ')})`
+                : `收到遠端 AI 指令 [msg:${message.id || 'unknown'}]（${actionDirectives.map((item) => buildDirectiveDebugLabel(item)).join('、')}）`, 'info');
             actionDirectives.forEach((directive) => {
+                if (shouldSkipDuplicateRemoteDirective(session.id, directive)) {
+                    const skipMessage = currentLocale === 'en-US'
+                        ? `Skipped duplicate remote directive: ${buildDirectiveDebugLabel(directive)}`
+                        : `已略過重複的遠端指令：${buildDirectiveDebugLabel(directive)}`;
+                    addUILog(skipMessage, 'warn');
+                    appendChatBubble('system', skipMessage, [], {
+                        container: remoteChatMessages,
+                        forceSystem: true,
+                    });
+                    return;
+                }
                 handleDirectiveAction(directive).then((result) => {
                     if (!result?.summary) return;
+                    addUILog(result.summary, 'success');
                     appendChatBubble('system', result.summary, [], {
                         container: remoteChatMessages,
                         forceSystem: true,
                     });
                 }).catch((error) => {
+                    addUILog(currentLocale === 'en-US'
+                        ? `❌ Remote AI directive failed: ${error.message || 'unknown error'}`
+                        : `❌ 遠端 AI 指令失敗：${error.message || '未知錯誤'}`, 'error');
                     appendChatBubble('system', error.message || 'Remote AI action failed', [], {
                         container: remoteChatMessages,
                         forceSystem: true,
@@ -4185,6 +4213,44 @@ function extractActionDirectivesFromReply(text = '') {
     return directives;
 }
 
+function buildDirectiveDebugLabel(action = {}) {
+    const normalized = String(action?.action || action?.type || '').trim().toLowerCase();
+    const detail = action.sopId || action.taskId || action.mode || action.path || action.url || 'unknown';
+    return `${normalized || 'unknown'}:${detail}`;
+}
+
+function buildRemoteDirectiveExecutionKey(sessionId = '', action = {}) {
+    const normalized = String(action?.action || action?.type || '').trim().toLowerCase();
+    return [
+        sessionId || 'no-session',
+        normalized || 'unknown',
+        action.sopId || '',
+        action.taskId || '',
+        action.mode || '',
+        action.path || '',
+        action.url || '',
+        action.arguments || '',
+    ].join('|');
+}
+
+function shouldSkipDuplicateRemoteDirective(sessionId = '', action = {}) {
+    const key = buildRemoteDirectiveExecutionKey(sessionId, action);
+    const now = Date.now();
+    const lastSeen = recentRemoteDirectiveExecutions.get(key) || 0;
+    if (now - lastSeen < REMOTE_DIRECTIVE_DEDUP_WINDOW_MS) {
+        return true;
+    }
+    recentRemoteDirectiveExecutions.set(key, now);
+    if (recentRemoteDirectiveExecutions.size > 200) {
+        for (const [entryKey, timestamp] of recentRemoteDirectiveExecutions.entries()) {
+            if (now - timestamp > REMOTE_DIRECTIVE_DEDUP_WINDOW_MS * 4) {
+                recentRemoteDirectiveExecutions.delete(entryKey);
+            }
+        }
+    }
+    return false;
+}
+
 async function loadSkills() {
     try {
         const data = await api('/api/skills');
@@ -4206,7 +4272,7 @@ async function queueSopTaskById(sopId = '', executeNow = false) {
         if (executeNow && existingTask.status === 'pending') {
             await executeTask(existingTask.id);
         }
-        return existingTask;
+        return { task: existingTask, reused: true };
     }
     const data = await api('/api/todo', {
         method: 'POST',
@@ -4225,34 +4291,43 @@ async function queueSopTaskById(sopId = '', executeNow = false) {
     if (executeNow && task?.id) {
         await executeTask(task.id);
     }
-    return task;
+    return { task, reused: false };
 }
 
 async function handleDirectiveAction(action = {}) {
     const normalized = String(action?.action || action?.type || '').trim().toLowerCase();
     if (normalized === 'install_sop') {
-        const task = await queueSopTaskById(action.sopId, true);
+        addUILog(currentLocale === 'en-US'
+            ? `▶ Remote directive: install_sop (${action.sopId || 'unknown'})`
+            : `▶ 遠端指令：install_sop（${action.sopId || 'unknown'}）`, 'info');
+        const { task, reused } = await queueSopTaskById(action.sopId, true);
         if (task?.id) await loadTodo();
         return {
             success: true,
             summary: currentLocale === 'en-US'
-                ? `Started SOP task: ${task?.title || action.sopId}`
-                : `已開始 SOP 任務：${task?.title || action.sopId}`,
+                ? `${reused ? 'Reused' : 'Started'} SOP task: ${task?.title || action.sopId}`
+                : `${reused ? '沿用' : '已開始'} SOP 任務：${task?.title || action.sopId}`,
         };
     }
     if (normalized === 'add_task') {
-        const task = await queueSopTaskById(action.sopId, false);
+        addUILog(currentLocale === 'en-US'
+            ? `＋ Remote directive: add_task (${action.sopId || 'unknown'})`
+            : `＋ 遠端指令：add_task（${action.sopId || 'unknown'}）`, 'info');
+        const { task, reused } = await queueSopTaskById(action.sopId, false);
         await loadTodo();
         return {
             success: true,
             summary: currentLocale === 'en-US'
-                ? `Added task: ${task?.title || action.sopId}`
-                : `已加入任務：${task?.title || action.sopId}`,
+                ? `${reused ? 'Reused' : 'Added'} task: ${task?.title || action.sopId}`
+                : `${reused ? '沿用' : '已加入'}任務：${task?.title || action.sopId}`,
         };
     }
     if (normalized === 'execute_task' && action.taskId) {
         const targetTask = todoList.find((item) => item.id === action.taskId);
         if (!targetTask) throw new Error(`Task not found: ${action.taskId}`);
+        addUILog(currentLocale === 'en-US'
+            ? `▶ Remote directive: execute_task (${targetTask.title})`
+            : `▶ 遠端指令：execute_task（${targetTask.title}）`, 'info');
         await executeTask(action.taskId);
         return {
             success: true,
@@ -4262,6 +4337,9 @@ async function handleDirectiveAction(action = {}) {
         };
     }
     if (normalized === 'computer_use') {
+        addUILog(currentLocale === 'en-US'
+            ? `🧭 Remote directive: computer_use (${action.mode || 'unknown'})`
+            : `🧭 遠端指令：computer_use（${action.mode || 'unknown'}）`, 'info');
         const result = await api('/api/agent/computer-use', {
             method: 'POST',
             body: {
@@ -5461,6 +5539,9 @@ async function sendChat() {
     const requestAbortController = new AbortController();
     setThinkingIdForMode(currentMode, thinkId);
     setActiveAbortController(requestAbortController, currentMode);
+    if (currentMode === 'remote') {
+        setRemotePendingRoles({ local: false, remote: false });
+    }
     updateSendButtonState();
 
     // 切換按鈕狀態為 Stop
@@ -5476,6 +5557,11 @@ async function sendChat() {
             ? await (async () => {
                 const targets = resolveRemoteTargets(msg);
                 if (targets.includes('local-ai') && targets.includes('remote-ai')) {
+                    setRemotePendingRoles({ local: true, remote: true });
+                    updatePendingStatusRow();
+                    addUILog(currentLocale === 'en-US'
+                        ? '🤝 Dual-AI collaboration: Local AI answers first, Remote AI follow-up queued'
+                        : '🤝 雙 AI 協作：本地 AI 先回，遠端 AI 補充已排入佇列', 'info');
                     api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
                         method: 'POST',
                         body: {
@@ -5485,6 +5571,9 @@ async function sendChat() {
                             locale: currentLocale,
                         }
                     }).catch((error) => {
+                        addUILog(currentLocale === 'en-US'
+                            ? `❌ Remote AI follow-up failed: ${error.message || 'unknown error'}`
+                            : `❌ 遠端 AI 補充失敗：${error.message || '未知錯誤'}`, 'error');
                         appendChatBubble('system', `Remote AI follow-up failed: ${error.message}`, [], {
                             container: remoteChatMessages,
                             forceSystem: true,
@@ -5501,11 +5590,17 @@ async function sendChat() {
                             mode: 'local-ai',
                             target: 'remote-user',
                             locale: currentLocale,
+                            skipUserEcho: true,
                         },
                         signal: requestAbortController.signal
                     });
                 }
                 if (targets.includes('local-ai')) {
+                    setRemotePendingRoles({ local: true, remote: false });
+                    updatePendingStatusRow();
+                    addUILog(currentLocale === 'en-US'
+                        ? '🤖 Routing message to Local AI'
+                        : '🤖 訊息交由本地 AI 處理', 'info');
                     const localAiTarget = 'remote-user';
                     return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
                         method: 'POST',
@@ -5519,6 +5614,11 @@ async function sendChat() {
                     });
                 }
                 if (targets.includes('remote-ai') || targets.includes('remote-user')) {
+                    setRemotePendingRoles({ local: false, remote: targets.includes('remote-ai') });
+                    updatePendingStatusRow();
+                    addUILog(currentLocale === 'en-US'
+                        ? `🌐 Routing message to ${targets.includes('remote-ai') ? 'Remote AI' : 'Remote User'}`
+                        : `🌐 訊息轉送至${targets.includes('remote-ai') ? '遠端 AI' : '遠端使用者'}`, 'info');
                     return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
                         method: 'POST',
                         body: {
@@ -5602,6 +5702,9 @@ async function sendChat() {
     } finally {
         // 恢復按鈕狀態
         btnSend.classList.remove('stop');
+        if (currentMode === 'remote') {
+            setRemotePendingRoles({ local: false, remote: false });
+        }
         setActiveAbortController(null, currentMode);
         updateSendButtonState();
     }
@@ -5667,6 +5770,9 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
                 if (action) {
                     btn.disabled = true;
                     try {
+                        addUILog(currentLocale === 'en-US'
+                            ? `🖱 Suggestion clicked: ${action}${btn.dataset.sopId ? ` (${btn.dataset.sopId})` : ''}`
+                            : `🖱 已點擊建議按鈕：${action}${btn.dataset.sopId ? `（${btn.dataset.sopId}）` : ''}`, 'info');
                         const result = await handleDirectiveAction({
                             action,
                             sopId: btn.dataset.sopId || '',

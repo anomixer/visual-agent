@@ -62,6 +62,24 @@ AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可�
 
 ---
 
+## Remote Validation Checklist
+
+Use these three flows when validating remote collaboration changes:
+
+1. `SUGGEST` flow
+   Expected: the remote message renders a real button, the button does not flicker, clicking it creates or reuses a task, and the UI log shows `Suggestion clicked`.
+2. `INSTALL_SOP` flow
+   Expected: `[ACTION:INSTALL_SOP sop_id="..."]` is executed locally, the UI log shows `Remote AI directive received`, then either `Started SOP task` / `Reused SOP task` or a clear failure message.
+3. Dual-AI flow
+   Expected: Local AI replies first, the UI log shows `Dual-AI collaboration: Local AI answers first, Remote AI follow-up queued`, and Remote AI follow-up appears later without blocking the first answer.
+
+Extra diagnostics:
+
+- Duplicate remote directives within a short window are skipped and logged as `Skipped duplicate remote directive`.
+- Directive receipt logs now include a `msg:<id>` marker so repeated remote messages can be correlated more easily.
+
+---
+
 ## 環境需求
 
 | 項目 | 需求 |
@@ -322,6 +340,11 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.05.20
+- **版本更新**：套件版本更新為 `2026.05.20`。
+- Added a remote validation checklist for `SUGGEST`, `INSTALL_SOP`, and dual-AI collaboration.
+- Added duplicate remote directive diagnostics guidance with `Skipped duplicate remote directive` and `msg:<id>` correlation markers.
+
 ### 2026.05.14
 - **遠端 Directive Protocol 標準化**：遠端 AI 建議按鈕統一採用結構化格式 `[SUGGEST: button_text="..." action="install_sop|add_task|execute_task|computer_use" ...]`，避免 UI 只顯示原始字串或點擊無效。
 - **遠端 Action 直通執行**：遠端 AI 若回覆 `[ACTION:INSTALL_SOP ...]`、`[ACTION:ADD_TASK ...]`、`[ACTION:EXECUTE_TASK ...]` 或 `COMPUTER_USE`，前端現在會解析並在本機真正執行，不再只顯示文字。
@@ -518,4 +541,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.05.06`。
+- 目前套件版本：`2026.05.20`。

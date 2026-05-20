@@ -233,6 +233,14 @@ class RemoteAgentService {
                 createdAt: payload.createdAt || new Date().toISOString(),
             };
             session.lastEventAt = new Date().toISOString();
+            if (payload.type === 'chat_message' && message.senderType === 'ai') {
+                session.aiStatus = {
+                    ...(session.aiStatus || buildIdleAiStatus()),
+                    remoteAi: 'idle',
+                    remoteAiLabel: message.senderLabel || session.peer?.agentName || session.peer?.machineName || 'Remote AI',
+                    updatedAt: message.createdAt,
+                };
+            }
             session.messages.push(message);
             this.onMessage(session, message, payload);
             this.onStateChanged();
@@ -374,6 +382,7 @@ class RemoteAgentService {
 
     sendChatMessage(sessionId, payload = {}) {
         const session = this.requireActiveSession(sessionId);
+        const createdAt = new Date().toISOString();
         const message = {
             id: createId('msg'),
             type: 'chat_message',
@@ -384,8 +393,16 @@ class RemoteAgentService {
             imageDataUrl: '',
             caption: '',
             target: payload.target || 'remote-user',
-            createdAt: new Date().toISOString(),
+            createdAt,
         };
+        if (message.senderType === 'ai') {
+            session.aiStatus = {
+                ...(session.aiStatus || buildIdleAiStatus()),
+                localAi: 'idle',
+                localAiLabel: message.senderLabel || session.local?.agentName || 'Local AI',
+                updatedAt: createdAt,
+            };
+        }
         session.messages.push(message);
         session.lastEventAt = message.createdAt;
         this.sendRaw(session.socket, message);

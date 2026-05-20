@@ -44,7 +44,23 @@
 - 修正遠端 `[SUGGEST: button_text="..." ...]` 先前只顯示屬性字串、按了沒作用的問題。
 - 修正遠端 `[ACTION:INSTALL_SOP ...]` 先前只顯示文字、不會真正執行的問題。
 - 遠端聊天室加入 render signature，降低 polling 導致的 suggestion 按鈕閃爍。
-- 遠端 AI 自動回覆改為 per-session queue，減少答錯題、回兩次與 thinking 卡住。
+- 遠端 AI 自動回覆改成 per-session queue，減少答錯題、回兩次與 thinking 卡住。
+
+## 2026.05.20 驗收重點
+
+建議每次改完遠端協作後，固定驗這三條：
+
+1. `SUGGEST` 流程
+   預期：遠端訊息會出現真正可點的按鈕、按鈕不閃、點下去後會建立或沿用任務，UI log 會看到 `Suggestion clicked`。
+2. `INSTALL_SOP` 流程
+   預期：`[ACTION:INSTALL_SOP sop_id="..."]` 會在本機被執行，UI log 先看到 `Remote AI directive received`，接著看到 `Started SOP task` / `Reused SOP task` 或明確錯誤。
+3. 雙 AI 協作流程
+   預期：本地 AI 先回，UI log 會看到 `Dual-AI collaboration: Local AI answers first, Remote AI follow-up queued`，遠端 AI 之後再補充，不會整段卡住。
+
+另外：
+
+- 短時間內重複的遠端 directive 現在會被略過，並在 log 顯示 `Skipped duplicate remote directive`。
+- directive 收到時的 log 會帶 `msg:<id>`，之後比較容易對照是不是同一批遠端訊息重送。
 
 ## 相關檔案
 

@@ -490,6 +490,20 @@ $true
 - 本機工具列順序為：新增對話、附上 Chalkboard、清除對話；麥克風位於送出鈕上方。
 - 本機對話 tab 為 chip 樣式，右上角可關閉。
 - 遠端連線設定為可收合抽屜；遠端工具列提供新增對話、附上檔案、掛電話中斷。
+
+## 12. 2026.05.20 版本與遠端驗收補強
+
+### 12.1 版本
+- Runtime 版本號更新為 `2026.05.20`。
+- 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
+
+### 12.2 Remote 驗收基準
+- 遠端協作調整後，至少需固定驗證三條流程：`SUGGEST`、`INSTALL_SOP`、`雙 AI 協作（本地先回、遠端後補）`。
+- 驗收時應確認 UI log 能看見 directive receipt、task reuse / start、以及 remote follow-up 的成功或失敗訊息。
+
+### 12.3 重複指令抑制
+- 若遠端 AI 在短時間內重複送出相同 directive，前端應略過重跑並留下 `Skipped duplicate remote directive` 診斷訊息。
+- directive receipt log 應包含 `msg:<id>`，方便對照遠端訊息是否重送。
 - 遠端身份欄位只在使用者修改後才啟用儲存，不得被 polling 立即還原。
 
 ### 11.5 Skills 與 Action

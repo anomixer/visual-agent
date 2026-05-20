@@ -5,6 +5,23 @@
 
 ---
 
+## 📌 2026.05.20 — 遠端協作驗收導向補強
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.05.20`。
+
+### Directive 可觀測性
+- 遠端 AI directive 的工作日誌現在會帶 `msg:<id>` 標記，方便對照是不是同一則遠端訊息重送。
+- `SUGGEST`、`INSTALL_SOP`、`COMPUTER_USE` 等遠端 directive 在執行前後都會留下較明確的 UI log 與 system bubble。
+
+### 重複指令抑制
+- 新增短時間 duplicate directive suppression，若遠端 AI 在短窗口內重複送出相同 directive，前端會略過重跑並留下 `Skipped duplicate remote directive` 診斷訊息。
+- 這層保護用來降低 polling 重繪、遠端重送或 orchestration 競態造成的重複動作。
+
+### 驗收腳本文件化
+- 在 `README.md` 與 `readme-tw.md` 補上固定的 remote validation checklist。
+- 驗收聚焦三條典型路徑：`SUGGEST`、`INSTALL_SOP`、`雙 AI 協作（本地先回、遠端後補）`。
+
 ## 📌 2026.02.25 — 初始版本
 
 ### Tauri 桌面化 + Sidecar 架構
