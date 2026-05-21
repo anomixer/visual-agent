@@ -2205,8 +2205,8 @@ async function loadRemoteProfileAndState() {
     if (activeSession?.status === 'active' && !remoteSessionsOpenedOnChalkboard.has(activeSession.id)) {
         remoteSessionsOpenedOnChalkboard.add(activeSession.id);
         openTab('chalkboard');
-        if (chalkboardState.hasUserContent || chalkboardState.hasInteracted) {
-            scheduleRemoteChalkboardSync(chalkboardState.hasUserContent);
+        if (activeSession.direction === 'outgoing' && chalkboardState.hasUserContent) {
+            scheduleRemoteChalkboardSync(true);
         }
     }
 }

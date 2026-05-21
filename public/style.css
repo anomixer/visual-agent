@@ -2523,25 +2523,37 @@ ol {
 }
 
 .user-message .msg-bubble {
-  background: rgba(99, 102, 241, 0.15);
-  border-color: rgba(99, 102, 241, 0.3);
-  border-radius: var(--radius-md) 0 var(--radius-md) var(--radius-md);
-  color: #c5c8f0;
-}
-
-.user-message .msg-avatar {
-  background: rgba(99, 102, 241, 0.2);
-}
-
-.remote-messages .user-message .msg-bubble {
   background: rgba(64, 118, 166, 0.2);
   border-color: rgba(112, 178, 232, 0.42);
+  border-radius: var(--radius-md) 0 var(--radius-md) var(--radius-md);
   color: #d7ebff;
 }
 
-.remote-messages .user-message .msg-avatar {
+.user-message .msg-avatar {
   background: rgba(64, 118, 166, 0.24);
   border-color: rgba(112, 178, 232, 0.42);
+}
+
+.ai-message .msg-bubble {
+  background: rgba(42, 96, 150, 0.18);
+  border-color: rgba(112, 178, 232, 0.34);
+  color: #d7ebff;
+}
+
+.ai-message .msg-avatar {
+  background: rgba(42, 96, 150, 0.22);
+  border-color: rgba(112, 178, 232, 0.34);
+}
+
+.remote-messages .user-message .msg-bubble {
+  background: rgba(52, 123, 94, 0.2);
+  border-color: rgba(107, 210, 157, 0.42);
+  color: #dcf7e7;
+}
+
+.remote-messages .user-message .msg-avatar {
+  background: rgba(52, 123, 94, 0.24);
+  border-color: rgba(107, 210, 157, 0.42);
 }
 
 .remote-messages .ai-message .msg-bubble {

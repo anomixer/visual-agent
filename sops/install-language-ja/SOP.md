@@ -17,25 +17,60 @@ Network: Required (internet connection needed to download language packs)
 ## Check
 Commands (PowerShell):
 ```powershell
-$installed = @(Get-InstalledLanguage) | Where-Object {
-    $_.LanguageId -eq 'ja-JP' -or
-    $_.LanguageTag -eq 'ja-JP' -or
-    $_.LocaleName -eq 'ja-JP' -or
-    $_.Language -eq 'ja-JP'
+$target = 'ja-JP'
+function Get-AipcLanguageTags {
+    $tags = @()
+    if (Get-Command Get-InstalledLanguage -ErrorAction SilentlyContinue) {
+        $tags += @(Get-InstalledLanguage -ErrorAction SilentlyContinue | ForEach-Object {
+            $_.LanguageId; $_.LanguageTag; $_.LocaleName; $_.Language
+        })
+    }
+    $tags += @(Get-WinUserLanguageList -ErrorAction SilentlyContinue | ForEach-Object { $_.LanguageTag })
+    $tags | Where-Object { $_ } | Select-Object -Unique
 }
-[bool]$installed
+@(Get-AipcLanguageTags) -contains $target
 ```
 
-Expected Result: Return True when the language pack is already installed, so the action phase can be skipped.
+Expected Result: Return True when the language pack is already installed or already in the user language list.
 
 ## Install
 Commands (PowerShell):
 ```powershell
 $ErrorActionPreference = 'Stop'
-Install-Language -Language ja-JP -ErrorAction Stop
+$target = 'ja-JP'
+
+function Install-AipcLanguagePack {
+    param([string]$LanguageTag)
+    if (Get-Command Install-Language -ErrorAction SilentlyContinue) {
+        Install-Language -Language $LanguageTag -ErrorAction Stop
+        return
+    }
+
+    $capabilities = @(
+        "Language.Basic~~~$LanguageTag~0.0.1.0",
+        "Language.Handwriting~~~$LanguageTag~0.0.1.0",
+        "Language.OCR~~~$LanguageTag~0.0.1.0",
+        "Language.TextToSpeech~~~$LanguageTag~0.0.1.0",
+        "Language.Speech~~~$LanguageTag~0.0.1.0"
+    )
+    foreach ($capability in $capabilities) {
+        try {
+            $cap = Get-WindowsCapability -Online -Name $capability -ErrorAction Stop
+            if ($cap.State -ne 'Installed') {
+                Add-WindowsCapability -Online -Name $capability -ErrorAction Stop | Out-Null
+            }
+        } catch {
+            Write-Warning "Optional language capability $capability was not installed: $($_.Exception.Message)"
+        }
+    }
+}
+
+Install-AipcLanguagePack -LanguageTag $target
+
 $langList = Get-WinUserLanguageList
-if (-not ($langList.LanguageTag -contains 'ja-JP')) {
-    $langList.Add('ja-JP')
+if (-not (@($langList | ForEach-Object { $_.LanguageTag }) -contains $target)) {
+    $newEntry = (New-WinUserLanguageList $target)[0]
+    [void]$langList.Add($newEntry)
     Set-WinUserLanguageList -LanguageList $langList -Force -ErrorAction Stop
 }
 UI Message: "Requesting the Japanese language pack from Microsoft. This may take a few minutes..."
@@ -44,16 +79,22 @@ UI Message: "Requesting the Japanese language pack from Microsoft. This may take
 ## Verify
 Commands (PowerShell):
 ```powershell
-$installed = @(Get-InstalledLanguage) | Where-Object {
-    $_.LanguageId -eq 'ja-JP' -or
-    $_.LanguageTag -eq 'ja-JP' -or
-    $_.LocaleName -eq 'ja-JP' -or
-    $_.Language -eq 'ja-JP'
+$target = 'ja-JP'
+$tags = @()
+if (Get-Command Get-InstalledLanguage -ErrorAction SilentlyContinue) {
+    $tags += @(Get-InstalledLanguage -ErrorAction SilentlyContinue | ForEach-Object {
+        $_.LanguageId; $_.LanguageTag; $_.LocaleName; $_.Language
+    })
 }
-if ($installed) {
+$tags += @(Get-WinUserLanguageList -ErrorAction SilentlyContinue | ForEach-Object { $_.LanguageTag })
+$basicCapabilityInstalled = $false
+try {
+    $basicCapabilityInstalled = (Get-WindowsCapability -Online -Name "Language.Basic~~~$target~0.0.1.0" -ErrorAction Stop).State -eq 'Installed'
+} catch {}
+if ((@($tags | Where-Object { $_ } | Select-Object -Unique) -contains $target) -or $basicCapabilityInstalled) {
     $true
 } else {
-    throw "The ja-JP language pack was not found."
+    throw "The $target language pack was not found."
 }
 ```
 
@@ -70,9 +111,14 @@ $installLanguageMap = @{
 }
 $installCode = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\Language' -ErrorAction Stop).InstallLanguage
 $originalLanguage = $installLanguageMap[$installCode]
-$installedTags = @((Get-InstalledLanguage | ForEach-Object {
-    $_.LanguageId, $_.LanguageTag, $_.LocaleName, $_.Language
-}) | Where-Object { $_ } | Select-Object -Unique)
+$installedTags = @()
+if (Get-Command Get-InstalledLanguage -ErrorAction SilentlyContinue) {
+    $installedTags += @(Get-InstalledLanguage -ErrorAction SilentlyContinue | ForEach-Object {
+        $_.LanguageId; $_.LanguageTag; $_.LocaleName; $_.Language
+    })
+}
+$installedTags += @(Get-WinUserLanguageList -ErrorAction SilentlyContinue | ForEach-Object { $_.LanguageTag })
+$installedTags = @($installedTags | Where-Object { $_ } | Select-Object -Unique)
 
 if (-not ($installedTags -contains $target)) {
     throw "$target is not installed, so there is nothing to remove."
@@ -97,7 +143,21 @@ if ($newList.Count -eq 0) {
     throw "Removing $target would leave the user with no language configured. Operation stopped."
 }
 Set-WinUserLanguageList -LanguageList $newList -Force -ErrorAction Stop
-Uninstall-Language -Language $target -ErrorAction Stop
+
+if (Get-Command Uninstall-Language -ErrorAction SilentlyContinue) {
+    Uninstall-Language -Language $target -ErrorAction Stop
+} else {
+    foreach ($capability in @("Language.Basic~~~$target~0.0.1.0", "Language.Handwriting~~~$target~0.0.1.0", "Language.OCR~~~$target~0.0.1.0", "Language.TextToSpeech~~~$target~0.0.1.0", "Language.Speech~~~$target~0.0.1.0")) {
+        try {
+            $cap = Get-WindowsCapability -Online -Name $capability -ErrorAction Stop
+            if ($cap.State -eq 'Installed') {
+                Remove-WindowsCapability -Online -Name $capability -ErrorAction Stop | Out-Null
+            }
+        } catch {
+            Write-Warning "Optional language capability $capability was not removed: $($_.Exception.Message)"
+        }
+    }
+}
 ```
 
 4. Error Handling

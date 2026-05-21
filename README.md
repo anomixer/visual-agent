@@ -189,6 +189,7 @@ src-tauri\target\release\bundle\nsis\
 | `backup-system` | 建立 Windows 系統還原點 | 是 |
 | `install-office` | 透過 Winget 安裝 LibreOffice | 是 |
 | `install-steam` | 靜默安裝 Steam | 是 |
+| `install-winhance` | 安裝 WinHance Windows optimization utility | 是 |
 | `check-drivers` | 觸發 Windows Update 與驅動掃描 | 是 |
 | `install-language-en-us` | 安裝英文語言包並保留既有語言清單 | 是 |
 | `install-language-zh-tw` | 安裝繁體中文語言包並保留既有語言清單 | 是 |
