@@ -37,6 +37,7 @@ const { DEFAULT_REMOTE_PORT, RemoteAgentService, getLocalIPv4List } = require('.
 const app = express();
 const PORT = 3210;
 const APP_VERSION = pkg.version || 'dev';
+const REMOTE_AI_REPLY_TIMEOUT_MS = 190000;
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -156,13 +157,21 @@ function enqueueRemoteAiReply(sessionId, task) {
     const previous = remoteAiReplyQueues.get(sessionId) || Promise.resolve();
     const next = previous
         .catch(() => {})
-        .then(() => task());
+        .then(() => runWithTimeout(task(), REMOTE_AI_REPLY_TIMEOUT_MS, 'Remote AI reply timed out before completion.'));
     remoteAiReplyQueues.set(sessionId, next.finally(() => {
         if (remoteAiReplyQueues.get(sessionId) === next) {
             remoteAiReplyQueues.delete(sessionId);
         }
     }));
     return next;
+}
+
+function runWithTimeout(promise, timeoutMs, message) {
+    let timer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 function getRemoteProfile() {

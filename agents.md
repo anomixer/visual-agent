@@ -5,6 +5,26 @@
 
 ---
 
+## 📌 2026.05.21 — Remote 協作卡住保護與 Chalkboard 同步修正
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.05.21`。
+
+### AI 回覆卡住保護
+- LLM 對話 timeout 統一收斂為 3 分鐘，避免 UI 長時間維持思考中卻沒有可見結果。
+- Remote AI queue 加入 timeout 防護；若單一回覆卡住，會釋放後續排程並回報可見錯誤訊息。
+
+### Remote Chat 辨識度
+- Remote User、Remote AI 與 remote system bubble 使用不同底色，降低與本機對話混淆的機率。
+
+### 硬體查詢歸屬
+- Remote 模式下，磁碟容量、RAM、CPU、GPU 等未明確指定「對方 / 遠端」的問題預設交給 Local AI 回答。
+- 這可避免 A 問「硬碟剩多少」時誤查到 B 電腦。
+
+### Chalkboard 同步與歷史
+- 遠端連線成功後，若本機黑板已經有內容，會主動推送目前畫面給對方。
+- 接收遠端 Chalkboard 同步時保留 redo stack，避免 undo 後同步導致 redo 失效。
+
 ## 📌 2026.05.20 — 遠端協作驗收導向補強
 
 ### 版本同步

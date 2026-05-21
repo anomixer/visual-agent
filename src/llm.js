@@ -15,6 +15,8 @@ let currentVisionModel = '';
 let cachedAccessToken = null;
 let cachedAccessTokenExpiresAt = 0;
 
+const CHAT_TIMEOUT_MS = 180000;
+
 /**
  * Provider 端點資料庫 (Database)
  * 依照 Provider 分類其特定的模型清單與 API 格式
@@ -773,7 +775,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
             method: 'POST',
             headers,
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(300000),
+            signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
         });
         if (!res.ok) {
             const errText = await res.text();
@@ -847,11 +849,11 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
             method: 'POST',
             headers,
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(300000), // 延長至 3 分鐘，配合「思考型」或地端加載較慢的模型
+            signal: AbortSignal.timeout(CHAT_TIMEOUT_MS), // Keep slow local reasoning bounded so the UI can recover.
         });
     } catch (fetchErr) {
         if (fetchErr.name === 'TimeoutError' || fetchErr.message.includes('timeout')) {
-            throw new Error(`AI engine timed out (waited 5 minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
+            throw new Error(`AI engine timed out (waited ${Math.round(CHAT_TIMEOUT_MS / 60000)} minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
         }
         throw fetchErr;
     }

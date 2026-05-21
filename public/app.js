@@ -2205,6 +2205,9 @@ async function loadRemoteProfileAndState() {
     if (activeSession?.status === 'active' && !remoteSessionsOpenedOnChalkboard.has(activeSession.id)) {
         remoteSessionsOpenedOnChalkboard.add(activeSession.id);
         openTab('chalkboard');
+        if (chalkboardState.hasUserContent || chalkboardState.hasInteracted) {
+            scheduleRemoteChalkboardSync(chalkboardState.hasUserContent);
+        }
     }
 }
 
@@ -2219,6 +2222,12 @@ function resolveRemoteTargets(messageText = '') {
         if (item.role === 'Remote User') targets.add('remote-user');
     });
     if (!targets.size) {
+        const mentionsPeerMachine = /(\u5c0d\u65b9|\u9060\u7aef|remote|peer|\u53e6\u4e00\u53f0|\u5225\u53f0)/i.test(lowerText);
+        const isHardwareQuestion = /(this pc|my pc|local machine|free space|disk space|\u78c1\u789f|\u786c\u789f|\u5bb9\u91cf|\u5269\u9918\u7a7a\u9593|ram|\u8a18\u61b6\u9ad4|cpu|gpu)/i.test(lowerText);
+        if (isHardwareQuestion && !mentionsPeerMachine) {
+            targets.add('local-ai');
+            return [...targets];
+        }
         const asksOwnMachine = /(自己|本機|本地|我的電腦|我這台|this pc|my pc|local machine|free space|disk space|磁碟|硬碟|容量|剩餘空間|ram|記憶體|cpu|gpu)/i.test(lowerText)
             && !/(對方|遠端|remote|peer|另一台|別台)/i.test(lowerText);
         if (/(只問|只叫|only|just).{0,8}(遠端|remote)/i.test(lowerText)) {
@@ -2357,7 +2366,7 @@ function applyRemoteChalkboardState(message = {}) {
             clearSelectionBox();
             chalkboardState.hasInteracted = true;
             chalkboardState.hintDrawn = true;
-            pushChalkHistory();
+            pushChalkHistory(null, { preserveFuture: true });
             clearChalkboardSurface();
             chalkboardState.ctx.drawImage(img, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
             chalkboardState.hasUserContent = message.hasContent !== false;
@@ -3281,7 +3290,7 @@ function clearChalkboardSurface() {
     chalkboardState.ctx.clearRect(0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
 }
 
-function pushChalkHistory(snapshot = null) {
+function pushChalkHistory(snapshot = null, options = {}) {
     const source = snapshot || createCanvasSnapshot();
     if (!source) return;
 
@@ -3291,7 +3300,9 @@ function pushChalkHistory(snapshot = null) {
     const recordCtx = record.getContext('2d');
     recordCtx.drawImage(source, 0, 0);
     chalkboardState.history.push(record);
-    chalkboardState.future = [];
+    if (!options.preserveFuture) {
+        chalkboardState.future = [];
+    }
 
     if (chalkboardState.history.length > 30) {
         chalkboardState.history.shift();

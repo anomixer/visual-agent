@@ -506,6 +506,28 @@ $true
 - directive receipt log 應包含 `msg:<id>`，方便對照遠端訊息是否重送。
 - 遠端身份欄位只在使用者修改後才啟用儲存，不得被 polling 立即還原。
 
+## 13. 2026.05.21 Remote 協作穩定性規格
+
+### 13.1 版本
+- Runtime 版本號更新為 `2026.05.21`。
+- 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
+
+### 13.2 AI Timeout 與 Queue
+- LLM chat request 必須有明確 timeout，目前規格為 3 分鐘。
+- Remote AI per-session queue 不得因單一回覆長時間卡住而永久阻塞；逾時後必須釋放 queue 並產生可見錯誤訊息。
+
+### 13.3 Remote Chat 視覺區分
+- Remote User、Remote AI、remote system message 的 bubble 底色必須與本機聊天不同。
+- Remote chat 仍需保留 sender label，讓使用者能辨識是哪一台電腦 / 哪個 Windows 使用者。
+
+### 13.4 硬體查詢歸屬
+- 在 remote 模式下，磁碟容量、RAM、CPU、GPU 等硬體問題，若未明確指定「對方 / 遠端 / remote / peer」，預設由 Local AI 回答。
+- 若使用者明確指定對方電腦，才可交給 Remote AI 查詢或回答對方機器資訊。
+
+### 13.5 Chalkboard 同步與歷史
+- Remote session 首次進入 active 後，若本機 Chalkboard 已有使用者內容，必須主動送出一次目前 snapshot。
+- 接收遠端 Chalkboard snapshot 時不得清空 redo stack，避免 undo 後同步造成使用者無法 redo 檢視歷史內容。
+
 ### 11.5 Skills 與 Action
 - Sidebar 必須提供 Skills 清單，來源為 `skills/<slug>/SKILL.md`。
 - Action parser 必須支援 `[ACTION:...]` 與 `Action=Computer_Use...`。

@@ -340,6 +340,13 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.05.21
+- **版本更新**：套件版本更新為 `2026.05.21`。
+- **AI 卡住保護**：LLM 對話 timeout 統一收斂為 3 分鐘，遠端 AI queue 也會在逾時後釋放，避免其中一端卡住時整條協作鏈乾等。
+- **Remote Chat 辨識度**：Remote User、Remote AI 與 remote system bubble 改用不同底色，和本機聊天泡泡更容易區分。
+- **硬體查詢歸屬**：在 remote 模式下，磁碟容量、RAM、CPU、GPU 等未明確指定對方電腦的問題預設交給 Local AI，不再誤查對方機器。
+- **Chalkboard 同步與歷史**：遠端連線成功後會主動推送本機既有黑板內容；接收遠端同步時保留 redo stack，避免 undo 後同步就不能 redo。
+
 ### 2026.05.20
 - **版本更新**：套件版本更新為 `2026.05.20`。
 - Added a remote validation checklist for `SUGGEST`, `INSTALL_SOP`, and dual-AI collaboration.
@@ -541,4 +548,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.05.20`。
+- 目前套件版本：`2026.05.21`。

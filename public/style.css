@@ -2533,6 +2533,33 @@ ol {
   background: rgba(99, 102, 241, 0.2);
 }
 
+.remote-messages .user-message .msg-bubble {
+  background: rgba(64, 118, 166, 0.2);
+  border-color: rgba(112, 178, 232, 0.42);
+  color: #d7ebff;
+}
+
+.remote-messages .user-message .msg-avatar {
+  background: rgba(64, 118, 166, 0.24);
+  border-color: rgba(112, 178, 232, 0.42);
+}
+
+.remote-messages .ai-message .msg-bubble {
+  background: rgba(52, 123, 94, 0.2);
+  border-color: rgba(107, 210, 157, 0.42);
+  color: #dcf7e7;
+}
+
+.remote-messages .ai-message .msg-avatar {
+  background: rgba(52, 123, 94, 0.24);
+  border-color: rgba(107, 210, 157, 0.42);
+}
+
+.remote-messages .system-message .msg-bubble {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
 /* Thinking animation */
 .thinking-dots::after {
   content: '...';
