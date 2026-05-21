@@ -217,6 +217,7 @@ const remoteRequestOverlay = $('#remoteRequestOverlay');
 const remoteRequestTitle = $('#remoteRequestTitle');
 const remoteRequestSummary = $('#remoteRequestSummary');
 const remoteRequestDetails = $('#remoteRequestDetails');
+const remoteRequestTimeout = $('#remoteRequestTimeout');
 const btnAcceptRemoteRequest = $('#btnAcceptRemoteRequest');
 const btnRejectRemoteRequest = $('#btnRejectRemoteRequest');
 const chalkboardFloatHint = $('#chalkboardFloatHint');
@@ -350,6 +351,11 @@ const I18N = {
             profileSaved: '遠端身份設定已儲存',
             connectSuccess: '已送出連線請求，等待對方允許',
             connectFailed: '遠端連線失敗：{error}',
+            invitationTimeout: '連線邀請已逾時。',
+            invitationCancelled: '連線邀請已取消。',
+            peerCancelledInvitation: '對方已取消連線邀請。',
+            inviteCountdown: '剩餘 {seconds} 秒',
+            bannedRemaining: '暫時無法連線，{seconds} 秒後解除限制。',
             noSession: '請先建立或選擇遠端連線',
             screenShared: '畫面已傳送給對方',
             screenFailed: '畫面傳送失敗：{error}',
@@ -670,6 +676,11 @@ const I18N = {
             profileSaved: 'Remote identity saved',
             connectSuccess: 'Connection request sent. Waiting for approval.',
             connectFailed: 'Remote connection failed: {error}',
+            invitationTimeout: 'Connection invitation timed out.',
+            invitationCancelled: 'Connection invitation cancelled.',
+            peerCancelledInvitation: 'The peer cancelled the connection invitation.',
+            inviteCountdown: '{seconds}s remaining',
+            bannedRemaining: 'Temporarily blocked. Try again in {seconds}s.',
             noSession: 'Please create or select a remote session first',
             screenShared: 'Screen image sent to remote peer',
             screenFailed: 'Screen send failed: {error}',
@@ -1757,10 +1768,27 @@ function getActiveRemoteSession() {
     return sessions.find((session) => session.id === selectedRemoteSessionId) || null;
 }
 
+function getSecondsRemaining(isoTime = '') {
+    const target = Date.parse(String(isoTime || ''));
+    if (!Number.isFinite(target)) return 0;
+    return Math.max(0, Math.ceil((target - Date.now()) / 1000));
+}
+
+function formatRemoteCountdown(isoTime = '') {
+    const seconds = getSecondsRemaining(isoTime);
+    return seconds > 0 ? t('remote.inviteCountdown', { seconds }) : '';
+}
+
 function getRemoteStatusText(session = null) {
     if (!session) return t('remote.disconnected');
     if (session.status === 'active') return t('remote.connected');
-    if (session.status === 'pending_approval') return t('remote.pending');
+    if (session.status === 'pending_approval') {
+        const countdown = formatRemoteCountdown(session.pendingExpiresAt);
+        return countdown ? `${t('remote.pending')} · ${countdown}` : t('remote.pending');
+    }
+    if (session.bannedUntil && getSecondsRemaining(session.bannedUntil) > 0) {
+        return t('remote.bannedRemaining', { seconds: getSecondsRemaining(session.bannedUntil) });
+    }
     return t('remote.disconnected');
 }
 
@@ -1784,7 +1812,20 @@ function buildRemoteHintText(session = null) {
     const user = session.peer?.userName || '';
 
     if (session.status === 'pending_approval') {
-        return t('remote.connectingTo', { host }) + ' ' + t('remote.waitingResponse');
+        const countdown = formatRemoteCountdown(session.pendingExpiresAt);
+        return `${t('remote.connectingTo', { host })} ${t('remote.waitingResponse')}${countdown ? ` · ${countdown}` : ''}`;
+    }
+    if (session.disconnectReason === 'timed_out') {
+        return t('remote.invitationTimeout');
+    }
+    if (session.disconnectReason === 'remote_cancelled') {
+        return t('remote.peerCancelledInvitation');
+    }
+    if (session.disconnectReason === 'local_cancelled') {
+        return t('remote.invitationCancelled');
+    }
+    if (session.bannedUntil && getSecondsRemaining(session.bannedUntil) > 0) {
+        return t('remote.bannedRemaining', { seconds: getSecondsRemaining(session.bannedUntil) });
     }
     return `${machine} / ${user} / ${host}`;
 }
@@ -1839,6 +1880,7 @@ function renderRemotePopup() {
     const pending = remoteState.pendingApprovals?.[0];
     if (!pending) {
         pendingRemoteRequestId = '';
+        if (remoteRequestTimeout) remoteRequestTimeout.textContent = '';
         remoteRequestOverlay?.classList.remove('visible');
         return;
     }
@@ -1852,6 +1894,9 @@ function renderRemotePopup() {
         agentName: pending.peer?.agentName || 'Unknown',
         ip: pending.peer?.ip || pending.host || 'Unknown',
     });
+    if (remoteRequestTimeout) {
+        remoteRequestTimeout.textContent = formatRemoteCountdown(pending.pendingExpiresAt);
+    }
     remoteRequestOverlay?.classList.add('visible');
 }
 
@@ -2203,6 +2248,7 @@ function debounce(fn, delay) {
 
 function markChalkboardUserContent(hasContent = true) {
     chalkboardState.hasUserContent = Boolean(hasContent);
+    syncChalkboardUI();
     if (hasContent || chalkboardState.hasInteracted) {
         scheduleRemoteChalkboardSync(Boolean(hasContent));
     }
@@ -3125,6 +3171,7 @@ function undoChalkAction() {
 
     clearChalkboardSurface();
     chalkboardState.ctx.drawImage(snapshot, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+    chalkboardState.hasInteracted = true;
     markChalkboardUserContent(chalkboardState.history.length > 0);
 }
 
@@ -3152,6 +3199,7 @@ function redoChalkAction() {
 
     clearChalkboardSurface();
     chalkboardState.ctx.drawImage(snapshot, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+    chalkboardState.hasInteracted = true;
     markChalkboardUserContent(true);
 }
 

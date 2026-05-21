@@ -238,6 +238,7 @@ Your rules:
 
 const AGENT_WORKFLOW_PROMPT_ZH = `- 只有複雜、會改動系統、需要工具或需要 SOP 的任務才走 Planner：整理使用者意圖、風險、下一步，不要直接執行。
 - 一般聊天、知識問答、創作、非系統操作話題不需要 Planner，直接回答。
+- 遵循 ReAct：先在內部判斷 Reason（意圖、風險、需要哪個工具），再用可見文字或結構化標籤 Act（SUGGEST / ACTION / Chalkboard），工具或任務結果回來後再 Observe 並回報。不要輸出完整隱藏推理鏈。
 - 只有在使用者明確允許後，才進入 Builder。
 - Builder 階段才可呼叫 Skills / SOPs / Browser Use / Computer Use。
 - 任務完成後要寫入一筆短 Exp，記錄成功、失敗與可重用做法。
@@ -245,6 +246,7 @@ const AGENT_WORKFLOW_PROMPT_ZH = `- 只有複雜、會改動系統、需要工�
 
 const AGENT_WORKFLOW_PROMPT_EN = `- Use Planner only for complex tasks, system-changing tasks, tool-using tasks, or SOP tasks: summarize intent, risks, and next step; do not execute immediately.
 - General chat, knowledge Q&A, writing, brainstorming, and non-system-operation topics do not need Planner; answer directly.
+- Follow ReAct: internally Reason about intent, risk, and needed tools; visibly Act with plain text or structured tags (SUGGEST / ACTION / Chalkboard); after tool or task results, Observe and report the outcome. Do not reveal hidden chain-of-thought.
 - Only enter Builder after the user explicitly approves.
 - Builder may call Skills / SOPs / Browser Use / Computer Use.
 - After completion, write a short Exp entry with what worked, what failed, and what can be reused.
@@ -744,6 +746,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
     const meta = PROVIDER_ENDPOINTS[provider] || { type: 'openai' };
     const chalkboardAttachment = options.chalkboardAttachment || null;
     const systemContext = options.systemContext || '';
+    const effectiveUserMessage = String(userMessage || '').trim() || 'Please continue based on the latest user request in the conversation context.';
     if (meta.type === 'anthropic') {
         const headers = {
             'Content-Type': 'application/json',
@@ -762,7 +765,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
                 })),
                 {
                     role: 'user',
-                    content: buildAnthropicMessageContent(userMessage, chalkboardAttachment)
+                    content: buildAnthropicMessageContent(effectiveUserMessage, chalkboardAttachment)
                 }
             ]
         };
@@ -789,20 +792,20 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         return content;
     }
     const historyMessages = history.map(m => ({
-        role: m.role,
+        role: m.role === 'assistant' ? 'assistant' : 'user',
         content: typeof m.content === 'string' ? m.content : String(m.content || '')
-    }));
+    })).filter((m) => m.content.trim());
 
     const messages = meta.type === 'ollama'
         ? [
             { role: 'system', content: buildFullSystemPrompt(locale, systemContext) },
             ...historyMessages.map(m => buildOllamaMessage(m.role, m.content)),
-            buildOllamaMessage('user', userMessage, chalkboardAttachment),
+            buildOllamaMessage('user', effectiveUserMessage, chalkboardAttachment),
         ]
         : [
             { role: 'system', content: buildFullSystemPrompt(locale, systemContext) },
             ...historyMessages,
-            { role: 'user', content: buildOpenAIMessageContent(userMessage, chalkboardAttachment) },
+            { role: 'user', content: buildOpenAIMessageContent(effectiveUserMessage, chalkboardAttachment) },
         ];
 
     const headers = {

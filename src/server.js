@@ -322,7 +322,11 @@ const remoteAgent = new RemoteAgentService({
             } catch (error) {
                 fileLog(`Remote AI reply failed: ${error.message}`);
                 try {
-                    remoteAgent.sendSystemMessage(session.id, `Remote AI failed to reply: ${error.message}`);
+                    remoteAgent.sendSystemMessage(
+                        session.id,
+                        `Remote AI failed to reply: ${error.message}`,
+                        { localText: `Local AI failed to reply: ${error.message}` }
+                    );
                 } catch {
                     // ignore
                 }

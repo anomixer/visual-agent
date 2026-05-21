@@ -147,6 +147,7 @@ class RemoteAgentService {
             this.clearPendingTimeout(session);
             session.status = 'rejected';
             session.lastEventAt = new Date().toISOString();
+            session.bannedUntil = payload.bannedUntil || '';
             this.emitSystemMessage(session, 'system', payload.reason || 'Remote peer rejected the connection.');
             socket.end();
             this.onStateChanged();
@@ -283,6 +284,7 @@ class RemoteAgentService {
             this.sendRaw(socket, {
                 type: 'hello_reject',
                 reason: 'Connection temporarily blocked due to repeated rejected invitations. Try again later.',
+                bannedUntil: new Date(bannedUntil).toISOString(),
             });
             socket.end();
             return;
@@ -487,15 +489,16 @@ class RemoteAgentService {
         return message;
     }
 
-    sendSystemMessage(sessionId, text = '') {
+    sendSystemMessage(sessionId, text = '', options = {}) {
         const session = this.requireActiveSession(sessionId);
+        const localText = options.localText || text;
         const message = {
             id: createId('msg'),
             type: 'system_message',
             direction: 'outgoing',
             senderType: 'system',
             senderLabel: 'System',
-            text,
+            text: localText,
             imageDataUrl: '',
             caption: '',
             target: 'remote-user',
@@ -503,7 +506,10 @@ class RemoteAgentService {
         };
         session.messages.push(message);
         session.lastEventAt = message.createdAt;
-        this.sendRaw(session.socket, message);
+        this.sendRaw(session.socket, {
+            ...message,
+            text,
+        });
         this.onStateChanged();
         return message;
     }
@@ -800,6 +806,8 @@ class RemoteAgentService {
             disconnectedAt: session.disconnectedAt || null,
             lastEventAt: session.lastEventAt || session.createdAt,
             disconnectReason: session.disconnectReason || '',
+            pendingExpiresAt: session.pendingExpiresAt || '',
+            bannedUntil: session.bannedUntil || '',
             host: session.host,
             port: session.port,
             local: session.local || null,
