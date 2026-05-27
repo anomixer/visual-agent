@@ -5855,7 +5855,8 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
         addLocalSessionMessage(role, text, suggestions, options);
     }
     const div = document.createElement('div');
-    div.className = `message ${isSystem ? 'system-message' : (isAI ? 'ai-message' : 'user-message')}`;
+    const chatScopeClass = container === remoteChatMessages || options.isRemote ? 'remote-chat-bubble' : 'local-chat-bubble';
+    div.className = `message ${chatScopeClass} ${isSystem ? 'system-message' : (isAI ? 'ai-message' : 'user-message')}`;
     
     if (isSystem) {
         div.innerHTML = `

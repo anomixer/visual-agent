@@ -42,8 +42,12 @@ $target = 'zh-CN'
 function Install-AipcLanguagePack {
     param([string]$LanguageTag)
     if (Get-Command Install-Language -ErrorAction SilentlyContinue) {
-        Install-Language -Language $LanguageTag -ErrorAction Stop
-        return
+        try {
+            Install-Language -Language $LanguageTag -ErrorAction Stop
+            return
+        } catch {
+            Write-Warning "Install-Language failed, falling back to Windows Capability install: $($_.Exception.Message)"
+        }
     }
 
     $capabilities = @(
@@ -67,11 +71,15 @@ function Install-AipcLanguagePack {
 
 Install-AipcLanguagePack -LanguageTag $target
 
-$langList = Get-WinUserLanguageList
+$langList = @(Get-WinUserLanguageList)
 if (-not (@($langList | ForEach-Object { $_.LanguageTag }) -contains $target)) {
     $newEntry = (New-WinUserLanguageList $target)[0]
-    [void]$langList.Add($newEntry)
-    Set-WinUserLanguageList -LanguageList $langList -Force -ErrorAction Stop
+    $newList = New-Object 'System.Collections.Generic.List[Microsoft.InternationalSettings.Commands.WinUserLanguage]'
+    foreach ($lang in $langList) {
+        [void]$newList.Add($lang)
+    }
+    [void]$newList.Add($newEntry)
+    Set-WinUserLanguageList -LanguageList $newList -Force -ErrorAction Stop
 }
 UI Message: "Requesting the Simplified Chinese language pack from Microsoft. This may take a few minutes..."
 ```

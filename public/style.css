@@ -2522,52 +2522,52 @@ ol {
   flex-direction: row-reverse;
 }
 
-.user-message .msg-bubble {
+.local-chat-bubble.user-message .msg-bubble {
   background: rgba(64, 118, 166, 0.2);
   border-color: rgba(112, 178, 232, 0.42);
   border-radius: var(--radius-md) 0 var(--radius-md) var(--radius-md);
   color: #d7ebff;
 }
 
-.user-message .msg-avatar {
+.local-chat-bubble.user-message .msg-avatar {
   background: rgba(64, 118, 166, 0.24);
   border-color: rgba(112, 178, 232, 0.42);
 }
 
-.ai-message .msg-bubble {
+.local-chat-bubble.ai-message .msg-bubble {
   background: rgba(42, 96, 150, 0.18);
   border-color: rgba(112, 178, 232, 0.34);
   color: #d7ebff;
 }
 
-.ai-message .msg-avatar {
+.local-chat-bubble.ai-message .msg-avatar {
   background: rgba(42, 96, 150, 0.22);
   border-color: rgba(112, 178, 232, 0.34);
 }
 
-.remote-messages .user-message .msg-bubble {
+.remote-chat-bubble.user-message .msg-bubble {
   background: rgba(52, 123, 94, 0.2);
   border-color: rgba(107, 210, 157, 0.42);
   color: #dcf7e7;
 }
 
-.remote-messages .user-message .msg-avatar {
+.remote-chat-bubble.user-message .msg-avatar {
   background: rgba(52, 123, 94, 0.24);
   border-color: rgba(107, 210, 157, 0.42);
 }
 
-.remote-messages .ai-message .msg-bubble {
+.remote-chat-bubble.ai-message .msg-bubble {
   background: rgba(52, 123, 94, 0.2);
   border-color: rgba(107, 210, 157, 0.42);
   color: #dcf7e7;
 }
 
-.remote-messages .ai-message .msg-avatar {
+.remote-chat-bubble.ai-message .msg-avatar {
   background: rgba(52, 123, 94, 0.24);
   border-color: rgba(107, 210, 157, 0.42);
 }
 
-.remote-messages .system-message .msg-bubble {
+.remote-chat-bubble.system-message .msg-bubble {
   background: rgba(148, 163, 184, 0.14);
   border-color: rgba(148, 163, 184, 0.3);
 }
