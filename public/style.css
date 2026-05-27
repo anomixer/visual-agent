@@ -2013,6 +2013,12 @@ ol {
   background: rgba(34, 197, 94, 0.12);
 }
 
+.chat-pending-pill.local-pending-pill.busy {
+  color: #7cc7ff;
+  border-color: rgba(71, 169, 255, 0.45);
+  background: rgba(17, 82, 143, 0.2);
+}
+
 .remote-session-chip {
   padding: 4px 8px;
   border-radius: 999px;

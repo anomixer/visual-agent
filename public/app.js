@@ -1680,8 +1680,8 @@ function updatePendingStatusRow() {
     const localLabel = currentLocale === 'en-US' ? 'Local AI' : '本地 AI';
     const remoteLabel = currentLocale === 'en-US' ? 'Remote AI' : '遠端 AI';
     row.innerHTML = `
-        <div class="chat-pending-pill ${localBusy ? 'busy' : ''}">${escapeHtml(localLabel)}: ${escapeHtml(localBusy ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
-        <div class="chat-pending-pill ${remoteBusy ? 'busy' : ''}">${escapeHtml(remoteLabel)}: ${escapeHtml(remoteBusy ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
+        <div class="chat-pending-pill local-pending-pill ${localBusy ? 'busy' : ''}">${escapeHtml(localLabel)}: ${escapeHtml(localBusy ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
+        <div class="chat-pending-pill remote-pending-pill ${remoteBusy ? 'busy' : ''}">${escapeHtml(remoteLabel)}: ${escapeHtml(remoteBusy ? t('chat.pendingBusy') : t('chat.pendingIdle'))}</div>
     `;
 }
 
