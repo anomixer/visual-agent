@@ -2005,7 +2005,7 @@ function renderRemoteMessages() {
             {
                 container: remoteChatMessages,
                 senderLabel: formatRemoteSender(message),
-                isRemote: true,
+                actorScope: message.direction === 'incoming' ? 'remote' : 'local',
                 forceSystem: message.senderType === 'system',
                 imageDataUrl: message.type === 'screen_share' ? message.imageDataUrl : '',
             }
@@ -5663,6 +5663,7 @@ async function sendChat() {
         appendChatBubble('user', msg, [], {
             container: remoteChatMessages,
             senderLabel: remoteProfile?.userName || 'Me',
+            actorScope: 'local',
         });
     } else {
         appendChatBubble('user', chalkboardAttachment ? `${msg}\n\n[已附上 Chalkboard 草圖供 AI 參考]` : msg);
@@ -5855,7 +5856,8 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
         addLocalSessionMessage(role, text, suggestions, options);
     }
     const div = document.createElement('div');
-    const chatScopeClass = container === remoteChatMessages || options.isRemote ? 'remote-chat-bubble' : 'local-chat-bubble';
+    const actorScope = options.actorScope || (container === remoteChatMessages || options.isRemote ? 'remote' : 'local');
+    const chatScopeClass = actorScope === 'remote' ? 'remote-chat-bubble' : 'local-chat-bubble';
     div.className = `message ${chatScopeClass} ${isSystem ? 'system-message' : (isAI ? 'ai-message' : 'user-message')}`;
     
     if (isSystem) {

@@ -2523,48 +2523,48 @@ ol {
 }
 
 .local-chat-bubble.user-message .msg-bubble {
-  background: rgba(64, 118, 166, 0.2);
-  border-color: rgba(112, 178, 232, 0.42);
+  background: rgba(20, 72, 116, 0.72);
+  border-color: rgba(71, 169, 255, 0.86);
   border-radius: var(--radius-md) 0 var(--radius-md) var(--radius-md);
-  color: #d7ebff;
+  color: #eef8ff;
 }
 
 .local-chat-bubble.user-message .msg-avatar {
-  background: rgba(64, 118, 166, 0.24);
-  border-color: rgba(112, 178, 232, 0.42);
+  background: rgba(20, 72, 116, 0.82);
+  border-color: rgba(71, 169, 255, 0.86);
 }
 
 .local-chat-bubble.ai-message .msg-bubble {
-  background: rgba(42, 96, 150, 0.18);
-  border-color: rgba(112, 178, 232, 0.34);
-  color: #d7ebff;
+  background: rgba(17, 82, 143, 0.66);
+  border-color: rgba(71, 169, 255, 0.76);
+  color: #eef8ff;
 }
 
 .local-chat-bubble.ai-message .msg-avatar {
-  background: rgba(42, 96, 150, 0.22);
-  border-color: rgba(112, 178, 232, 0.34);
+  background: rgba(17, 82, 143, 0.76);
+  border-color: rgba(71, 169, 255, 0.76);
 }
 
 .remote-chat-bubble.user-message .msg-bubble {
-  background: rgba(52, 123, 94, 0.2);
-  border-color: rgba(107, 210, 157, 0.42);
-  color: #dcf7e7;
+  background: rgba(22, 95, 58, 0.72);
+  border-color: rgba(73, 218, 129, 0.86);
+  color: #effff4;
 }
 
 .remote-chat-bubble.user-message .msg-avatar {
-  background: rgba(52, 123, 94, 0.24);
-  border-color: rgba(107, 210, 157, 0.42);
+  background: rgba(22, 95, 58, 0.82);
+  border-color: rgba(73, 218, 129, 0.86);
 }
 
 .remote-chat-bubble.ai-message .msg-bubble {
-  background: rgba(52, 123, 94, 0.2);
-  border-color: rgba(107, 210, 157, 0.42);
-  color: #dcf7e7;
+  background: rgba(18, 105, 67, 0.66);
+  border-color: rgba(73, 218, 129, 0.76);
+  color: #effff4;
 }
 
 .remote-chat-bubble.ai-message .msg-avatar {
-  background: rgba(52, 123, 94, 0.24);
-  border-color: rgba(107, 210, 157, 0.42);
+  background: rgba(18, 105, 67, 0.76);
+  border-color: rgba(73, 218, 129, 0.76);
 }
 
 .remote-chat-bubble.system-message .msg-bubble {
