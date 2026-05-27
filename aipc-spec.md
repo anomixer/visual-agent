@@ -528,6 +528,21 @@ $true
 - Remote session 首次進入 active 後，若本機 Chalkboard 已有使用者內容，必須主動送出一次目前 snapshot。
 - 接收遠端 Chalkboard snapshot 時不得清空 redo stack，避免 undo 後同步造成使用者無法 redo 檢視歷史內容。
 
+## 14. 2026.05.28 Browser Use 即時查詢規格
+
+### 14.1 版本
+- Runtime 版本號更新為 `2026.05.28`。
+- 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
+
+### 14.2 工具邊界
+- Browser Use 是網路資源取得與瀏覽器內導覽工具。
+- Computer Use 是桌面、App、檔案、SOP 等本機操作工具，不得作為一般網路搜尋工具。
+
+### 14.3 即時資訊策略
+- 天氣、物價、新聞、股價、匯率、最新版本、店家與行程等即時資訊，AI 必須優先使用 Browser Use。
+- AI 不得只回「找不到」或要求使用者手動搜尋；若本地知識不足，應先用 Browser Use 取得可信來源與連結。
+- Browser Use `search` 模式若 server-side HTML fetch 失敗或解析不到結果，必須 fallback 到 Playwright Chromium 真瀏覽器搜尋並解析 DOM。
+
 ### 11.5 Skills 與 Action
 - Sidebar 必須提供 Skills 清單，來源為 `skills/<slug>/SKILL.md`。
 - Action parser 必須支援 `[ACTION:...]` 與 `Action=Computer_Use...`。

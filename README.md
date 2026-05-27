@@ -341,6 +341,12 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.05.28
+- **版本更新**：套件版本更新為 `2026.05.28`。
+- **Browser Use 即時查詢**：天氣、物價、新聞、股價、匯率、最新版本等即時資訊，AI 應優先使用 Browser Use，不再用 CLI 硬爬或只叫使用者手動搜尋。
+- **真瀏覽器搜尋 fallback**：`/api/agent/browser-use` 的 `search` 模式在 HTML fetch 失敗或無結果時，會改用 Playwright Chromium 開搜尋頁並解析 DOM 結果。
+- **Computer Use 邊界收斂**：Computer Use 定位為桌面、App、檔案、SOP 等本機操作，不作為一般網路搜尋工具。
+
 ### 2026.05.21
 - **版本更新**：套件版本更新為 `2026.05.21`。
 - **AI 卡住保護**：LLM 對話 timeout 統一收斂為 3 分鐘，遠端 AI queue 也會在逾時後釋放，避免其中一端卡住時整條協作鏈乾等。
@@ -549,4 +555,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.05.21`。
+- 目前套件版本：`2026.05.28`。

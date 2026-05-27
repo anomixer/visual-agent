@@ -5,6 +5,20 @@
 
 ---
 
+## 📌 2026.05.28 — Browser Use 即時查詢與版本同步
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.05.28`。
+
+### Browser Use 重新定位
+- 天氣、物價、新聞、股價、匯率、最新版本、店家與行程等即時資訊，應優先走 Browser Use。
+- `Computer Use` 不再被視為網路查詢工具；它只負責桌面、App、檔案、SOP 等本機操作。
+- `/api/agent/browser-use` 的 `search` 模式新增真瀏覽器 fallback：server-side fetch 搜尋失敗或解析不到結果時，會改用 Playwright Chromium 開搜尋頁並從 DOM 抽取結果。
+
+### Prompt 收斂
+- System prompt 明確要求：本地知識不足或需要最新資訊時，要主動使用 Browser Use，不要叫使用者手動搜尋，也不要用 CLI 硬爬。
+- Browser Use action 範圍明確列入 `search/open/navigate/extract_text/snapshot/fetch_title`。
+
 ## 📌 2026.05.21 — Remote 協作卡住保護與 Chalkboard 同步修正
 
 ### 版本同步

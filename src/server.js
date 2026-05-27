@@ -1580,11 +1580,25 @@ async function runBrowserUseOperation(params = {}) {
     }
     if (mode === 'search') {
         const query = String(params.query || '').trim();
-        const results = await searchWebLinks(query, Math.min(10, Number(params.limit) || 5));
+        const limit = Math.min(10, Number(params.limit) || 5);
+        let results = [];
+        let source = 'fetch';
+        let fetchError = '';
+        try {
+            results = await searchWebLinks(query, limit);
+        } catch (error) {
+            fetchError = error.message || String(error);
+        }
+        if (!results.length) {
+            source = 'browser';
+            results = await searchWebLinksWithBrowser(query, limit);
+        }
         return {
             success: true,
             mode,
             query,
+            source,
+            fetchError,
             results,
         };
     }
@@ -1812,6 +1826,40 @@ async function searchWebLinks(query = '', limit = 5) {
         if (results.length >= limit) break;
     }
     return results;
+}
+
+async function searchWebLinksWithBrowser(query = '', limit = 5) {
+    const q = String(query || '').trim();
+    if (!q) return [];
+    const page = await ensureBrowserSession();
+    await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(q)}`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000,
+    });
+    await page.waitForTimeout(800).catch(() => null);
+    const results = await page.evaluate((maxItems) => {
+        const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+        const seen = new Set();
+        const items = [];
+        const links = [
+            ...document.querySelectorAll('li.b_algo h2 a'),
+            ...document.querySelectorAll('a[data-testid="result-title-a"]'),
+            ...document.querySelectorAll('a[href^="http"]'),
+        ];
+        for (const link of links) {
+            const title = clean(link.innerText || link.textContent || '');
+            const url = String(link.href || '').trim();
+            if (!title || !/^https?:\/\//i.test(url)) continue;
+            if (/bing\.com\/(search|ck\/a|images|videos|maps)/i.test(url)) continue;
+            const key = `${title}|${url}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            items.push({ title, url });
+            if (items.length >= maxItems) break;
+        }
+        return items;
+    }, Math.min(10, Number(limit) || 5));
+    return Array.isArray(results) ? results : [];
 }
 
 function looksLikeUnavailableHtml(text = '') {
