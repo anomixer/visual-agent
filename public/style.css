@@ -2101,14 +2101,17 @@ ol {
 }
 
 .message.system-message .msg-bubble-wrapper {
-  max-width: 100%;
+  max-width: min(92%, 520px);
 }
 
 .message.system-message .msg-bubble {
-  border-radius: 999px;
+  border-radius: 16px;
   background: rgba(86, 156, 214, 0.12);
   color: var(--text-secondary);
   font-size: 11px;
+  width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .remote-image {
