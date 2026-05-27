@@ -1884,6 +1884,22 @@ ol {
   color: var(--text-primary);
 }
 
+.local-chat-tab.active {
+  color: #7cc7ff;
+  border: 1px solid rgba(71, 169, 255, 0.42);
+  background: rgba(17, 82, 143, 0.2);
+}
+
+.chat-mode-tab-remote.active {
+  color: #7deda9;
+  border: 1px solid rgba(73, 218, 129, 0.42);
+  background: rgba(18, 105, 67, 0.2);
+}
+
+.chat-mode-tab-remote {
+  color: #7deda9;
+}
+
 .chat-mode-tab.pending::after {
   content: '';
   display: inline-block;
