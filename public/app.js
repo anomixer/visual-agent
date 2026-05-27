@@ -323,7 +323,7 @@ const I18N = {
         },
         remote: {
             localTab: '💬 本機 AI',
-            remoteTab: '🌐 遠端 AI',
+            remoteTab: '遠端 AI',
             disconnected: '未連線',
             connecting: '連線中',
             connected: '已連線',
@@ -648,7 +648,7 @@ const I18N = {
         },
         remote: {
             localTab: '💬 Local AI',
-            remoteTab: '🌐 Remote AI',
+            remoteTab: 'Remote AI',
             disconnected: 'Disconnected',
             connecting: 'Connecting',
             connected: 'Connected',
