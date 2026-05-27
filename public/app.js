@@ -4353,6 +4353,22 @@ function buildDirectiveDebugLabel(action = {}) {
     return `${normalized || 'unknown'}:${detail}`;
 }
 
+function resolveLanguageSopIdFromDirective(action = {}, contextText = '') {
+    const haystack = [
+        action.sopId,
+        action.mode,
+        action.language,
+        action.arguments,
+        action.label,
+        contextText,
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (/sys_lang_zh_cn|zh-cn|simplified chinese|\u7c21\u9ad4\u4e2d\u6587|\u7c21\u4e2d/.test(haystack)) return 'sys_lang_zh_cn';
+    if (/sys_lang_zh_tw|zh-tw|traditional chinese|\u7e41\u9ad4\u4e2d\u6587|\u7e41\u4e2d/.test(haystack)) return 'sys_lang_zh_tw';
+    if (/sys_lang_ja_jp|ja-jp|japanese|\u65e5\u6587|\u65e5\u8a9e/.test(haystack)) return 'sys_lang_ja_jp';
+    if (/sys_lang_en_us|en-us|english|\u82f1\u6587|\u82f1\u8a9e/.test(haystack)) return 'sys_lang_en_us';
+    return '';
+}
+
 function buildRemoteDirectiveExecutionKey(sessionId = '', action = {}) {
     const normalized = String(action?.action || action?.type || '').trim().toLowerCase();
     return [
@@ -4471,6 +4487,22 @@ async function handleDirectiveAction(action = {}) {
         };
     }
     if (normalized === 'computer_use') {
+        const languageSopId = /install[_-]?language[_-]?pack/i.test(action.mode || '')
+            ? resolveLanguageSopIdFromDirective(action, action.contextText || '')
+            : '';
+        if (languageSopId) {
+            addUILog(currentLocale === 'en-US'
+                ? `＋ Remote directive converted to task (${languageSopId})`
+                : `＋ 遠端指令已轉為工作清單任務（${languageSopId}）`, 'info');
+            const { task, reused } = await queueSopTaskById(languageSopId, false);
+            await loadTodo();
+            return {
+                success: true,
+                summary: currentLocale === 'en-US'
+                    ? `${reused ? 'Reused' : 'Added'} task: ${task?.title || languageSopId}. Please run it from the task list when ready.`
+                    : `${reused ? '沿用' : '已加入'}任務：${task?.title || languageSopId}。請到工作清單確認後再執行。`,
+            };
+        }
         addUILog(currentLocale === 'en-US'
             ? `🧭 Remote directive: computer_use (${action.mode || 'unknown'})`
             : `🧭 遠端指令：computer_use（${action.mode || 'unknown'}）`, 'info');
@@ -5917,6 +5949,8 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
                             sopId: btn.dataset.sopId || '',
                             taskId: btn.dataset.taskId || '',
                             mode: btn.dataset.mode || '',
+                            label: btn.textContent || '',
+                            contextText: text || '',
                         });
                         if (result?.summary) {
                             appendChatBubble('system', result.summary, [], {
