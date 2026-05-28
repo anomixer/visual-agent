@@ -1994,7 +1994,9 @@ function renderRemoteMessages() {
         }
         if (chalkControl.draft && !appliedRemoteDraftMessageIds.has(message.id)) {
             appliedRemoteDraftMessageIds.add(message.id);
-            applyAgentChalkboardDraft(chalkControl.draft);
+            applyAgentChalkboardDraft(chalkControl.draft, {
+                actorScope: message.direction === 'incoming' ? 'remote' : 'local',
+            });
         }
         appendChatBubble(
             message.senderType === 'system' ? 'system' : (message.senderType === 'ai' ? 'ai' : 'user'),
@@ -3538,23 +3540,43 @@ function showChalkboardFloatHint(message) {
     window.addEventListener('pointerdown', chalkboardHintClickDismissHandler, true);
 }
 
-async function applyAgentChalkboardDraft(draft) {
+function normalizeCollaborativeChalkboardDraft(draft = {}, options = {}) {
+    const session = getActiveRemoteSession();
+    const inRemoteSession = Boolean(session && session.status === 'active');
+    const actorScope = options.actorScope || draft.actorScope || (activeChatMode === 'remote' ? 'remote' : 'local');
+    const normalized = { ...draft };
+    if (inRemoteSession) {
+        normalized.clear = false;
+        if (!normalized.position || normalized.position === 'full') {
+            normalized.position = actorScope === 'remote' ? 'right' : 'left';
+        }
+    }
+    return normalized;
+}
+
+async function applyAgentChalkboardDraft(draft, options = {}) {
     if (!draft) return;
-    const title = String(draft.title || '').trim();
-    const bullets = Array.isArray(draft.bullets)
-        ? draft.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
+    const collaborativeDraft = normalizeCollaborativeChalkboardDraft(draft, options);
+    const title = String(collaborativeDraft.title || '').trim();
+    const bullets = Array.isArray(collaborativeDraft.bullets)
+        ? collaborativeDraft.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
         : [];
     if (!title && bullets.length === 0) return;
 
     try {
-        let normalizedDraft = { title, bullets };
+        let normalizedDraft = {
+            title,
+            bullets,
+            position: collaborativeDraft.position,
+            clear: collaborativeDraft.clear,
+        };
         try {
             const normalized = await api('/api/chalkboard/draft', {
                 method: 'POST',
-                body: { title, bullets },
+                body: normalizedDraft,
             });
             if (normalized.success && normalized.draft) {
-                normalizedDraft = normalized.draft;
+                normalizedDraft = normalizeCollaborativeChalkboardDraft(normalized.draft, options);
             }
         } catch {
             // fallback: still render locally even if draft API is unavailable
@@ -3696,7 +3718,7 @@ function extractChalkboardControlFromReply(text = '') {
         .slice(0, 6);
     const finalTitle = (title || (currentLocale === 'en-US' ? 'AI Chalkboard Notes' : 'AI 黑板重點')).slice(0, 52);
     const draft = compactBullets.length > 0
-        ? { title: finalTitle, bullets: compactBullets }
+        ? { title: finalTitle, bullets: compactBullets, position, clear }
         : null;
     return {
         displayText,
@@ -5831,7 +5853,7 @@ async function sendChat() {
                 appendChatBubble('ai', chalkControl.displayText || data.reply, data.suggestions);
                 const autoDraft = chalkControl.draft;
                 if (autoDraft) {
-                    applyAgentChalkboardDraft(autoDraft);
+                    applyAgentChalkboardDraft(autoDraft, { actorScope: 'local' });
                 }
                 if (data.sopChanged) {
                     refreshSidebarDataSoon();

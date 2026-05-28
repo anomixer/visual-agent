@@ -314,7 +314,7 @@ const remoteAgent = new RemoteAgentService({
                         'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
                         'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
                         buildLatestChalkboardContext(session, payload?.locale || session.peer?.locale || 'zh-TW'),
-                        'When using ##CHALKBOARD##, coordinate with Local AI! You are the Remote AI: use "position: right" and "clear: false" to avoid erasing teammate content.',
+                        'When using ##CHALKBOARD##, coordinate with Local AI. You are the Remote AI: use "position: right" and "clear: false"; never redraw or redefine a board/grid that already exists. For games such as tic-tac-toe, keep the existing numbering/coordinates and only update your move/status.',
                             `IMPORTANT: All hardware info (CPU/RAM/disk/free space) belongs to THIS machine (${profile.machineName}). When answering questions about disk space or system resources, always specify which machine: "On ${profile.machineName}: ..."`,
                             (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const diskFreePart = formatDiskFreePart(localHardwareContext); return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                             'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
@@ -1415,7 +1415,7 @@ function buildLatestChalkboardContext(session = null, locale = 'zh-TW') {
     const sender = latest.senderLabel || (latest.direction === 'incoming' ? 'Remote peer' : 'Local peer');
     const caption = String(latest.caption || '').trim();
     return locale === 'en-US'
-        ? `Latest Chalkboard sync: updated by ${sender} at ${latest.createdAt || 'unknown time'}. ${caption || 'Review the latest synced Chalkboard state before answering if the task depends on shared notes.'}`
+        ? `Latest Chalkboard sync: updated by ${sender} at ${latest.createdAt || 'unknown time'}. ${caption || 'Review the latest synced Chalkboard state before answering if the task depends on shared notes.'} If you write to Chalkboard now, preserve this board, use clear:false, and add only a coordinated supplement.`
         : `最新 Chalkboard 同步：由 ${sender} 於 ${latest.createdAt || '未知時間'} 更新。${caption || '若回答依賴共同筆記，請先參考最新同步過來的 Chalkboard 狀態。'}`;
 }
 
@@ -2785,7 +2785,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                             : 'Answer the local human directly and concisely.',
                         buildLatestChalkboardContext(currentSession, locale),
                         'If asked what model you are using, answer with the exact current provider and model from the system context.',
-                        'When using ##CHALKBOARD##, coordinate with Remote AI! You are the Local AI: use "position: left" and "clear: false" to avoid erasing teammate content.',
+                        'When using ##CHALKBOARD##, coordinate with Remote AI. You are the Local AI: use "position: left" and "clear: false"; never redraw or redefine a board/grid that already exists. For games such as tic-tac-toe, define the shared board once, then keep the same numbering/coordinates and only update moves/status.',
                         'Keep the answer concise and practical.',
                     ].join('\n'),
                 },
@@ -4354,6 +4354,10 @@ app.post('/api/agent/computer-use', async (req, res) => {
 
 app.post('/api/chalkboard/draft', (req, res) => {
     const title = String(req.body?.title || '').trim();
+    const position = ['left', 'right', 'full'].includes(String(req.body?.position || '').toLowerCase())
+        ? String(req.body.position).toLowerCase()
+        : 'full';
+    const clear = req.body?.clear !== false;
     const bullets = Array.isArray(req.body?.bullets)
         ? req.body.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
         : [];
@@ -4365,6 +4369,8 @@ app.post('/api/chalkboard/draft', (req, res) => {
         draft: {
             title: title || 'Chalkboard Draft',
             bullets,
+            position,
+            clear,
             createdAt: new Date().toISOString(),
         },
     });
