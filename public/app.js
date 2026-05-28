@@ -3547,11 +3547,26 @@ function normalizeCollaborativeChalkboardDraft(draft = {}, options = {}) {
     const normalized = { ...draft };
     if (inRemoteSession) {
         normalized.clear = false;
+        normalized.replaceLane = draft.replaceLane !== false;
         if (!normalized.position || normalized.position === 'full') {
             normalized.position = actorScope === 'remote' ? 'right' : 'left';
         }
     }
     return normalized;
+}
+
+function clearChalkboardLane(position = 'full') {
+    if (!chalkboardState.ctx) return;
+    const pos = String(position || 'full').toLowerCase();
+    if (pos === 'left') {
+        chalkboardState.ctx.clearRect(0, 0, chalkboardState.cssWidth / 2, chalkboardState.cssHeight);
+        return;
+    }
+    if (pos === 'right') {
+        chalkboardState.ctx.clearRect(chalkboardState.cssWidth / 2, 0, chalkboardState.cssWidth / 2, chalkboardState.cssHeight);
+        return;
+    }
+    clearChalkboardSurface();
 }
 
 async function applyAgentChalkboardDraft(draft, options = {}) {
@@ -3569,6 +3584,7 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             bullets,
             position: collaborativeDraft.position,
             clear: collaborativeDraft.clear,
+            replaceLane: collaborativeDraft.replaceLane,
         };
         try {
             const normalized = await api('/api/chalkboard/draft', {
@@ -3608,6 +3624,8 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             const clear = normalizedDraft.clear !== false;
             if (clear) {
                 clearChalkboardSurface();
+            } else if (normalizedDraft.replaceLane !== false && (normalizedDraft.position === 'left' || normalizedDraft.position === 'right')) {
+                clearChalkboardLane(normalizedDraft.position);
             }
 
             const finalTitle = String(normalizedDraft.title || title || 'Chalkboard Draft').trim();

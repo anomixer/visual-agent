@@ -1419,6 +1419,20 @@ function buildLatestChalkboardContext(session = null, locale = 'zh-TW') {
         : `最新 Chalkboard 同步：由 ${sender} 於 ${latest.createdAt || '未知時間'} 更新。${caption || '若回答依賴共同筆記，請先參考最新同步過來的 Chalkboard 狀態。'}`;
 }
 
+function shouldInvitePeerAiContinuation(text = '') {
+    const normalized = String(text || '').toLowerCase();
+    if (!normalized) return false;
+    return /(換你|輪到你|請你接著|請.*補|等你|your turn|take over|continue from here|remote ai.*continue|local ai.*continue)/i.test(normalized);
+}
+
+function buildPeerAiContinuationText(session = null, aiText = '', locale = 'zh-TW') {
+    const peerName = session?.peer?.agentName || session?.peer?.machineName || 'Remote AI';
+    const localName = session?.local?.agentName || session?.local?.machineName || 'Local AI';
+    return locale === 'en-US'
+        ? `Teammate handoff from ${localName}: ${aiText}\n\nPlease continue the collaboration now. If the Chalkboard already has a board/grid/coordinates, do not redraw or redefine it. Preserve the existing shared definition, use clear:false, and only update your move/status or a coordinated supplement.`
+        : `${localName} 給 ${peerName} 的協作交接：${aiText}\n\n請你現在接續協作。若 Chalkboard 已有棋盤、格線、座標或共同定義，不要重畫或改定義；請沿用既有定義，使用 clear:false，只更新你的下一步、棋步或協調補充。`;
+}
+
 function normalizeActionString(action = '') {
     const raw = String(action || '').trim();
     if (!raw) return '';
@@ -2806,6 +2820,15 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
             text: outboundText,
             target,
         });
+        if (mode === 'local-ai' && target !== 'remote-ai' && shouldInvitePeerAiContinuation(outboundText)) {
+            const currentSession = remoteAgent.getState().sessions.find((item) => item.id === sessionId);
+            remoteAgent.sendChatMessage(sessionId, {
+                senderType: 'ai',
+                senderLabel,
+                text: buildPeerAiContinuationText(currentSession, outboundText, locale),
+                target: 'remote-ai',
+            });
+        }
         touchRemoteState();
         res.json({ success: true, message });
     } catch (error) {
@@ -4073,7 +4096,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
                 .replace(/\[SUGGEST:.*?\]/g, '')
                 .trim();
-            const finalReply = [
+            let finalReply = [
                 cleanReply,
                 actionSummaries.length ? actionSummaries.join('\n\n') : '',
             ].filter(Boolean).join('\n\n') || (
@@ -4081,6 +4104,41 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     ? 'Done. I executed the requested action.'
                     : '已執行指定動作。'
             );
+            if (actionSummaries.length > 0 && !executeTaskId) {
+                try {
+                    const observedReply = await llm.chatWithLLM(
+                        [
+                            locale === 'en-US'
+                                ? 'The tool/action step finished. Continue the answer without waiting for the user to poke you again.'
+                                : '工具/動作步驟已完成。請直接接續回答，不要等使用者再提醒。',
+                            `Original user request:\n${message}`,
+                            cleanReply ? `Your prior visible plan/reply:\n${cleanReply}` : '',
+                            `Tool observations:\n${actionSummaries.join('\n\n')}`,
+                            locale === 'en-US'
+                                ? 'Now provide the final useful answer. If this is research/current-info, summarize the result with source links. Do not output ACTION or SUGGEST tags unless another user-approved step is truly required.'
+                                : '現在請給出最後可用答案。若這是查詢/即時資訊，請整理結果並附來源連結。除非真的還需要下一個經使用者同意的步驟，否則不要輸出 ACTION 或 SUGGEST 標籤。',
+                        ].filter(Boolean).join('\n\n'),
+                        requestHistory,
+                        {
+                            systemContext: [
+                                chatOptions.systemContext || '',
+                                'You are in Observe-after-Act mode. A tool already ran. Synthesize the observation into a final answer now.',
+                            ].filter(Boolean).join('\n'),
+                        },
+                        locale
+                    );
+                    const observedClean = String(observedReply || '')
+                        .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
+                        .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
+                        .replace(/\[SUGGEST:.*?\]/g, '')
+                        .trim();
+                    if (observedClean) {
+                        finalReply = observedClean;
+                    }
+                } catch (observeError) {
+                    console.warn('Observe-after-Act follow-up failed:', observeError.message);
+                }
+            }
             const trimmedHistory = [
                 ...baseHistory,
                 { role: 'user', content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message },
@@ -4358,6 +4416,7 @@ app.post('/api/chalkboard/draft', (req, res) => {
         ? String(req.body.position).toLowerCase()
         : 'full';
     const clear = req.body?.clear !== false;
+    const replaceLane = req.body?.replaceLane !== false;
     const bullets = Array.isArray(req.body?.bullets)
         ? req.body.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
         : [];
@@ -4371,6 +4430,7 @@ app.post('/api/chalkboard/draft', (req, res) => {
             bullets,
             position,
             clear,
+            replaceLane,
             createdAt: new Date().toISOString(),
         },
     });
