@@ -5920,6 +5920,7 @@ async function sendChat() {
 }
 
 function appendChatBubble(role, text, suggestions = [], options = {}) {
+    suggestions = [];
     const isAI = role === 'ai';
     const isSystem = role === 'system' || options.forceSystem;
     const container = options.container || chatMessages;

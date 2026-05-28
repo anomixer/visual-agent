@@ -1448,6 +1448,8 @@ function normalizeActionString(action = '') {
 }
 
 function parseStructuredSuggestions(reply = '', locale = 'zh-TW', fallbackSuggestions = []) {
+    // Suggestion buttons are intentionally disabled: LLM-generated buttons were too often off-topic.
+    return [];
     const raw = String(reply || '');
     const matches = [...raw.matchAll(/\[SUGGEST:(.*?)\]/gs)];
     if (!matches.length) return Array.isArray(fallbackSuggestions) ? fallbackSuggestions : [];
@@ -1476,6 +1478,41 @@ function parseStructuredSuggestions(reply = '', locale = 'zh-TW', fallbackSugges
         return Array.isArray(fallbackSuggestions) ? fallbackSuggestions : [];
     }
     return structured;
+}
+
+function getRuntimeDateContext(locale = 'zh-TW') {
+    const timeZone = 'Asia/Taipei';
+    const now = new Date();
+    const getParts = (date) => Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        weekday: 'long',
+    }).formatToParts(date).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+    const today = getParts(now);
+    const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrow = getParts(tomorrowDate);
+    const todayIso = `${today.year}-${today.month}-${today.day}`;
+    const tomorrowIso = `${tomorrow.year}-${tomorrow.month}-${tomorrow.day}`;
+    return locale === 'en-US'
+        ? `Current date: ${todayIso} (${today.weekday}) in ${timeZone}. Tomorrow is ${tomorrowIso} (${tomorrow.weekday}). Resolve relative dates like today/tomorrow/yesterday from this context; never invent stale dates.`
+        : `今天日期：${todayIso}（${today.weekday}，時區 ${timeZone}）。明天是 ${tomorrowIso}（${tomorrow.weekday}）。所有「今天/明天/昨天」都必須以這個日期解析，不可自行猜舊日期。`;
+}
+
+function isCurrentInfoRequest(text = '') {
+    return /(天氣|氣溫|降雨|颱風|物價|價格|報價|新聞|最新|今天|明天|昨日|昨天|匯率|股價|股票|油價|金價|weather|forecast|temperature|rain|price|quote|news|latest|today|tomorrow|yesterday|exchange rate|stock)/i.test(String(text || ''));
+}
+
+function buildCurrentInfoSearchQuery(text = '', locale = 'zh-TW') {
+    const base = String(text || '').trim();
+    const context = getRuntimeDateContext(locale);
+    const tomorrowMatch = context.match(locale === 'en-US' ? /Tomorrow is (\d{4}-\d{2}-\d{2})/ : /明天是 (\d{4}-\d{2}-\d{2})/);
+    const todayMatch = context.match(locale === 'en-US' ? /Current date: (\d{4}-\d{2}-\d{2})/ : /今天日期：(\d{4}-\d{2}-\d{2})/);
+    const dateHint = /(明天|tomorrow)/i.test(base)
+        ? tomorrowMatch?.[1]
+        : (/(今天|today)/i.test(base) ? todayMatch?.[1] : '');
+    return [base, dateHint].filter(Boolean).join(' ');
 }
 
 function buildModelCapabilityProfile() {
@@ -1603,9 +1640,22 @@ async function runBrowserUseOperation(params = {}) {
         } catch (error) {
             fetchError = error.message || String(error);
         }
-        if (!results.length) {
+        if (!results.length && isPlaywrightAvailable() && hasPlaywrightBrowserBinary()) {
             source = 'browser';
             results = await searchWebLinksWithBrowser(query, limit);
+        }
+        if (!results.length && (!isPlaywrightAvailable() || !hasPlaywrightBrowserBinary())) {
+            return {
+                success: false,
+                mode,
+                query,
+                source,
+                fetchError,
+                browserUnavailable: true,
+                sopId: 'install_playwright_chromium',
+                error: 'Browser Use plugin/runtime is unavailable. Install Playwright Chromium to enable live browser fallback.',
+                results,
+            };
         }
         return {
             success: true,
@@ -3538,9 +3588,7 @@ app.post('/api/chat', async (req, res) => {
             return res.json({
                 success: true,
                 reply: browserReply,
-                suggestions: locale === 'en-US'
-                    ? ['Search another keyword', 'Continue in Browser tab']
-                    : ['換關鍵字再查', '切到 Browser 分頁繼續'],
+                suggestions: [],
                 task: false,
                 llmUsed: false,
                 browser: browserResult || null,
@@ -3557,7 +3605,7 @@ app.post('/api/chat', async (req, res) => {
     } catch (agentErr) {
         fileLog(`Agent workflow failed: ${agentErr.message}`);
     }
-    let suggestions = locale === 'en-US' ? ['Install Chrome', 'Clear Tasks', 'System Status'] : ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態']; // 提升作用域
+    let suggestions = []; // Suggestion buttons disabled; use plain text and task list actions instead.
     let llmErrorForFallback = null;
     // 1. 快速蒐集背景資訊
     const sopCatalog = sopsWithState.map(s => `- ID: ${s.id}, Name: ${s.name}, Status: ${s.installed ? 'installed' : 'not installed'}, Action: ${s.recommendedAction}`).join('\n');
@@ -3738,8 +3786,11 @@ app.post('/api/chat', async (req, res) => {
                 || (localChatSessionId ? (localChatHistoryBySession.get(localChatSessionId) || []) : chatHistory);
             const requestHistory = buildChatHistoryForRequest(baseHistory, Boolean(chalkboardAttachment));
             const onDemandGuidance = buildOnDemandSkillAndSopContext(message, sopsWithState, locale || 'zh-TW');
+            const runtimeDateContext = getRuntimeDateContext(locale || 'zh-TW');
             const contextNote = `
 [[Current System Context]]
+0. Runtime Date: ${runtimeDateContext}
+
 1. Hardware Summary: ${hardwareSummary}
 
 2. Available SOPs:
@@ -3772,10 +3823,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             const chatOptions = {
                 systemContext: [
                     buildLocalAgentContext(activeRemoteSession || null),
+                    runtimeDateContext,
                     `Available local IPv4 list: ${remoteState.localIps.join(', ') || 'N/A'}`,
                     `Remote chat service port: ${DEFAULT_REMOTE_PORT}`,
-                    'Built-in Browser tab is available and controlled by Playwright Chromium session APIs.',
-                    'When web tasks are needed, prefer Browser Use actions to drive Browser tab directly.',
+                    `Built-in Browser tab availability: Playwright module=${isPlaywrightAvailable() ? 'yes' : 'no'}, Chromium binary=${hasPlaywrightBrowserBinary() ? 'yes' : 'no'}.`,
+                    'When web/current-info tasks are needed, prefer Browser Use actions. If Browser Use is unavailable, say so briefly and still provide text/link fallback from available search results.',
                     'Remote model proxy is removed. Use remote chat collaboration when another AI should help.',
                     onDemandGuidance || '',
                 ].join('\n'),
@@ -4089,6 +4141,45 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             }
 
 
+            if (!actionSummaries.length && isCurrentInfoRequest(message)) {
+                const query = buildCurrentInfoSearchQuery(message, locale || 'zh-TW');
+                try {
+                    const browserResult = await runBrowserUseOperation({ mode: 'search', query, limit: 5 });
+                    const items = Array.isArray(browserResult?.results) ? browserResult.results.slice(0, 5) : [];
+                    if (items.length > 0) {
+                        actionSummaries.push(
+                            [
+                                browserResult?.browserUnavailable
+                                    ? (locale === 'en-US'
+                                        ? 'Browser Use is not fully installed, so I used text/link search fallback.'
+                                        : 'Browser Use 尚未完整安裝，因此先改用文字/連結搜尋 fallback。')
+                                    : '',
+                                (locale === 'en-US'
+                                    ? `Current-info search results for "${query}":`
+                                    : `「${query}」即時資訊搜尋結果：`),
+                                ...items.map((item, index) => `${index + 1}. ${item.title} - ${item.url}`),
+                            ].filter(Boolean).join('\n')
+                        );
+                    } else {
+                        actionSummaries.push(
+                            browserResult?.browserUnavailable
+                                ? (locale === 'en-US'
+                                    ? 'Browser Use is unavailable. Please install the Playwright Chromium browser runtime; no text fallback results were found.'
+                                    : 'Browser Use 不可用。請先安裝 Playwright Chromium 瀏覽器 runtime；這次也沒有取得文字 fallback 結果。')
+                                : (locale === 'en-US'
+                                    ? `Current-info search completed, but no usable results were parsed for "${query}".`
+                                    : `已完成即時資訊搜尋，但沒有解析到可用結果：「${query}」。`)
+                        );
+                    }
+                } catch (searchError) {
+                    actionSummaries.push(
+                        locale === 'en-US'
+                            ? `Current-info search failed: ${searchError.message}`
+                            : `即時資訊搜尋失敗：${searchError.message}`
+                    );
+                }
+            }
+
             if (hasActionTaken) saveTasks();
             // 4. 更新對話紀錄
             const cleanReply = llmReply
@@ -4184,7 +4275,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
     let taskAdded = null;
     let executeTaskId = null;
     let isActionTaken = false;
-    suggestions = locale === 'en-US' ? ['Install Chrome', 'Clear Tasks', 'System Status'] : ['幫我安裝 Chrome', '清理工作清單', '查看系統狀態'];
+    suggestions = [];
     const isDeletionIntent = /刪除|移除|移掉|清空|清掉|delete|remove/.test(message);
     const isConfirmation = /是|好|確定|執行|同意/.test(message);
     // 備援模式的刪除邏輯：也改成需要確認
