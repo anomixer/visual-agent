@@ -5,6 +5,21 @@
 
 ---
 
+## 📌 2026.06.03 — 日期上下文、Observe-after-Act 與建議按鈕收斂
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.06.03`。
+
+### 日期與即時資訊
+- 每輪 `/api/chat` 會注入 runtime date context，明確標示今天、明天與時區，避免 AI 把「明天」解析成舊日期。
+- 天氣、物價、新聞、匯率、股價與最新資訊若模型忘記主動呼叫 Browser Use，後端會自動補一輪 current-info search，再交給 Observe-after-Act 整理成可讀回答。
+- Browser Use 不完整或 Chromium runtime 未安裝時，AI 需明確提示使用者安裝，並盡量使用文字/連結 fallback 回答。
+
+### Chalkboard 與回覆收斂
+- 前端新增自動 Chalkboard draft：計畫、比較、查詢摘要、天氣/物價/新聞或偏長回答，即使模型沒有輸出 `##CHALKBOARD##`，也會自動寫入簡短黑板摘要。
+- Browser Use / Computer Use / current-info fallback 完成後會自動進入 Observe-after-Act，不再只說「資料取得後回報」就停住。
+- LLM 產生的 suggestion buttons 全面停用，避免問天氣卻顯示安裝 Chrome 等文不對題按鈕。
+
 ## 📌 2026.05.28 — Browser Use 即時查詢與版本同步
 
 ### 版本同步

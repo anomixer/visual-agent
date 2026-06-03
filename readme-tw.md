@@ -2,6 +2,15 @@
 
 > 本文件為繁體中文快速摘要，重點補充遠端 AI 協作、Directive Protocol 與最近修正。完整說明仍以 [README.md](/C:/dev/aipc-agent/README.md) 為準。
 
+## 2026.06.03 修正摘要
+
+- 版本更新為 `2026.06.03`。
+- `/api/chat` 每輪注入今天、明天與時區，避免 AI 把「明天」解析成舊日期。
+- 天氣、物價、新聞、匯率、股價與最新資訊若模型忘了叫 Browser Use，後端會自動補 current-info search，並進入 Observe-after-Act 續答。
+- Browser Use runtime 未安裝時會提示安裝，並盡量使用文字/連結搜尋 fallback。
+- 計畫、比較、查詢摘要或偏長回答會自動寫入 Chalkboard 摘要。
+- LLM suggestion buttons 已停用，避免顯示文不對題的安裝或 SOP 按鈕。
+
 ## 遠端 AI 協作重點
 
 - 遠端聊天室支援本地 AI、遠端 AI 與使用者三方協作。

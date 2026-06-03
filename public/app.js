@@ -1992,9 +1992,10 @@ function renderRemoteMessages() {
                 });
             });
         }
-        if (chalkControl.draft && !appliedRemoteDraftMessageIds.has(message.id)) {
+        const remoteAutoDraft = chalkControl.draft || buildAutoChalkboardDraft('', chalkControl.displayText || remoteText || '');
+        if (remoteAutoDraft && !appliedRemoteDraftMessageIds.has(message.id)) {
             appliedRemoteDraftMessageIds.add(message.id);
-            applyAgentChalkboardDraft(chalkControl.draft, {
+            applyAgentChalkboardDraft(remoteAutoDraft, {
                 actorScope: message.direction === 'incoming' ? 'remote' : 'local',
             });
         }
@@ -3741,6 +3742,37 @@ function extractChalkboardControlFromReply(text = '') {
     return {
         displayText,
         draft,
+    };
+}
+
+function shouldAutoDraftChalkboard(userText = '', replyText = '') {
+    const combined = `${userText || ''}\n${replyText || ''}`;
+    if (/##CHALKBOARD##/i.test(replyText || '')) return false;
+    if (/(黑板|chalkboard|畫|draw|流程|計畫|比較|整理|摘要|查詢|天氣|物價|新聞|步驟|plan|compare|summary|research|weather|price|news|steps)/i.test(combined)) {
+        return true;
+    }
+    const lineCount = String(replyText || '').split(/\r?\n/).filter((line) => line.trim()).length;
+    return String(replyText || '').length > 420 || lineCount >= 5;
+}
+
+function buildAutoChalkboardDraft(userText = '', replyText = '') {
+    if (!shouldAutoDraftChalkboard(userText, replyText)) return null;
+    const plain = String(replyText || '')
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/\[(?:ACTION|SUGGEST)[\s\S]*?\]/gi, '')
+        .replace(/[#>*_`]/g, '')
+        .trim();
+    const lines = plain.split(/\r?\n/)
+        .map((line) => line.replace(/^[-\d.\s]+/, '').trim())
+        .filter(Boolean)
+        .slice(0, 6)
+        .map((line) => line.slice(0, 72));
+    if (!lines.length) return null;
+    return {
+        title: currentLocale === 'en-US' ? 'AI Summary' : 'AI 摘要',
+        bullets: lines,
+        position: 'full',
+        clear: true,
     };
 }
 
@@ -5869,7 +5901,7 @@ async function sendChat() {
                 }
                 const chalkControl = extractChalkboardControlFromReply(data.reply || '');
                 appendChatBubble('ai', chalkControl.displayText || data.reply, data.suggestions);
-                const autoDraft = chalkControl.draft;
+                const autoDraft = chalkControl.draft || buildAutoChalkboardDraft(msg, chalkControl.displayText || data.reply || '');
                 if (autoDraft) {
                     applyAgentChalkboardDraft(autoDraft, { actorScope: 'local' });
                 }

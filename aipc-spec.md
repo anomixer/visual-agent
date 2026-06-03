@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (2026.05.06 Updated)
+# AI PC Agent — 實作需求規格書 (2026.06.03 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.05.06 Updated] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.06.03 Updated] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -554,3 +554,26 @@ $true
 ### 10.6 一般對話
 - System prompt 必須允許一般聊天、知識問答、創作與非系統操作話題。
 - 只有使用者明確談到電腦問題、軟體、安裝、維護、自動化或本 App 功能時，才引導到 SOP / 安裝 / Agent 工作流。
+
+## 15. 2026.06.03 Observe-after-Act 與建議按鈕規格
+
+### 15.1 版本
+- Runtime 版本號更新為 `2026.06.03`。
+- 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
+
+### 15.2 日期上下文
+- `/api/chat` 每輪必須注入 runtime date context，包含今天、明天與時區。
+- AI 回答今天、明天、昨天、最新、天氣、新聞、物價等相對時間問題時，必須使用 runtime date context，不得自行猜測舊日期。
+
+### 15.3 即時資訊與 Browser Use fallback
+- 天氣、物價、新聞、匯率、股價與最新資訊若模型未輸出 Browser Use action，後端必須自動補 current-info search。
+- Browser Use runtime 或 Playwright Chromium 未安裝時，系統必須提示使用者安裝，並盡量用文字/連結搜尋結果 fallback。
+- 工具結果回來後必須進入 Observe-after-Act，直接整理最後答案，不得停在「資料取得後回報」。
+
+### 15.4 Chalkboard 主動摘要
+- 計畫、比較、查詢摘要、天氣/物價/新聞或偏長回答，若模型沒有輸出 `##CHALKBOARD##`，前端必須自動產生簡短 Chalkboard draft。
+- Remote collaboration 下仍須遵守 local left / remote right 與 lane overwrite protection，避免互相覆蓋。
+
+### 15.5 Suggestion Buttons
+- LLM 產生的 suggestion buttons 預設停用。
+- 系統不得在一般問答、天氣、新聞、物價等場景顯示與問題無關的安裝或 SOP 建議按鈕。

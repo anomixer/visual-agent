@@ -341,6 +341,14 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.06.03
+- **版本更新**：套件版本更新為 `2026.06.03`。
+- **日期上下文**：`/api/chat` 每輪注入今天、明天與時區，避免「明天天氣」被模型解析成舊日期。
+- **即時資訊保底**：天氣、物價、新聞、匯率、股價與最新資訊若模型沒有主動輸出 Browser Use action，後端會自動補 current-info search，再由 Observe-after-Act 整理結果。
+- **Browser Use fallback**：若 Playwright Chromium runtime 尚未安裝，會提醒使用者安裝，並盡量以文字/連結搜尋結果 fallback。
+- **自動畫黑板**：計畫、比較、查詢摘要、天氣/物價/新聞或偏長回答會自動產生 Chalkboard 摘要，不再完全依賴模型主動輸出 `##CHALKBOARD##`。
+- **關閉亂跳建議鈕**：停用 LLM suggestion buttons，避免與問題無關的安裝/任務按鈕干擾對話。
+
 ### 2026.05.28
 - **版本更新**：套件版本更新為 `2026.05.28`。
 - **Browser Use 即時查詢**：天氣、物價、新聞、股價、匯率、最新版本等即時資訊，AI 應優先使用 Browser Use，不再用 CLI 硬爬或只叫使用者手動搜尋。
@@ -555,4 +563,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.05.28`。
+- 目前套件版本：`2026.06.03`。
