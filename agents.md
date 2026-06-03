@@ -10,10 +10,14 @@
 ### 版本同步
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.06.03`。
 
+### Provider 設定
+- LM Studio 加入模型清單刷新白名單，和 Ollama、NVIDIA NIM 一樣可用「刷新清單」直接抓取 `/models`。
+
 ### 日期與即時資訊
 - 每輪 `/api/chat` 會注入 runtime date context，明確標示今天、明天與時區，避免 AI 把「明天」解析成舊日期。
 - 天氣、物價、新聞、匯率、股價與最新資訊若模型忘記主動呼叫 Browser Use，後端會自動補一輪 current-info search，再交給 Observe-after-Act 整理成可讀回答。
-- Browser Use 不完整或 Chromium runtime 未安裝時，AI 需明確提示使用者安裝，並盡量使用文字/連結 fallback 回答。
+- Browser Use 不完整或 Chromium runtime 未安裝時，後端會明確提示使用者安裝，並真的加入/沿用 `install_playwright_chromium` 工作清單任務；使用者接著說「執行 / 開始 / 安裝」時會保底啟動該 pending task。
+- Browser Use 仍會盡量使用文字/連結 fallback 回答，避免只停在錯誤訊息。
 
 ### Chalkboard 與回覆收斂
 - 前端新增自動 Chalkboard draft：計畫、比較、查詢摘要、天氣/物價/新聞或偏長回答，即使模型沒有輸出 `##CHALKBOARD##`，也會自動寫入簡短黑板摘要。

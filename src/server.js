@@ -884,6 +884,35 @@ function buildTaskTitle(sop, action = 'install') {
     return `📦 ${sop.name}`;
 }
 
+function queueSopTaskById(sopsWithState = [], sopId = '', description = 'Scheduled by AI Agent') {
+    const targetId = String(sopId || '').trim();
+    if (!targetId) return { success: false, error: 'Missing SOP id' };
+    const existingTask = [...todoList].reverse().find((task) =>
+        String(task.skillId || '') === targetId && ['pending', 'running'].includes(String(task.status || ''))
+    );
+    if (existingTask) {
+        return { success: true, task: existingTask, reused: true };
+    }
+    const sop = sopsWithState.find((item) => String(item.id || '') === targetId);
+    if (!sop) return { success: false, error: `SOP not found: ${targetId}` };
+    const task = {
+        id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        title: buildTaskTitle(sop, sop.recommendedAction),
+        description,
+        skillId: sop.id,
+        action: sop.recommendedAction,
+        category: sop.category || 'Maintenance',
+        status: 'pending',
+        progress: 0,
+        logs: [],
+        createdAt: new Date().toISOString(),
+        completedAt: null,
+    };
+    todoList.push(task);
+    saveTasks();
+    return { success: true, task, reused: false };
+}
+
 function buildLocalAgentContext(sessionSummary = null) {
     const profile = getRemoteProfile();
     const lines = [
@@ -3555,6 +3584,24 @@ app.post('/api/chat', async (req, res) => {
     if (!message) return res.json({ success: false, error: 'Please enter a message' });
     const sops = loadAllSOPs(SOPS_DIR);
     const sopsWithState = await annotateSOPRuntimeState(sops);
+    if (/(執行|開始|安裝|run|start|execute|install)/i.test(message)) {
+        const pendingBrowserInstall = [...todoList].reverse().find((task) =>
+            String(task.skillId || '') === 'install_playwright_chromium'
+            && String(task.status || '') === 'pending'
+        );
+        if (pendingBrowserInstall && /(browser|chromium|playwright|瀏覽器|瀏覽|搜尋|查|執行|開始|安裝|run|start|execute|install)/i.test(message)) {
+            return res.json({
+                success: true,
+                reply: locale === 'en-US'
+                    ? `Starting Browser Use runtime install task: ${pendingBrowserInstall.title}`
+                    : `開始執行 Browser Use runtime 安裝任務：${pendingBrowserInstall.title}`,
+                suggestions: [],
+                task: false,
+                executeTaskId: pendingBrowserInstall.id,
+                llmUsed: false,
+            });
+        }
+    }
     try {
         if (isManualBrowserSearchIntent(message)) {
             const query = inferBrowserSearchQuery(message, requestedHistory) || 'GTA V 攻略';
@@ -4021,7 +4068,18 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const mode = parseActionArg(actionStr, 'mode') || 'search';
                     const query = parseActionArg(actionStr, 'query');
                     const url = parseActionArg(actionStr, 'url');
-                    const browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
+                    let browserResult;
+                    try {
+                        browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
+                    } catch (browserError) {
+                        browserResult = {
+                            success: false,
+                            mode,
+                            error: browserError.message || String(browserError),
+                            sopId: browserError.sopId || (/playwright|chromium|browser unavailable/i.test(browserError.message || '') ? 'install_playwright_chromium' : ''),
+                            browserUnavailable: /playwright|chromium|browser unavailable/i.test(browserError.message || ''),
+                        };
+                    }
                     hasActionTaken = true;
                     if (browserResult?.success && mode === 'search') {
                         const items = Array.isArray(browserResult.results) ? browserResult.results.slice(0, 3) : [];
@@ -4046,6 +4104,27 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                 : `已執行 Browser Use（${mode}）。`
                         );
                     } else {
+                        if (browserResult?.sopId === 'install_playwright_chromium' || browserResult?.browserUnavailable) {
+                            const queued = queueSopTaskById(
+                                sopsWithState,
+                                'install_playwright_chromium',
+                                'Required by Browser Use'
+                            );
+                            if (queued.success) {
+                                taskListChanged = true;
+                                actionSummaries.push(
+                                    locale === 'en-US'
+                                        ? `Browser Use is unavailable because Playwright Chromium is not installed. ${queued.reused ? 'Reused' : 'Added'} install task: ${queued.task.title} (${queued.task.id}). Please run this task, then try Browser Use again.`
+                                        : `Browser Use 目前不可用，因為尚未安裝 Playwright Chromium。已${queued.reused ? '沿用' : '加入'}安裝任務：${queued.task.title}（${queued.task.id}）。請先執行此任務，完成後再使用 Browser Use。`
+                                );
+                            } else {
+                                actionSummaries.push(
+                                    locale === 'en-US'
+                                        ? `Browser Use is unavailable and I could not queue the install task: ${queued.error}`
+                                        : `Browser Use 不可用，而且無法加入安裝任務：${queued.error}`
+                                );
+                            }
+                        }
                         actionSummaries.push(
                             locale === 'en-US'
                                 ? `Browser Use failed (${mode}): ${browserResult?.error || 'unknown error'}`
@@ -4161,6 +4240,16 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             ].filter(Boolean).join('\n')
                         );
                     } else {
+                        if (browserResult?.browserUnavailable) {
+                            const queued = queueSopTaskById(
+                                sopsWithState,
+                                'install_playwright_chromium',
+                                'Required by Browser Use current-info search'
+                            );
+                            if (queued.success) {
+                                taskListChanged = true;
+                            }
+                        }
                         actionSummaries.push(
                             browserResult?.browserUnavailable
                                 ? (locale === 'en-US'

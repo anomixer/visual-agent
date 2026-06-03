@@ -567,7 +567,9 @@ $true
 
 ### 15.3 即時資訊與 Browser Use fallback
 - 天氣、物價、新聞、匯率、股價與最新資訊若模型未輸出 Browser Use action，後端必須自動補 current-info search。
-- Browser Use runtime 或 Playwright Chromium 未安裝時，系統必須提示使用者安裝，並盡量用文字/連結搜尋結果 fallback。
+- Browser Use runtime 或 Playwright Chromium 未安裝時，系統必須提示使用者安裝，並真的加入或沿用 `install_playwright_chromium` 工作清單任務。
+- 使用者接著輸入「執行 / 開始 / 安裝 / run / start / execute」時，若有 pending 的 `install_playwright_chromium` 任務，後端必須保底回傳 `executeTaskId` 啟動該任務，不得讓 LLM 空轉等待。
+- Browser Use runtime 未就緒時仍應盡量用文字/連結搜尋結果 fallback。
 - 工具結果回來後必須進入 Observe-after-Act，直接整理最後答案，不得停在「資料取得後回報」。
 
 ### 15.4 Chalkboard 主動摘要
@@ -577,3 +579,7 @@ $true
 ### 15.5 Suggestion Buttons
 - LLM 產生的 suggestion buttons 預設停用。
 - 系統不得在一般問答、天氣、新聞、物價等場景顯示與問題無關的安裝或 SOP 建議按鈕。
+
+### 15.6 Provider Model List
+- LM Studio 必須和 Ollama、NVIDIA NIM 一樣支援設定視窗「刷新清單」。
+- 可提供 OpenAI-compatible `/models` 的 provider 應優先使用下拉清單選模型；抓不到清單時才 fallback 到手動輸入。

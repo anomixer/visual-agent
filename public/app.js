@@ -7253,7 +7253,7 @@ async function openProviderSettings() {
 async function onProviderChange(provider, currentModel = '', currentVisionModel = '') {
     syncProviderAuthUI(provider);
     // 判斷哪些 Provider 支援模型下拉清單
-    const supportList = ['Ollama', 'Ollama Cloud', 'NVIDIA NIM', 'Mistral', 'Together AI', 'Groq', 'OpenAI', 'DeepSeek'];
+    const supportList = ['Ollama', 'Ollama Cloud', 'NVIDIA NIM', 'LM Studio', 'Mistral', 'Together AI', 'Groq', 'OpenAI', 'DeepSeek'];
     
     // 如果沒帶 currentModel，嘗試抓取目前下拉選單的值（保留選取項）
     if (!currentModel && settingModelSelect.value) {

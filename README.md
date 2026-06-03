@@ -343,9 +343,11 @@ aipc-agent/
 
 ### 2026.06.03
 - **版本更新**：套件版本更新為 `2026.06.03`。
+- **LM Studio 模型刷新**：LM Studio 加入模型清單刷新白名單，設定視窗可像 Ollama / NVIDIA NIM 一樣按「刷新清單」抓模型。
 - **日期上下文**：`/api/chat` 每輪注入今天、明天與時區，避免「明天天氣」被模型解析成舊日期。
 - **即時資訊保底**：天氣、物價、新聞、匯率、股價與最新資訊若模型沒有主動輸出 Browser Use action，後端會自動補 current-info search，再由 Observe-after-Act 整理結果。
-- **Browser Use fallback**：若 Playwright Chromium runtime 尚未安裝，會提醒使用者安裝，並盡量以文字/連結搜尋結果 fallback。
+- **Browser Use runtime 安裝任務**：若 Playwright Chromium runtime 尚未安裝，系統會提醒使用者並真的加入/沿用 `install_playwright_chromium` 工作清單任務；使用者接著說「執行 / 開始 / 安裝」時會保底啟動該 pending task。
+- **Browser Use fallback**：即使 runtime 未就緒，仍盡量以文字/連結搜尋結果 fallback，不再假裝已指定動作卻沒有實際任務。
 - **自動畫黑板**：計畫、比較、查詢摘要、天氣/物價/新聞或偏長回答會自動產生 Chalkboard 摘要，不再完全依賴模型主動輸出 `##CHALKBOARD##`。
 - **關閉亂跳建議鈕**：停用 LLM suggestion buttons，避免與問題無關的安裝/任務按鈕干擾對話。
 
