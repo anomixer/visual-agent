@@ -1,9 +1,66 @@
-﻿# AI PC Agent 開發日誌
+# AI PC Agent 開發日誌
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
 
 ---
+
+## 📌 2026.06.09 — 完整國際化 (I18N) 支援、對話與任務 UI 優化、P2P 語系網路傳播
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.06.09`。
+
+### 完整動態 UI 國際化 (I18N)
+- **多語系切換支援**：實作中英文語系無縫動態切換。包含所有面板（側邊欄、工作日誌、對話列、Chalkboard 等）之標題、按鈕、說明文字、佔位符 (Placeholder) 與提示語。
+- **對話分頁動態翻譯**：本機對話分頁（如「本機對話 1」）現在在切換語言時會動態翻譯為對應語言。
+- **正則表達式邊界修復**：修正原本以 `\b` 匹配中文造成的正則表達式邊界無效問題（如 `^本機對話\b`），改為更強健的 `/^(?:本機對話|Local Chat)(?:\s+\d+)?$/i`，確保不論有無序號、皆能正確識別並翻譯聊天分頁名稱。
+- **硬體統計資訊國際化**：CPU、GPU 型號與負載百分比、RAM 剩餘與使用量、硬碟 S.M.A.R.T 健康度（如 SSD Health: Good 100% / SSD 健康度：良好 100%）與剩餘容量等探測文字在語系切換時皆能同步完成語意翻譯。
+- **任務與知識庫空狀態國際化**：任務清單空狀態（"No tasks pending" / "目前沒有待辦任務"）與經驗知識庫空狀態等在語系切換時亦能完整適配。
+
+### 任務清單 (Tasks Tab) DOM 節點損毀修復
+- **清除邏輯修正**：修復原先在渲染工作清單時直接執行 `.innerHTML = ''` 導致 `#todoEmpty` (空狀態提示節點) 被意外徹底移除，造成後續新增任務並清空後空狀態無法再次顯示的 Bug。
+- **動態重建**：更新 `renderTodos()` 以在清空容器時保留或動態重建 `#todoEmpty` 節點，確保空狀態顯示與隱藏的 toggle 邏輯長效穩定。
+
+### P2P 遠端協作語系網路傳播 (Network Locale Propagation)
+- **即時語系傳遞**：除首次連線之 handshake Profile 交換外，在遠端聊天封包 `chat_message` 的 TCP/Socket payload 中新增 `locale` 欄位。
+- **遠端 AI 語系對齊**：當本機使用者切換介面語系（如英文）並向遠端 AI 發問時，遠端 AI 能即時在 TCP 封包中讀取 `locale: 'en-US'`，並在建構 System Prompt 時動態將其對齊英文回覆，徹底解決遠端 AI 無法跟隨發問者語系的限制。
+
+### 預設語言模型升級 (Ollama Gemma 4 E2B QAT)
+- **模型替換**：預設本地下載與使用的 LLM 模型由 `qwen3.5:4b` 升級/替換為 `gemma4:e2b-it-qat`。
+- **好處與效益**：從 Ollama v0.30.6 起支援的 Gemma 4 QAT 具有更小的體積（約 1.1GB vs 原先 Qwen3.5 4B 的 2.6GB），載入與啟動速度極快。
+- **變更範圍**：
+  - 更新 `sops/pull-llm-model/SOP.md` 內全部下載/檢查/清理/驗證邏輯與大小說明。
+  - 更新 `src/llm.js` 預設模型定義 (`DEFAULT_MODEL`) 與自動模型清單過濾器中 `gemma` 的優先比對。
+  - 更新 `src/server.js` 與 `public/app.js`（中英文）的推薦清單標題、說明描述及模型大小提示。
+  - 更新 `public/index.html` 的設定模型預設 placeholder 字串。
+  - 更新 `skills/ollama/SKILL.md` 相關 tags 與模型體積對照表。
+
+
+## 📌 2026.06.08 — Bug 修復、Markdown 支援、模型選取優化與 Hermes Skills 整合
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.06.08`。
+
+### AI Chat Markdown 支援
+- 前端引入 `marked.min.js`（本地 bundle），`renderMarkdown()` 改為真正解析 GFM（含表格、刪除線、code block）。
+- 新增 `.markdown-body` CSS：表格邊框、th 底色、code/pre、h1-h3、blockquote、hr 完整樣式。
+
+### 模型自動選取修正
+- `llm.js` 新增 `isLLMCapableModel()` 過濾函式，排除 embedding、reranker、TTS、Whisper、Diffusion、CLIP 等非對話模型。
+- `checkOllamaStatus` 的 fallback 選模邏輯全面改為只在 chat-capable 清單中選，避免首次啟動誤選 embedding 模型。
+
+### Browser Tab 顯示修正
+- `getPlaywrightBrowserDirCandidates()` 移除 `%LOCALAPPDATA%\ms-playwright` 系統全域路徑。
+- 改為只認 AppData 下的 `aipc-agent\playwright-browsers`，清除 AppData 後能正確顯示 `install required`，不再因偵測到其他 Playwright 裝置而誤啟 Browser tab。
+
+### Hermes Agent Skills 整合
+- 從 [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/tree/main/skills) 批量轉換 19 個 skills，全部轉為 AIPC Agent 的 `SKILL.md` 格式（含 YAML frontmatter + 完整 prompt 說明）。
+- 每個 skill 的 frontmatter 加入 `source: hermes-agent` 欄位；後端 `loadSkillDocuments()` 同步讀取並回傳 `source` 欄位（兼容舊 skills 自動 fallback 為 `aipc-agent`）。
+- Skills Tab UI 改為兩大來源群組：`🤖 AIPC Agent`（18 個原生 skills）和 `⚗️ From Hermes Agent`（19 個轉換 skills），各有對應顏色的 section header 與 count badge。
+- Hermes skills 卡片右上角顯示 `⚗️ Hermes` 黃色徽章，視覺區分來源。
+- 轉換的 19 個 skills 涵蓋：apple、autonomous-ai-agents、creative、data-science、devops、dogfood、email、github、index-cache、media、mlops、note-taking、productivity、red-teaming、research、smart-home、social-media、software-development、yuanbao。
+- **說明**：Hermes Skills 屬於 AI 知識增強層（context/prompt），不像 SOP 有可執行的 PowerShell 步驟；它們在 AI 對話時自動注入對應領域知識，讓 AI 回答更專業。
+
 
 ## 📌 2026.06.03 — 日期上下文、Observe-after-Act 與建議按鈕收斂
 

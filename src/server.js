@@ -54,14 +54,19 @@ app.use(express.static(path.join(__dirname, '../public')));
 const isPkg = typeof process.pkg !== 'undefined';
 
 function getPlaywrightBrowserDirCandidates() {
-    return [process.env.PLAYWRIGHT_BROWSERS_PATH, appDataBrowserDir, defaultPlaywrightBrowserDir]
+    // 只認 appData 自己管理的安裝目錄，避免誤判圖 %LOCALAPPDATA%\ms-playwright 等系統安裝位置
+    return [process.env.PLAYWRIGHT_BROWSERS_PATH, appDataBrowserDir]
         .map((item) => String(item || '').trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((p, i, arr) => arr.indexOf(p) === i); // 去重
 }
 
 function findExecutableRecursive(rootDir, executableName = 'chrome-headless-shell.exe') {
-    const targetName = String(executableName || '').trim().toLowerCase();
+    const targetNames = (Array.isArray(executableName) ? executableName : [executableName])
+        .map((item) => String(item || '').trim().toLowerCase())
+        .filter(Boolean);
     if (!rootDir || !fs.existsSync(rootDir)) return '';
+    if (!targetNames.length) return '';
     const stack = [rootDir];
     while (stack.length) {
         const currentDir = stack.pop();
@@ -71,7 +76,7 @@ function findExecutableRecursive(rootDir, executableName = 'chrome-headless-shel
                 const fullPath = path.join(currentDir, entry.name);
                 if (entry.isDirectory()) {
                     stack.push(fullPath);
-                } else if (entry.isFile() && entry.name.toLowerCase() === targetName) {
+                } else if (entry.isFile() && targetNames.includes(entry.name.toLowerCase())) {
                     return fullPath;
                 }
             }
@@ -83,7 +88,7 @@ function findExecutableRecursive(rootDir, executableName = 'chrome-headless-shel
 function resolvePlaywrightBrowserDir() {
     for (const browserDir of getPlaywrightBrowserDirCandidates()) {
         try {
-            const browserExe = findExecutableRecursive(browserDir);
+            const browserExe = findExecutableRecursive(browserDir, ['chrome-headless-shell.exe', 'chrome.exe']);
             if (browserExe) return browserDir;
         } catch {}
     }
@@ -92,7 +97,7 @@ function resolvePlaywrightBrowserDir() {
 
 function resolvePlaywrightBrowserExecutable() {
     for (const browserDir of getPlaywrightBrowserDirCandidates()) {
-        const browserExe = findExecutableRecursive(browserDir);
+        const browserExe = findExecutableRecursive(browserDir, ['chrome-headless-shell.exe', 'chrome.exe']);
         if (browserExe) return browserExe;
     }
     return '';
@@ -327,6 +332,7 @@ const remoteAgent = new RemoteAgentService({
                     senderLabel: profile.agentName,
                     text: aiReply,
                     target: 'remote-user',
+                    locale: payload?.locale || session.peer?.locale || 'zh-TW',
                 });
             } catch (error) {
                 fileLog(`Remote AI reply failed: ${error.message}`);
@@ -445,12 +451,16 @@ function loadSkillDocuments(forceRefresh = false) {
                     ? tagsBlockMatch[1].split(/\r?\n/).map((line) => line.replace(/^\s+-\s*/, '').trim()).filter(Boolean)
                     : (tagsInlineMatch ? tagsInlineMatch[1].trim().replace(/^\[|\]$/g, '').split(',').map((tag) => tag.trim()).filter(Boolean) : []);
                 const category = categoryMatch ? categoryMatch[1].trim().replace(/^["']|["']$/g, '') : 'Skills';
+                const sourceMatch = fmText.match(/^source:\s*(.+)$/m);
+                const sourceRaw = sourceMatch ? sourceMatch[1].trim().replace(/^["']|["']$/g, '') : '';
+                const source = sourceRaw || (entry.name.startsWith('hermes-') ? 'hermes-agent' : 'aipc-agent');
                 docs.push({
                     slug: entry.name,
                     name: displayName,
                     description,
                     tags,
                     category,
+                    source,
                     content,
                     tokens: new Set(tokenizeForMatch(
                         `${displayName} ${description} ${tags.join(' ')} ${category} ${content.slice(0, 1200)}`
@@ -2727,11 +2737,15 @@ app.get('/api/system/health', async (req, res) => {
 
 });
 app.get('/api/meta', (req, res) => {
+    const browserExecutable = resolvePlaywrightBrowserExecutable();
     res.json({
         success: true,
         name: pkg.name || 'aipc-agent',
         version: APP_VERSION,
-        browserAvailable: hasPlaywrightBrowserBinary(),
+        browserAvailable: Boolean(browserExecutable),
+        browserExecutable,
+        browserSearchPaths: getPlaywrightBrowserDirCandidates(),
+        playwrightModuleAvailable: isPlaywrightAvailable(),
     });
 });
 
@@ -2844,6 +2858,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                     senderLabel: getRemoteProfile().userName,
                     text,
                     target,
+                    locale,
                 });
             }
             remoteAgent.sendAiStatus(sessionId, {
@@ -2898,6 +2913,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
             senderLabel,
             text: outboundText,
             target,
+            locale,
         });
         if (mode === 'local-ai' && target !== 'remote-ai' && shouldInvitePeerAiContinuation(outboundText)) {
             const currentSession = remoteAgent.getState().sessions.find((item) => item.id === sessionId);
@@ -2906,6 +2922,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                 senderLabel,
                 text: buildPeerAiContinuationText(currentSession, outboundText, locale),
                 target: 'remote-ai',
+                locale,
             });
         }
         touchRemoteState();
@@ -3061,8 +3078,8 @@ const RECOMMEND_BASE = [
     },
     {
         id: 'rec_pull_llm_model',
-        title: '📥 Download Language Model (Qwen3.5 4B)',
-        description: 'Download Qwen3.5 4B (~2.6GB). After this, AI will truly understand your requests',
+        title: '📥 Download Language Model (Gemma 4 E2B QAT)',
+        description: 'Download Gemma 4 E2B QAT (~1.1GB). After this, AI will truly understand your requests',
         category: 'AI Engine',
         priority: 'critical',
     },

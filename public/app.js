@@ -28,7 +28,7 @@ let localThinkingId = '';
 let remoteThinkingId = '';
 let isSidebarCollapsed = false;
 let isChatCollapsed = false;
-let isLogCollapsed = false; 
+let isLogCollapsed = false;
 let isRecording = false;
 let recognition = null;
 let currentLogIndex = 0;
@@ -56,6 +56,7 @@ let mentionCandidates = [];
 let activeMentionIndex = 0;
 let remotePendingRoles = { local: false, remote: false };
 let browserInstallQueued = false;
+const monitoredBrowserInstallTaskIds = new Set();
 let pendingModelShareSessionId = '';
 let remoteToolbarCollapsed = localStorage.getItem('remote_toolbar_collapsed') === '1';
 let chalkboardHintTimer = null;
@@ -294,6 +295,17 @@ const I18N = {
             aiChat: '💬 AI 對話',
             chalkboard: 'Chalkboard',
         },
+        hardware: {
+            title: '🌡️ 系統硬體狀態',
+            subtitle: '即時監控本機硬體健康與效能',
+            cpu: '中央處理器 (CPU)',
+            gpu: '圖形處理器 (GPU)',
+            ram: '記憶體 (RAM)',
+            disk: '主硬碟健康度',
+            detecting: '偵測中...',
+            scanning: '掃描中...',
+            lastUpdate: '上次更新',
+        },
         chalkboardWelcome: {
             title: '歡迎使用 AI PC Agent',
             body: '這裡可以快速啟動推薦工具與瀏覽器。請從左側推薦清單選擇工具，或是直接與 AI 對話。',
@@ -371,6 +383,7 @@ const I18N = {
             fileTooLarge: '檔案太大，請選擇 256KB 以下文字檔',
         },
         exps: {
+            detailsTitle: '經驗詳情',
             searchPlaceholder: '搜尋經驗、關鍵字...',
             exportButton: '⬇ 匯出',
             exportTooltip: '匯出所有 exps 為 Markdown',
@@ -394,7 +407,7 @@ const I18N = {
             apiKey: 'API Key',
             apiKeyPlaceholder: 'Bearer Token / API Key',
             modelName: '模型名稱 (Model Name)',
-            modelNamePlaceholder: '例如: qwen3.5:4b',
+            modelNamePlaceholder: '例如: gemma4:e2b-it-qat',
             visionModel: 'Vision 多模態模型',
             visionModelPlaceholder: '留空則自動挑選可看圖模型',
             refresh: '🔄 刷新清單',
@@ -479,7 +492,7 @@ const I18N = {
             notDetected: '未偵測到 Ollama，自動加入安裝任務',
             installing: '未偵測到本地 AI 引擎（Ollama）。系統正自動為您安裝，請在出現提示時允許權限。',
             ready: 'Ollama 已就緒，自動加入模型下載任務',
-            downloading: 'Ollama 已就緒，正在自動為您下載 qwen3.5 語言模型，請稍候...',
+            downloading: 'Ollama 已就緒，正在自動為您下載 gemma4:e2b-it-qat 語言模型，請稍候...',
         },
         status: {
             llmReady: '🟢 AI 就緒',
@@ -493,6 +506,10 @@ const I18N = {
             exportFallback: '原生匯出失敗，已改用瀏覽器下載：{error}',
             importSuccess: '任務清單已匯入',
             importFailed: '匯入失敗：JSON 格式錯誤',
+        },
+        todo: {
+            emptyTitle: '目前沒有執行中的任務',
+            emptyHint: '您可以從左側推薦清單或透過對話新增任務',
         },
         buttons: {
             collapse: '收起 ▼',
@@ -569,7 +586,7 @@ const I18N = {
         },
         sopUi: {
             rec_install_ollama: { title: '安裝 Ollama 本地 AI 引擎', description: '下載並安裝 Ollama，讓 AI PC Agent 具備本地語意理解能力', category: 'AI 引擎' },
-            rec_pull_llm_model: { title: '下載語言模型 (Qwen3.5 4B)', description: '下載 Qwen3.5 4B 語言模型，約 2.6GB，完成後即可開始本地對話', category: 'AI 引擎' },
+            rec_pull_llm_model: { title: '下載語言模型 (Gemma 4 E2B QAT)', description: '下載 Gemma 4 E2B QAT 語言模型，約 1.1GB，完成後即可開始本地對話', category: 'AI 引擎' },
             rec_driver_check: { title: '檢查並安裝驅動程式', description: '掃描硬體裝置並確認驅動程式是否為最新版本', category: '系統優化' },
             rec_remove_copilot: { title: '移除 Windows Copilot', description: '停用並移除 Windows 內建的 Copilot 功能', category: '系統清理' },
             rec_install_chrome: { title: '安裝 Google Chrome', description: '下載並安裝 Chrome 瀏覽器，設為預設瀏覽器', category: '瀏覽器' },
@@ -618,6 +635,17 @@ const I18N = {
             exps: '🧠 Exp. Log',
             aiChat: '💬 AI Chat',
             chalkboard: 'Chalkboard',
+        },
+        hardware: {
+            title: '🌡️ System Hardware',
+            subtitle: 'Real-time monitoring of local PC health and performance',
+            cpu: 'Processor (CPU)',
+            gpu: 'Graphics (GPU)',
+            ram: 'Memory (RAM)',
+            disk: 'Primary Disk Health',
+            detecting: 'Detecting...',
+            scanning: 'Scanning...',
+            lastUpdate: 'Last Updated',
         },
         chalkboardWelcome: {
             title: 'Welcome to AI PC Agent',
@@ -696,6 +724,7 @@ const I18N = {
             fileTooLarge: 'File too large. Choose a text file under 256KB.',
         },
         exps: {
+            detailsTitle: 'Experience Details',
             searchPlaceholder: 'Search experiences, keywords...',
             exportButton: '⬇ Export',
             exportTooltip: 'Export all exps as Markdown',
@@ -719,7 +748,7 @@ const I18N = {
             apiKey: 'API Key',
             apiKeyPlaceholder: 'Bearer Token / API Key',
             modelName: 'Model Name',
-            modelNamePlaceholder: 'e.g., qwen3.5:4b',
+            modelNamePlaceholder: 'e.g., gemma4:e2b-it-qat',
             visionModel: 'Vision Model',
             visionModelPlaceholder: 'Leave empty for auto-selection',
             refresh: '🔄 Refresh',
@@ -804,7 +833,7 @@ const I18N = {
             notDetected: 'Ollama not detected, automatically adding installation task',
             installing: 'Local AI engine (Ollama) not detected. System is automatically installing it, please allow permissions when prompted.',
             ready: 'Ollama is ready, automatically adding model download task',
-            downloading: 'Ollama is ready, automatically downloading qwen3.5 language model, please wait...',
+            downloading: 'Ollama is ready, automatically downloading gemma4:e2b-it-qat language model, please wait...',
         },
         status: {
             llmReady: '🟢 AI Ready',
@@ -818,6 +847,10 @@ const I18N = {
             exportFallback: 'Native export failed, fallback to browser download: {error}',
             importSuccess: 'Task list imported',
             importFailed: 'Import failed: JSON format error',
+        },
+        todo: {
+            emptyTitle: 'No running tasks at the moment',
+            emptyHint: 'You can add tasks from the recommended list on the left or via chat',
         },
         buttons: {
             collapse: 'Collapse ▼',
@@ -905,7 +938,7 @@ const I18N = {
         },
         sopUi: {
             rec_install_ollama: { title: 'Install Ollama Local AI Engine', description: 'Install Ollama to give AI PC Agent local language understanding.', category: 'AI Engine' },
-            rec_pull_llm_model: { title: 'Download Language Model (Qwen3.5 4B)', description: 'Download the Qwen3.5 4B model, about 2.6 GB, for local chat.', category: 'AI Engine' },
+            rec_pull_llm_model: { title: 'Download Language Model (Gemma 4 E2B QAT)', description: 'Download the Gemma 4 E2B QAT model, about 1.1 GB, for local chat.', category: 'AI Engine' },
             rec_driver_check: { title: 'Scan and Install Drivers', description: 'Check hardware devices and update missing or outdated drivers.', category: 'System Optimization' },
             rec_remove_copilot: { title: 'Remove Windows Copilot', description: 'Disable and remove the built-in Windows Copilot feature.', category: 'System Cleanup' },
             rec_install_chrome: { title: 'Install Google Chrome', description: 'Install Chrome and set it as the default browser.', category: 'Browser' },
@@ -1119,9 +1152,18 @@ async function api(endpoint, options = {}) {
     }
 }
 
+let _markedInited = false;
 function renderMarkdown(text = '') {
     if (typeof marked !== 'undefined') {
-        return marked.parse(text);
+        if (!_markedInited) {
+            marked.setOptions({ gfm: true, breaks: true, pedantic: false });
+            _markedInited = true;
+        }
+        try {
+            return marked.parse(String(text || ''));
+        } catch (e) {
+            console.warn('[Markdown] parse error:', e.message);
+        }
     }
 
     const escaped = escapeHtml(String(text || ''));
@@ -1309,6 +1351,13 @@ async function refreshBrowserRuntimeAvailability() {
             syncBrowserTabAvailability(!!data.browserAvailable);
             if (data.browserAvailable) {
                 browserInstallQueued = false;
+                addUILog(currentLocale === 'en-US'
+                    ? `🌐 Browser runtime ready: ${data.browserExecutable || 'detected'}`
+                    : `🌐 Browser runtime 已就緒：${data.browserExecutable || '已偵測到'}`, 'success');
+            } else if (data.browserSearchPaths?.length) {
+                addUILog(currentLocale === 'en-US'
+                    ? `🌐 Browser runtime not detected. Search paths: ${data.browserSearchPaths.join('; ')}`
+                    : `🌐 尚未偵測到 Browser runtime。搜尋路徑：${data.browserSearchPaths.join('; ')}`, 'warn');
             }
         }
     } catch (e) {
@@ -1327,6 +1376,33 @@ async function waitForTaskCompletion(taskId, timeoutMs = 10 * 60 * 1000) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
     }
     return null;
+}
+
+function monitorBrowserInstallTask(taskId = '') {
+    const id = String(taskId || '').trim();
+    if (!id || monitoredBrowserInstallTaskIds.has(id)) return;
+    monitoredBrowserInstallTaskIds.add(id);
+    waitForTaskCompletion(id).then(async (task) => {
+        monitoredBrowserInstallTaskIds.delete(id);
+        await refreshBrowserRuntimeAvailability();
+        if (task?.status === 'success' && browserRuntimeReady) {
+            addUILog(currentLocale === 'en-US'
+                ? '🌐 Browser install completed. Browser tab is now available.'
+                : '🌐 Browser 安裝完成，Browser 分頁已可使用。', 'success');
+            openTab('browser');
+        } else if (task?.status === 'failed') {
+            browserInstallQueued = false;
+            addUILog(currentLocale === 'en-US'
+                ? '❌ Browser install task failed. Check task logs.'
+                : '❌ Browser 安裝任務失敗，請查看工作日誌。', 'error');
+        }
+    }).catch((error) => {
+        monitoredBrowserInstallTaskIds.delete(id);
+        browserInstallQueued = false;
+        addUILog(currentLocale === 'en-US'
+            ? `❌ Browser install monitor failed: ${error.message || error}`
+            : `❌ Browser 安裝監控失敗：${error.message || error}`, 'error');
+    });
 }
 
 async function runBrowserInstallWorkflow() {
@@ -2038,7 +2114,7 @@ function renderRemoteMessages() {
 function addLocalSessionMessage(role, text, suggestions = [], options = {}) {
     const session = getActiveLocalChatSession();
     if (!session) return;
-    if (role === 'user' && (!session.messages.length || /^本機對話\b|^Local Chat\b/i.test(session.title || ''))) {
+    if (role === 'user' && (!session.messages.length || /^(?:本機對話|Local Chat)(?:\s+\d+)?$/i.test((session.title || '').trim()))) {
         session.title = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 18) || session.title;
     }
     session.messages.push({
@@ -2088,7 +2164,13 @@ function renderLocalSessionControls() {
         const activeClass = isActive ? 'active' : '';
         const pendingClass = isSelected && isModePending('local') ? 'pending' : '';
         const canClose = sessions.length > 1;
-        const title = escapeHtml(session.title || t('chat.localSessionDefault'));
+        let displayTitle = (session.title || '').trim();
+        const m = displayTitle.match(/^(?:本機對話|Local Chat)(?:\s+(\d+))?$/i);
+        if (m) {
+            const num = m[1] ? ` ${m[1]}` : '';
+            displayTitle = `${t('chat.localSessionDefault')}${num}`;
+        }
+        const title = escapeHtml(displayTitle || t('chat.localSessionDefault'));
         return `
             <button type="button" class="chat-mode-tab local-chat-tab ${activeClass} ${pendingClass}" data-chat-mode="local" data-local-session-id="${session.id}">
                 <span class="local-chat-tab-title">${title}</span>
@@ -2252,7 +2334,7 @@ function resolveRemoteTargets(messageText = '') {
  */
 function debounce(fn, delay) {
     let timer = null;
-    return function(...args) {
+    return function (...args) {
         clearTimeout(timer);
         timer = setTimeout(() => fn.apply(this, args), delay);
     };
@@ -3235,7 +3317,7 @@ function clearChalkboard() {
 
 function saveChalkboardImage() {
     if (!chalkboardCanvas) return;
-    
+
     const base64Image = chalkboardCanvas.toDataURL('image/png');
     api('/api/chalkboard/export-file', { method: 'POST', body: { imageBase64: base64Image } }).then((data) => {
         if (data.success) {
@@ -4265,7 +4347,7 @@ async function init() {
     updatePendingStatusRow();
     if (remoteStateInterval) clearInterval(remoteStateInterval);
     remoteStateInterval = setInterval(loadRemoteProfileAndState, 2000);
-    
+
     // 硬體監控改為「顯示時才執行」，避免啟動延遲
     if (activeTab === 'hardware') {
         startHardwarePolling();
@@ -4326,9 +4408,18 @@ async function loadTodo() {
     if (data.success) {
         announceTaskStatusChanges(todoList, data.todoList);
         todoList = data.todoList;
+        syncBrowserInstallQueuedFromTasks(todoList);
         syncKnownTaskStatuses(todoList);
         renderTodoList();
     }
+}
+
+function syncBrowserInstallQueuedFromTasks(tasks = []) {
+    const activeInstallTask = (Array.isArray(tasks) ? tasks : []).find((task) =>
+        String(task.skillId || '') === 'install_playwright_chromium'
+        && ['pending', 'running'].includes(String(task.status || ''))
+    );
+    browserInstallQueued = Boolean(activeInstallTask) && !browserRuntimeReady;
 }
 
 async function loadRecommend() {
@@ -4639,7 +4730,7 @@ function syncKnownTaskStatuses(tasks) {
 function buildTaskCompletionMessage(task) {
     const actionLabel = getActionLabel(task.action || 'install');
     if (task.status === 'success') {
-        const completionText = actionLabel === t('actions.uninstall') 
+        const completionText = actionLabel === t('actions.uninstall')
             ? t('task.uninstallCompleted', { title: task.title })
             : t('task.installCompleted', { title: task.title });
         return `✅${completionText}`;
@@ -4802,7 +4893,7 @@ async function checkLLMStatus() {
             // [優化] 若已經就緒，主動移除 list 中還在 pending 的 bootstrap 任務
             const bootstrapTasks = todoList.filter(t => t.status === 'pending' && (t.skillId === 'rec_install_ollama' || t.skillId === 'rec_pull_llm_model'));
             for (const t of bootstrapTasks) {
-                 deleteTask(t.id);
+                deleteTask(t.id);
             }
         }
     } catch (e) {
@@ -4864,7 +4955,7 @@ async function toggleModelMenu() {
 
     menu = document.createElement('div');
     menu.className = 'model-menu';
-    
+
     // Search Box
     const searchWrapper = document.createElement('div');
     searchWrapper.className = 'model-menu-search';
@@ -4882,7 +4973,7 @@ async function toggleModelMenu() {
     const renderMenuContent = (filter = '') => {
         listContainer.innerHTML = '';
         const filtered = data.models.filter(m => m.name.toLowerCase().includes(filter.toLowerCase()));
-        
+
         if (filtered.length === 0) {
             const noRes = document.createElement('div');
             noRes.style.cssText = 'padding:12px; font-size:11px; color:var(--text-muted); text-align:center;';
@@ -4930,7 +5021,7 @@ async function toggleModelMenu() {
 }
 
 // ════════════════════════════════════════════════════════
-//  RENDER � RECOMMEND LIST (sidebar)
+//  RENDER 📋 RECOMMEND LIST (sidebar)
 // ════════════════════════════════════════════════════════
 function localizeCategory(category) {
     return t(`categories.${category}`) || category || t('sidebar.otherCategory');
@@ -5028,7 +5119,7 @@ function getActionLabel(action) {
 function getActionTitle(title, action) {
     if (!title) return t('task.unnamedItem');
     const normalizedAction = action === 'uninstall' ? 'uninstall' : 'install';
-    
+
     // 提取主體：移掉開頭的表情符號與常見動詞
     let subject = String(title)
         .replace(/^[^\p{L}\p{N}]+/u, '') // 移掉開頭符號/表情
@@ -5057,8 +5148,8 @@ function createRecommendCard(item) {
           <div class="recommend-title">
               ${getActionTitle(localized.title, action)}
               ${isInstalled
-                ? `<span style="font-size:10px; color:${localized.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${localized.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge')}</span>`
-                : ''}
+            ? `<span style="font-size:10px; color:${localized.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${localized.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge')}</span>`
+            : ''}
           </div>
           ${isActionable ? `
               <div class="recommend-btn-group">
@@ -5232,28 +5323,61 @@ function renderSkillList() {
         return;
     }
 
-    const groups = {};
-    filtered.forEach((skill) => {
-        const cat = skill.category || t('sidebar.otherCategory');
-        if (!groups[cat]) groups[cat] = [];
-        groups[cat].push(skill);
-    });
+    // Split into two top-level source groups
+    const aipcSkills = filtered.filter(s => !s.source || s.source === 'aipc-agent');
+    const hermesSkills = filtered.filter(s => s.source === 'hermes-agent');
 
-    Object.entries(groups).forEach(([cat, items]) => {
-        skillListContainer.appendChild(createSidebarSectionHeader(cat));
-        items.forEach((skill) => {
-            skillListContainer.appendChild(createSkillCard(skill));
+    // ── AIPC Agent group ──────────────────────────────────────────────
+    if (aipcSkills.length) {
+        const aipcHeader = document.createElement('div');
+        aipcHeader.className = 'skill-source-header';
+        aipcHeader.innerHTML = `<span class="skill-source-icon">🤖</span><span>AIPC Agent</span><span class="skill-source-count">${aipcSkills.length}</span>`;
+        skillListContainer.appendChild(aipcHeader);
+
+        const aipcGroups = {};
+        aipcSkills.forEach((skill) => {
+            const cat = skill.category || t('sidebar.otherCategory');
+            if (!aipcGroups[cat]) aipcGroups[cat] = [];
+            aipcGroups[cat].push(skill);
         });
-    });
+        Object.entries(aipcGroups).forEach(([cat, items]) => {
+            skillListContainer.appendChild(createSidebarSectionHeader(cat));
+            items.forEach((skill) => skillListContainer.appendChild(createSkillCard(skill)));
+        });
+    }
+
+    // ── From Hermes Agent group ───────────────────────────────────────
+    if (hermesSkills.length) {
+        const hermesHeader = document.createElement('div');
+        hermesHeader.className = 'skill-source-header skill-source-header--hermes';
+        hermesHeader.innerHTML = `<span class="skill-source-icon">⚗️</span><span>From Hermes Agent</span><span class="skill-source-count">${hermesSkills.length}</span>`;
+        skillListContainer.appendChild(hermesHeader);
+
+        const hermesGroups = {};
+        hermesSkills.forEach((skill) => {
+            const cat = skill.category || t('sidebar.otherCategory');
+            if (!hermesGroups[cat]) hermesGroups[cat] = [];
+            hermesGroups[cat].push(skill);
+        });
+        Object.entries(hermesGroups).forEach(([cat, items]) => {
+            skillListContainer.appendChild(createSidebarSectionHeader(cat));
+            items.forEach((skill) => skillListContainer.appendChild(createSkillCard(skill)));
+        });
+    }
 }
 
 function createSkillCard(skill) {
     const card = document.createElement('div');
     card.className = 'recommend-card skill-card';
-    const tags = Array.isArray(skill.tags) ? skill.tags.join(', ') : (skill.tags || '');
+    const tags = Array.isArray(skill.tags) ? skill.tags.slice(0, 4).join(', ') : (skill.tags || '');
+    const isHermes = skill.source === 'hermes-agent';
+    const sourceBadge = isHermes
+        ? `<span class="skill-source-badge" title="Converted from Hermes Agent">⚗️ Hermes</span>`
+        : '';
     card.innerHTML = `
         <div class="recommend-card-top">
           <div class="recommend-title">${escapeHtml(skill.name || skill.slug || t('task.unnamedItem'))}</div>
+          ${sourceBadge}
         </div>
         <div class="recommend-desc">${escapeHtml(skill.description || '')}</div>
         <div class="recommend-meta">
@@ -5295,6 +5419,42 @@ function updateLocaleUI() {
     const tabBrowser = document.querySelector('#tab-browser .tab-title');
     const tabTodo = document.querySelector('#tab-todolist .tab-title');
     if (tabHardware) tabHardware.textContent = t('tabs.hardware');
+    const hwTitle = document.getElementById('hw-title');
+    const hwSubtitle = document.getElementById('hw-subtitle');
+    const hwLabelCpu = document.getElementById('hw-label-cpu');
+    const hwLabelGpu = document.getElementById('hw-label-gpu');
+    const hwLabelRam = document.getElementById('hw-label-ram');
+    const hwLabelDisk = document.getElementById('hw-label-disk');
+    if (hwTitle) hwTitle.textContent = t('hardware.title');
+    if (hwSubtitle) hwSubtitle.textContent = t('hardware.subtitle');
+    if (hwLabelCpu) hwLabelCpu.textContent = t('hardware.cpu');
+    if (hwLabelGpu) hwLabelGpu.textContent = t('hardware.gpu');
+    if (hwLabelRam) hwLabelRam.textContent = t('hardware.ram');
+    if (hwLabelDisk) hwLabelDisk.textContent = t('hardware.disk');
+    const hwCpuModel = document.getElementById('hw-cpu-model');
+    const hwGpuName = document.getElementById('hw-gpu-name');
+    const hwDiskName = document.getElementById('hw-disk-name');
+    if (hwCpuModel && (hwCpuModel.textContent === '偵測中...' || hwCpuModel.textContent === 'Detecting...')) {
+        hwCpuModel.textContent = t('hardware.detecting');
+    }
+    if (hwGpuName && (hwGpuName.textContent === '偵測中...' || hwGpuName.textContent === 'Detecting...')) {
+        hwGpuName.textContent = t('hardware.detecting');
+    }
+    if (hwDiskName && (hwDiskName.textContent === '掃描中...' || hwDiskName.textContent === 'Scanning...')) {
+        hwDiskName.textContent = t('hardware.scanning');
+    }
+    const chalkKicker = document.getElementById('chalk-kicker');
+    const chalkTitle = document.getElementById('chalk-title');
+    const chalkDesc = document.getElementById('chalk-desc');
+    if (chalkKicker) chalkKicker.textContent = 'Interactive Chalkboard';
+    if (chalkTitle) chalkTitle.textContent = t('chalkboardWelcome.hintTitle');
+    if (chalkDesc) chalkDesc.textContent = t('chalkboardWelcome.hintBody');
+
+    const todoEmptyTitle = document.getElementById('todo-empty-title');
+    const todoEmptyHint = document.getElementById('todo-empty-hint');
+    if (todoEmptyTitle) todoEmptyTitle.textContent = t('todo.emptyTitle');
+    if (todoEmptyHint) todoEmptyHint.textContent = t('todo.emptyHint');
+
     if (tabBrowser) tabBrowser.textContent = 'Browser';
     if (tabTodo) tabTodo.textContent = t('tabs.todolist');
     const logTab = document.querySelector('[data-bottom-tab="logs"]');
@@ -5330,7 +5490,7 @@ function updateLocaleUI() {
     if (remoteRequestSummary) remoteRequestSummary.textContent = t('remote.requestSummary');
     if (btnAcceptRemoteRequest) btnAcceptRemoteRequest.textContent = t('remote.accept');
     if (btnRejectRemoteRequest) btnRejectRemoteRequest.textContent = t('remote.reject');
-    
+
     // Update experience search placeholder
     if (expSearchInput) expSearchInput.placeholder = t('exps.searchPlaceholder');
     if (btnExpsExport) {
@@ -5341,33 +5501,33 @@ function updateLocaleUI() {
     // Update log empty message
     const logEmptyMessage = document.getElementById('logEmptyMessage');
     if (logEmptyMessage) logEmptyMessage.textContent = t('logs.emptyMessage');
-    
+
     // Update exps empty message
     const expsEmptyMessage = document.getElementById('expsEmptyMessage');
     if (expsEmptyMessage) expsEmptyMessage.textContent = t('exps.emptyMessage');
-    
+
     // Update menu elements
     const menuFileText = document.getElementById('menuFileText');
     if (menuFileText) menuFileText.textContent = t('titlebar.file');
-    
+
     const menuViewText = document.getElementById('menuView');
     if (menuViewText) menuViewText.textContent = t('titlebar.view');
-    
+
     const menuHelpText = document.getElementById('menuHelp');
     if (menuHelpText) menuHelpText.textContent = t('titlebar.help');
-    
+
     const importTasksText = document.getElementById('importTasksText');
     if (importTasksText) importTasksText.textContent = t('footer.importTasks');
-    
+
     const exportTasksText = document.getElementById('exportTasksText');
     if (exportTasksText) exportTasksText.textContent = t('footer.exportTasks');
-    
+
     const menuRefreshText = document.getElementById('menuRefreshText');
     if (menuRefreshText) menuRefreshText.textContent = t('titlebar.refresh');
-    
+
     const menuExitText = document.getElementById('menuExitText');
     if (menuExitText) menuExitText.textContent = t('titlebar.exit');
-    
+
     // Update LLM status
     const llmLabel = document.getElementById('llmLabel');
     if (llmLabel) llmLabel.textContent = t('titlebar.llmReady');
@@ -5382,7 +5542,7 @@ function updateLocaleUI() {
     // AI Settings Modal
     const settingsTitle = document.querySelector('.provider-modal .modal-header h3');
     if (settingsTitle) settingsTitle.textContent = t('settings.title');
-    
+
     const labels = document.querySelectorAll('.provider-modal .form-group label');
     if (labels.length > 0) {
         labels.forEach(l => {
@@ -5402,13 +5562,13 @@ function updateLocaleUI() {
 
     const modelNameLabel = document.querySelector('label[style*="display:flex"] span');
     if (modelNameLabel) modelNameLabel.textContent = t('settings.modelName');
-    
+
     if (btnRefreshModels) btnRefreshModels.textContent = t('settings.refresh');
     if (settingBaseUrl) settingBaseUrl.placeholder = t('settings.baseUrlPlaceholder');
     if (settingApiKey2) settingApiKey2.placeholder = t('settings.apiKeyPlaceholder');
     if (settingModelName) settingModelName.placeholder = t('settings.modelNamePlaceholder');
     if (settingVisionModelName) settingVisionModelName.placeholder = t('settings.visionModelPlaceholder');
-    
+
     if (providerHelpTitle && providerHelpTitle.id === 'providerHelpTitle') providerHelpTitle.textContent = t('settings.helpTitle');
     if (providerHelpText && providerHelpText.id === 'providerHelpText') providerHelpText.textContent = t('settings.helpText');
     const mHelp = document.getElementById('modelHelpText');
@@ -5418,13 +5578,13 @@ function updateLocaleUI() {
 
     if (btnTestProviderSettings) btnTestProviderSettings.textContent = t('settings.test');
     if (btnSaveProviderSettings) btnSaveProviderSettings.textContent = t('settings.save');
-    
+
     // Model Name & Vision Model Labels
     const labelModelName = document.getElementById('labelModelName');
     if (labelModelName) labelModelName.textContent = t('settings.modelName');
     const labelVisionModel = document.getElementById('labelVisionModel');
     if (labelVisionModel) labelVisionModel.textContent = t('settings.visionModel');
-    
+
     // Auth Type Options
     const authOptions = document.querySelectorAll('#settingAuthType option');
     if (authOptions.length >= 3) {
@@ -5432,142 +5592,153 @@ function updateLocaleUI() {
         authOptions[1].textContent = t('settings.authApiKey');
         authOptions[2].textContent = t('settings.authOAuth');
     }
-    
+
     // Text Tool Modal
     const textToolTitle = document.querySelector('.text-tool-modal h3');
     if (textToolTitle) textToolTitle.textContent = t('textTool.title');
-    
+
     const textToolContentLabel = document.getElementById('textToolContentLabel');
     if (textToolContentLabel) textToolContentLabel.textContent = t('textTool.content');
-    
+
     const textToolContent = document.getElementById('textToolContent');
     if (textToolContent) textToolContent.placeholder = t('textTool.contentPlaceholder');
-    
+
     const textToolFontFamilyLabel = document.getElementById('textToolFontFamilyLabel');
     if (textToolFontFamilyLabel) textToolFontFamilyLabel.textContent = t('textTool.fontFamily');
-    
+
     const textToolFontStyleLabel = document.getElementById('textToolFontStyleLabel');
     if (textToolFontStyleLabel) textToolFontStyleLabel.textContent = t('textTool.fontStyle');
-    
+
     const textToolFontSizeLabel = document.getElementById('textToolFontSizeLabel');
     if (textToolFontSizeLabel) textToolFontSizeLabel.textContent = t('textTool.fontSize');
-    
+
     const textToolColorLabel = document.getElementById('textToolColorLabel');
     if (textToolColorLabel) textToolColorLabel.textContent = t('textTool.color');
-    
+
     const textToolAlignLabel = document.getElementById('textToolAlignLabel');
     if (textToolAlignLabel) textToolAlignLabel.textContent = t('textTool.align');
-    
+
     const textToolBoldLabel = document.getElementById('textToolBoldLabel');
     if (textToolBoldLabel) textToolBoldLabel.textContent = t('textTool.bold');
-    
+
     const textToolItalicLabel = document.getElementById('textToolItalicLabel');
     if (textToolItalicLabel) textToolItalicLabel.textContent = t('textTool.italic');
-    
+
     const textToolUsageTitle = document.getElementById('textToolUsageTitle');
     if (textToolUsageTitle) textToolUsageTitle.textContent = t('textTool.usage');
-    
+
     const textToolUsageText = document.getElementById('textToolUsageText');
     if (textToolUsageText) textToolUsageText.textContent = t('textTool.usageText');
-    
+
     const btnCancelTextTool = document.getElementById('btnCancelTextTool');
     if (btnCancelTextTool) btnCancelTextTool.textContent = t('textTool.cancel');
-    
+
     const btnApplyTextTool = document.getElementById('btnApplyTextTool');
     if (btnApplyTextTool) btnApplyTextTool.textContent = t('textTool.apply');
-    
+
     // Text Tool Font Style Options
     const textToolStyleChalk = document.getElementById('textToolStyleChalk');
     if (textToolStyleChalk) textToolStyleChalk.textContent = t('textTool.styleOptions.chalk');
-    
+
     const textToolStyleBoard = document.getElementById('textToolStyleBoard');
     if (textToolStyleBoard) textToolStyleBoard.textContent = t('textTool.styleOptions.board');
-    
+
     const textToolStyleClean = document.getElementById('textToolStyleClean');
     if (textToolStyleClean) textToolStyleClean.textContent = t('textTool.styleOptions.clean');
-    
+
     const textToolStyleSerif = document.getElementById('textToolStyleSerif');
     if (textToolStyleSerif) textToolStyleSerif.textContent = t('textTool.styleOptions.serif');
-    
+
     const textToolStyleMono = document.getElementById('textToolStyleMono');
     if (textToolStyleMono) textToolStyleMono.textContent = t('textTool.styleOptions.mono');
-    
+
+    // Text Tool Font Family Options
+    const fontOptions = document.querySelectorAll('#textToolFontFamily option');
+    if (fontOptions.length >= 7) {
+        fontOptions[0].textContent = t('textTool.fontOptions.kaiti');
+        fontOptions[1].textContent = t('textTool.fontOptions.jhenghei');
+        fontOptions[2].textContent = t('textTool.fontOptions.yahei');
+        fontOptions[3].textContent = t('textTool.fontOptions.mingliu');
+        fontOptions[4].textContent = t('textTool.fontOptions.arial');
+        fontOptions[5].textContent = t('textTool.fontOptions.timesnewroman');
+        fontOptions[6].textContent = t('textTool.fontOptions.couriernew');
+    }
+
     // Text Tool Alignment Options
     const textToolAlignLeft = document.getElementById('textToolAlignLeft');
     if (textToolAlignLeft) textToolAlignLeft.textContent = t('textTool.alignOptions.left');
-    
+
     const textToolAlignCenter = document.getElementById('textToolAlignCenter');
     if (textToolAlignCenter) textToolAlignCenter.textContent = t('textTool.alignOptions.center');
-    
+
     const textToolAlignRight = document.getElementById('textToolAlignRight');
     if (textToolAlignRight) textToolAlignRight.textContent = t('textTool.alignOptions.right');
-    
+
     // Chalkboard Tools Tooltips
     const chalkEraser = document.getElementById('chalkEraser');
     if (chalkEraser) chalkEraser.title = t('chalkboard.tools.eraser');
-    
+
     const chalkWhite = document.getElementById('chalkWhite');
     if (chalkWhite) chalkWhite.title = t('chalkboard.tools.chalkWhite');
-    
+
     const chalkRed = document.getElementById('chalkRed');
     if (chalkRed) chalkRed.title = t('chalkboard.tools.chalkRed');
-    
+
     const chalkYellow = document.getElementById('chalkYellow');
     if (chalkYellow) chalkYellow.title = t('chalkboard.tools.chalkYellow');
-    
+
     const chalkGreen = document.getElementById('chalkGreen');
     if (chalkGreen) chalkGreen.title = t('chalkboard.tools.chalkGreen');
-    
+
     const chalkBlue = document.getElementById('chalkBlue');
     if (chalkBlue) chalkBlue.title = t('chalkboard.tools.chalkBlue');
-    
+
     const chalkSizeSmall = document.getElementById('chalkSizeSmall');
     if (chalkSizeSmall) chalkSizeSmall.title = t('chalkboard.tools.sizeSmall');
-    
+
     const chalkSizeMedium = document.getElementById('chalkSizeMedium');
     if (chalkSizeMedium) chalkSizeMedium.title = t('chalkboard.tools.sizeMedium');
-    
+
     const chalkSizeLarge = document.getElementById('chalkSizeLarge');
     if (chalkSizeLarge) chalkSizeLarge.title = t('chalkboard.tools.sizeLarge');
-    
+
     const chalkSelectButton = document.getElementById('chalkSelectButton');
     if (chalkSelectButton) chalkSelectButton.title = t('chalkboard.tools.select');
-    
+
     const chalkLineButton = document.getElementById('chalkLineButton');
     if (chalkLineButton) chalkLineButton.title = t('chalkboard.tools.line');
-    
+
     const chalkRectButton = document.getElementById('chalkRectButton');
     if (chalkRectButton) chalkRectButton.title = t('chalkboard.tools.rect');
-    
+
     const chalkCircleButton = document.getElementById('chalkCircleButton');
     if (chalkCircleButton) chalkCircleButton.title = t('chalkboard.tools.circle');
-    
+
     const chalkTextButton = document.getElementById('chalkTextButton');
     if (chalkTextButton) chalkTextButton.title = t('chalkboard.tools.text');
-    
+
     const chalkCopyButton = document.getElementById('chalkCopyButton');
     if (chalkCopyButton) chalkCopyButton.title = t('chalkboard.tools.copy');
-    
+
     const chalkCutButton = document.getElementById('chalkCutButton');
     if (chalkCutButton) chalkCutButton.title = t('chalkboard.tools.cut');
-    
+
     const chalkPasteButton = document.getElementById('chalkPasteButton');
     if (chalkPasteButton) chalkPasteButton.title = t('chalkboard.tools.paste');
-    
+
     const chalkClearButton = document.getElementById('chalkClearButton');
     if (chalkClearButton) chalkClearButton.title = t('chalkboard.tools.clear');
-    
+
     const chalkUndoButton = document.getElementById('chalkUndoButton');
     if (chalkUndoButton) chalkUndoButton.title = t('chalkboard.tools.undo');
     const chalkRedoButton = document.getElementById('chalkRedoButton');
     if (chalkRedoButton) chalkRedoButton.title = currentLocale === 'en-US' ? 'Redo' : '重做';
-    
+
     const chalkUploadButton = document.getElementById('chalkUploadButton');
     if (chalkUploadButton) chalkUploadButton.title = t('chalkboard.tools.upload');
-    
+
     const chalkSaveButton = document.getElementById('chalkSaveButton');
     if (chalkSaveButton) chalkSaveButton.title = t('chalkboard.tools.save');
-    
     if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
     if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
     // Title and menu i18n
@@ -5578,7 +5749,7 @@ function updateLocaleUI() {
     if (_menuHelp) _menuHelp.textContent = currentLocale === 'en-US' ? 'Help' : '說明';
     const _menuView = document.getElementById('menuView');
     if (_menuView) _menuView.textContent = currentLocale === 'en-US' ? 'View' : '檢視';
-    
+
     // File Menu i18n
     const isEn = currentLocale === 'en-US';
     const _mft = document.getElementById('menuFileText'); if (_mft) _mft.textContent = isEn ? 'File' : '檔案';
@@ -5594,10 +5765,27 @@ function updateLocaleUI() {
     renderLocalChatMessages();
 }
 
-function setLocale(locale) {
+async function setLocale(locale) {
     currentLocale = locale === 'en-US' ? 'en-US' : 'zh-TW';
     localStorage.setItem('ui_locale', currentLocale);
     updateLocaleUI();
+    try {
+        const pData = await api('/api/remote/profile');
+        if (pData && pData.success && pData.profile) {
+            await api('/api/remote/profile', {
+                method: 'POST',
+                body: {
+                    machineName: pData.profile.machineName,
+                    userName: pData.profile.userName,
+                    agentName: pData.profile.agentName,
+                    ip: pData.profile.ip,
+                    locale: currentLocale
+                }
+            });
+        }
+    } catch (err) {
+        console.warn('Failed to sync locale to backend remote profile:', err);
+    }
 }
 
 function toggleLocale() {
@@ -5624,7 +5812,7 @@ function updateLLMStatusText(status = {}) {
 }
 
 // ════════════════════════════════════════════════════════
-//  RENDER � TODO LIST (center top)
+//  RENDER 📋 TODO LIST (center top)
 // ════════════════════════════════════════════════════════
 function renderTodoList() {
     const pending = todoList.filter(t => t.status !== 'success' && t.status !== 'failed' && t.status !== 'skipped');
@@ -5635,10 +5823,15 @@ function renderTodoList() {
 
     if (!todoList.length) {
         todoContainer.innerHTML = '';
-        todoEmpty?.classList.remove('hidden');
+        if (todoEmpty) {
+            todoEmpty.classList.remove('hidden');
+            todoContainer.appendChild(todoEmpty);
+        }
         return;
     }
-    todoEmpty?.classList.add('hidden');
+    if (todoEmpty) {
+        todoEmpty.classList.add('hidden');
+    }
 
     todoContainer.innerHTML = '';
     [...pending, ...done].forEach(task => {
@@ -5692,10 +5885,10 @@ async function addRecommendToTodo(item) {
         method: 'POST',
         body: { title: localized.title, description: localized.description, category: localized.category, skillId: localized.id, action },
     });
-    if (data.success) { 
-        todoList = data.todoList; 
-        renderTodoList(); 
-        addUILog(`＋ ${t('task.addedToList', { action: getActionLabel(action), title: getActionTitle(localized.title, action) })}`, 'info'); 
+    if (data.success) {
+        todoList = data.todoList;
+        renderTodoList();
+        addUILog(`＋ ${t('task.addedToList', { action: getActionLabel(action), title: getActionTitle(localized.title, action) })}`, 'info');
         openTab('todolist');
     }
 }
@@ -5726,9 +5919,32 @@ async function addAndExecuteRecommend(item) {
 
 async function executeTask(taskId) {
     const task = todoList.find(t => t.id === taskId);
-    if (task) appendChatBubble('ai', `🚀 ${t('task.executionStarted', { title: task.title })}`);
+    const taskTitle = task?.title || taskId;
+    const isBrowserInstall = String(task?.skillId || '').trim() === 'install_playwright_chromium';
+
+    if (task) appendChatBubble('ai', `🚀 ${t('task.executionStarted', { title: taskTitle })}`);
     expandLog();
-    await api(`/api/execute/${taskId}`, { method: 'POST' });
+
+    try {
+        const data = await api(`/api/execute/${taskId}`, { method: 'POST' });
+        if (data && data.success === false) {
+            addUILog(currentLocale === 'en-US'
+                ? `❌ Failed to start task: ${taskTitle}`
+                : `❌ 任務啟動失敗：${taskTitle}`, 'error');
+        } else {
+            addUILog(currentLocale === 'en-US'
+                ? `▶ Task started: ${taskTitle}`
+                : `▶ 任務已啟動：${taskTitle}`, 'info');
+            await loadTodo();
+            if (isBrowserInstall) {
+                monitorBrowserInstallTask(taskId);
+            }
+        }
+    } catch (err) {
+        addUILog(currentLocale === 'en-US'
+            ? `❌ Task execution error: ${err.message || err}`
+            : `❌ 任務執行錯誤：${err.message || err}`, 'error');
+    }
 }
 
 async function deleteTask(taskId) {
@@ -5964,7 +6180,7 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
     const actorScope = options.actorScope || (container === remoteChatMessages || options.isRemote ? 'remote' : 'local');
     const chatScopeClass = actorScope === 'remote' ? 'remote-chat-bubble' : 'local-chat-bubble';
     div.className = `message ${chatScopeClass} ${isSystem ? 'system-message' : (isAI ? 'ai-message' : 'user-message')}`;
-    
+
     if (isSystem) {
         div.innerHTML = `
             <div class="msg-bubble-wrapper">
@@ -5975,15 +6191,15 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
     } else if (isAI) {
         // 設定 marked 選項 (若 library 已載入)
         const htmlContent = highlightMentionsInHtml(renderMarkdown(linkifyPlainUrls(text)), options.highlightNames || getMentionHighlightNames());
-        
+
         let suggestionsHtml = '';
         if (suggestions && suggestions.length > 0) {
             suggestionsHtml = `
                 <div class="suggestions-container">
                     ${suggestions.map((s) => {
-                        const item = typeof s === 'string' ? { label: s, action: '', sopId: '', taskId: '', mode: '' } : s;
-                        return `<button class="btn-suggest" data-action="${escapeHtml(item.action || '')}" data-sop-id="${escapeHtml(item.sopId || '')}" data-task-id="${escapeHtml(item.taskId || '')}" data-mode="${escapeHtml(item.mode || '')}">${escapeHtml(item.label || '')}</button>`;
-                    }).join('')}
+                const item = typeof s === 'string' ? { label: s, action: '', sopId: '', taskId: '', mode: '' } : s;
+                return `<button class="btn-suggest" data-action="${escapeHtml(item.action || '')}" data-sop-id="${escapeHtml(item.sopId || '')}" data-task-id="${escapeHtml(item.taskId || '')}" data-mode="${escapeHtml(item.mode || '')}">${escapeHtml(item.label || '')}</button>`;
+            }).join('')}
                 </div>`;
         }
 
@@ -6006,7 +6222,7 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
         `;
         bindExternalLinks(div);
         div.querySelector('.btn-speak').addEventListener('click', () => speakText(text, div.querySelector('.btn-speak')));
-        
+
         // 建議按鈕點擊事件
         div.querySelectorAll('.btn-suggest').forEach(btn => {
             btn.addEventListener('click', async () => {
@@ -6057,7 +6273,7 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
         avatarEl.innerHTML = isAI ? '&#129302;' : '&#128100;';
     }
     div.querySelector('.btn-inline-save')?.addEventListener('click', () => saveSharedImage(options.imageDataUrl));
-    
+
     container.appendChild(div);
     if (shouldStick) {
         container.scrollTop = container.scrollHeight;
@@ -6082,7 +6298,7 @@ function speakText(text, btn) {
     // 移除常見的 Unicode Emoji
     cleanText = cleanText.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}]/gu, '');
     cleanText = cleanText.trim();
-    
+
     if (!cleanText) return;
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
@@ -6130,8 +6346,8 @@ function clearChatMessages() {
         disconnectRemoteSession();
         return;
     }
-    const confirmMsg = currentLocale === 'en-US' 
-        ? 'Clear all chat history?' 
+    const confirmMsg = currentLocale === 'en-US'
+        ? 'Clear all chat history?'
         : '確定要清除所有對話紀錄嗎？';
     if (confirm(confirmMsg)) {
         const session = getActiveLocalChatSession();
@@ -6463,7 +6679,7 @@ function renderExps() {
     if (filtered.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'log-empty';
-        const emptyText = expsEntries.length 
+        const emptyText = expsEntries.length
             ? t('exps.no_match', { default: 'No matching experiences found.' })
             : t('exps.no_data', { default: 'No installation experiences yet...' });
         empty.textContent = emptyText;
@@ -6543,12 +6759,12 @@ function exportExps() {
 }
 
 function showExpDetail(entry) {
-    modalTitle.textContent = entry.title || entry.fileName || '經驗詳情';
+    modalTitle.textContent = entry.title || entry.fileName || t('exps.detailsTitle');
     const htmlContent = typeof marked !== 'undefined'
         ? marked.parse(entry.content || '')
         : escapeHtml(entry.content || '').replace(/\n/g, '<br>');
     const updatedAt = entry.updatedAt
-        ? new Date(entry.updatedAt).toLocaleString('zh-TW', { hour12: false })
+        ? new Date(entry.updatedAt).toLocaleString(currentLocale === 'en-US' ? 'en-US' : 'zh-TW', { hour12: false })
         : '';
     modalBody.innerHTML = `
         <div class="task-detail-row">
@@ -6580,7 +6796,7 @@ function showTaskModal(task) {
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">分類</span>
-          <span class="task-detail-value">${task.category || '�'}</span>
+          <span class="task-detail-value">${task.category || '—'}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">動作</span>
@@ -6592,7 +6808,7 @@ function showTaskModal(task) {
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">建立時間</span>
-          <span class="task-detail-value">${task.createdAt ? new Date(task.createdAt).toLocaleString('zh-TW') : '�'}</span>
+          <span class="task-detail-value">${task.createdAt ? new Date(task.createdAt).toLocaleString('zh-TW') : '—'}</span>
         </div>
         ${task.logs?.length ? `
           <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;">執行記錄</div>
@@ -6610,7 +6826,7 @@ function applyTheme(theme) {
     const isLight = theme === 'light';
     if (isLight) document.documentElement.classList.add('theme-light');
     else document.documentElement.classList.remove('theme-light');
-    
+
     // 更新圖示：暗色時顯示太陽，亮色時顯示月亮
     if (btnTheme) {
         if (isLight) {
@@ -6627,7 +6843,7 @@ function applyTheme(theme) {
             btnTheme.title = currentLocale === 'en-US' ? 'Switch to Light Mode' : '切換至淺色模式';
         }
     }
-    
+
     localStorage.setItem('theme', theme);
 }
 
@@ -6659,7 +6875,7 @@ function exportTasks() {
         a.download = `aipc-tasks-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
-            addUILog(`⚠️ ${t('tasks.exportFallback', { error: data.error || 'Unknown error' })}`, 'warn');
+        addUILog(`⚠️ ${t('tasks.exportFallback', { error: data.error || 'Unknown error' })}`, 'warn');
     });
 }
 
@@ -7006,7 +7222,7 @@ function setupEventListeners() {
     if (settingProvider) {
         const providerOptions = Object.keys(PROVIDER_DEFAULTS).map(p => `<option value="${p}">${getProviderDisplayLabel(p)}</option>`).join('');
         settingProvider.innerHTML = providerOptions;
-        
+
         // 當切換 Provider 時，自動帶入預設 URL
         settingProvider.addEventListener('change', (e) => {
             const val = e.target.value;
@@ -7070,11 +7286,11 @@ function setupEventListeners() {
         const item = e.target.closest('.tab-item');
         if (!item) return;
         const tabId = item.dataset.tab;
-        
+
         if (tabId === 'hardware') {
             updateHardwareStatus();
         }
-        
+
         if (e.target.closest('.tab-close')) {
             e.stopPropagation();
             closeTab(tabId);
@@ -7107,12 +7323,12 @@ function switchTab(tabId) {
     if (tabId === 'browser' && !browserRuntimeReady) return;
     if (!openTabs.includes(tabId)) return;
     activeTab = tabId;
-    
+
     // Update tabs UI
     $$('.tab-item').forEach(item => {
         item.classList.toggle('active', item.dataset.tab === tabId);
     });
-    
+
     // Update content UI
     $$('.tab-content').forEach(content => {
         content.classList.toggle('active', content.id === `content-${tabId}`);
@@ -7151,11 +7367,11 @@ function openTab(tabId) {
 
 function closeTab(tabId) {
     if (tabId === 'chalkboard') return; // Cannot close chalkboard
-    
+
     openTabs = openTabs.filter(id => id !== tabId);
     const tabEl = $(`#tab-${tabId}`);
     if (tabEl) tabEl.classList.add('hidden');
-    
+
     if (activeTab === tabId) {
         switchTab('chalkboard');
     }
@@ -7174,7 +7390,7 @@ function toggleViewMenu(e) {
 
     menu = document.createElement('div');
     menu.className = 'view-dropdown menu-dropdown';
-    
+
     const items = [
         { id: 'chalkboard', label: t('tabs.chalkboard'), icon: '🎨' },
         { id: 'hardware', label: t('tabs.hardware'), icon: '🌡️' },
@@ -7239,10 +7455,10 @@ async function openProviderSettings() {
         settingAudience.value = data.authConfig?.audience || '';
         if (settingVisionModelName) settingVisionModelName.value = data.visionModel || '';
         syncProviderAuthUI(settingProvider.value);
-        
+
         // 切換 UI 狀態
         await onProviderChange(data.provider, data.model, data.visionModel || '');
-        
+
         providerSettingsOverlay.classList.add('visible');
     }
 }
@@ -7254,7 +7470,7 @@ async function onProviderChange(provider, currentModel = '', currentVisionModel 
     syncProviderAuthUI(provider);
     // 判斷哪些 Provider 支援模型下拉清單
     const supportList = ['Ollama', 'Ollama Cloud', 'NVIDIA NIM', 'LM Studio', 'Mistral', 'Together AI', 'Groq', 'OpenAI', 'DeepSeek'];
-    
+
     // 如果沒帶 currentModel，嘗試抓取目前下拉選單的值（保留選取項）
     if (!currentModel && settingModelSelect.value) {
         currentModel = settingModelSelect.value;
@@ -7271,7 +7487,7 @@ async function onProviderChange(provider, currentModel = '', currentVisionModel 
         settingModelName.style.display = 'none';
         settingModelSelect.style.display = 'block';
         if (btnRefreshModels) btnRefreshModels.style.display = 'inline-block';
-        
+
         // 抓取模型清單
         settingModelSelect.innerHTML = `<option value="">${currentLocale === "en-US" ? "Loading models..." : "正在載入模型清單..."}</option>`;
         try {
@@ -7280,9 +7496,9 @@ async function onProviderChange(provider, currentModel = '', currentVisionModel 
                 method: 'POST',
                 body: { provider, baseUrl, authConfig }
             });
-            
+
             if (data.success && data.models.length > 0) {
-                settingModelSelect.innerHTML = data.models.map(m => 
+                settingModelSelect.innerHTML = data.models.map(m =>
                     `<option value="${m.name}" ${m.name === currentModel ? 'selected' : ''}>${m.name}</option>`
                 ).join('');
                 syncVisionModelInputs(true, currentVisionModel, data.models);
@@ -7489,14 +7705,17 @@ async function updateHardwareStatus() {
             setGauge('ram', h.ram.usage);
             const ramTotalGB = Math.round(h.ram.total / 1024 / 1024 / 1024);
             const ramUsedGB = (h.ram.total - h.ram.free) / 1024 / 1024 / 1024;
-            if ($('#hw-ram-total')) $('#hw-ram-total').textContent = `${ramUsedGB.toFixed(1)} GB of ${ramTotalGB}GB`;
+            const ramText = currentLocale === 'en-US'
+                ? `${ramUsedGB.toFixed(1)} GB of ${ramTotalGB} GB`
+                : `${ramUsedGB.toFixed(1)} GB / ${ramTotalGB} GB`;
+            if ($('#hw-ram-total')) $('#hw-ram-total').textContent = ramText;
 
             // Disk (以第一個硬碟為代表)
             if (h.disk.drives && h.disk.drives.length > 0) {
                 const mainDisk = h.disk.drives[0];
                 const diskGauge = document.getElementById('gauge-disk');
                 const mainVolume = Array.isArray(h.disk.volumes) && h.disk.volumes.length > 0 ? h.disk.volumes[0] : null;
-                
+
                 // 健康 = 100%, 警告 = 50%, 危險 = 20%
                 let healthScore = 100;
                 if (mainDisk.health === 'Warning') healthScore = 50;
@@ -7508,15 +7727,16 @@ async function updateHardwareStatus() {
                 }
                 if ($('#hw-disk-status')) $('#hw-disk-status').textContent = `${healthScore}%`;
                 if ($('#hw-disk-name')) {
+                    const freeLabel = currentLocale === 'en-US' ? 'free' : '可用';
                     $('#hw-disk-name').textContent = mainVolume
-                        ? `S.M.A.R.T: ${mainDisk.name} | ${mainVolume.name} free ${Math.round(mainVolume.free / 1024 / 1024 / 1024)}GB`
+                        ? `S.M.A.R.T: ${mainDisk.name} | ${mainVolume.name} ${freeLabel} ${Math.round(mainVolume.free / 1024 / 1024 / 1024)}GB`
                         : `S.M.A.R.T: ${mainDisk.name}`;
                 }
             }
 
             if ($('#hw-last-update')) {
                 const now = new Date();
-                $('#hw-last-update').textContent = `上次更新: ${now.toLocaleTimeString()}`;
+                $('#hw-last-update').textContent = `${t('hardware.lastUpdate')}: ${now.toLocaleTimeString()}`;
             }
         }
     } catch (e) {

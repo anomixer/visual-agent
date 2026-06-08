@@ -6,7 +6,7 @@ compatibility: Windows 10/11. Requires winget for Ollama installation; GPU optio
 metadata:
   author: anomixer
   version: "1.0"
-  tags: ollama llm local-ai model download qwen setup runtime
+  tags: ollama llm local-ai model download gemma setup runtime
 ---
 
 ## When to Use
@@ -40,6 +40,6 @@ metadata:
 
 | Model | Approx. Download Size |
 |---|---|
-| qwen3.5:4b | ~2.6 GB |
+| gemma4:e2b-it-qat | ~1.1 GB |
 | llama3.2:3b | ~2.0 GB |
 | mistral:7b | ~4.1 GB |

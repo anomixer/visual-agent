@@ -2452,7 +2452,7 @@ ol {
 }
 
 .user-message .msg-bubble {
-  white-space: pre-wrap;
+  white-space: normal;
 }
 
 /* Markdown Support inside AI bubbles */
@@ -3328,4 +3328,62 @@ select.form-input option,
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
+}
+
+/* ── Skills Tab: Source Group Headers ─────────────────────────── */
+.skill-source-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px 6px;
+  margin: 10px 0 4px;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.18), transparent);
+  border-left: 3px solid var(--accent-indigo);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-active);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.skill-source-header--hermes {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.18), transparent);
+  border-left-color: #f59e0b;
+  color: #fbbf24;
+}
+
+.skill-source-header:first-child {
+  margin-top: 4px;
+}
+
+.skill-source-icon {
+  font-size: 13px;
+}
+
+.skill-source-count {
+  margin-left: auto;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ── Skills Tab: Hermes Source Badge on Cards ─────────────────── */
+.skill-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
 }

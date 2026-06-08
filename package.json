@@ -1,6 +1,6 @@
 {
   "name": "aipc-agent",
-  "version": "2026.06.03",
+  "version": "2026.06.09",
   "description": "AI PC Agent — 本地優先、無命令列、具備感知能力的系統管家",
   "main": "src/server.js",
   "bin": "src/server.js",

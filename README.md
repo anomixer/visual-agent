@@ -1,5 +1,8 @@
 # AI PC Agent
 
+> [!NOTE]
+> **本程式還在開發中**，若發現任何問題，或有任何想要貢獻的程式與想法，都歡迎提供。
+
 > 本地優先、無命令列、具備感知與自我進化能力的圖形化 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
 
@@ -11,11 +14,22 @@
 
 ## 這是什麼？
 
-AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可以直接用英文或中文描述需求，或從推薦清單點選項目，系統會替你建立任務、執行嚴謹的 SOP (標準作業程序)、驗證執行結果，並把完整過程顯示在 UI 與工作日誌中，同時建立於經驗庫(Exp)，以便未來執行相同任務時做參考，提升任務執行成功率，達到自我進化能力。
+**AI PC Agent** 是一個運行於本地端、兼具安全感知與自我進化能力的 Windows 系統自動化管家。我們拋棄了傳統命令行（CLI）Agent 的高風險操作與簡陋介面，打造出**純圖形介面 (Pure-GUI)** 的視覺化控制中心。
+
+不僅能透過直觀的對話與標準作業程序（SOP）來自動化設定、監控與修復您的 PC，更具備以下突破性優勢：
+
+- **🌐 首創雙 AI 遠端協作**：支援兩台實體電腦透過專用通訊協議連線，本地 AI 先答、遠端 AI 隨後補充，輕鬆實現多機協同對話與管理。
+- **🎨 互動式黑板 (Chalkboard) 共享**：內建粉筆畫布與多模態視覺理解。遠端連線時可即時共享黑板快照，隨手塗鴉、放圖、標記即可讓 AI 看懂並提供精準建議。
+- **📊 圓圈式 (Circular Gauge) 硬體環形監控**：即時探測 CPU、GPU、RAM、Disk，並能透過專屬插件精準監控 NVIDIA 顯示卡的溫度、VRAM 與即時負載。
+- **🔍 Browser Use 聯網即時查詢**：當本地知識不足時，AI 能夠自動呼叫並控制 Playwright 瀏覽器進行即時網頁檢索與 DOM 解析，完美回答天氣、新聞與最新股價。
+- **⚡ 雙向自動化軟體管理**：整合 winget、Microsoft Store、GitHub Releases，為 Chrome、Steam、Office 等常用工具打造防錯的「安裝與移除」雙向 SOP 執行鏈。
+- **⚗️ 整合 19 個 Hermes Agent 領域知識庫**：融合來自 NousResearch 專業級 Hermes Agent 的 19 大領域 Skills，在 AI 對話時動態注入，涵蓋 Data Science、DevOps、Red Teaming、自動化代理等深度背景，回答更專業。
+- **🛡️ Consent-before-action 安全防護**：AI 執行任何系統變更（如安裝、修改設定）前，均會先將其新增至待辦任務清單，等待使用者手動點擊確認後才執行，防止無人值守的自動修改與潛在風險。
+- **🧠 經驗學習與自我進化**：每次任務執行的成敗皆會沉澱至本地經驗庫（Exp），AI 會自動讀取並進行敏感資訊遮罩，並在下一次類似任務中主動避坑，實現軟體層面的持續進化。
 
 ```text
 你說：「幫我移除 Copilot」
-它就：建立任務 -> 執行 SOP -> 修改系統設定 -> 驗證結果 -> 回報成功或失敗
+它就：建立任務 -> 提示建議執行按鈕 -> 您確認點擊 -> 提權執行 SOP -> 修改系統設定 -> 驗證結果 -> 寫入經驗庫
 ```
 
 ---
@@ -37,46 +51,6 @@ AI PC Agent 是一個跑在本機上的 Windows 系統自動化工具。你可�
 | 插件系統 | 可用 `.js` 擴充系統監控能力 |
 | 自動初始化 | 首次執行可自動安裝 Ollama 與預設模型 |
 | Tauri 打包 | 可打包成獨立 Windows EXE，Node 後端以 sidecar 方式隨附 |
-
----
-
-## Remote Directive Protocol
-
-- Structured suggestion buttons:
-
-```text
-[SUGGEST: button_text="🟢 Install VS Code" action="install_sop" sop_id="vscode_install"]
-```
-
-- Preferred action tags:
-
-```text
-[ACTION:ADD_TASK sop_id="..."]
-[ACTION:EXECUTE_TASK task_id="..."]
-[ACTION:INSTALL_SOP sop_id="..."]
-[ACTION:COMPUTER_USE mode="prepare_vm_sandbox|open_file|open_url|install_sop" ...]
-[ACTION:BROWSER_USE mode="search|open|navigate|fetch_title|extract_text|snapshot" ...]
-```
-
-- When both Local AI and Remote AI are relevant, Local AI should answer first and Remote AI may follow up later. The user should not be blocked waiting for both sides.
-
----
-
-## Remote Validation Checklist
-
-Use these three flows when validating remote collaboration changes:
-
-1. `SUGGEST` flow
-   Expected: the remote message renders a real button, the button does not flicker, clicking it creates or reuses a task, and the UI log shows `Suggestion clicked`.
-2. `INSTALL_SOP` flow
-   Expected: `[ACTION:INSTALL_SOP sop_id="..."]` is executed locally, the UI log shows `Remote AI directive received`, then either `Started SOP task` / `Reused SOP task` or a clear failure message.
-3. Dual-AI flow
-   Expected: Local AI replies first, the UI log shows `Dual-AI collaboration: Local AI answers first, Remote AI follow-up queued`, and Remote AI follow-up appears later without blocking the first answer.
-
-Extra diagnostics:
-
-- Duplicate remote directives within a short window are skipped and logged as `Skipped duplicate remote directive`.
-- Directive receipt logs now include a `msg:<id>` marker so repeated remote messages can be correlated more easily.
 
 ---
 
@@ -138,7 +112,7 @@ http://localhost:3210
 
 ### 本機 Ollama
 
-系統可自動偵測 Ollama 是否存在，若缺少則可透過內建 SOP 安裝，並下載預設模型 `qwen3.5:4b`。當 UI 顯示 `AI 就緒` 時，就可以直接在右側對話區輸入需求。
+系統可自動偵測 Ollama 是否存在，若缺少則可透過內建 SOP 安裝，並下載預設模型 `gemma4:e2b-it-qat`。當 UI 顯示 `AI 就緒` 時，就可以直接在右側對話區輸入需求。
 
 ### 其他 Provider
 
@@ -295,24 +269,45 @@ aipc-agent/
 │   ├── hardware-info.js
 │   └── temperature-monitor.js
 ├── skills/
-│   ├── app-install-and-repair/SKILL.md
-│   ├── backup-restore/SKILL.md
-│   ├── browser-research-and-edit/SKILL.md
-│   ├── desktop-agent/SKILL.md
-│   ├── developer-tools-assistant/SKILL.md
-│   ├── game-research/SKILL.md
-│   ├── github-releases/SKILL.md
-│   ├── manager/SKILL.md
-│   ├── media-editing-assistant/SKILL.md
-│   ├── microsoft-store/SKILL.md
-│   ├── office-excel-assistant/SKILL.md
-│   ├── ollama/SKILL.md
-│   ├── photoshop-workflow/SKILL.md
-│   ├── virtualization-sandbox/SKILL.md
-│   ├── windows-network-troubleshoot/SKILL.md
-│   ├── windows-printer-troubleshoot/SKILL.md
-│   ├── windows-storage-recovery/SKILL.md
-│   └── winget-store/SKILL.md
+│   ├── [AIPC Agent 原生 × 18]
+│   │   ├── app-install-and-repair/SKILL.md
+│   │   ├── backup-restore/SKILL.md
+│   │   ├── browser-research-and-edit/SKILL.md
+│   │   ├── desktop-agent/SKILL.md
+│   │   ├── developer-tools-assistant/SKILL.md
+│   │   ├── game-research/SKILL.md
+│   │   ├── github-releases/SKILL.md
+│   │   ├── manager/SKILL.md
+│   │   ├── media-editing-assistant/SKILL.md
+│   │   ├── microsoft-store/SKILL.md
+│   │   ├── office-excel-assistant/SKILL.md
+│   │   ├── ollama/SKILL.md
+│   │   ├── photoshop-workflow/SKILL.md
+│   │   ├── virtualization-sandbox/SKILL.md
+│   │   ├── windows-network-troubleshoot/SKILL.md
+│   │   ├── windows-printer-troubleshoot/SKILL.md
+│   │   ├── windows-storage-recovery/SKILL.md
+│   │   └── winget-store/SKILL.md
+│   └── [From Hermes Agent × 19]
+│       ├── hermes-apple/SKILL.md
+│       ├── hermes-autonomous-ai-agents/SKILL.md
+│       ├── hermes-creative/SKILL.md
+│       ├── hermes-data-science/SKILL.md
+│       ├── hermes-devops/SKILL.md
+│       ├── hermes-dogfood/SKILL.md
+│       ├── hermes-email/SKILL.md
+│       ├── hermes-github/SKILL.md
+│       ├── hermes-index-cache/SKILL.md
+│       ├── hermes-media/SKILL.md
+│       ├── hermes-mlops/SKILL.md
+│       ├── hermes-note-taking/SKILL.md
+│       ├── hermes-productivity/SKILL.md
+│       ├── hermes-red-teaming/SKILL.md
+│       ├── hermes-research/SKILL.md
+│       ├── hermes-smart-home/SKILL.md
+│       ├── hermes-social-media/SKILL.md
+│       ├── hermes-software-development/SKILL.md
+│       └── hermes-yuanbao/SKILL.md
 ├── sops/
 │   ├── backup-system/SOP.md
 │   ├── backup-user-files/SOP.md
@@ -340,6 +335,22 @@ aipc-agent/
 ---
 
 ## 近期更新
+
+### 2026.06.09
+- **版本更新**：套件版本更新為 `2026.06.09`。
+- **全動態國際化 (I18N) 支援**：支援中英文介面無縫即時切換。包括工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、黑板畫布工具與對話列之標籤、按鈕與文字佔位符。
+- **對話分頁與邊界匹配修正**：本機聊天對話分頁在語系切換時可動態翻譯。修正原先 `\b` 匹配中文時造成的正則邊界失效，改為 `/^(?:本機對話|Local Chat)(?:\s+\d+)?$/i`。
+- **硬體簡報與空狀態國際化**：硬體統計與 S.M.A.R.T 磁碟健康度等文字在切換語言時能同步完成語意翻譯；任務與知識庫空狀態提示字亦完成國際化翻譯。
+- **任務 Tab 清空與節點重建**：修復原先工作清單在直接執行 `.innerHTML = ''` 導致 `#todoEmpty` 空提示節點損毀、無法再次顯示空狀態的 bug。
+- **P2P 遠端連線語系傳遞**：遠端 `chat_message` 的 TCP/Socket payload 傳播發問者 `locale`。遠端 AI 能即時適配發問者的介面語系（如英文模式下回覆英文）。
+- **預設本地語言模型升級**：從 `qwen3.5:4b`（2.6GB）升級至 `gemma4:e2b-it-qat`（1.1GB），體積減小 60% 且載入與運行速度極快。同步更新 `pull-llm-model` SOP 與對應之系統推薦與 UI 語系提示。
+
+### 2026.06.08
+- **版本更新**：套件版本更新為 `2026.06.08`。
+- **AI Chat Markdown 支援**：前端引入 `marked.min.js`，聊天視窗完整支援 GFM 表格、code block、刪除線等語法，避免 AI 回覆表格錯位。
+- **模型自動選取修正**：新增 `isLLMCapableModel()` 過濾，排除 embedding、reranker、TTS、Whisper、Diffusion 等非對話模型，首次啟動不再誤選無法對話的模型。
+- **Browser Tab 顯示修正**：移除 `%LOCALAPPDATA%\ms-playwright` 系統全域路徑偵測，改為只認 AppData 下自己管理的 playwright-browsers；清除 AppData 後能正確顯示 `Install Required`。
+- **Hermes Agent Skills 整合**：從 [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/tree/main/skills) 批量轉換 19 個 skills（apple、autonomous-ai-agents、creative、data-science、devops、dogfood、email、github、index-cache、media、mlops、note-taking、productivity、red-teaming、research、smart-home、social-media、software-development、yuanbao）。Skills Tab 改為兩大群組顯示（🤖 AIPC Agent / ⚗️ From Hermes Agent）。注意：這些 skill 為 **AI 知識增強層**，不含可執行的 PowerShell 步驟。
 
 ### 2026.06.03
 - **版本更新**：套件版本更新為 `2026.06.03`。
@@ -429,23 +440,6 @@ aipc-agent/
   - 若缺少試算表工具，會分流詢問「安裝 Office 相容工具」或「改用 Google Sheets web」。
   - 新增遊戲攻略/影片代理流程：自動網頁蒐集後回傳 Markdown 結果，並附 `Chalkboard 摘要草稿`。
   - 新增 Agent action：`OPEN_FILE`、`OPEN_URL`。
-- **Browser Use / Computer Use 分級**：
-  - Browser Use（內宇宙）：`/api/agent/browser-use`，提供 `search/open/fetch_title`。
-  - Computer Use（外宇宙）：`/api/agent/computer-use`，提供 `open_file/open_url/install_sop`。
-  - 新增 `/api/agent/capability`：需 `top-tier + vision` 模型才允許進入 Browser/Computer Use。
-- **xlsx 寫入強化**：
-  - 財報更新改為多策略：`Excel COM` → `WPS COM` → `OpenXML` 直寫，降低環境相依性。
-- **Chalkboard API 直寫**：
-  - 新增 `/api/chalkboard/draft`，AI 回覆可附 `chalkboardDraft`，前端會自動落板成重點草稿。
-  - Agent 落板前會先清除舊內容，再以粉筆字重畫，並依實際包行高度排版，避免字重疊。
-- **內宇宙 / 外宇宙**：
-  - 內宇宙（Browser Use）：偏向瀏覽器內資源取得與編輯。
-  - 外宇宙（Computer Use）：偏向桌面操作，預設先 VM sandbox（如 VirtualBox）再執行，減少對主機干擾。
-- **Skills/SOP 懶載入**：
-  - 不再於 system prompt 預載所有 Skills。
-  - 改為依對話內容動態挑選相關 Skill/SOP 摘要注入（on-demand context），降低 context size。
-- **新增技能庫（skills）**：
-  - Photoshop、Backup/Restore、App 安裝修復、Office/Excel、Browser research、Network/Printer、Storage recovery、VM sandbox、Developer tools、Media editing。
 - **新增 SOP（多步驟）**：
   - `sops/backup-user-files.md`
   - `sops/restore-user-files.md`
@@ -456,6 +450,89 @@ aipc-agent/
 ### 2026.03.30
 - **遠端 AI 聊天室**：支援區域網路互連 (19168 TCP)，雙方 AI 與使用者可進行多方通訊。
 - **模型共享 (Model Share)**：此版曾支援本機模型分享；已於 `2026.05.06` 移除，改走遠端雙 AI 分工。
+- **協作輔助**：包含畫面分享另存、多對話紀錄管理 (Session Chips)，以及 `@mention` 對象標記功能。
+
+
+### 2026.03.29
+
+- **Chalkboard Resize 落稿框校正**：
+  - 拖拉 log 窗、sidebar 或 chat 欄縮放後，文字落稿框與 8 點控制框現在會同步按比例重新映射，不再偏移。
+  - 三個 panel resizer 的 setSize callback 均補上 `resizeChalkboardCanvas()` 觸發。
+  - `resizeChalkboardCanvas()` 在 resize 後對 `pendingTextRect` 按新舊尺寸比例縮放，確保落稿位置始終與 canvas 內容對齊。
+
+### 2026.03.28
+
+- **深度國際化補完**：
+  - 各大雲端與地端 AI Provider 的使用說明、推薦模型範例已完整支援中英切換。
+  - 模型測試工具 (Test Model) 按鈕狀態、警示與日誌成功實作雙語化。
+  - 對話框上方預設建議按鈕 (如 `Install Chrome`) 能隨語系自動切換。
+  - 大幅清理早期的生成式 `*.i18n.js` 檔案，減少結構混亂。
+- **選單系統 (File Menu)**：
+  - `index.html` 導入下拉式檔案選單。
+  - 將 `匯出任務`、`匯入任務` 統一整合，維持版面簡潔，並提供 `Refresh` 與 `Exit` 便捷操作。
+
+### 2026.03.26
+
+- **國際化完善**：
+  - AI Engine Settings dialog 中的所有標籤現在根據語系自動翻譯，英文模式下完全無中文殘留。
+  - AI chat 在英文模式下會使用英文 system prompt，確保 AI 回覆語言一致。
+  - 經驗庫的時間戳與空狀態文案也根據 locale 翻譯。
+- **經驗庫卡片排序修正**：
+  - 知識庫卡片現在按時間戳倒序排列，最新的經驗記錄顯示在最前面。
+  - 之前最新的記錄在最下方的問題已解決。
+- **多來源軟體推薦能力擴充**：
+  - AI 現在除了 `winget-store` 之外，也支援 `microsoft-store` 與 `github-releases` 兩條推薦路徑。
+  - 使用者若明確偏好 `Microsoft Store / UWP`，系統會改走 `msstore` 來源搜尋與建立 SOP。
+  - 使用者若要找 GitHub 上的 Windows App，系統會搜尋 repository 與 release assets，並只挑有明確 Windows 安裝檔或壓縮包的候選。
+- **內容規格英文化**：
+  - `sops/*.md`、`skills/*.md`、`plugins/*.js`、經驗庫/*.md` 的格式規格與內容骨架已改為英文，方便後續國際化與多語系 UI。
+  - `sop-parser.js` 保留中英雙語欄位相容，既有舊版中文 SOP 仍可被正確解析。
+
+### 2026.03.25
+
+- **經驗庫視覺進化**：
+  - 工作日誌右側經驗庫 tab 重塑為「知識庫」風格，卡片更緊湊。
+  - 摘要預設限制顯示 3 行，滑鼠懸停 (Hover) 時自動展開內容。
+  - 新增「⬇ 匯出」按鈕，可將累積經驗匯出為 Markdown。
+  - 安裝任務結束後，自動將 log 摘要寫入 `%APPDATA%\aipc-agent\經驗庫\exp-yyyymmdd.md`。
+- **視窗持久化與最大化**：
+  - 程式現在會記住上次視窗大小與位置，下次開啟自動還原。
+  - 首次啟動預設以最大化視窗呈現。
+- **軟體與硬體感知優化**：
+  - Ollama 安裝 SOP 改為非提權 (User mode) 流程。
+  - 修正 Qwen3.5 模型名稱 (4B) 與下載大小 (2.6GB) 描述。
+  - 強固 GPU 監控邏輯，優先採用 nvidia-smi 並提供計數器 fallback，解決 Tauri packaged 環境下顯示失效問題。
+- **封裝環境的指令與體驗修正 (Tauri EXE)**：
+  - 修正 Tauri EXE 環境下 `hardware-info.js` 因雙引號干擾導致的指令錯誤，恢復磁碟與 GPU 狀態監控。
+  - 新增 `/api/chalkboard/export-file` API 端點與 PowerShell `SaveFileDialog` 實作，修復黑板畫布在封裝模式下無法原生匯出 PNG 的問題。
+- **Chalkboard 畫布互動與多模態**：
+  - 中央 `Chalkboard` 改為真正可互動的黑板畫布，支援白、紅、黃、綠、藍粉筆與局部板擦。
+  - 黑板改為深綠色材質風格，底部加入粉筆托盤、板擦、粗細切換、Undo、清空、上傳圖片與存成圖片。
+  - 加入直線、矩形、圓形工具，支援像一般繪圖軟體那樣預覽與落筆。
+  - 上傳圖片後可在黑板上拖曳放置範圍與大小。
+  - 黑板啟動時會先以粉筆字顯示歡迎詞，首次互動後切換為教學提示；提示字也可被板擦擦除。
+  - 歡迎畫面階段會先鎖住黑板工具列，必須先點一下黑板進入可畫模式後才解鎖。
+  - `T` 文字工具升級為設定視窗，可輸入文字、選字型、選字型風格、調字級、文字顏色、對齊、粗體與斜體，再到黑板上放置、移動與縮放文字框。
+  - 文字字型目前支援 `標楷體`、`微軟正黑體`、`黑體`、`細明體`、`Arial`、`Times New Roman`、`Courier New`。
+  - 右側聊天列新增 `Chalkboard` 附圖按鈕，可切換是否把黑板內容一併送給 AI。
+  - AI Provider 設定視窗新增 `Vision 多模態模型` 欄位，可指定圖片理解模型；留空時會自動挑選。
+  - 當本輪有附圖時，AI 會優先以當前圖片理解使用者意圖，不再被上一張圖的描述污染。
+  - 黑板新增選取、複製、剪下、貼上與 clipboard 支援，可把選取區當成圖片重新貼回黑板放置。
+
+### 2026.03.24
+
+- 任務完成後，AI 對話區會回報 `success`、`failed`、`skipped`。
+- SOP 載入時會依 `id` 去重，優先使用正式檔名。
+- 內建 SOP、skill、plugin 內容更新後會同步到 `%APPDATA%\aipc-agent\`。
+- `Verify` 階段若明確輸出 `false`，會視為真正失敗。
+- 工作日誌只在使用者停在底部時自動捲動。
+- 版本號改由 `/api/meta` 從 `package.json` 讀取。
+- EXE 啟動時會先顯示 splash，再於背景啟動 Node sidecar。
+- 語系 SOP 已拆分為 `en-US`、`zh-TW`、`zh-CN`、`ja-JP` 四支。
+- 需要管理員權限的 SOP 會共用 UAC 提權執行器。
+- 右側 AI 對話欄可往左拖拉到工作區一半寬度。
+- 左側 sidebar 新增 `SOP 清單` tab，可列出所有 SOP 並支援加入任務與立即執行。
+
 - **協作輔助**：包含畫面分享另存、多對話紀錄管理 (Session Chips)，以及 `@mention` 對象標記功能。
 
 
@@ -565,4 +642,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.06.03`。
+- 目前套件版本：`2026.06.09`.

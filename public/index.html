@@ -48,6 +48,65 @@
       }
     }
   </style>
+  <style>
+    /* Markdown-body table styles for chat bubbles */
+    .markdown-body table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 8px 0;
+      font-size: 12px;
+    }
+    .markdown-body th,
+    .markdown-body td {
+      border: 1px solid var(--border-color, #3a3a4a);
+      padding: 5px 10px;
+      text-align: left;
+    }
+    .markdown-body th {
+      background: var(--bg-card, #252535);
+      font-weight: 600;
+      color: var(--accent-blue, #7aa2f7);
+    }
+    .markdown-body tr:nth-child(even) td {
+      background: rgba(255,255,255,0.03);
+    }
+    .markdown-body code {
+      background: rgba(0,0,0,0.3);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: var(--font-mono, monospace);
+      font-size: 11px;
+    }
+    .markdown-body pre code {
+      background: none;
+      padding: 0;
+    }
+    .markdown-body pre {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border-color, #3a3a4a);
+      border-radius: 5px;
+      padding: 10px 14px;
+      overflow-x: auto;
+      font-size: 11px;
+    }
+    .markdown-body h1,.markdown-body h2,.markdown-body h3 {
+      margin: 10px 0 5px;
+      font-weight: 600;
+    }
+    .markdown-body h1 { font-size: 1.2em; }
+    .markdown-body h2 { font-size: 1.1em; }
+    .markdown-body h3 { font-size: 1em; }
+    .markdown-body p { margin: 5px 0; }
+    .markdown-body ul, .markdown-body ol { padding-left: 18px; margin: 4px 0; }
+    .markdown-body li { margin: 2px 0; }
+    .markdown-body blockquote {
+      border-left: 3px solid var(--accent-blue, #7aa2f7);
+      margin: 6px 0;
+      padding: 2px 10px;
+      opacity: 0.8;
+    }
+    .markdown-body hr { border: none; border-top: 1px solid var(--border-color, #3a3a4a); margin: 8px 0; }
+  </style>
 </head>
 <body>
   <div class="splash-overlay" id="splashOverlay">
@@ -212,9 +271,9 @@
                 <div class="chalkboard-stage">
                   <div class="chalkboard-surface" id="chalkboardSurface">
                     <div class="chalkboard-heading">
-                      <span class="chalkboard-kicker">Interactive Chalkboard</span>
-                      <h2>用粉筆直接畫</h2>
-                      <p>選一支粉筆，直接在黑板上塗寫，板擦可清空畫布。可把想法畫出來給AI看。</p>
+                      <span class="chalkboard-kicker" id="chalk-kicker">Interactive Chalkboard</span>
+                      <h2 id="chalk-title">用粉筆直接畫</h2>
+                      <p id="chalk-desc">選一支粉筆，直接在黑板上塗寫，板擦可清空畫布。可把想法畫出來給AI看。</p>
                     </div>
                     <canvas class="chalkboard-canvas" id="chalkboardCanvas"></canvas>
                     <div class="chalkboard-float-hint" id="chalkboardFloatHint" role="status" aria-live="polite"></div>
@@ -271,8 +330,8 @@
               <div class="todo-body" id="todoListContainer">
                 <div class="empty-state" id="todoEmpty">
                   <div class="empty-icon">✨</div>
-                  <p>目前沒有執行中的任務</p>
-                  <p class="empty-hint">您可以從左側推薦清單或透過對話新增任務</p>
+                  <p id="todo-empty-title">目前沒有執行中的任務</p>
+                  <p class="empty-hint" id="todo-empty-hint">您可以從左側推薦清單或透過對話新增任務</p>
                 </div>
               </div>
             </div>
@@ -280,13 +339,13 @@
             <div class="tab-content" id="content-hardware">
               <div class="hardware-dashboard">
                 <div class="dashboard-header">
-                  <h3>🌡️ 系統硬體狀態</h3>
-                  <p>即時監控本機硬體健康與效能</p>
+                  <h3 id="hw-title">🌡️ 系統硬體狀態</h3>
+                  <p id="hw-subtitle">即時監控本機硬體健康與效能</p>
                 </div>
 
                 <div class="monitor-grid">
                   <div class="monitor-card gauge-card">
-                    <div class="card-title">中央處理器 (CPU)</div>
+                    <div class="card-title" id="hw-label-cpu">中央處理器 (CPU)</div>
                     <div class="gauge-container">
                       <svg class="gauge-svg" viewBox="0 0 100 100">
                         <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
@@ -301,7 +360,7 @@
                   </div>
 
                   <div class="monitor-card gauge-card">
-                    <div class="card-title">繪圖處理器 (GPU)</div>
+                    <div class="card-title" id="hw-label-gpu">繪圖處理器 (GPU)</div>
                     <div class="gauge-container">
                       <svg class="gauge-svg" viewBox="0 0 100 100">
                         <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
@@ -316,7 +375,7 @@
                   </div>
 
                   <div class="monitor-card gauge-card">
-                    <div class="card-title">記憶體 (RAM)</div>
+                    <div class="card-title" id="hw-label-ram">記憶體 (RAM)</div>
                     <div class="gauge-container">
                       <svg class="gauge-svg" viewBox="0 0 100 100">
                         <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
@@ -328,7 +387,7 @@
                   </div>
 
                   <div class="monitor-card gauge-card">
-                    <div class="card-title">主硬碟健康度</div>
+                    <div class="card-title" id="hw-label-disk">主硬碟健康度</div>
                     <div class="gauge-container">
                       <svg class="gauge-svg" viewBox="0 0 100 100">
                         <circle class="gauge-ring-bg" cx="50" cy="50" r="40"></circle>
@@ -580,7 +639,7 @@
             <button id="btnRefreshModels" class="btn-text" style="font-size:11px; color:var(--accent-blue); display:none;">🔄 刷新清單</button>
           </label>
           <div id="modelNameContainer">
-            <input type="text" id="settingModelName" class="form-input" placeholder="例如: qwen3.5:4b">
+            <input type="text" id="settingModelName" class="form-input" placeholder="例如: gemma4:e2b-it-qat">
             <select id="settingModelSelect" class="form-input" style="display:none;"></select>
             <div class="form-help" id="modelHelpText">雲端模型通常需要手動填入 model 名稱，本地引擎可直接從清單選擇。</div>
           </div>
@@ -690,6 +749,7 @@
       </div>
     </div>
   </div>
+  <script src="marked.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -252,6 +252,7 @@ class RemoteAgentService {
                 height: Number(payload.height) || 0,
                 hasContent: payload.hasContent !== false,
                 target: payload.target || 'remote-user',
+                locale: payload.locale || '',
                 createdAt: payload.createdAt || new Date().toISOString(),
             };
             session.lastEventAt = new Date().toISOString();
@@ -431,6 +432,7 @@ class RemoteAgentService {
             imageDataUrl: '',
             caption: '',
             target: payload.target || 'remote-user',
+            locale: payload.locale || '',
             createdAt,
         };
         if (message.senderType === 'ai') {

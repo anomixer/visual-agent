@@ -2,7 +2,7 @@ const { spawn, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const DEFAULT_MODEL = 'qwen3.5:4b';
+const DEFAULT_MODEL = 'gemma4:e2b-it-qat';
 let currentModel = DEFAULT_MODEL;
 
 // 新增 Provider 設定
@@ -336,6 +336,33 @@ function modelSupportsVision(modelName = '') {
     return /(vision|vlm|multimodal|nano-vl|paligemma|kosmos|fuyu|neva|vila|deplot|-vl\b)/i.test(normalized);
 }
 
+/**
+ * 判斷模型是否為可對話的 LLM/VLM
+ * 排除 embedding, rerank, audio-only, speech, clip 等非對話模型
+ */
+function isLLMCapableModel(modelName = '') {
+    const n = String(modelName || '').toLowerCase();
+    if (!n) return false;
+    // 明確排除清單
+    const EXCLUDED = [
+        /\bembed(ding)?s?\b/,      // nomic-embed-text, text-embedding-*, *-embed
+        /\brerank(er)?\b/,          // bge-reranker, rerank-*
+        /\bclip\b/,                 // openai/clip-*
+        /\bwhisper\b/,              // whisper-*, openai/whisper
+        /\btts\b/,                  // tts-1, kokoro-tts
+        /\basr\b/,                  // asr-only models
+        /\bspeech\b/,               // speech-to-text models
+        /\bvoice\b/,                // voice-only models
+        /\bstable[- ]?diffusion\b/, // sd, sdxl
+        /\bsd[xl]?\b/,              // sdxl, sd3
+        /\bdiffusion\b/,            // flux, *-diffusion
+        /\bflux\b/,                 // FLUX image models
+        /\bclassif(y|ier|ication)\b/, // classifier-only
+        /\bcross[- ]?encoder\b/,   // cross-encoder rerankers
+    ];
+    return !EXCLUDED.some(re => re.test(n));
+}
+
 async function getVisionCapableModel(options = {}) {
     const models = await listModels({ ...options, forceRefresh: options.forceRefresh ?? false });
     const names = Array.isArray(models) ? models.map(model => model?.name).filter(Boolean) : [];
@@ -463,9 +490,12 @@ async function checkOllamaStatus(force = false) {
                     const tagsData = await tagsRes.json();
 
                     if (tagsData.models && Array.isArray(tagsData.models)) {
-                        let foundModel = tagsData.models.find(m => m.name === currentModel);
+                        // 只考慮 chat-capable 的模型（排除 embed/rerank/audio/tts 等）
+                        const chatModels = tagsData.models.filter(m => isLLMCapableModel(m.name));
+
+                        let foundModel = chatModels.find(m => m.name === currentModel);
                         if (!foundModel && currentModel !== DEFAULT_MODEL) {
-                            foundModel = tagsData.models.find(m => m.name === DEFAULT_MODEL);
+                            foundModel = chatModels.find(m => m.name === DEFAULT_MODEL);
                             if (foundModel) {
                                 currentModel = DEFAULT_MODEL;
                                 saveConfig();
@@ -473,10 +503,15 @@ async function checkOllamaStatus(force = false) {
                         }
                         if (!foundModel) {
                             const modelPrefix = DEFAULT_MODEL.split(':')[0];
-                            foundModel = tagsData.models.find(m => m.name.startsWith(modelPrefix + ':') || m.name === modelPrefix);
+                            foundModel = chatModels.find(m => m.name.startsWith(modelPrefix + ':') || m.name === modelPrefix);
                         }
                         if (!foundModel) {
-                            foundModel = tagsData.models.find(m => m.name.toLowerCase().includes('qwen'));
+                            foundModel = chatModels.find(m => m.name.toLowerCase().includes('gemma'));
+                        }
+                        // 最後 fallback：挑第一個 chat-capable 模型
+                        if (!foundModel && chatModels.length > 0) {
+                            foundModel = chatModels[0];
+                            console.log(`[LLM] Auto-selected first chat-capable model: ${foundModel.name}`);
                         }
                         if (foundModel) {
                             status.modelReady = true;

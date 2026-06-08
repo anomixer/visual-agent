@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (2026.06.03 Updated)
+# AI PC Agent — 實作需求規格書 (2026.06.09 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.06.03 Updated] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.06.09 Updated] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -50,7 +50,7 @@
 | **監控插件系統** | ✅ | 支援 `plugins/*.js` 動態擴充監控項目，自動同步至 AppData |
 | **AI Provider 設定** | ✅ | 支援 20+ 種雲端與地端 Provider，自動帶入 Base URL，儲存於 AppData |
 | **互動安全機制** | ✅ | 「先問後做」攔截、按鈕式建議 (SUGGEST)、對話中斷 (AbortController) |
-| **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載地端模型（qwen3.5:4b） |
+| **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載地端模型（gemma4:e2b-it-qat） |
 | **啟動啟始畫面** | ✅ | 首次執行顯示「環境設定中」，再次執行顯示「伺服器啟動中」，自動淡出 |
 | **UTF-8 編碼** | ✅ | PowerShell 輸出正確顯示中文，使用 `chcp 65001` 和 UTF-8 編碼 |
 | **執行日誌** | ✅ | Mono 字體，依等級顯示色（info/warn/error/success），支援進度條原地更新 |
@@ -68,7 +68,7 @@
 | SOP ID | 功能 | 狀態 |
 |----------|------|------|
 | `rec_install_ollama` | 安裝 Ollama 本地 AI 引擎 | ✅ |
-| `rec_pull_llm_model` | 下載 qwen3.5:4b 模型 | ✅ |
+| `rec_pull_llm_model` | 下載 gemma4:e2b-it-qat 模型 | ✅ |
 | `rec_install_chrome` | 靜默安裝 Google Chrome | ✅ |
 | `rec_remove_copilot` | 移除 Windows Copilot | ✅ |
 | `rec_backup` | 建立系統還原點 | ✅ |
@@ -142,6 +142,17 @@ Skills 的目錄架構與 `SKILL.md` 的語法，**嚴格遵守 [agentskills.io/
     tags: ["system", "tool"]
   ---
   ```
+
+#### 4.1.1 Skills 來源（source）欄位
+- `source: aipc-agent`（預設）：AIPC Agent 原生 skill，針對 Windows 本地操作優化。
+- `source: hermes-agent`：從 [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) 轉換而來，涵蓋更廣泛的 AI/開發/創意領域（共 19 個）。
+
+**重要澄清**：Skills（無論來源）均屬於 **AI 知識增強層**，不含可執行步驟。若需執行系統操作，請使用 **SOP**。
+
+| 類型 | 目的 | 可執行 | 觸發方式 |
+|------|------|--------|----------|
+| Skill | AI 知識增強 | ❌ | AI 對話時按需注入 |
+| SOP | 系統操作腳本 | ✅ | 工作清單執行 |
 
 ### 4.2 SOP 腳本規範
 SOP 同樣延續目錄化精神 (`sops/<slug>/SOP.md`)，但內部為我們獨有的 Check / Install / Verify 三段式強固結構：
@@ -583,3 +594,78 @@ $true
 ### 15.6 Provider Model List
 - LM Studio 必須和 Ollama、NVIDIA NIM 一樣支援設定視窗「刷新清單」。
 - 可提供 OpenAI-compatible `/models` 的 provider 應優先使用下拉清單選模型；抓不到清單時才 fallback 到手動輸入。
+
+## 16. 遠端指令協議與驗收規範
+
+### 16.1 遠端指令協議 (Remote Directive Protocol)
+
+本專案支援遠端 AI 協作，雙方 AI 透過結構化指令（Directive）進行引導與自動化操作：
+
+- **結構化建議按鈕 (Suggestion Buttons)**：
+  ```text
+  [SUGGEST: button_text="🟢 安裝 VS Code" action="install_sop" sop_id="vscode_install"]
+  ```
+
+- **建議動作標籤 (Preferred Action Tags)**：
+  ```text
+  [ACTION:ADD_TASK sop_id="..."]
+  [ACTION:EXECUTE_TASK task_id="..."]
+  [ACTION:INSTALL_SOP sop_id="..."]
+  [ACTION:COMPUTER_USE mode="prepare_vm_sandbox|open_file|open_url|install_sop" ...]
+  [ACTION:BROWSER_USE mode="search|open|navigate|fetch_title|extract_text|snapshot" ...]
+  ```
+
+- **雙 AI 協作分流**：當同時涉及本地 AI 與遠端 AI 時，本地 AI 應優先回覆，遠端 AI 再行跟進（Follow-up），避免阻礙使用者對話。
+
+### 16.2 遠端驗收基準 (Remote Validation Checklist)
+
+在驗證遠端協作變更時，必須執行並通過以下三種典型情境流程：
+
+1. **`SUGGEST` 流程**：
+   - **預期結果**：遠端訊息能正確渲染出真實按鈕，按鈕在 polling 時不會閃爍；點擊後能建立或沿用任務，且 UI 執行日誌顯示 `Suggestion clicked`。
+2. **`INSTALL_SOP` 流程**：
+   - **預期結果**：`[ACTION:INSTALL_SOP sop_id="..."]` 能在本機被執行，UI 執行日誌會先顯示 `Remote AI directive received`，接著顯示 `Started SOP task` 或 `Reused SOP task`（若失敗則顯示明確錯誤）。
+3. **雙 AI 協作流程**：
+   - **預期結果**：本地 AI 先行回覆，UI 執行日誌顯示 `Dual-AI collaboration: Local AI answers first, Remote AI follow-up queued`，隨後遠端 AI 的回覆在背景排程完成後出現，整體流程不阻塞。
+
+### 16.3 其他診斷機制
+
+- **重複指令抑制**：在短時間內收到的重複遠端 directive 將被忽略，並記錄 `Skipped duplicate remote directive`。
+- **訊息追蹤識別**：指令接收日誌需包含 `msg:<id>` 標記，方便交叉對照是否為重複發送之遠端訊息。
+
+---
+
+## 17. 2026.06.09 完整國際化 (I18N) 與 UI/網路協定規格
+
+### 17.1 雙語動態切換機制 (Bilingual UI Toggling)
+- **零重載翻譯**：介面支援 `zh-TW` 與 `en-US` 雙語動態切換。
+- **UI 元素涵蓋範圍**：工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、黑板工具、經驗知識庫、以及系統對話視窗，皆需根據 `currentLocale` 即時更新。
+- **對話分頁動態過濾**：
+  - 本機與遠端聊天分頁名稱在切換語系時需動態翻譯（例如：「本機對話 1」 ↔ 「Local Chat 1」）。
+  - 對話分頁的過濾與翻譯必須使用非 ASCII 安全的正則表達式 `/^(?:本機對話|Local Chat)(?:\s+\d+)?$/i`，嚴禁使用 `\b`（單字邊界符）以防止在中文等非 ASCII 字元上發生比對失效。
+
+### 17.2 硬體指標與空狀態動態插補 (Hardware Stats & Empty States)
+- **硬體統計資訊**：CPU 規格、GPU 機型、RAM/記憶體容量與百分比、硬碟 S.M.A.R.T 健康度（良好/Good）與磁碟空間，其輸出格式與字串需根據目前語系進行插補與翻譯。
+- **空狀態保護**：
+  - 任務清單當無項目時，需動態顯示 `"No tasks pending"` 或 `"目前沒有待辦任務"`。
+  - 渲染工作清單時，必須保留或動態重建 `#todoEmpty` 節點，嚴禁使用直接將容器清空且不復原節點之做法（例如：直接執行容器的 `.innerHTML = ''` 而未重建 `#todoEmpty`）。
+
+### 17.3 點對點連線語系傳遞 (P2P Locale Propagation Protocol)
+- **協定欄位擴充**：雙機點對點 TCP Socket 連線下，`chat_message` 訊息之 payload 必須攜帶 `locale` 屬性。
+  ```json
+  {
+    "type": "chat_message",
+    "text": "How is the weather today?",
+    "locale": "en-US",
+    "timestamp": 1780938724186
+  }
+  ```
+- **遠端 AI 語系適配**：遠端端接收到 `chat_message` 時，必須自 payload 中提取 `locale`，並在調用本地 LLM 及建構 System Prompt 時將該 `locale` 傳入，使遠端 AI 能精確使用發問者的介面語系進行回應。
+
+### 17.4 本地預設語言模型規格
+- **預設模型名稱**：使用 `gemma4:e2b-it-qat`。
+- **體積與加載效能**：模型下載體積需限制於 1.1GB 左右。應用程式於首次執行或啟動檢測時，需自動以該模型進行背景下載與初始化，以實現極速加載與低資源消耗。
+- **備份與自動匹配**：
+  - `llm.js` 偵測與自動選取邏輯中，除預設的 `gemma4:e2b-it-qat` 外，需優先尋找名稱中包含 `gemma` 的對話型模型作為本地 Ollama 引擎 fallback。
+  - 當遠端或本機發起 `rec_pull_llm_model` SOP 時，均需調用該模型的 pull 與 verify 流程。
+
