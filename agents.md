@@ -5,6 +5,25 @@
 
 ---
 
+## 📌 2026.06.12 — 搜尋品質、影片年份權重排序與本地黑板版面優化
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.06.12`。
+
+### 本地黑板版面優化 (Local Chalkboard Layout Fix)
+- **滿版呈現**：修復了本地聊天時，Chalkboard 摘要或 draft 預設只使用左半邊（`position: 'left'`）的 Bug。現在當非處於遠端協作模式時，本地聊天產生的黑板會自動以滿版（`position: 'full'`）呈現，充分利用螢幕寬度。
+
+### DuckDuckGo 跳轉連結與 Lite 引擎遷移 (DDG Redirect & Lite Migration)
+- **跳轉連結解析**：修正了原本以 `//duckduckgo.com` 開頭的協議相對跳轉連結無法被正確正常化為 `https:`，導致 parameter 解碼出錯並重新導向中間頁的問題。
+- **Lite 引擎遷移**：將核心搜尋機制 `searchWebLinks` 從極易被 anti-bot 或 `202 Accepted` 挑戰阻擋的 `duckduckgo.com/html/` 遷移到極速、無 anti-bot 驗證的 DuckDuckGo Lite 版 (`lite.duckduckgo.com/lite/`)，搭配通用 `aTagRegex` 寬鬆屬性匹配，大幅提升搜尋結果可靠性。
+- **搜尋頻率優化**：將遊戲攻略文章搜尋次數從 4 次簡化合併為 1 次，大幅減輕 DuckDuckGo 連續查詢的負載，完全避免高頻限流。
+
+### YouTube 影片發布年份提取與評分加權 (YouTube Date Extraction & Weighted Ranking)
+- **年份提取**：更新 `isYouTubeWatchPagePlayable` 核心邏輯，讀取完整 Watch page HTML 以避免 config 截斷；使用高強固性的 JSON/meta regex 精準提取影片發布年份。
+- **年份評分加權**：在 `scoreVideoResult` 排序模組中引入年份評分加權：對 &gt;= 2025 年的影片大幅加權 $+10$ 分，2024 年 $+6$ 分，而對於 &lt;= 2021 年的影片加重扣分 $-6$ 分，從而主動排除過時的預告片、反應影片，優先渲染最新的實用攻略。
+- **Playwright Chromium 執行路徑指定**：修復了 Chromium 搜尋 fallback 在背景啟動時因為找不到系統全域 Playwright 路徑而拋錯的問題。在 launch config 中明確傳入 `executablePath: browserExe`，保證完美調用 AppData 中管理的內置瀏覽器執行檔。
+
+
 ## 📌 2026.06.09 — 完整國際化 (I18N) 支援、對話與任務 UI 優化、P2P 語系網路傳播
 
 ### 版本同步

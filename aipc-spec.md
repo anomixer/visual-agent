@@ -669,3 +669,24 @@ $true
   - `llm.js` 偵測與自動選取邏輯中，除預設的 `gemma4:e2b-it-qat` 外，需優先尋找名稱中包含 `gemma` 的對話型模型作為本地 Ollama 引擎 fallback。
   - 當遠端或本機發起 `rec_pull_llm_model` SOP 時，均需調用該模型的 pull 與 verify 流程。
 
+---
+
+## 18. 2026.06.12 搜尋品質、影片年份權重排序與本地黑板版面優化
+
+### 18.1 本地黑板版面優化 (Local Chalkboard Layout Fix)
+- **滿版呈現**：當不在遠端連線模式（`inRemoteSession` 為 false）時，本地聊天產生的 Chalkboard Draft（例如查詢摘要、比較、天氣新聞等）必須預設以滿版（`position: 'full'`）呈現，避免被非必要地限制在左半邊。
+
+### 18.2 DuckDuckGo 重定向跳轉修正與 Lite 引擎遷移 (DDG Redirect Fix & Lite Migration)
+- **跳轉連結解析**：針對 DuckDuckGo 的跳轉連結（如 `//duckduckgo.com/l/?uddg=...` 格式之 URL），在解析前必須先將開頭的相對通訊協定 `//` 正常化為完整的 `https:`，以確保能夠通過正規表達式成功提取 `uddg` 參數中的目標 destination URL，使 AI 回答中的連結可以直接跳轉至來源網站。
+- **Lite 引擎保護**：為避免高頻率查詢或中英夾雜的 site 搜尋在 DuckDuckGo HTML 介面觸發 202 阻擋，核心 `searchWebLinks` 正式遷移至不包含 anti-bot 及 JS 驗證碼的 DuckDuckGo Lite 版 (`https://lite.duckduckgo.com/lite/`)，並提供更強健的 `aTagRegex` 標籤提取與單雙引號寬鬆匹配，徹底提升搜尋成功率。
+
+### 18.3 YouTube 影片年份權重排序與防過時機制 (YouTube Date Extraction & Score Weighted Ranking)
+- **發布年份提取**：修改影片檢測邏輯，在判斷 YouTube 影片是否可播放 (`isYouTubeWatchPagePlayable`) 時，不再切片前 15,000 字元，而是讀取完整的 Watch page HTML，並以正規表達式從 `itemprop="datePublished"`、`itemprop="uploadDate"` 或 `publishDate` 等 JSON 設定檔欄位中精準提取影片的發布年份。
+- **年份權重加權**：在對搜尋到的 YouTube 影片進行評分與排序 (`scoreVideoResult`) 時，引入發布年份權重調整：
+  - &gt;= 2025 年的影片：加 10 分。
+  - 2024 年的影片：加 6 分。
+  - 2023 年的影片：加 3 分。
+  - 2022 年的影片：加 1 分。
+  - &lt;= 2021 年的影片：扣 6 分。
+  藉此確保新影片排在前方，過時的預告片、反應片或無用片段被自動沉底過濾。
+- **Playwright Chromium 執行路徑指定**：在背景使用 Playwright 啟動 Chromium 進行搜尋 fallback 時，必須在 launch config 中明確傳入 `executablePath: browserExe`，以確保即使系統 ms-playwright 全域路徑不存在，依然能正確調用本地 AppData 目錄管理的 Chromium 執行檔。

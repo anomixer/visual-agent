@@ -3634,6 +3634,8 @@ function normalizeCollaborativeChalkboardDraft(draft = {}, options = {}) {
         if (!normalized.position || normalized.position === 'full') {
             normalized.position = actorScope === 'remote' ? 'right' : 'left';
         }
+    } else {
+        normalized.position = 'full';
     }
     return normalized;
 }

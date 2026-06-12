@@ -1597,6 +1597,7 @@ async function ensureBrowserSession() {
     }
     if (!browserSession.browser) {
         browserSession.browser = await playwright.chromium.launch({
+            executablePath: browserExe,
             headless: true,
             args: ['--disable-blink-features=AutomationControlled'],
         });
@@ -1875,8 +1876,11 @@ function decodeHtmlEntities(value = '') {
 }
 
 function normalizeDuckDuckGoUrl(url = '') {
-    const raw = String(url || '').trim();
+    let raw = String(url || '').trim();
     if (!raw) return '';
+    if (raw.startsWith('//')) {
+        raw = `https:${raw}`;
+    }
     // Handle full DDG redirect URL: https://duckduckgo.com/l/?uddg=...
     if (/^https?:\/\/(?:www\.)?duckduckgo\.com\/l\/\?/i.test(raw)) {
         try {
@@ -1897,7 +1901,6 @@ function normalizeDuckDuckGoUrl(url = '') {
             return '';
         }
     }
-    if (raw.startsWith('//')) return `https:${raw}`;
     if (/^https?:\/\//i.test(raw)) return raw;
     return '';
 }
@@ -1905,11 +1908,11 @@ function normalizeDuckDuckGoUrl(url = '') {
 async function searchWebLinks(query = '', limit = 5) {
     const q = String(query || '').trim();
     if (!q) return [];
-    const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}`;
     const response = await fetch(url, {
         method: 'GET',
         headers: {
-            'User-Agent': 'aipc-agent/2026.04.01',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html',
         },
         signal: AbortSignal.timeout(20000),
@@ -1918,15 +1921,30 @@ async function searchWebLinks(query = '', limit = 5) {
         throw new Error(`Web search failed (${response.status})`);
     }
     const html = await response.text();
-    const regex = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const aTagRegex = /<a\s+([^>]+)>([\s\S]*?)<\/a>/gi;
     const results = [];
     let match;
-    while ((match = regex.exec(html)) !== null) {
-        const href = normalizeDuckDuckGoUrl(decodeHtmlEntities(match[1]));
-        const title = decodeHtmlEntities(match[2].replace(/<[^>]+>/g, '').trim());
+    while ((match = aTagRegex.exec(html)) !== null) {
+        const attrs = match[1];
+        const content = match[2];
+        if (!/class=['"](?:result-link|result__a)['"]/i.test(attrs)) continue;
+        const hrefMatch = attrs.match(/href="([^"]+)"/i) || attrs.match(/href='([^']+)'/i);
+        if (!hrefMatch) continue;
+        const href = normalizeDuckDuckGoUrl(decodeHtmlEntities(hrefMatch[1]));
+        const title = decodeHtmlEntities(content.replace(/<[^>]+>/g, '').trim());
         if (!href || !title) continue;
         results.push({ title, url: href });
         if (results.length >= limit) break;
+    }
+    if (results.length === 0) {
+        fileLog(`[SearchDiagnostic] searchWebLinks extracted 0 results. HTML length: ${html.length}. Status: ${response.status}`);
+        try {
+            const dest = path.join(aipcDir, 'search_failed.html');
+            fs.writeFileSync(dest, html, 'utf8');
+            fileLog(`[SearchDiagnostic] Saved search HTML to ${dest}`);
+        } catch (e) {
+            fileLog(`[SearchDiagnostic] Failed to save search HTML: ${e.message}`);
+        }
     }
     return results;
 }
@@ -2192,13 +2210,8 @@ function fallbackRankGuideResults(results = [], topic = '', limit = 5) {
 async function searchGameGuideArticles(topic = '', limit = 5) {
     const q = String(topic || '').trim();
     if (!q) return [];
-    const year = new Date().getFullYear();
-    const prevYear = year - 1;
     const queries = [
-        `${q} 攻略 教學 任務 ${year}`,
-        `${q} walkthrough guide tips ${year}`,
-        `${q} walkthrough guide tips ${prevYear}`,
-        `${q} beginner guide missions`,
+        `${q} 攻略 walkthrough guide tips`,
     ];
 
     const merged = [];
@@ -2286,7 +2299,7 @@ async function isYouTubeVideoPlayable(watchUrl = '') {
 
 async function isYouTubeWatchPagePlayable(watchUrl = '') {
     const normalized = normalizeYouTubeWatchUrl(watchUrl);
-    if (!normalized) return false;
+    if (!normalized) return { playable: false };
     try {
         const response = await fetch(normalized, {
             method: 'GET',
@@ -2294,13 +2307,22 @@ async function isYouTubeWatchPagePlayable(watchUrl = '') {
             redirect: 'follow',
             signal: AbortSignal.timeout(12000),
         });
-        if (!response.ok) return false;
-        const html = (await response.text()).slice(0, 15000);
-        if (looksLikeUnavailableHtml(html)) return false;
-        if (/private video|video unavailable|playback on other websites has been disabled/i.test(html)) return false;
-        return true;
+        if (!response.ok) return { playable: false };
+        const html = await response.text();
+        if (looksLikeUnavailableHtml(html)) return { playable: false };
+        if (/private video|video unavailable|playback on other websites has been disabled/i.test(html)) return { playable: false };
+        
+        let publishYear = null;
+        const match = html.match(/(?:itemprop="datePublished"|itemprop="uploadDate")\s+content="([^"]+)"/i) 
+                   || html.match(/"(?:publishDate|uploadDate)"\s*:\s*"([^"]+)"/i);
+        if (match && match[1]) {
+            const yearMatch = match[1].match(/^(\d{4})/);
+            if (yearMatch) publishYear = parseInt(yearMatch[1], 10);
+        }
+        
+        return { playable: true, publishYear };
     } catch {
-        return false;
+        return { playable: false };
     }
 }
 
@@ -2319,6 +2341,21 @@ function scoreVideoResult(item = {}, topic = '') {
     if (topicText && title.includes(topicText)) score += 3;
     if (/(wiki|guide|gaming|攻略|教學)/i.test(author)) score += 1;
     if (isLikelyLowValueVideoTitle(item.title)) score -= 5;
+    
+    if (item.publishYear) {
+        const year = item.publishYear;
+        if (year >= 2025) {
+            score += 10;
+        } else if (year === 2024) {
+            score += 6;
+        } else if (year === 2023) {
+            score += 3;
+        } else if (year === 2022) {
+            score += 1;
+        } else if (year <= 2021) {
+            score -= 6;
+        }
+    }
     return score;
 }
 
@@ -2334,7 +2371,23 @@ function containsTopicToken(title = '', topic = '') {
 async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
     const query = String(topic || '').trim();
     if (!query) return [];
-    const candidates = await searchWebLinks(`${query} 攻略 教學 walkthrough guide site:youtube.com/watch`, 24);
+    fileLog(`[VideoSearch] Start searching for topic: "${query}"`);
+    let candidates = [];
+    try {
+        candidates = await searchWebLinks(`${query} 攻略 site:youtube.com`, 24);
+        fileLog(`[VideoSearch] DDG search returned ${candidates.length} candidates`);
+    } catch (err) {
+        fileLog(`[VideoSearch] DDG search failed for videos: ${err.message}`);
+    }
+    if (!candidates || !candidates.length) {
+        try {
+            fileLog(`[VideoSearch] Attempting browser fallback search...`);
+            candidates = await searchWebLinksWithBrowser(`${query} 攻略 walkthrough site:youtube.com`, 24);
+            fileLog(`[VideoSearch] Browser fallback returned ${candidates.length} candidates`);
+        } catch (err) {
+            fileLog(`[VideoSearch] Browser fallback search failed for videos: ${err.message}`);
+        }
+    }
     const unique = new Map();
     candidates.forEach((item) => {
         const watchUrl = normalizeYouTubeWatchUrl(item.url);
@@ -2347,35 +2400,59 @@ async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
             unique.set(id, { title: item.title, url: watchUrl });
         }
     });
+    fileLog(`[VideoSearch] Unique video candidates count: ${unique.size}`);
 
     const playable = [];
     const fallback = [];
     for (const entry of unique.values()) {
-        if (isLikelyLowValueVideoTitle(entry.title)) continue;
-        if (!containsTopicToken(entry.title, query)) continue;
+        const isLowValue = isLikelyLowValueVideoTitle(entry.title);
+        const hasTopic = containsTopicToken(entry.title, query);
+        fileLog(`[VideoSearch] Candidate: "${entry.title}" -> isLowValue=${isLowValue}, hasTopic=${hasTopic}`);
+        if (isLowValue) continue;
+        if (!hasTopic) continue;
         if (fallback.length < limit) fallback.push({ title: entry.title, url: entry.url });
+        
         const playableMeta = await isYouTubeVideoPlayable(entry.url);
+        fileLog(`[VideoSearch]   oembed check: ${playableMeta?.ok ? 'OK' : 'failed'}`);
         if (!playableMeta?.ok) continue;
+        
         const finalTitle = playableMeta.title || entry.title;
-        if (isLikelyLowValueVideoTitle(finalTitle)) continue;
-        if (!containsTopicToken(finalTitle, query)) continue;
+        const finalIsLowValue = isLikelyLowValueVideoTitle(finalTitle);
+        const finalHasTopic = containsTopicToken(finalTitle, query);
+        if (finalIsLowValue) continue;
+        if (!finalHasTopic) continue;
+        
         const pagePlayable = await isYouTubeWatchPagePlayable(entry.url);
-        if (!pagePlayable) continue;
+        fileLog(`[VideoSearch]   watch page playability: ${pagePlayable.playable ? 'playable' : 'unplayable'} (year: ${pagePlayable.publishYear})`);
+        if (!pagePlayable.playable) continue;
+        
+        const score = scoreVideoResult({ 
+            title: finalTitle, 
+            authorName: playableMeta.authorName || '',
+            publishYear: pagePlayable.publishYear 
+        }, query);
+        
+        fileLog(`[VideoSearch]   Score: ${score}`);
         playable.push({
             title: finalTitle,
             url: entry.url,
             authorName: playableMeta.authorName || '',
-            _score: scoreVideoResult({ title: finalTitle, authorName: playableMeta.authorName || '' }, query),
+            publishYear: pagePlayable.publishYear,
+            _score: score,
         });
     }
+    fileLog(`[VideoSearch] Total playable videos: ${playable.length}`);
     const rankedPlayable = playable
         .filter((item) => item._score >= 1)
         .sort((a, b) => b._score - a._score)
         .slice(0, limit)
         .map((item) => ({ title: item.title, url: item.url }));
+    fileLog(`[VideoSearch] Ranked playable videos: ${rankedPlayable.length}`);
     if (rankedPlayable.length > 0) return rankedPlayable;
-    // Fallback: return strict-filtered candidates when YouTube verification endpoints are blocked.
-    if (fallback.length > 0) return fallback.slice(0, limit);
+    if (fallback.length > 0) {
+        fileLog(`[VideoSearch] Returning fallback candidates (count: ${fallback.length})`);
+        return fallback.slice(0, limit);
+    }
     return unique.size ? [...unique.values()].slice(0, limit).map((item) => ({ title: item.title, url: item.url })) : [];
 }
 
