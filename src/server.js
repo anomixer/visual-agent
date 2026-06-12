@@ -1952,35 +1952,100 @@ async function searchWebLinks(query = '', limit = 5) {
 async function searchWebLinksWithBrowser(query = '', limit = 5) {
     const q = String(query || '').trim();
     if (!q) return [];
+    const maxItems = Math.min(10, Number(limit) || 5);
     const page = await ensureBrowserSession();
-    await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(q)}`, {
-        waitUntil: 'domcontentloaded',
-        timeout: 45000,
-    });
-    await page.waitForTimeout(800).catch(() => null);
-    const results = await page.evaluate((maxItems) => {
-        const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
-        const seen = new Set();
-        const items = [];
-        const links = [
-            ...document.querySelectorAll('li.b_algo h2 a'),
-            ...document.querySelectorAll('a[data-testid="result-title-a"]'),
-            ...document.querySelectorAll('a[href^="http"]'),
-        ];
-        for (const link of links) {
-            const title = clean(link.innerText || link.textContent || '');
-            const url = String(link.href || '').trim();
-            if (!title || !/^https?:\/\//i.test(url)) continue;
-            if (/bing\.com\/(search|ck\/a|images|videos|maps)/i.test(url)) continue;
-            const key = `${title}|${url}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            items.push({ title, url });
-            if (items.length >= maxItems) break;
+
+    // 1. 優先嘗試 Yahoo 搜尋，因為 Yahoo 防爬蟲檢測極低，且不易觸發驗證
+    try {
+        fileLog(`[BrowserSearch] Attempting Yahoo search for: "${q}"`);
+        await page.goto(`https://search.yahoo.com/search?p=${encodeURIComponent(q)}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: 25000,
+        });
+        await page.waitForTimeout(800).catch(() => null);
+        const yahooResults = await page.evaluate((maxIt) => {
+            const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+            const seen = new Set();
+            const items = [];
+            const links = [
+                ...document.querySelectorAll('h3.title a'),
+                ...document.querySelectorAll('a[href^="http"]'),
+            ];
+            for (const link of links) {
+                const title = clean(link.innerText || link.textContent || '');
+                const url = String(link.href || '').trim();
+                if (!title || !/^https?:\/\//i.test(url)) continue;
+                if (/yahoo\.com/i.test(url)) continue;
+                const key = `${title}|${url}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                items.push({ title, url });
+                if (items.length >= maxIt) break;
+            }
+            return items;
+        }, maxItems);
+
+        if (yahooResults && yahooResults.length > 0) {
+            fileLog(`[BrowserSearch] Yahoo search succeeded with ${yahooResults.length} results`);
+            return yahooResults;
         }
-        return items;
-    }, Math.min(10, Number(limit) || 5));
-    return Array.isArray(results) ? results : [];
+        fileLog(`[BrowserSearch] Yahoo search returned 0 results, trying Bing...`);
+    } catch (err) {
+        fileLog(`[BrowserSearch] Yahoo search failed: ${err.message}, trying Bing...`);
+    }
+
+    // 2. Fallback 到原先的 Bing 搜尋
+    try {
+        fileLog(`[BrowserSearch] Attempting Bing search for: "${q}"`);
+        await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(q)}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: 25000,
+        });
+        await page.waitForTimeout(800).catch(() => null);
+        const bingResults = await page.evaluate((maxIt) => {
+            const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+            const seen = new Set();
+            const items = [];
+            const links = [
+                ...document.querySelectorAll('li.b_algo h2 a'),
+                ...document.querySelectorAll('a[data-testid="result-title-a"]'),
+                ...document.querySelectorAll('a[href^="http"]'),
+            ];
+            for (const link of links) {
+                const title = clean(link.innerText || link.textContent || '');
+                const url = String(link.href || '').trim();
+                if (!title || !/^https?:\/\//i.test(url)) continue;
+                if (/bing\.com\/(search|images|videos|maps)/i.test(url)) continue;
+
+                let finalUrl = url;
+                if (url.includes('bing.com/ck/a')) {
+                    try {
+                        const parsed = new URL(url);
+                        const u = parsed.searchParams.get('u');
+                        if (u && u.startsWith('a1')) {
+                            const base64 = u.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+                            finalUrl = atob(base64);
+                        }
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+
+                const key = `${title}|${finalUrl}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                items.push({ title, url: finalUrl });
+                if (items.length >= maxIt) break;
+            }
+            return items;
+        }, maxItems);
+
+        fileLog(`[BrowserSearch] Bing search returned ${bingResults ? bingResults.length : 0} results`);
+        return Array.isArray(bingResults) ? bingResults : [];
+    } catch (err) {
+        fileLog(`[BrowserSearch] Bing search failed: ${err.message}`);
+        return [];
+    }
 }
 
 function looksLikeUnavailableHtml(text = '') {
@@ -2216,12 +2281,24 @@ async function searchGameGuideArticles(topic = '', limit = 5) {
 
     const merged = [];
     for (const query of queries) {
-        try {
-            const results = await searchWebLinks(query, 10);
-            merged.push(...results);
-        } catch {
-            // ignore single query failure
-        }
+            let results = [];
+            try {
+                results = await searchWebLinks(query, 10);
+            } catch (err) {
+                fileLog(`[GuideSearch] DDG search failed: ${err.message}`);
+            }
+            if (!results || !results.length) {
+                try {
+                    fileLog(`[GuideSearch] Attempting browser fallback search for query: "${query}"`);
+                    results = await searchWebLinksWithBrowser(query, 10);
+                    fileLog(`[GuideSearch] Browser fallback returned ${results.length} results`);
+                } catch (err) {
+                    fileLog(`[GuideSearch] Browser fallback search failed: ${err.message}`);
+                }
+            }
+            if (results && results.length) {
+                merged.push(...results);
+            }
     }
     const ranked = rankGuideResults(merged, q, 24);
     const usable = [];
