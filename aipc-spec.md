@@ -435,7 +435,7 @@ $true
 - Browser tab 與 Browser Use 預設使用 Playwright Chromium session。
 - Chromium 不再打包進 MSI / EXE，改由 UI 一鍵引導執行 `install-playwright-chromium` SOP 按需事後補裝。
 - 若 Chromium 尚未就緒，UI 將隱藏 Browser 分頁。
-- 安裝條件與完成偵測不再僅檢查資料夾，必須精確驗證實際的 `chrome-headless-shell.exe` 執行檔是否存在。
+- 安裝條件與完成偵測不再僅檢查資料夾，必須精確驗證實際的 `chrome-headless-shell.exe` 或 `chrome.exe` 執行檔是否存在，並由 `/api/meta` 回報 `browserExecutable`。
 - 一旦安裝完成，無需重啟程式，Browser 分頁即會自動顯示。
 
 ### 8.14 Planner -> Builder -> Learn 工作流

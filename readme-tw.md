@@ -9,6 +9,7 @@
 - `/api/chat` 每輪注入今天、明天與時區，避免 AI 把「明天」解析成舊日期。
 - 天氣、物價、新聞、匯率、股價與最新資訊若模型忘了叫 Browser Use，後端會自動補 current-info search，並進入 Observe-after-Act 續答。
 - Browser Use runtime 未安裝時會提示安裝，並真的加入/沿用 `install_playwright_chromium` 工作清單任務；使用者接著說「執行 / 開始 / 安裝」時會保底啟動該 pending task。
+- Browser runtime ready 狀態由 `/api/meta.browserExecutable` 驗證，接受 `chrome-headless-shell.exe` 或 `chrome.exe`。
 - Browser Use runtime 未就緒時仍會盡量使用文字/連結搜尋 fallback。
 - 計畫、比較、查詢摘要或偏長回答會自動寫入 Chalkboard 摘要。
 - LLM suggestion buttons 已停用，避免顯示文不對題的安裝或 SOP 按鈕。

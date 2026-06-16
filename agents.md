@@ -800,7 +800,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ### Browser Runtime 動態載入
 - Browser tab 現在按需使用 Playwright Chromium，不再將 Chromium 打包入 EXE / MSI，保持安裝檔輕巧。
-- Browser 狀態取決於 Playwright cache 中的 \chrome-headless-shell.exe\ 是否存在。
+- Browser 狀態取決於 Playwright cache 中的 `chrome-headless-shell.exe` 或 `chrome.exe` 是否存在，並由 `/api/meta` 回報實際 `browserExecutable`。
 - 缺失時，UI提供一鍵執行 \install-playwright-chromium\ SOP，安裝完畢無需重啟即可出現 Browser tab。
 
 ---

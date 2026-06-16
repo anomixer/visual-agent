@@ -124,6 +124,7 @@ http://localhost:3210
 ### Browser Runtime
 
 - Browser tab 使用 Playwright Chromium。
+- Browser runtime ready 狀態由 `/api/meta.browserExecutable` 驗證，接受 Playwright cache 內的 `chrome-headless-shell.exe` 或 `chrome.exe`。
 - 若第一次啟動顯示 Browser 不可用，請執行 `install-playwright-chromium` SOP 補裝。
 - 這樣可避免把 Chromium 綁進 MSI / EXE，安裝包會維持較小。
 

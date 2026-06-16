@@ -5920,9 +5920,12 @@ async function addAndExecuteRecommend(item) {
 }
 
 async function executeTask(taskId) {
-    const task = todoList.find(t => t.id === taskId);
+    let task = todoList.find(t => t.id === taskId);
+    if (!task) {
+        await loadTodo();
+        task = todoList.find(t => t.id === taskId);
+    }
     const taskTitle = task?.title || taskId;
-    const isBrowserInstall = String(task?.skillId || '').trim() === 'install_playwright_chromium';
 
     if (task) appendChatBubble('ai', `🚀 ${t('task.executionStarted', { title: taskTitle })}`);
     expandLog();
@@ -5938,7 +5941,8 @@ async function executeTask(taskId) {
                 ? `▶ Task started: ${taskTitle}`
                 : `▶ 任務已啟動：${taskTitle}`, 'info');
             await loadTodo();
-            if (isBrowserInstall) {
+            const latestTask = todoList.find(t => t.id === taskId) || task;
+            if (String(latestTask?.skillId || '').trim() === 'install_playwright_chromium') {
                 monitorBrowserInstallTask(taskId);
             }
         }
