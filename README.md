@@ -337,6 +337,11 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.06.17
+- **版本更新**：套件版本更新為 `2026.06.17`。
+- **Chalkboard Markdown 表格純文字化**：AI 將 Markdown table 寫入黑板時，前端會把表格轉成 `欄位: 值 / 欄位: 值` 的短句，不再直接畫 `|---|` 等表格骨架。
+- **多層保護**：`##CHALKBOARD##` block、auto draft 與實際 canvas render 前都會套用同一層正規化，避免遠端同步或後端 draft normalization 後表格再次跑回畫布。
+
 ### 2026.06.09
 - **版本更新**：套件版本更新為 `2026.06.09`。
 - **全動態國際化 (I18N) 支援**：支援中英文介面無縫即時切換。包括工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、黑板畫布工具與對話列之標籤、按鈕與文字佔位符。
@@ -644,4 +649,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.06.09`.
+- 目前套件版本：`2026.06.17`.

@@ -3654,12 +3654,73 @@ function clearChalkboardLane(position = 'full') {
     clearChalkboardSurface();
 }
 
+function isMarkdownTableSeparator(line = '') {
+    const compact = String(line || '').trim();
+    return /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(compact);
+}
+
+function splitMarkdownTableRow(line = '') {
+    const raw = String(line || '').trim();
+    if (!raw.includes('|') || isMarkdownTableSeparator(raw)) return null;
+    const cells = raw
+        .replace(/^\|/, '')
+        .replace(/\|$/, '')
+        .split('|')
+        .map((cell) => cell.trim().replace(/\s+/g, ' '))
+        .filter(Boolean);
+    return cells.length >= 2 ? cells : null;
+}
+
+function markdownTableToChalkLines(lines = []) {
+    const output = [];
+    let index = 0;
+    while (index < lines.length) {
+        const header = splitMarkdownTableRow(lines[index]);
+        const separator = index + 1 < lines.length && isMarkdownTableSeparator(lines[index + 1]);
+        if (!header || !separator) {
+            if (!isMarkdownTableSeparator(lines[index])) output.push(lines[index]);
+            index += 1;
+            continue;
+        }
+        index += 2;
+        while (index < lines.length) {
+            const row = splitMarkdownTableRow(lines[index]);
+            if (!row) break;
+            const pairs = row.map((cell, cellIndex) => {
+                const label = header[cellIndex] || `#${cellIndex + 1}`;
+                return `${label}: ${cell}`;
+            });
+            output.push(pairs.join(' / '));
+            index += 1;
+        }
+    }
+    return output;
+}
+
+function normalizeChalkboardTextForCanvas(value = '') {
+    return String(value || '')
+        .replace(/\[(?:ACTION|SUGGEST)[\s\S]*?\]/gi, '')
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/^\s*[-*]\s+/gm, '')
+        .replace(/^\s*\d+\.\s+/gm, '')
+        .replace(/[#>*_`]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function normalizeChalkboardBulletsForCanvas(lines = [], limit = 6) {
+    return markdownTableToChalkLines(lines)
+        .map((line) => normalizeChalkboardTextForCanvas(line).slice(0, 96))
+        .filter(Boolean)
+        .slice(0, limit);
+}
+
 async function applyAgentChalkboardDraft(draft, options = {}) {
     if (!draft) return;
     const collaborativeDraft = normalizeCollaborativeChalkboardDraft(draft, options);
-    const title = String(collaborativeDraft.title || '').trim();
+    const title = normalizeChalkboardTextForCanvas(collaborativeDraft.title || '').slice(0, 52);
     const bullets = Array.isArray(collaborativeDraft.bullets)
-        ? collaborativeDraft.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
+        ? normalizeChalkboardBulletsForCanvas(collaborativeDraft.bullets, 8)
         : [];
     if (!title && bullets.length === 0) return;
 
@@ -3713,9 +3774,9 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
                 clearChalkboardLane(normalizedDraft.position);
             }
 
-            const finalTitle = String(normalizedDraft.title || title || 'Chalkboard Draft').trim();
+            const finalTitle = normalizeChalkboardTextForCanvas(normalizedDraft.title || title || 'Chalkboard Draft').slice(0, 52);
             const finalBullets = Array.isArray(normalizedDraft.bullets)
-                ? normalizedDraft.bullets
+                ? normalizeChalkboardBulletsForCanvas(normalizedDraft.bullets, 8)
                 : bullets;
             showChalkboardFloatHint(finalTitle);
 
@@ -3815,13 +3876,10 @@ function extractChalkboardControlFromReply(text = '') {
         }
     });
 
-    const compactBullets = bullets
-        .map((line) => line.slice(0, 72))
-        .filter(Boolean)
-        .slice(0, 6);
+    const compactBullets = normalizeChalkboardBulletsForCanvas(bullets, 6);
     const finalTitle = (title || (currentLocale === 'en-US' ? 'AI Chalkboard Notes' : 'AI 黑板重點')).slice(0, 52);
     const draft = compactBullets.length > 0
-        ? { title: finalTitle, bullets: compactBullets, position, clear }
+        ? { title: normalizeChalkboardTextForCanvas(finalTitle).slice(0, 52), bullets: compactBullets, position, clear }
         : null;
     return {
         displayText,
@@ -3846,11 +3904,7 @@ function buildAutoChalkboardDraft(userText = '', replyText = '') {
         .replace(/\[(?:ACTION|SUGGEST)[\s\S]*?\]/gi, '')
         .replace(/[#>*_`]/g, '')
         .trim();
-    const lines = plain.split(/\r?\n/)
-        .map((line) => line.replace(/^[-\d.\s]+/, '').trim())
-        .filter(Boolean)
-        .slice(0, 6)
-        .map((line) => line.slice(0, 72));
+    const lines = normalizeChalkboardBulletsForCanvas(plain.split(/\r?\n/), 6);
     if (!lines.length) return null;
     return {
         title: currentLocale === 'en-US' ? 'AI Summary' : 'AI 摘要',

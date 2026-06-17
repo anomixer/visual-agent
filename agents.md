@@ -5,6 +5,16 @@
 
 ---
 
+## 📌 2026.06.17 — Chalkboard Markdown 表格純文字化
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.06.17`。
+
+### Chalkboard 表格渲染修正
+- AI 將 Markdown table 寫入 Chalkboard 時，不再直接把 `| 欄位 |` 與 `|---|` 畫到黑板上。
+- 前端新增 Chalkboard 專用純文字正規化：偵測 Markdown table header / separator / row，並轉為 `欄位: 值 / 欄位: 值` 的短句格式。
+- `##CHALKBOARD##` block、auto draft 與實際 canvas render 前都會套用同一層正規化，避免遠端同步或後端 draft normalization 後又把表格骨架帶回畫布。
+
 ## 📌 2026.06.12 — 搜尋品質、影片年份權重排序與本地黑板版面優化
 
 ### 版本同步

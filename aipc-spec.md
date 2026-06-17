@@ -694,3 +694,14 @@ $true
   - &lt;= 2021 年的影片：扣 6 分。
   藉此確保新影片排在前方，過時的預告片、反應片或無用片段被自動沉底過濾。
 - **Playwright Chromium 執行路徑指定**：在背景使用 Playwright 啟動 Chromium 進行搜尋 fallback 時，必須在 launch config 中明確傳入 `executablePath: browserExe`，以確保即使系統 ms-playwright 全域路徑不存在，依然能正確調用本地 AppData 目錄管理的 Chromium 執行檔。
+
+## 19. 2026.06.17 Chalkboard Markdown 表格純文字化
+
+### 19.1 版本
+- Runtime 版本號更新為 `2026.06.17`。
+- 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
+
+### 19.2 Markdown Table Normalization
+- AI 將 Markdown table 寫入 Chalkboard 時，前端不得直接把 `| 欄位 |`、`|---|` 或 GFM 表格骨架畫到 canvas。
+- Chalkboard draft 進入畫布前必須將 table rows 轉為短句格式，例如：`欄位A: 值A / 欄位B: 值B`。
+- `##CHALKBOARD##` block、auto draft 與實際 canvas render 前都必須套用相同正規化規則，避免後端 draft normalization 或遠端同步後重新帶回 markdown 表格。
