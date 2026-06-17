@@ -86,6 +86,10 @@
 ### 版本同步
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.06.03`。
 
+### Agent 回覆體感
+- 對攻略、搜尋、比較、規劃、安裝、除錯、機票/物價/新聞/天氣等可能耗時的請求，前端會先顯示一則不寫入對話歷史的 interim plan，讓使用者先知道 AI 準備怎麼做，再繼續等待背景工具與最終答案。
+- Interim plan 只作為 UI 進度提示，不會污染 local chat history，也不取代後續正式答案。
+
 ### Provider 設定
 - LM Studio 加入模型清單刷新白名單，和 Ollama、NVIDIA NIM 一樣可用「刷新清單」直接抓取 `/models`。
 

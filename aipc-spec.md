@@ -576,6 +576,10 @@ $true
 - `/api/chat` 每輪必須注入 runtime date context，包含今天、明天與時區。
 - AI 回答今天、明天、昨天、最新、天氣、新聞、物價等相對時間問題時，必須使用 runtime date context，不得自行猜測舊日期。
 
+### 15.2.1 Interim Plan
+- 對攻略、搜尋、比較、規劃、安裝、設定、除錯、機票/物價/新聞/天氣等可能耗時的請求，前端必須先顯示簡短 interim plan，再等待 `/api/chat` 或工具流程完成。
+- Interim plan 只是 UI 進度提示，不得寫入 local chat history，也不得取代正式 AI 回答。
+
 ### 15.3 即時資訊與 Browser Use fallback
 - 天氣、物價、新聞、匯率、股價與最新資訊若模型未輸出 Browser Use action，後端必須自動補 current-info search。
 - Browser Use runtime 或 Playwright Chromium 未安裝時，系統必須提示使用者安裝，並真的加入或沿用 `install_playwright_chromium` 工作清單任務。
