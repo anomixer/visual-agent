@@ -327,7 +327,7 @@ visual-agent/
 │   └── restore-user-files/SOP.md
 ├── src-tauri/
 ├── agents.md
-├── aipc-spec.md
+├── visual-agent-spec.md
 ├── build.bat
 ├── package.json
 └── verify-remove-copilot.ps1
@@ -655,5 +655,5 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 ## 開發說明
 
 - 開發日誌請見 `agents.md`。
-- 產品規格請見 `aipc-spec.md`。
+- 產品規格請見 `visual-agent-spec.md`。
 - 目前套件版本：`2026.06.23`.

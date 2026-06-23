@@ -822,7 +822,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ### 亂碼修復
 - agents.md：修復 nvidia-smi ENOENT 行的 Big5 亂碼、°C 溫度符號、以及重複貼入的 Big5 亂碼 Browser 區段。
-- aipc-spec.md：修復「Browser (未安裝)」的 Big5 亂碼。
+- visual-agent-spec.md：修復「Browser (未安裝)」的 Big5 亂碼。
 
 ### Planner / Builder / Learn 代理流程
 - **Planner**：AI 優先返回規劃回應，總結意圖並提出下一步建議。
