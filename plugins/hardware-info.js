@@ -1,11 +1,11 @@
-// AI PC Agent Plugin File v1
+// Visual Agent Plugin File v1
 
 /**
  * @name HardwareInfo
  * @description Core hardware monitoring plugin. Collects CPU load, GPU name/load fallback data,
  *              and disk health information. GPU load should preferably come from
  *              temperature-monitor (nvidia-smi); this plugin provides WMI fallback data.
- * @author AI PC Agent Team
+ * @author Visual Agent Team
  * @version 2026.03.25
  */
 

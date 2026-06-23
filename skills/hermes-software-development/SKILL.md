@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/software-development
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: development coding debugging architecture testing documentation refactoring
   category: development

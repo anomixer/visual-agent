@@ -1,5 +1,5 @@
 /**
- * SOP Parser - AI PC Agent
+ * SOP Parser - Visual Agent
  *
  * Parses markdown SOP files in the sops/ directory and extracts:
  * - Metadata (ID, Name, Category, Risk Level)

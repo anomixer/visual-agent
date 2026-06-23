@@ -1,5 +1,5 @@
 /**
- * SOP Executor - AI PC Agent
+ * SOP Executor - Visual Agent
  *
  * 接收由 sop-parser 解析出的 sop 物件，按照以下流程執行：
  *   1. Check  → 檢查是否已完成（若已完成則跳過）
@@ -143,7 +143,7 @@ class SOPExecutor extends EventEmitter {
                 return;
             }
 
-            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aipc-elevated-'));
+            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'visual-agent-elevated-'));
             const runnerPath = path.join(tempDir, 'runner.ps1');
             const logPath = path.join(tempDir, 'combined.log');
             const exitPath = path.join(tempDir, 'exitcode.txt');

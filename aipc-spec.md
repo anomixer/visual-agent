@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (2026.06.23 Updated)
+# Visual Agent — 實作需求規格書 (2026.06.23 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -99,9 +99,9 @@ browser ──── public/index.html
                  │ PowerShell / API
                  ▼
              sops/<slug>/SOP.md        (SOP 腳本庫)
-             %APPDATA%\aipc-agent\  (tasks.json, sops/<slug>/SOP.md, plugins/)
+             %APPDATA%\visual-agent\  (tasks.json, sops/<slug>/SOP.md, plugins/)
 ```
-- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\aipc-agent\plugins\` 目慶，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
+- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\visual-agent\plugins\` 目慶，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
 
 ---
 
@@ -127,7 +127,7 @@ browser ──── public/index.html
 
 ### 4.1 Skills 腳本規範
 Skills 的目錄架構與 `SKILL.md` 的語法，**嚴格遵守 [agentskills.io/specification](https://agentskills.io/specification)** 規範。
-這確保了我們寫的 Skills 不僅能在 AI PC Agent 本身運作，**也能與生態系中其他遵循同一標準的 AI Agent 互相相容與共享**。
+這確保了我們寫的 Skills 不僅能在 Visual Agent 本身運作，**也能與生態系中其他遵循同一標準的 AI Agent 互相相容與共享**。
 
 - 目錄格式：`skills/<slug>/SKILL.md`
 - Markdown 頂端必須具備合規的 YAML Frontmatter：
@@ -144,7 +144,7 @@ Skills 的目錄架構與 `SKILL.md` 的語法，**嚴格遵守 [agentskills.io/
   ```
 
 #### 4.1.1 Skills 來源（source）欄位
-- `source: aipc-agent`（預設）：AIPC Agent 原生 skill，針對 Windows 本地操作優化。
+- `source: visual-agent`（預設）：Visual Agent 原生 skill，針對 Windows 本地操作優化。
 - `source: hermes-agent`：從 [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) 轉換而來，涵蓋更廣泛的 AI/開發/創意領域（共 19 個）。
 
 **重要澄清**：Skills（無論來源）均屬於 **AI 知識增強層**，不含可執行步驟。若需執行系統操作，請使用 **SOP**。
@@ -200,7 +200,7 @@ $true
 
 存放與掃描位置：
 - 開發時：`skills/<slug>/SKILL.md` / `sops/<slug>/SOP.md`
-- 執行時：`%APPDATA%\aipc-agent\skills\` / `%APPDATA%\aipc-agent\sops\`
+- 執行時：`%APPDATA%\visual-agent\skills\` / `%APPDATA%\visual-agent\sops\`
 
 ---
 
@@ -232,7 +232,7 @@ $true
 ### 6.2 Runtime 規則
 - 任務完成時，必須在 AI 對話區回報 `success`、`failed`、`skipped`。
 - Runtime 必須依 `id` 去重 SOP，並優先採用正式檔名，不使用 `Copy` 類副本。
-- 內建 SOP、skill、plugin 在內容變更時，需同步至 `%APPDATA%\aipc-agent\`。
+- 內建 SOP、skill、plugin 在內容變更時，需同步至 `%APPDATA%\visual-agent\`。
 
 ### 6.3 執行器契約
 - `Check` 回傳 `true` 表示可跳過；即使同時有提示文字，執行器仍需辨識布林值。
@@ -479,7 +479,7 @@ $true
 - `/api/remote/session/:sessionId/model-share/*` 與 `/api/remote/model-proxy/chat` 停用並回傳 `410 Gone`。
 - 遠端連線後，雙方仍可透過遠端聊天室直接呼叫本地 AI 與遠端 AI 分工。
 
-### 10.4 雙 AI 分工
+### 10.4 Double Agent Mode 分工
 - 遠端聊天室未指定對象時，流程預設為：本地 AI 先產生輔助筆記，再交由遠端 AI 彙整並回覆人類。
 - 若使用者明確指定 `@本地 AI` 或 `@遠端 AI`，則只呼叫指定 AI。
 - AI 對 AI 訊息應視為隊友筆記，遠端 AI 負責產出最終回覆，不應互相爭辯或重複搶答。
@@ -509,7 +509,7 @@ $true
 - 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
 
 ### 12.2 Remote 驗收基準
-- 遠端協作調整後，至少需固定驗證三條流程：`SUGGEST`、`INSTALL_SOP`、`雙 AI 協作（本地先回、遠端後補）`。
+- 遠端協作調整後，至少需固定驗證三條流程：`SUGGEST`、`INSTALL_SOP`、`Double Agent Mode（本地先回、遠端後補）`。
 - 驗收時應確認 UI log 能看見 directive receipt、task reuse / start、以及 remote follow-up 的成功或失敗訊息。
 
 ### 12.3 重複指令抑制
@@ -619,7 +619,7 @@ $true
   [ACTION:BROWSER_USE mode="search|open|navigate|fetch_title|extract_text|snapshot" ...]
   ```
 
-- **雙 AI 協作分流**：當同時涉及本地 AI 與遠端 AI 時，本地 AI 應優先回覆，遠端 AI 再行跟進（Follow-up），避免阻礙使用者對話。
+- **Double Agent Mode 分流**：當同時涉及本地 AI 與遠端 AI 時，本地 AI 應優先回覆，遠端 AI 再行跟進（Follow-up），避免阻礙使用者對話。
 
 ### 16.2 遠端驗收基準 (Remote Validation Checklist)
 
@@ -629,8 +629,8 @@ $true
    - **預期結果**：遠端訊息能正確渲染出真實按鈕，按鈕在 polling 時不會閃爍；點擊後能建立或沿用任務，且 UI 執行日誌顯示 `Suggestion clicked`。
 2. **`INSTALL_SOP` 流程**：
    - **預期結果**：`[ACTION:INSTALL_SOP sop_id="..."]` 能在本機被執行，UI 執行日誌會先顯示 `Remote AI directive received`，接著顯示 `Started SOP task` 或 `Reused SOP task`（若失敗則顯示明確錯誤）。
-3. **雙 AI 協作流程**：
-   - **預期結果**：本地 AI 先行回覆，UI 執行日誌顯示 `Dual-AI collaboration: Local AI answers first, Remote AI follow-up queued`，隨後遠端 AI 的回覆在背景排程完成後出現，整體流程不阻塞。
+3. **Double Agent Mode 流程**：
+   - **預期結果**：本地 AI 先行回覆，UI 執行日誌顯示 `Double Agent Mode: Local AI answers first, Remote AI follow-up queued`，隨後遠端 AI 的回覆在背景排程完成後出現，整體流程不阻塞。
 
 ### 16.3 其他診斷機制
 
@@ -722,3 +722,19 @@ $true
 - `Install-Language` 失敗時可 fallback 至 `Add-WindowsCapability`；`Language.Basic` 盡量安裝，OCR、Speech、TextToSpeech、Handwriting 等 optional capability 應 best-effort 處理並記錄 warning。
 - `Uninstall-Language` 與 `Remove-WindowsCapability` 應 best-effort 處理；Windows 因原始安裝語言、目前 UI 語言、版本限制或功能包鎖定而拒絕移除時，不得在使用者語言清單已移除的情況下誤判整體卸載失敗。
 - SOP 必須保留原始 Windows 安裝語言不可移除、以及系統至少保留一個使用者語言的防呆檢查。
+
+## 21. 2026.06.23 Visual Agent 品牌與資料路徑規格
+
+### 21.1 產品命名
+- 使用者可見產品名稱統一為 `Visual Agent`。
+- repo、npm package、User-Agent 與 AppData 新路徑統一使用 `visual-agent`。
+- 遠端雙 AI 協作模式正式命名為 `Double Agent Mode`；`Local AI`、`Remote AI`、`Remote User` 等角色名稱保留，用於對話來源與狀態辨識。
+
+### 21.2 核心定位
+- 對外定位句統一為「可視化、可塗鴉、可協作的本地 AI PC Agent」。
+- 文件、README、Tauri window title、HTML title、status bar、welcome message、技能來源分組與 SOP/Plugin/Experience 標頭應使用 `Visual Agent`。
+
+### 21.3 資料路徑
+- 新安裝與新資料應寫入 `%APPDATA%\visual-agent`。
+- 因專案尚未公開發布，不保留舊 `aipc-agent` AppData、localStorage 或 package name 相容層。
+- Browser runtime、LLM config、tasks、SOP、skills、plugins 與 experience logs 皆以 `visual-agent` 作為唯一資料根目錄。

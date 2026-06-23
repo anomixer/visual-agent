@@ -1,9 +1,9 @@
-// AI PC Agent Plugin File v1
+// Visual Agent Plugin File v1
 
 /**
  * @name TemperatureMonitor
  * @description NVIDIA GPU temperature and utilization monitor via nvidia-smi.
- * @author AI PC Agent Team
+ * @author Visual Agent Team
  * @version 2026.03.25
  */
 

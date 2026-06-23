@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title id="appTitle">AI PC Agent - 系統管家</title>
-  <meta name="description" content="本地優先、無命令列、具備感知能力的系統管家">
+  <title id="appTitle">Visual Agent - 系統管家</title>
+  <meta name="description" content="可視化、可塗鴉、可協作的本地 AI PC Agent">
   <link rel="stylesheet" href="style.css">
   <style>
     .splash-overlay {
@@ -119,7 +119,7 @@
       const splashText = document.getElementById('splashText');
       if (!splashText) return;
       try {
-        const hasRun = localStorage.getItem('aipc_has_run');
+        const hasRun = localStorage.getItem('visual_agent_has_run');
         splashText.textContent = hasRun
           ? '啟動後端伺服器中，請稍候...'
           : '首次執行本程式，正設定環境中，請稍候...';
@@ -144,7 +144,7 @@
             </defs>
           </svg>
         </div>
-        <span class="app-name">AI PC Agent</span>
+        <span class="app-name">Visual Agent</span>
         <span class="app-author">by anomixer</span>
         <nav class="menu-bar">
           <div class="menu-dropdown-container" style="position:relative; display:inline-block;">
@@ -159,7 +159,7 @@
               </div>
             </div>
           <span class="menu-item" id="menuView"></span>
-          <span class="menu-item" id="menuHelp" onclick="window.open('https://github.com/anomixer/aipc-agent', '_blank');" style="cursor:pointer;">說明</span>
+          <span class="menu-item" id="menuHelp" onclick="window.open('https://github.com/anomixer/visual-agent', '_blank');" style="cursor:pointer;">說明</span>
         </nav>
       </div>
 
@@ -559,7 +559,7 @@
         <span class="status-item" id="statusTasks">0 個任務</span>
       </span>
       <span class="status-right">
-        <span class="status-item" id="statusVersion">AI PC Agent</span>
+        <span class="status-item" id="statusVersion">Visual Agent</span>
         <span class="status-sep">│</span>
         <span class="status-item" id="btnLang" style="cursor:pointer">繁體中文</span>
       </span>
@@ -738,7 +738,7 @@
       </div>
       <div class="modal-body">
         <div class="provider-help-card">
-          <div class="provider-help-title" id="remoteRequestSummary">有另一台 AI PC Agent 想要與您通訊</div>
+          <div class="provider-help-title" id="remoteRequestSummary">有另一台 Visual Agent 想要與您通訊</div>
           <div class="provider-help-text" id="remoteRequestDetails"></div>
         </div>
         <div class="provider-actions">

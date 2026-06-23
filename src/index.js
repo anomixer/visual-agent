@@ -1,5 +1,5 @@
 /**
- * AI PC Agent - CLI Entry Point
+ * Visual Agent - CLI Entry Point
  *
  * 用法:
  *   node src/index.js                    # 掃描 skills/ 目錄並列出所有 skill
@@ -41,7 +41,7 @@ function prettyLog(event) {
 function listSOPs() {
     const sops = loadAllSOPs(SOPS_DIR);
     console.log('\n┌─────────────────────────────────────────────────┐');
-    console.log('│          AI PC Agent — SOP 清單               │');
+    console.log('│          Visual Agent — SOP 清單               │');
     console.log('└─────────────────────────────────────────────────┘\n');
 
     if (sops.length === 0) {
@@ -169,7 +169,7 @@ async function main() {
         case '--help':
         default:
             console.log(`
-  AI PC Agent — SOP 執行工具
+  Visual Agent — SOP 執行工具
 
   用法:
     node src/index.js                       列出所有可用的 SOP

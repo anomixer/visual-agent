@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "aipc-agent",
+  "productName": "Visual Agent",
   "version": "0.1.0",
-  "identifier": "com.aipc.agent",
+  "identifier": "com.visual.agent",
   "build": {
     "frontendDist": "../public",
     "devUrl": "http://localhost:3210/",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AI PC Agent",
+        "title": "Visual Agent",
         "width": 1440,
         "height": 900,
         "resizable": true,

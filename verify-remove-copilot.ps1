@@ -1,5 +1,5 @@
 # ============================================================
-# AI PC Agent — Copilot 移除驗證腳本 (VM 測試用)
+# Visual Agent — Copilot 移除驗證腳本 (VM 測試用)
 # 
 # 執行方式（需管理員 PowerShell）：
 #   powershell -ExecutionPolicy Bypass -File verify-remove-copilot.ps1

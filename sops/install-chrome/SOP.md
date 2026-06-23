@@ -1,4 +1,4 @@
-# AI PC Agent SOP File v1
+# Visual Agent SOP File v1
 
 1. Metadata
 ID: rec_install_chrome

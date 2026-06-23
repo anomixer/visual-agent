@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/index-cache
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: index cache search embeddings vector rag retrieval knowledge-base faiss chromadb
   category: knowledge
@@ -31,4 +31,4 @@ You assist with building and querying local knowledge index caches for fast docu
 - Index only files the user explicitly authorises; never crawl the entire filesystem without confirmation.
 - Show retrieval scores alongside results so the user can assess relevance.
 - For large corpora (>10k docs), suggest chunking strategies and batch processing to avoid memory issues.
-- Integrate with AIPC Agent's experience logs as a searchable knowledge base for past task outcomes.
+- Integrate with Visual Agent's experience logs as a searchable knowledge base for past task outcomes.

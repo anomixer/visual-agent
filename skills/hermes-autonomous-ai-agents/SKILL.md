@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/autonomous-ai-agents
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: agents orchestration multi-agent autonomous coding delegation workflow
   category: ai
@@ -30,4 +30,4 @@ You coordinate and orchestrate multiple AI agents for complex coding, research, 
 - Report which sub-agent is handling which task so the user can track progress.
 - Aggregate results and present a unified, actionable summary.
 - Ask for user confirmation before spawning long-running or resource-intensive agent processes.
-- Prefer AIPC Agent's existing Browser Use / Computer Use APIs for local tasks before spawning new agents.
+- Prefer Visual Agent's existing Browser Use / Computer Use APIs for local tasks before spawning new agents.

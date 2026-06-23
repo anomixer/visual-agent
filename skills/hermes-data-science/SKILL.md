@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS (requires Python + relevant packages)
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/data-science
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: data-science python jupyter pandas numpy matplotlib visualization analysis
   category: data
@@ -31,4 +31,4 @@ You assist with data science tasks including exploratory data analysis, Jupyter 
 - Prefer reproducible, self-contained code snippets the user can paste directly into a notebook or `.py` file.
 - Explain statistical concepts in plain language alongside code.
 - For large datasets, suggest chunked loading or sampling strategies first.
-- Check if Python/pip/conda is available before suggesting installation steps; integrate with AIPC Agent's SOP system when installation is needed.
+- Check if Python/pip/conda is available before suggesting installation steps; integrate with Visual Agent's SOP system when installation is needed.

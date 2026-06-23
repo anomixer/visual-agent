@@ -1,11 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
-title AI PC Agent — Build Tool v0.4
+title Visual Agent — Build Tool v0.4
 
 color 0A
 echo.
 echo  =====================================================
-echo    AI PC Agent ^| Full Build Script
+echo    Visual Agent ^| Full Build Script
 echo    Node Sidecar + Tauri -^> Windows .exe Installer
 echo  =====================================================
 echo.
@@ -14,8 +14,8 @@ echo.
 :: Check project root
 :: ─────────────────────────────────────────────────────────
 if not exist "package.json" (
-    echo  [ERROR] Run this script from the aipc-agent project root.
-    echo  Example: cd C:\dev\aipc-agent ^&^& build.bat
+    echo  [ERROR] Run this script from the visual-agent project root.
+    echo  Example: cd C:\dev\visual-agent ^&^& build.bat
     pause & exit /b 1
 )
 

@@ -1,7 +1,7 @@
 {
-  "name": "aipc-agent",
+  "name": "visual-agent",
   "version": "2026.06.23",
-  "description": "AI PC Agent — 本地優先、無命令列、具備感知能力的系統管家",
+  "description": "Visual Agent — 可視化、可塗鴉、可協作的本地 AI PC Agent",
   "main": "src/server.js",
   "bin": "src/server.js",
   "scripts": {

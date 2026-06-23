@@ -1,5 +1,5 @@
 /**
- * AI PC Agent — Frontend Application (VS Code Layout)
+ * Visual Agent — Frontend Application (VS Code Layout)
  *
  * 功能：
  *  - 三欄可拖拉 resize（sidebar / center / chat / log）
@@ -307,7 +307,7 @@ const I18N = {
             lastUpdate: '上次更新',
         },
         chalkboardWelcome: {
-            title: '歡迎使用 AI PC Agent',
+            title: '歡迎使用 Visual Agent',
             body: '這裡可以快速啟動推薦工具與瀏覽器。請從左側推薦清單選擇工具，或是直接與 AI 對話。',
             warn: '⚠️ AI Agent 很強大，但也可能犯錯，導致系統有風險，敬請仔細查證並小心下指令。',
             hintTitle: '用粉筆直接畫',
@@ -356,7 +356,7 @@ const I18N = {
             waitingHint: '等待遠端連線。Port: 19168',
             acceptedHint: '您已接受對話。請開始聊天或支援',
             requestTitle: '遠端連線請求',
-            requestSummary: '有另一台 AI PC Agent 想要與您通訊',
+            requestSummary: '有另一台 Visual Agent 想要與您通訊',
             accept: '允許',
             reject: '拒絕',
             requestAccepted: '您已接受對話。請開始聊天或支援',
@@ -585,7 +585,7 @@ const I18N = {
             failed: '失敗',
         },
         sopUi: {
-            rec_install_ollama: { title: '安裝 Ollama 本地 AI 引擎', description: '下載並安裝 Ollama，讓 AI PC Agent 具備本地語意理解能力', category: 'AI 引擎' },
+            rec_install_ollama: { title: '安裝 Ollama 本地 AI 引擎', description: '下載並安裝 Ollama，讓 Visual Agent 具備本地語意理解能力', category: 'AI 引擎' },
             rec_pull_llm_model: { title: '下載語言模型 (Gemma 4 E2B QAT)', description: '下載 Gemma 4 E2B QAT 語言模型，約 1.1GB，完成後即可開始本地對話', category: 'AI 引擎' },
             rec_driver_check: { title: '檢查並安裝驅動程式', description: '掃描硬體裝置並確認驅動程式是否為最新版本', category: '系統優化' },
             rec_remove_copilot: { title: '移除 Windows Copilot', description: '停用並移除 Windows 內建的 Copilot 功能', category: '系統清理' },
@@ -648,7 +648,7 @@ const I18N = {
             lastUpdate: 'Last Updated',
         },
         chalkboardWelcome: {
-            title: 'Welcome to AI PC Agent',
+            title: 'Welcome to Visual Agent',
             body: 'Launch recommended tools and browse quickly. Select tools from the sidebar or start a conversation with AI.',
             warn: '⚠️ AI is powerful but may make mistakes. Please verify and issue commands carefully.',
             hintTitle: 'Chalkboard Interactive',
@@ -697,7 +697,7 @@ const I18N = {
             waitingHint: 'Waiting for remote connection. Port: 19168',
             acceptedHint: 'You accepted the conversation. Start chatting or supporting now.',
             requestTitle: 'Remote Connection Request',
-            requestSummary: 'Another AI PC Agent wants to talk to you',
+            requestSummary: 'Another Visual Agent wants to talk to you',
             accept: 'Allow',
             reject: 'Reject',
             requestAccepted: 'You accepted the conversation. Start chatting or supporting now.',
@@ -937,7 +937,7 @@ const I18N = {
             failed: 'Failed',
         },
         sopUi: {
-            rec_install_ollama: { title: 'Install Ollama Local AI Engine', description: 'Install Ollama to give AI PC Agent local language understanding.', category: 'AI Engine' },
+            rec_install_ollama: { title: 'Install Ollama Local AI Engine', description: 'Install Ollama to give Visual Agent local language understanding.', category: 'AI Engine' },
             rec_pull_llm_model: { title: 'Download Language Model (Gemma 4 E2B QAT)', description: 'Download the Gemma 4 E2B QAT model, about 1.1 GB, for local chat.', category: 'AI Engine' },
             rec_driver_check: { title: 'Scan and Install Drivers', description: 'Check hardware devices and update missing or outdated drivers.', category: 'System Optimization' },
             rec_remove_copilot: { title: 'Remove Windows Copilot', description: 'Disable and remove the built-in Windows Copilot feature.', category: 'System Cleanup' },
@@ -4426,7 +4426,7 @@ async function init() {
 async function loadAppMeta() {
     const data = await api('/api/meta');
     if (data.success && statusVersion) {
-        statusVersion.textContent = `AI PC Agent v${data.version || 'dev'}`;
+        statusVersion.textContent = `Visual Agent v${data.version || 'dev'}`;
     }
     syncBrowserTabAvailability(!!data.browserAvailable);
 }
@@ -4436,7 +4436,7 @@ function checkFirstRun() {
     if (!splashText) return;
 
     // 檢查 localStorage 標記
-    const hasRun = localStorage.getItem('aipc_has_run');
+    const hasRun = localStorage.getItem('visual_agent_has_run');
     console.log('[Init] hasRun flag:', hasRun);
 
     if (!hasRun) {
@@ -4451,7 +4451,7 @@ function hideSplash() {
     if (splash && !splash.classList.contains('hidden')) {
         splash.classList.add('hidden');
         // 真正隱藏後才標記「已執行過」，確保下次進來才顯示「啟動中」
-        localStorage.setItem('aipc_has_run', 'true');
+        localStorage.setItem('visual_agent_has_run', 'true');
         setTimeout(() => splash.style.display = 'none', 600);
     }
 }
@@ -4931,8 +4931,8 @@ async function checkLLMStatus() {
             if (!window._llmWelcomed) {
                 // 顯示初始訊息（根據語系）
                 const welcomeMsg = currentLocale === 'en-US'
-                    ? 'Hello! I\'m your AI PC Agent. You can type, speak, or draw to tell me what software you need to install or what system settings to adjust.'
-                    : '你好！我是你的 AI PC Agent，可以輸入文字、用嘴巴說，或是畫圖，來告訴我你需要安裝什麼軟體，或是調整系統設定喔！';
+                    ? 'Hello! I\'m your Visual Agent. You can type, speak, or draw to tell me what software you need to install or what system settings to adjust.'
+                    : '你好！我是你的 Visual Agent，可以輸入文字、用嘴巴說，或是畫圖，來告訴我你需要安裝什麼軟體，或是調整系統設定喔！';
                 appendChatBubble('ai', welcomeMsg);
                 const versionStr = data.version ? ` (v${data.version})` : '';
                 const readyMsg = currentLocale === 'en-US'
@@ -5380,23 +5380,23 @@ function renderSkillList() {
     }
 
     // Split into two top-level source groups
-    const aipcSkills = filtered.filter(s => !s.source || s.source === 'aipc-agent');
+    const visualAgentSkills = filtered.filter(s => !s.source || s.source === 'visual-agent');
     const hermesSkills = filtered.filter(s => s.source === 'hermes-agent');
 
-    // ── AIPC Agent group ──────────────────────────────────────────────
-    if (aipcSkills.length) {
-        const aipcHeader = document.createElement('div');
-        aipcHeader.className = 'skill-source-header';
-        aipcHeader.innerHTML = `<span class="skill-source-icon">🤖</span><span>AIPC Agent</span><span class="skill-source-count">${aipcSkills.length}</span>`;
-        skillListContainer.appendChild(aipcHeader);
+    // ── Visual Agent group ──────────────────────────────────────────────
+    if (visualAgentSkills.length) {
+        const visualAgentHeader = document.createElement('div');
+        visualAgentHeader.className = 'skill-source-header';
+        visualAgentHeader.innerHTML = `<span class="skill-source-icon">🤖</span><span>Visual Agent</span><span class="skill-source-count">${visualAgentSkills.length}</span>`;
+        skillListContainer.appendChild(visualAgentHeader);
 
-        const aipcGroups = {};
-        aipcSkills.forEach((skill) => {
+        const visualAgentGroups = {};
+        visualAgentSkills.forEach((skill) => {
             const cat = skill.category || t('sidebar.otherCategory');
-            if (!aipcGroups[cat]) aipcGroups[cat] = [];
-            aipcGroups[cat].push(skill);
+            if (!visualAgentGroups[cat]) visualAgentGroups[cat] = [];
+            visualAgentGroups[cat].push(skill);
         });
-        Object.entries(aipcGroups).forEach(([cat, items]) => {
+        Object.entries(visualAgentGroups).forEach(([cat, items]) => {
             skillListContainer.appendChild(createSidebarSectionHeader(cat));
             items.forEach((skill) => skillListContainer.appendChild(createSkillCard(skill)));
         });
@@ -5452,7 +5452,7 @@ function updateLocaleUI() {
     }
     const splashText = document.getElementById('splashText');
     if (splashText && !document.getElementById('splashOverlay')?.classList.contains('hidden')) {
-        splashText.textContent = localStorage.getItem('aipc_has_run') ? t('splash.starting') : t('splash.firstRun');
+        splashText.textContent = localStorage.getItem('visual_agent_has_run') ? t('splash.starting') : t('splash.firstRun');
     }
     const menuFile = document.getElementById('menuFile');
     const menuView = document.getElementById('menuView');
@@ -5798,7 +5798,7 @@ function updateLocaleUI() {
     if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
     if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
     // Title and menu i18n
-    document.title = currentLocale === 'en-US' ? 'AI PC Agent - System Butler' : 'AI PC Agent - 系統管家';
+    document.title = currentLocale === 'en-US' ? 'Visual Agent - System Butler' : 'Visual Agent - 系統管家';
     const _appTitle = document.getElementById('appTitle');
     if (_appTitle) _appTitle.textContent = document.title;
     const _menuHelp = document.getElementById('menuHelp');
@@ -6111,8 +6111,8 @@ async function sendChat() {
                     setRemotePendingRoles({ local: true, remote: true });
                     updatePendingStatusRow();
                     addUILog(currentLocale === 'en-US'
-                        ? '🤝 Dual-AI collaboration: Local AI answers first, Remote AI follow-up queued'
-                        : '🤝 雙 AI 協作：本地 AI 先回，遠端 AI 補充已排入佇列', 'info');
+                        ? '🤝 Double Agent Mode: Local AI answers first, Remote AI follow-up queued'
+                        : '🤝 Double Agent Mode：本地 AI 先回，遠端 AI 補充已排入佇列', 'info');
                     api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
                         method: 'POST',
                         body: {
@@ -6845,7 +6845,7 @@ function exportExps() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `aipc-exps-${new Date().toISOString().slice(0, 10)}.md`;
+        a.download = `visual-agent-exps-${new Date().toISOString().slice(0, 10)}.md`;
         a.click();
         URL.revokeObjectURL(url);
         addUILog(`⚠️ ${t('exps.exportFallback', { error: data.error || 'Unknown error' })}`, 'warn');
@@ -6966,7 +6966,7 @@ function exportTasks() {
         const json = JSON.stringify(todoList, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        a.download = `aipc-tasks-${new Date().toISOString().slice(0, 10)}.json`;
+        a.download = `visual-agent-tasks-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
         addUILog(`⚠️ ${t('tasks.exportFallback', { error: data.error || 'Unknown error' })}`, 'warn');

@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS (requires git + gh CLI)
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/github
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: github git pr pull-request code-review issues cicd gh-cli repository
   category: development

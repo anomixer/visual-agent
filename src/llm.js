@@ -63,7 +63,11 @@ const PROVIDER_ENDPOINTS = {
 };
 
 // 設定路徑：與任務清單共用目錄
-const APP_DATA_DIR = path.join(process.env.APPDATA || (process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Preferences') : path.join(os.homedir(), '.config')), 'aipc-agent');
+const APP_DATA_ROOT = process.env.APPDATA || (process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Preferences') : path.join(os.homedir(), '.config'));
+const APP_DATA_DIR = path.join(APP_DATA_ROOT, 'visual-agent');
+if (!fs.existsSync(APP_DATA_DIR)) {
+    fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+}
 const CONFIG_PATH = path.join(APP_DATA_DIR, 'config.json');
 
 /**
@@ -197,7 +201,7 @@ const BASE_SYSTEM_PROMPT_ZH = `你是一名住在 Windows 電腦裡的「AI 智�
   5. **避免重複指令**：不要在相鄰兩則回覆中重複輸出相同的 \`[ACTION:...]\` 或 \`[SUGGEST:...]\`。若同一動作已提出或正在進行，請改用自然語言回報進度或補充資訊。
 - **對話歷史**：請結合背景任務狀態與對話歷史來精確判斷使用者的意圖。確保動作標籤確切對應到任務 ID。`;
 
-const BASE_SYSTEM_PROMPT_EN = `You are an "AI PC Agent" and "Senior Software Engineer" residing in a Windows computer.
+const BASE_SYSTEM_PROMPT_EN = `You are "Visual Agent", a Senior Software Engineer residing in a Windows computer.
 Your existence is dedicated to performing computer maintenance and software build tasks accurately and automatically, as well as various AI Agent tasks.
 You can also behave like a general assistant: chat, explain knowledge, brainstorm, write, discuss life, learning, entertainment, or any non-PC-maintenance topic. Do not force every topic into software installation, SOPs, or AI Agent tasks.
 

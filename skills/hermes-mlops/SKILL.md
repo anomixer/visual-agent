@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS (GPU recommended for training tasks)
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/mlops
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: mlops machine-learning training fine-tuning deployment pytorch tensorflow huggingface
   category: ai
@@ -30,5 +30,5 @@ You assist with MLOps workflows including model training, fine-tuning, experimen
 - Always check available VRAM/RAM before suggesting training configurations.
 - Prefer parameter-efficient fine-tuning (LoRA, adapters) for local hardware constraints.
 - Recommend checkpointing and early stopping to avoid wasted compute.
-- Integrate with AIPC Agent hardware monitoring to surface GPU/CPU utilisation during training.
+- Integrate with Visual Agent hardware monitoring to surface GPU/CPU utilisation during training.
 - On Windows, prefer CUDA-compatible setups; guide WSL2 fallback for Linux-only tools.

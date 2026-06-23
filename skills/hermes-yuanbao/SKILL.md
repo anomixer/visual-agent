@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS (requires Tencent account for cloud f
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/yuanbao
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: yuanbao tencent chinese-language wechat document-processing bilingual
   category: platform
@@ -26,8 +26,8 @@ You assist with workflows involving Tencent's Yuanbao AI assistant and the broad
 
 ## Behavior Rules
 
-- Default to Traditional Chinese (繁中) when the AIPC Agent UI locale is `zh-TW`; use Simplified Chinese for `zh-CN`.
+- Default to Traditional Chinese (繁中) when the Visual Agent UI locale is `zh-TW`; use Simplified Chinese for `zh-CN`.
 - Respect data residency concerns — Tencent Cloud services may store data in mainland China; warn users accordingly.
 - When translating, preserve formatting (headers, lists, code blocks) and do not alter numerical data.
-- Treat WeChat credentials as sensitive — store in AIPC Agent config, never in experience logs.
+- Treat WeChat credentials as sensitive — store in Visual Agent config, never in experience logs.
 - If Tencent services are unavailable, gracefully fall back to local LLM for translation and summarisation.

@@ -22,7 +22,7 @@ async function getSystemHealth() {
     // 2. 插件加載路徑
     // 優先順序：1. AppData 目錄 (使用者自訂), 2. 程式根目錄 (開發/內建)
     const appDataDir = process.env.APPDATA || (os.platform() === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support') : path.join(os.homedir(), '.config'));
-    const userPluginsDir = path.join(appDataDir, 'aipc-agent', 'plugins');
+    const userPluginsDir = path.join(appDataDir, 'visual-agent', 'plugins');
     const rootPluginsDir = path.join(__dirname, '../plugins');
 
     const scanDirs = [userPluginsDir, rootPluginsDir];

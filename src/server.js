@@ -1,5 +1,5 @@
 /**
- * AI PC Agent Local Server
+ * Visual Agent Local Server
  * 
  * 提供 REST API 給前端 UI 使用，橋接 sop-parser 與 sop-executor。
  * 啟動後會自動開啟瀏覽器。
@@ -12,11 +12,11 @@ const { execSync, spawnSync, spawn } = require('child_process');
 const os = require('os');
 
 const appDataDir = process.env.APPDATA || path.join(os.homedir(), '.config');
-const aipcDir = path.join(appDataDir, 'aipc-agent');
-if (!fs.existsSync(aipcDir)) {
-    fs.mkdirSync(aipcDir, { recursive: true });
+const visualAgentDir = path.join(appDataDir, 'visual-agent');
+if (!fs.existsSync(visualAgentDir)) {
+    fs.mkdirSync(visualAgentDir, { recursive: true });
 }
-const appDataBrowserDir = path.join(aipcDir, 'playwright-browsers');
+const appDataBrowserDir = path.join(visualAgentDir, 'playwright-browsers');
 const defaultPlaywrightBrowserDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright');
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
     process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
@@ -104,12 +104,12 @@ function resolvePlaywrightBrowserExecutable() {
 }
 
 
-const TASKS_FILE = path.join(aipcDir, 'tasks.json');
-const REMOTE_PROFILE_FILE = path.join(aipcDir, 'remote-profile.json');
-const SOPS_DIR = path.join(aipcDir, 'sops');
-const SKILLS_DIR = path.join(aipcDir, 'skills');
-const PLUGINS_DIR = path.join(aipcDir, 'plugins');
-const EXPS_DIR = path.join(aipcDir, 'exps');
+const TASKS_FILE = path.join(visualAgentDir, 'tasks.json');
+const REMOTE_PROFILE_FILE = path.join(visualAgentDir, 'remote-profile.json');
+const SOPS_DIR = path.join(visualAgentDir, 'sops');
+const SKILLS_DIR = path.join(visualAgentDir, 'skills');
+const PLUGINS_DIR = path.join(visualAgentDir, 'plugins');
+const EXPS_DIR = path.join(visualAgentDir, 'exps');
 let remoteStateTick = Date.now();
 const remoteAiReplyQueues = new Map();
 if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
@@ -453,7 +453,7 @@ function loadSkillDocuments(forceRefresh = false) {
                 const category = categoryMatch ? categoryMatch[1].trim().replace(/^["']|["']$/g, '') : 'Skills';
                 const sourceMatch = fmText.match(/^source:\s*(.+)$/m);
                 const sourceRaw = sourceMatch ? sourceMatch[1].trim().replace(/^["']|["']$/g, '') : '';
-                const source = sourceRaw || (entry.name.startsWith('hermes-') ? 'hermes-agent' : 'aipc-agent');
+                const source = sourceRaw || (entry.name.startsWith('hermes-') ? 'hermes-agent' : 'visual-agent');
                 docs.push({
                     slug: entry.name,
                     name: displayName,
@@ -776,7 +776,7 @@ function appendTaskExperience(task, sop) {
         const stamp = formatDateStamp(task?.completedAt ? new Date(task.completedAt) : new Date());
         const expPath = path.join(EXPS_DIR, `exp-${stamp}.md`);
         if (!fs.existsSync(expPath)) {
-            fs.writeFileSync(expPath, `# AI PC Agent Experience Log - ${stamp}\n\n`, 'utf8');
+            fs.writeFileSync(expPath, `# Visual Agent Experience Log - ${stamp}\n\n`, 'utf8');
         }
 
 
@@ -1195,7 +1195,7 @@ function openUrlInDefaultBrowser(url = '') {
 async function fetchNvidiaLatestFinancialSnapshot() {
     const cik = '0001045810';
     const headers = {
-        'User-Agent': 'aipc-agent/2026.04.01 (local desktop agent)',
+        'User-Agent': 'visual-agent/2026.04.01 (local desktop agent)',
         'Accept': 'application/json',
     };
     const response = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
@@ -1710,7 +1710,7 @@ async function runBrowserUseOperation(params = {}) {
         const url = String(params.url || '').trim();
         const response = await fetch(url, {
             method: 'GET',
-            headers: { 'User-Agent': 'aipc-agent/2026.04.01' },
+            headers: { 'User-Agent': 'visual-agent/2026.04.01' },
             signal: AbortSignal.timeout(20000),
         });
         if (!response.ok) throw new Error(`fetch failed (${response.status})`);
@@ -1939,7 +1939,7 @@ async function searchWebLinks(query = '', limit = 5) {
     if (results.length === 0) {
         fileLog(`[SearchDiagnostic] searchWebLinks extracted 0 results. HTML length: ${html.length}. Status: ${response.status}`);
         try {
-            const dest = path.join(aipcDir, 'search_failed.html');
+            const dest = path.join(visualAgentDir, 'search_failed.html');
             fs.writeFileSync(dest, html, 'utf8');
             fileLog(`[SearchDiagnostic] Saved search HTML to ${dest}`);
         } catch (e) {
@@ -2060,7 +2060,7 @@ async function validatePlayableArticleUrl(inputUrl = '') {
     try {
         const response = await fetch(url, {
             method: 'GET',
-            headers: { 'User-Agent': 'aipc-agent/2026.04.02', 'Accept': 'text/html,*/*' },
+            headers: { 'User-Agent': 'visual-agent/2026.04.02', 'Accept': 'text/html,*/*' },
             redirect: 'follow',
             signal: AbortSignal.timeout(12000),
         });
@@ -2358,7 +2358,7 @@ async function isYouTubeVideoPlayable(watchUrl = '') {
         const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`;
         const response = await fetch(endpoint, {
             method: 'GET',
-            headers: { 'User-Agent': 'aipc-agent/2026.04.02' },
+            headers: { 'User-Agent': 'visual-agent/2026.04.02' },
             signal: AbortSignal.timeout(10000),
         });
         if (!response.ok) return null;
@@ -2380,7 +2380,7 @@ async function isYouTubeWatchPagePlayable(watchUrl = '') {
     try {
         const response = await fetch(normalized, {
             method: 'GET',
-            headers: { 'User-Agent': 'aipc-agent/2026.04.02', 'Accept': 'text/html,*/*' },
+            headers: { 'User-Agent': 'visual-agent/2026.04.02', 'Accept': 'text/html,*/*' },
             redirect: 'follow',
             signal: AbortSignal.timeout(12000),
         });
@@ -2894,7 +2894,7 @@ app.get('/api/meta', (req, res) => {
     const browserExecutable = resolvePlaywrightBrowserExecutable();
     res.json({
         success: true,
-        name: pkg.name || 'aipc-agent',
+        name: pkg.name || 'visual-agent',
         version: APP_VERSION,
         browserAvailable: Boolean(browserExecutable),
         browserExecutable,
@@ -3453,14 +3453,14 @@ app.get('/api/todo/export', (req, res) => {
 // POST /api/todo/export-file 匯出任務清單 (跳出另存新檔對話框)
 app.post('/api/todo/export-file', (req, res) => {
     try {
-        const defaultName = `aipc-tasks-${new Date().toISOString().slice(0, 10)}.json`;
+        const defaultName = `visual-agent-tasks-${new Date().toISOString().slice(0, 10)}.json`;
         // 透過 PowerShell 呼叫原生的 Windows SaveFileDialog
         const psScript = `
         Add-Type -AssemblyName System.Windows.Forms
         $dlg = New-Object System.Windows.Forms.SaveFileDialog
         $dlg.Filter = 'JSON Files (*.json)|*.json|All Files (*.*)|*.*'
         $dlg.FileName = '${defaultName}'
-        $dlg.Title = 'Export AI PC Agent Tasks'
+        $dlg.Title = 'Export Visual Agent Tasks'
         $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
         $res = $dlg.ShowDialog()
         if ($res -eq [System.Windows.Forms.DialogResult]::OK) { 
@@ -3547,13 +3547,13 @@ app.post('/api/exps/export-file', (req, res) => {
         }
 
 
-        const defaultName = `aipc-exps-${new Date().toISOString().slice(0, 10)}.md`;
+        const defaultName = `visual-agent-exps-${new Date().toISOString().slice(0, 10)}.md`;
         const psScript = `
         Add-Type -AssemblyName System.Windows.Forms
         $dlg = New-Object System.Windows.Forms.SaveFileDialog
         $dlg.Filter = 'Markdown Files (*.md)|*.md|All Files (*.*)|*.*'
         $dlg.FileName = '${defaultName}'
-        $dlg.Title = 'Export AI PC Agent Experience Log'
+        $dlg.Title = 'Export Visual Agent Experience Log'
         $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
         $res = $dlg.ShowDialog()
         if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
@@ -4794,7 +4794,7 @@ app.get('/api/logs', (req, res) => {
  * 寫入 Debug Log 到 APPDATA，修復打包後看不到 Console 的問題
  */
 function fileLog(msg) {
-    const logPath = path.join(aipcDir, 'debug.log');
+    const logPath = path.join(visualAgentDir, 'debug.log');
     const timestamp = new Date().toISOString();
     fs.appendFileSync(logPath, `[${timestamp}] ${msg}\n`);
 }
@@ -4898,7 +4898,7 @@ function buildGitHubReleaseSopMarkdown(packageInfo = {}) {
     const escapedUrl = downloadUrl.replace(/'/g, "''");
     const escapedAssetName = assetName.replace(/'/g, "''");
     const extractDirName = assetSlug || 'app';
-    return `# AI PC Agent SOP File v1
+    return `# Visual Agent SOP File v1
 1. Metadata
 ID: ${sopId}
 
@@ -4914,7 +4914,7 @@ Network: Required (download from GitHub Releases)
 Expected Result: Return True when the release asset already exists in the managed download folder.
 \`\`\`powershell
 try {
-    $baseDir = Join-Path $env:USERPROFILE 'Downloads\\AI PC Agent Downloads'
+    $baseDir = Join-Path $env:USERPROFILE 'Downloads\\Visual Agent Downloads'
     $assetPath = Join-Path $baseDir '${escapedAssetName}'
     if (Test-Path $assetPath) { $true } else { $false }
 
@@ -4927,7 +4927,7 @@ try {
 ## Install
 \`\`\`powershell
 Write-Host "Downloading ${repoName} from GitHub Releases. Please wait..."
-$baseDir = Join-Path $env:USERPROFILE 'Downloads\\AI PC Agent Downloads'
+$baseDir = Join-Path $env:USERPROFILE 'Downloads\\Visual Agent Downloads'
 if (-not (Test-Path $baseDir)) {
     New-Item -ItemType Directory -Path $baseDir -Force | Out-Null
 }
@@ -4955,7 +4955,7 @@ if ($assetPath -like '*.zip') {
 ## Verify
 \`\`\`powershell
 try {
-    $baseDir = Join-Path $env:USERPROFILE 'Downloads\\AI PC Agent Downloads'
+    $baseDir = Join-Path $env:USERPROFILE 'Downloads\\Visual Agent Downloads'
     $assetPath = Join-Path $baseDir '${escapedAssetName}'
     if (-not (Test-Path $assetPath)) {
         throw "Downloaded asset not found: ${assetName}"
@@ -4972,7 +4972,7 @@ try {
 ## Uninstall
 \`\`\`powershell
 Write-Host "Removing downloaded ${repoName} release asset..."
-$baseDir = Join-Path $env:USERPROFILE 'Downloads\\AI PC Agent Downloads'
+$baseDir = Join-Path $env:USERPROFILE 'Downloads\\Visual Agent Downloads'
 $assetPath = Join-Path $baseDir '${escapedAssetName}'
 $extractDir = Join-Path $baseDir '${extractDirName}'
 if (Test-Path $assetPath) {
@@ -5034,7 +5034,7 @@ function buildStoreSopMarkdown(packageInfo = {}, options = {}) {
     const packageNameRegex = escapeRegExp(packageName);
     const uninstallSourceFlag = source === 'winget' ? '' : ` --source ${source}`;
     const installSourceFlag = source === 'winget' ? '' : ` --source ${source}`;
-    return `# AI PC Agent SOP File v1
+    return `# Visual Agent SOP File v1
 1. Metadata
 ID: ${sopId}
 
@@ -5292,7 +5292,7 @@ process.on('SIGTERM', async () => {
 });
 
 app.listen(PORT, async () => {
-    const startMsg = `AI PC Agent started! (PID: ${process.pid}, Path: ${process.execPath})`;
+    const startMsg = `Visual Agent started! (PID: ${process.pid}, Path: ${process.execPath})`;
     console.log(`\n  🖥️  ${startMsg}`);
     fileLog(startMsg);
     console.log(`  📍 http://localhost:${PORT}`);

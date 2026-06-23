@@ -1,6 +1,6 @@
-# AI PC Agent 繁中摘要
+# Visual Agent 繁中摘要
 
-> 本文件為繁體中文快速摘要，重點補充遠端 AI 協作、Directive Protocol 與最近修正。完整說明仍以 [README.md](/C:/dev/aipc-agent/README.md) 為準。
+> 本文件為繁體中文快速摘要，重點補充 Double Agent Mode、Directive Protocol 與最近修正。完整說明仍以 [README.md](/C:/dev/visual-agent/README.md) 為準。
 
 ## 2026.06.03 修正摘要
 
@@ -68,8 +68,8 @@
    預期：遠端訊息會出現真正可點的按鈕、按鈕不閃、點下去後會建立或沿用任務，UI log 會看到 `Suggestion clicked`。
 2. `INSTALL_SOP` 流程
    預期：`[ACTION:INSTALL_SOP sop_id="..."]` 會在本機被執行，UI log 先看到 `Remote AI directive received`，接著看到 `Started SOP task` / `Reused SOP task` 或明確錯誤。
-3. 雙 AI 協作流程
-   預期：本地 AI 先回，UI log 會看到 `Dual-AI collaboration: Local AI answers first, Remote AI follow-up queued`，遠端 AI 之後再補充，不會整段卡住。
+3. Double Agent Mode 流程
+   預期：本地 AI 先回，UI log 會看到 `Double Agent Mode: Local AI answers first, Remote AI follow-up queued`，遠端 AI 之後再補充，不會整段卡住。
 
 另外：
 
@@ -78,7 +78,7 @@
 
 ## 相關檔案
 
-- 協議規則：[src/llm.js](/C:/dev/aipc-agent/src/llm.js)
-- 遠端協作後端：[src/server.js](/C:/dev/aipc-agent/src/server.js)
-- 遠端前端 UI：[public/app.js](/C:/dev/aipc-agent/public/app.js)
-- 開發日誌：[agents.md](/C:/dev/aipc-agent/agents.md)
+- 協議規則：[src/llm.js](/C:/dev/visual-agent/src/llm.js)
+- 遠端協作後端：[src/server.js](/C:/dev/visual-agent/src/server.js)
+- 遠端前端 UI：[public/app.js](/C:/dev/visual-agent/public/app.js)
+- 開發日誌：[agents.md](/C:/dev/visual-agent/agents.md)

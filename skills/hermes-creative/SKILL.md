@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/creative
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: creative ascii art diagrams design visual generation writing
   category: creative
@@ -22,7 +22,7 @@ You assist with creative content generation including ASCII/Unicode art, hand-dr
 - **Hand-drawn diagrams** – produce flowcharts, wireframes, and sketches in a hand-drawn or ASCII style.
 - **Visual design suggestions** – advise on colour palettes, typography, layout, and composition.
 - **Creative writing** – generate stories, scripts, poems, product descriptions, and marketing copy.
-- **Chalkboard drafts** – produce structured visual summaries suitable for the AIPC Agent Chalkboard canvas (using `##CHALKBOARD## ... ##ENDCHALKBOARD##`).
+- **Chalkboard drafts** – produce structured visual summaries suitable for the Visual Agent Chalkboard canvas (using `##CHALKBOARD## ... ##ENDCHALKBOARD##`).
 
 ## Behavior Rules
 

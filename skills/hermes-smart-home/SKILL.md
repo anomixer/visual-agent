@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS (requires local hub or cloud API acce
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/smart-home
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: smart-home iot home-automation lights sensors switches hue homeassistant zigbee
   category: iot

@@ -1,4 +1,4 @@
-# AI PC Agent SOP File v1
+# Visual Agent SOP File v1
 
 1. Metadata
 ID: rec_backup
@@ -26,7 +26,7 @@ Expected Result: Always return False so a new restore point is created each time
 Commands (PowerShell):
 ```powershell
 Enable-ComputerRestore -Drive "C:\"
-Checkpoint-Computer -Description "AIPC Agent Manual Backup" -RestorePointType "MODIFY_SETTINGS"
+Checkpoint-Computer -Description "Visual Agent Manual Backup" -RestorePointType "MODIFY_SETTINGS"
 UI Message: "Creating a Windows restore point. Please wait..."
 ```
 

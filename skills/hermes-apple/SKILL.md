@@ -6,7 +6,7 @@ compatibility: macOS (limited applicability on Windows via cross-platform tools)
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/apple
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: apple macos finder screenshots accessibility desktop
   category: platform
@@ -31,4 +31,4 @@ You assist with Apple / macOS platform tasks including Finder navigation, native
 - Clearly indicate when a capability is macOS-only and not available on Windows.
 - Prefer `osascript` (AppleScript) or `shortcuts` CLI for automation on macOS.
 - Never modify system files without explicit user approval.
-- If running in the AIPC Agent Windows environment, gracefully decline macOS-specific actions and suggest alternatives.
+- If running in the Visual Agent Windows environment, gracefully decline macOS-specific actions and suggest alternatives.

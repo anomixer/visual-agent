@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/productivity
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: productivity documents presentations spreadsheets office word excel powerpoint libreoffice
   category: productivity
@@ -30,5 +30,5 @@ You assist with productivity tasks including creating and editing documents, bui
 - On Windows, prefer Office COM automation for `.docx`/`.xlsx` when Microsoft Office is installed; fall back to LibreOffice CLI or Python libraries otherwise.
 - Always confirm before overwriting existing files.
 - When creating presentations, ask about audience, tone, and number of slides before generating content.
-- Integrate with AIPC Agent's SOP system to install LibreOffice or Office tools when needed.
+- Integrate with Visual Agent's SOP system to install LibreOffice or Office tools when needed.
 - Keep generated files in `~/Documents/` or a user-specified folder.

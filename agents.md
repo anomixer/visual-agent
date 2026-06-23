@@ -1,4 +1,4 @@
-# AI PC Agent 開發日誌
+# Visual Agent 開發日誌
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家  
 > by [anomixer](https://github.com/anomixer)
@@ -9,6 +9,12 @@
 
 ### 版本同步
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.06.23`。
+
+### 品牌重命名
+- 產品名稱由 `AI PC Agent` 全面改為 `Visual Agent`。
+- repo / package / AppData 新路徑改用 `visual-agent`；因專案尚未公開發布，不保留舊 `aipc-agent` 相容層。
+- 遠端雙 AI 協作模式正式命名為 `Double Agent Mode`；本地 AI / 遠端 AI 仍作為角色名稱保留在 UI 與協作規格中。
+- 核心定位收斂為「可視化、可塗鴉、可協作的本地 AI PC Agent」。
 
 ### 多國語言 SOP 修正
 - `install-language-en-us`、`install-language-zh-tw`、`install-language-zh-cn`、`install-language-ja` 的 Check / Install / Uninstall 流程改以目前使用者的 `Get-WinUserLanguageList` 為主要成功判準。
@@ -91,12 +97,12 @@
 
 ### Browser Tab 顯示修正
 - `getPlaywrightBrowserDirCandidates()` 移除 `%LOCALAPPDATA%\ms-playwright` 系統全域路徑。
-- 改為只認 AppData 下的 `aipc-agent\playwright-browsers`，清除 AppData 後能正確顯示 `install required`，不再因偵測到其他 Playwright 裝置而誤啟 Browser tab。
+- 改為只認 AppData 下的 `visual-agent\playwright-browsers`，清除 AppData 後能正確顯示 `install required`，不再因偵測到其他 Playwright 裝置而誤啟 Browser tab。
 
 ### Hermes Agent Skills 整合
-- 從 [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/tree/main/skills) 批量轉換 19 個 skills，全部轉為 AIPC Agent 的 `SKILL.md` 格式（含 YAML frontmatter + 完整 prompt 說明）。
-- 每個 skill 的 frontmatter 加入 `source: hermes-agent` 欄位；後端 `loadSkillDocuments()` 同步讀取並回傳 `source` 欄位（兼容舊 skills 自動 fallback 為 `aipc-agent`）。
-- Skills Tab UI 改為兩大來源群組：`🤖 AIPC Agent`（18 個原生 skills）和 `⚗️ From Hermes Agent`（19 個轉換 skills），各有對應顏色的 section header 與 count badge。
+- 從 [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/tree/main/skills) 批量轉換 19 個 skills，全部轉為 Visual Agent 的 `SKILL.md` 格式（含 YAML frontmatter + 完整 prompt 說明）。
+- 每個 skill 的 frontmatter 加入 `source: hermes-agent` 欄位；後端 `loadSkillDocuments()` 同步讀取並回傳 `source` 欄位（兼容舊 skills 自動 fallback 為 `visual-agent`）。
+- Skills Tab UI 改為兩大來源群組：`🤖 Visual Agent`（18 個原生 skills）和 `⚗️ From Hermes Agent`（19 個轉換 skills），各有對應顏色的 section header 與 count badge。
 - Hermes skills 卡片右上角顯示 `⚗️ Hermes` 黃色徽章，視覺區分來源。
 - 轉換的 19 個 skills 涵蓋：apple、autonomous-ai-agents、creative、data-science、devops、dogfood、email、github、index-cache、media、mlops、note-taking、productivity、red-teaming、research、smart-home、social-media、software-development、yuanbao。
 - **說明**：Hermes Skills 屬於 AI 知識增強層（context/prompt），不像 SOP 有可執行的 PowerShell 步驟；它們在 AI 對話時自動注入對應領域知識，讓 AI 回答更專業。
@@ -174,7 +180,7 @@
 
 ### 驗收腳本文件化
 - 在 `README.md` 與 `readme-tw.md` 補上固定的 remote validation checklist。
-- 驗收聚焦三條典型路徑：`SUGGEST`、`INSTALL_SOP`、`雙 AI 協作（本地先回、遠端後補）`。
+- 驗收聚焦三條典型路徑：`SUGGEST`、`INSTALL_SOP`、`Double Agent Mode（本地先回、遠端後補）`。
 
 ## 📌 2026.02.25 — 初始版本
 
@@ -184,7 +190,7 @@
 - 修改 `capabilities/default.json` 賦予殼層最高執行權限 (`shell:allow-execute`)
 
 ### AppData 架構
-- 任務清單 (`tasks.json`) 與 SOP 庫 (`sops/`) 儲存至 `%APPDATA%\aipc-agent\`
+- 任務清單 (`tasks.json`) 與 SOP 庫 (`sops/`) 儲存至 `%APPDATA%\visual-agent\`
 - 初次啟動自動把內建 SOPs 複製過去，確保零設定上手
 
 ### 初始 SOPs 庫
@@ -352,7 +358,7 @@
   - 對話欄的「AI 模型」徽章則是切換模型入口。
 
 ### 架構、穩定性與 Bug 修復
-- **AppData 統一存取**：`SOPs` 與 `Skills` 目錄統一移至 `AppData/aipc-agent`。
+- **AppData 統一存取**：`SOPs` 與 `Skills` 目錄統一移至 `AppData/visual-agent`。
 - **啟動同步機制**：`syncBundledAssets` 同步內建 SOPs 與技能至 AppData。
 - **Bug Fixes**：
   - 修復了 `server.js` 中的 `ReferenceError: llm is not defined`。
@@ -373,7 +379,7 @@
 - **獨立監控插件**：
   - `hardware-info.js`: 核心負載與 S.M.A.R.T 偵測。
   - `temperature-monitor.js`: 專責偵測 GPU (nvidia-smi) 溫度。
-- **AppData 同步**：啟動時自動同步內建插件至 `%APPDATA%\aipc-agent\plugins\`。
+- **AppData 同步**：啟動時自動同步內建插件至 `%APPDATA%\visual-agent\plugins\`。
 
 ### 對話與 UI 體感進化
 - **多輪對話歷史 (Contextual Chat)**：
@@ -416,7 +422,7 @@
 ### SOP 執行流程
 - 任務完成後，AI 對話區會主動回報 `success`、`failed`、`skipped`。
 - SOP 載入時會依 `id` 去重，並優先採用正式檔名，不再被 `Copy` 類副本覆蓋。
-- 內建 SOP、skill、plugin 在內容變更時，會同步到 `%APPDATA%\aipc-agent\`。
+- 內建 SOP、skill、plugin 在內容變更時，會同步到 `%APPDATA%\visual-agent\`。
 
 ### 執行器修正
 - 移除可能觸發 `Out-File` / `nul` 裝置錯誤的 PowerShell 包裝方式。
@@ -539,7 +545,7 @@
 ### 🌍 全方位國際化 (Internationalization / I18N)
 - **UI 全面中英切換**：新增 `I18N` 資源表，涵蓋 AI 對話區、AI 引擎設定 Modal、狀態列與黑板提示詞。
 - **設定視窗 (Settings Modal) 深度翻譯**：包括所有 Provider 說明、認證方式選項、以及 Vision 模型佔位符，確保英文模式下無殘留中文。
-- **黑板粉筆互動字體**：黑板啟動時的歡迎詞與互動提示字，現在會根據介面語系自動切換（Welcome to AI PC Agent / 互動提示）。
+- **黑板粉筆互動字體**：黑板啟動時的歡迎詞與互動提示字，現在會根據介面語系自動切換（Welcome to Visual Agent / 互動提示）。
 
 ### 🧠 LLM 語系意識 (Locale-Aware AI)
 - **雙語 System Prompt**：後端 `llm.js` 內建中英雙語系統提示詞。
@@ -580,10 +586,10 @@
 - `exps` 匯出改走原生 Windows 另存新檔流程，提升 Tauri / EXE 環境穩定性。
 
 ### 檔案格式規格
-- `sops/*.md` 第一行固定為 `# AI PC Agent SOP File v1`
-- `exps/exp-yyyymmdd.md` 第一行固定為 `# AI PC Agent Experience Log - yyyymmdd`
-- `skills/*.md` 第一行固定為 `# AI PC Agent Skill File v1`
-- `plugins/*.js` 第一行固定為 `// AI PC Agent Plugin File v1`
+- `sops/*.md` 第一行固定為 `# Visual Agent SOP File v1`
+- `exps/exp-yyyymmdd.md` 第一行固定為 `# Visual Agent Experience Log - yyyymmdd`
+- `skills/*.md` 第一行固定為 `# Visual Agent Skill File v1`
+- `plugins/*.js` 第一行固定為 `// Visual Agent Plugin File v1`
 
 ### Microsoft Store / UWP 技能
 - 新增 `skills/microsoft-store.md`，讓 AI 能在使用者明確偏好商店版 App 時，改走 `msstore` 來源搜尋候選軟體。
@@ -605,9 +611,9 @@
 - `/api/chat` 現在支援 `CREATE_MSSTORE_SOP` 與 `CREATE_GITHUB_RELEASE_SOP`，搭配既有的 `CREATE_WINGET_SOP` 流程。
 
 ### 英文內容標準化
-- 將內建 `sops/*.md` 內容改為英文，同時保留必要的標題 `# AI PC Agent SOP File v1`。
+- 將內建 `sops/*.md` 內容改為英文，同時保留必要的標題 `# Visual Agent SOP File v1`。
 - 將 `skills/*.md` 與 `plugins/*.js` 的標題與核心描述改為英文，為未來國際化做準備。
-- 標準化經驗庫 markdown 生成為英文導向內容，保留標題格式 `# AI PC Agent Experience Log - yyyymmdd`。
+- 標準化經驗庫 markdown 生成為英文導向內容，保留標題格式 `# Visual Agent Experience Log - yyyymmdd`。
 - 重寫 `sop-parser.js` 註解為英文，同時保留對舊版中文 SOP 欄位的雙語相容性。
 
 ### 雙向 SOP 與動作感知卡片
@@ -680,7 +686,7 @@
 - **Session 管理**：本機與遠端均實作歷史紀錄切換 Chips (依活躍度排序)。
 - **Pending 狀態分離**：切換分頁時，本機或遠端 AI 的思考狀態不會被中斷。
 
-### 遠端雙 AI 協作
+### Double Agent Mode
 - **移除模型接管**：舊 Model Share 已於 `2026.05.06` 移除，不再讓本機全域 AI API 改呼叫對方模型。
 - **分工協作**：遠端連線後，雙方可直接呼叫本地 AI 與遠端 AI；未指定對象時，本地 AI 先提供輔助筆記，遠端 AI 再彙整回覆。
 - **狀態標示**：主聊天模型徽章只顯示本機目前模型；AI 思考狀態以 `本地 AI: 思考中` / `遠端 AI: 思考中` 顯示。
@@ -837,7 +843,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ### 遠端模型共享
 - 此版曾補上模型分享請求視窗的 `AI 模型` 顯示。
-- `2026.05.06` 已移除「分享模型」操作入口與模型接管流程，改採遠端雙 AI 分工。
+- `2026.05.06` 已移除「分享模型」操作入口與模型接管流程，改採 Double Agent Mode 分工。
 - 遠端連線成功後，中央區域會自動切到 Chalkboard tab，方便立即協作。
 
 ### 遠端連線提示
@@ -867,7 +873,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 ### 遠端 AI 分工
 - 移除「分享模型」操作入口；遠端連線後改以雙方 AI 分工協作，不再要求額外模型共享授權。
 - 停用 model-share 與 remote model proxy API，舊呼叫會回傳 `410 Gone`。
-- 遠端聊天室未明確指定對象時，本地 AI 會先產生輔助筆記，再交由遠端 AI 給出最終回覆，避免雙 AI 搶答。
+- 遠端聊天室未明確指定對象時，本地 AI 會先產生輔助筆記，再交由遠端 AI 給出最終回覆，避免 Double Agent Mode 下雙方搶答。
 - 使用者仍可透過 `@本地 AI` 或 `@遠端 AI` 明確指定單一 AI。
 
 ### 斷線提示
@@ -898,7 +904,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ## 📌 2026.05.13 — 遠端協作、Chat UI、Skills 清單與 Action 回報修正
 
-### 遠端雙 AI / Chalkboard
+### Double Agent Mode / Chalkboard
 - AI 需主動使用 Chalkboard 呈現計畫、比較、查詢摘要與多步驟結果。
 - 遠端協作時，本地 AI 使用 `position: left`，遠端 AI 使用 `position: right`，雙方皆使用 `clear: false` 避免覆蓋。
 - 遠端對話需以實際 Windows user name 稱呼對方，AI 自稱以自己的 PC name 表示。

@@ -1,4 +1,4 @@
-# AI PC Agent SOP File v1
+# Visual Agent SOP File v1
 1. Metadata
 ID: install_playwright_chromium
 
@@ -14,7 +14,7 @@ Network: Required
 Expected Result: Return True when Playwright Chromium browser binaries already exist in AppData.
 ```powershell
 try {
-    $browserDir = Join-Path $env:APPDATA 'aipc-agent\playwright-browsers'
+    $browserDir = Join-Path $env:APPDATA 'visual-agent\playwright-browsers'
     if (Test-Path $browserDir) {
         $exe = Get-ChildItem -Path $browserDir -Recurse -Filter 'chrome-headless-shell.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($exe) {
@@ -32,7 +32,7 @@ try {
 ## Install
 ```powershell
 Write-Host "Installing Playwright Chromium. Please wait..."
-$browserDir = Join-Path $env:APPDATA 'aipc-agent\playwright-browsers'
+$browserDir = Join-Path $env:APPDATA 'visual-agent\playwright-browsers'
 if (-not (Test-Path $browserDir)) {
     New-Item -ItemType Directory -Path $browserDir -Force | Out-Null
 }
@@ -52,7 +52,7 @@ if ($LASTEXITCODE -ne 0) {
 ## Verify
 ```powershell
 try {
-    $browserDir = Join-Path $env:APPDATA 'aipc-agent\playwright-browsers'
+    $browserDir = Join-Path $env:APPDATA 'visual-agent\playwright-browsers'
     if (Test-Path $browserDir) {
         $exe = Get-ChildItem -Path $browserDir -Recurse -Filter 'chrome-headless-shell.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($exe) {

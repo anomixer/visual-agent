@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/social-media
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: social-media twitter x reddit linkedin mastodon posting monitoring analytics
   category: communication
@@ -31,4 +31,4 @@ You assist with social media workflows including drafting posts, reading timelin
 - Respect platform rate limits and API terms of service.
 - Flag potentially sensitive content (controversial topics, personal data) and ask for user review.
 - Maintain the user's authentic voice — do not over-polish or sanitise their natural style unless asked.
-- Store API credentials securely in AIPC Agent's config; never log tokens in experience entries.
+- Store API credentials securely in Visual Agent's config; never log tokens in experience entries.

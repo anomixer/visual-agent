@@ -6,7 +6,7 @@ compatibility: Windows 10/11, Linux, macOS
 source: hermes-agent
 hermes_origin: https://github.com/NousResearch/hermes-agent/tree/main/skills/devops
 metadata:
-  author: NousResearch (converted for AIPC Agent)
+  author: NousResearch (converted for Visual Agent)
   version: "1.0"
   tags: devops cicd docker kubernetes terraform ansible cloud infrastructure
   category: devops
@@ -31,4 +31,4 @@ You assist with DevOps workflows including CI/CD pipeline setup, container orche
 - Prefer idempotent, version-controlled infrastructure definitions.
 - Highlight security-sensitive settings (IAM roles, secrets, open ports) and suggest best practices.
 - On Windows, prefer PowerShell-compatible commands; provide Linux equivalents as alternatives.
-- Integrate with AIPC Agent's SOP system for tool installation when needed.
+- Integrate with Visual Agent's SOP system for tool installation when needed.

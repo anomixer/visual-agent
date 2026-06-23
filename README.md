@@ -1,9 +1,9 @@
-# AI PC Agent
+# Visual Agent
 
 > [!NOTE]
 > **本程式還在開發中**，若發現任何問題，或有任何想要貢獻的程式與想法，都歡迎提供。
 
-> 本地優先、無命令列、具備感知與自我進化能力的圖形化 Windows 系統管家  
+> 可視化、可塗鴉、可協作的本地 AI PC Agent  
 > by [anomixer](https://github.com/anomixer)
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-brightgreen)](https://nodejs.org/)
@@ -14,11 +14,11 @@
 
 ## 這是什麼？
 
-**AI PC Agent** 是一個運行於本地端、兼具安全感知與自我進化能力的 Windows 系統自動化管家。我們拋棄了傳統命令行（CLI）Agent 的高風險操作與簡陋介面，打造出**純圖形介面 (Pure-GUI)** 的視覺化控制中心。
+**Visual Agent** 是一個運行於本地端、兼具安全感知與自我進化能力的 Windows 系統自動化管家。我們拋棄了傳統命令行（CLI）Agent 的高風險操作與簡陋介面，打造出**純圖形介面 (Pure-GUI)** 的視覺化控制中心。
 
 不僅能透過直觀的對話與標準作業程序（SOP）來自動化設定、監控與修復您的 PC，更具備以下突破性優勢：
 
-- **🌐 首創雙 AI 遠端協作**：支援兩台實體電腦透過專用通訊協議連線，本地 AI 先答、遠端 AI 隨後補充，輕鬆實現多機協同對話與管理。
+- **🌐 Double Agent Mode**：支援兩台實體電腦透過專用通訊協議連線，本地 AI 先答、遠端 AI 隨後補充，輕鬆實現多機協同對話與管理。
 - **🎨 互動式黑板 (Chalkboard) 共享**：內建粉筆畫布與多模態視覺理解。遠端連線時可即時共享黑板快照，隨手塗鴉、放圖、標記即可讓 AI 看懂並提供精準建議。
 - **📊 圓圈式 (Circular Gauge) 硬體環形監控**：即時探測 CPU、GPU、RAM、Disk，並能透過專屬插件精準監控 NVIDIA 顯示卡的溫度、VRAM 與即時負載。
 - **🔍 Browser Use 聯網即時查詢**：當本地知識不足時，AI 能夠自動呼叫並控制 Playwright 瀏覽器進行即時網頁檢索與 DOM 解析，完美回答天氣、新聞與最新股價。
@@ -72,8 +72,8 @@
 ### 1. 複製專案
 
 ```bash
-git clone https://github.com/anomixer/aipc-agent.git
-cd aipc-agent
+git clone https://github.com/anomixer/visual-agent.git
+cd visual-agent
 ```
 
 ### 2. 安裝相依套件
@@ -148,7 +148,7 @@ src-tauri\target\release\bundle\nsis\
 
 - 當「瀏覽器」標籤顯示「瀏覽器不可用」時，按一下按鈕即可執行 install-playwright-chromium 單操作程式。
 - 在安裝 Chromium 之前，「瀏覽器」標籤會隱藏在中間區域，僅在安裝完成後才會顯示。
-- 安裝完成後，應用程式會同時接受 %APPDATA%\aipc-agent\playwright-browsers 和 Playwright 的預設路徑 ms-playwright，然後自動顯示「瀏覽器」標籤。
+- 安裝完成後，應用程式會同時接受 %APPDATA%\visual-agent\playwright-browsers 和 Playwright 的預設路徑 ms-playwright，然後自動顯示「瀏覽器」標籤。
 
 
 ---
@@ -178,20 +178,20 @@ src-tauri\target\release\bundle\nsis\
 - `skills/<slug>/SKILL.md`
   第一行固定為 `---`，然後 `name: <slug>` ，遵循 [agentskills.io](https://agentskills.io) 格式製作
 - `sops/*.md`
-  第一行固定為 `# AI PC Agent SOP File v1`
+  第一行固定為 `# Visual Agent SOP File v1`
 - `exps/exp-yyyymmdd.md`
-  第一行固定為 `# AI PC Agent Experience Log - yyyymmdd`
+  第一行固定為 `# Visual Agent Experience Log - yyyymmdd`
 - `plugins/*.js`
-  第一行固定為 `// AI PC Agent Plugin File v1`
+  第一行固定為 `// Visual Agent Plugin File v1`
 
 ---
 
 ## 自訂 SOP
 
-將 `.md` 檔放進開發目錄 `sops/`，或執行時目錄 `%APPDATA%\aipc-agent\sops\`。格式範例：
+將 `.md` 檔放進開發目錄 `sops/`，或執行時目錄 `%APPDATA%\visual-agent\sops\`。格式範例：
 
 ````markdown
-# AI PC Agent SOP File v1
+# Visual Agent SOP File v1
 
 1. 基本資訊 (Metadata)
 ID: my_sop_id
@@ -235,7 +235,7 @@ $true
 
 - 若使用者只想看推薦，AI 會直接回推薦清單
 - 若使用者指定某一套軟體，AI 可直接產生對應 SOP
-- 新產生的 SOP 會寫入 `%APPDATA%\aipc-agent\sops\`
+- 新產生的 SOP 會寫入 `%APPDATA%\visual-agent\sops\`
 - 產生完成後，左側 `SOP 清單` 會自動刷新
 
 ### Microsoft Store / UWP
@@ -247,14 +247,14 @@ $true
 
 - 若使用者明確要找 `GitHub` 上的 Windows App，AI 會搜尋 repository 與 release assets
 - 只會挑有明確 Windows `.exe` / `.msi` / `.zip` release asset 的候選
-- 若建立 SOP，預設產生的是「下載型 SOP」：下載到 `Downloads\AI PC Agent Downloads`，並支援驗證與移除下載檔
+- 若建立 SOP，預設產生的是「下載型 SOP」：下載到 `Downloads\Visual Agent Downloads`，並支援驗證與移除下載檔
 
 ---
 
 ## 專案結構
 
 ```text
-aipc-agent/
+visual-agent/
 ├── public/
 │   ├── index.html
 │   ├── style.css
@@ -270,7 +270,7 @@ aipc-agent/
 │   ├── hardware-info.js
 │   └── temperature-monitor.js
 ├── skills/
-│   ├── [AIPC Agent 原生 × 18]
+│   ├── [Visual Agent 原生 × 18]
 │   │   ├── app-install-and-repair/SKILL.md
 │   │   ├── backup-restore/SKILL.md
 │   │   ├── browser-research-and-edit/SKILL.md
@@ -339,6 +339,8 @@ aipc-agent/
 
 ### 2026.06.23
 - **版本更新**：套件版本更新為 `2026.06.23`。
+- **品牌重命名**：產品名稱全面改為 **Visual Agent**，repo / package / AppData 新路徑改用 `visual-agent`；遠端雙 AI 協作模式正式命名為 **Double Agent Mode**。
+- **乾淨重命名**：因專案尚未公開發布，程式端不保留舊 `aipc-agent` 相容層；所有新資料統一寫入 `%APPDATA%\visual-agent`。
 - **多國語言 SOP 穩定化**：英文、繁中、簡中、日文語系 SOP 改以目前使用者語言清單作為安裝/卸載成功判準，避免 Windows 底層語言包或 optional capability 回報不一致時誤判失敗。
 - **安裝/卸載容錯**：`Install-Language`、`Uninstall-Language` 與 OCR/語音/手寫等 optional capability 改為 best-effort；真正必須成功的是加入或移除 `Get-WinUserLanguageList`，同時保留原始安裝語言與最後一個語言不可移除的安全檢查。
 
@@ -361,7 +363,7 @@ aipc-agent/
 - **AI Chat Markdown 支援**：前端引入 `marked.min.js`，聊天視窗完整支援 GFM 表格、code block、刪除線等語法，避免 AI 回覆表格錯位。
 - **模型自動選取修正**：新增 `isLLMCapableModel()` 過濾，排除 embedding、reranker、TTS、Whisper、Diffusion 等非對話模型，首次啟動不再誤選無法對話的模型。
 - **Browser Tab 顯示修正**：移除 `%LOCALAPPDATA%\ms-playwright` 系統全域路徑偵測，改為只認 AppData 下自己管理的 playwright-browsers；清除 AppData 後能正確顯示 `Install Required`。
-- **Hermes Agent Skills 整合**：從 [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/tree/main/skills) 批量轉換 19 個 skills（apple、autonomous-ai-agents、creative、data-science、devops、dogfood、email、github、index-cache、media、mlops、note-taking、productivity、red-teaming、research、smart-home、social-media、software-development、yuanbao）。Skills Tab 改為兩大群組顯示（🤖 AIPC Agent / ⚗️ From Hermes Agent）。注意：這些 skill 為 **AI 知識增強層**，不含可執行的 PowerShell 步驟。
+- **Hermes Agent Skills 整合**：從 [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/tree/main/skills) 批量轉換 19 個 skills（apple、autonomous-ai-agents、creative、data-science、devops、dogfood、email、github、index-cache、media、mlops、note-taking、productivity、red-teaming、research、smart-home、social-media、software-development、yuanbao）。Skills Tab 改為兩大群組顯示（🤖 Visual Agent / ⚗️ From Hermes Agent）。注意：這些 skill 為 **AI 知識增強層**，不含可執行的 PowerShell 步驟。
 
 ### 2026.06.03
 - **版本更新**：套件版本更新為 `2026.06.03`。
@@ -401,7 +403,7 @@ aipc-agent/
 
 ### 2026.05.13
 - **版本更新**：套件版本更新為 `2026.05.13`。
-- **遠端雙 AI 與 Chalkboard**：強化 AI 主動落板規則；本地 AI 寫左側、遠端 AI 寫右側，並以 `clear:false` 避免互相覆蓋。
+- **Double Agent Mode 與 Chalkboard**：強化 AI 主動落板規則；本地 AI 寫左側、遠端 AI 寫右側，並以 `clear:false` 避免互相覆蓋。
 - **遠端硬體查詢修正**：遠端聊天室詢問「本機 / 自己電腦」磁碟、RAM、CPU、GPU 時，預設交給本地 AI 回答，避免拿到對方電腦資訊。
 - **Chat UI 調整**：本機聊天工具列改為「新增對話、附上 Chalkboard、清除對話」，麥克風移到送出鈕上方。
 - **遠端聊天 UI 調整**：遠端連線設定改為可收合抽屜；底部新增「附上檔案」與掛電話中斷按鈕。
@@ -411,14 +413,14 @@ aipc-agent/
 ### 2026.05.06
 - **版本更新**：套件版本更新為 `2026.05.06`。
 - **畫面傳送語意**：將「分享畫面」改為「傳送畫面」，並在擷取前提醒對方可查看該畫面內容，避免誤傳機敏資訊。
-- **移除分享模型入口**：遠端連線後改走雙 AI 分工協作，不再需要額外「分享模型」按鈕或模型接管流程；舊 model-share API 已停用。
-- **雙 AI 分工**：遠端聊天室未指定對象時，本地 AI 先提供輔助筆記，遠端 AI 再彙整回覆；使用者仍可用 `@本地 AI` / `@遠端 AI` 指定單一 AI。
+- **移除分享模型入口**：遠端連線後改走 Double Agent Mode，不再需要額外「分享模型」按鈕或模型接管流程；舊 model-share API 已停用。
+- **Double Agent Mode 分工**：遠端聊天室未指定對象時，本地 AI 先提供輔助筆記，遠端 AI 再彙整回覆；使用者仍可用 `@本地 AI` / `@遠端 AI` 指定單一 AI。
 - **斷線提示**：對方中斷連線時，聊天窗會顯示「對方已斷線」。
 - **一般對話修正**：AI 不再把所有話題硬導向安裝軟體或 SOP；一般聊天、知識、創作與生活話題會直接自然回答。
 
 ### 2026.05.05
 - **版本更新**：套件版本更新為 `2026.05.05`。
-- **遠端模型共享資訊**：當時曾補上分享模型請求的模型資訊顯示；此入口已在 `2026.05.06` 改為移除，改採遠端雙 AI 分工。
+- **遠端模型共享資訊**：當時曾補上分享模型請求的模型資訊顯示；此入口已在 `2026.05.06` 改為移除，改採 Double Agent Mode 分工。
 - **遠端連線提示**：連線請求視窗補上說明文字，讓使用者清楚知道接受後雙方與 AI 對話可互通。
 - **Chalkboard 協作同步**：遠端連線時，雙方使用者或 AI 寫入 Chalkboard 後會同步到對方；黑板正在互動時暫停傳送，idle 約 1 秒後才送出最新畫面。
 - **AI 思考狀態**：新增遠端 `ai_status`，清楚顯示 `本地 AI: 思考中` 或 `遠端 AI: 思考中`，結束後回到 `待命`。
@@ -461,7 +463,7 @@ aipc-agent/
 
 ### 2026.03.30
 - **遠端 AI 聊天室**：支援區域網路互連 (19168 TCP)，雙方 AI 與使用者可進行多方通訊。
-- **模型共享 (Model Share)**：此版曾支援本機模型分享；已於 `2026.05.06` 移除，改走遠端雙 AI 分工。
+- **模型共享 (Model Share)**：此版曾支援本機模型分享；已於 `2026.05.06` 移除，改走 Double Agent Mode 分工。
 - **協作輔助**：包含畫面分享另存、多對話紀錄管理 (Session Chips)，以及 `@mention` 對象標記功能。
 
 
@@ -506,7 +508,7 @@ aipc-agent/
   - 工作日誌右側經驗庫 tab 重塑為「知識庫」風格，卡片更緊湊。
   - 摘要預設限制顯示 3 行，滑鼠懸停 (Hover) 時自動展開內容。
   - 新增「⬇ 匯出」按鈕，可將累積經驗匯出為 Markdown。
-  - 安裝任務結束後，自動將 log 摘要寫入 `%APPDATA%\aipc-agent\經驗庫\exp-yyyymmdd.md`。
+  - 安裝任務結束後，自動將 log 摘要寫入 `%APPDATA%\visual-agent\經驗庫\exp-yyyymmdd.md`。
 - **視窗持久化與最大化**：
   - 程式現在會記住上次視窗大小與位置，下次開啟自動還原。
   - 首次啟動預設以最大化視窗呈現。
@@ -535,7 +537,7 @@ aipc-agent/
 
 - 任務完成後，AI 對話區會回報 `success`、`failed`、`skipped`。
 - SOP 載入時會依 `id` 去重，優先使用正式檔名。
-- 內建 SOP、skill、plugin 內容更新後會同步到 `%APPDATA%\aipc-agent\`。
+- 內建 SOP、skill、plugin 內容更新後會同步到 `%APPDATA%\visual-agent\`。
 - `Verify` 階段若明確輸出 `false`，會視為真正失敗。
 - 工作日誌只在使用者停在底部時自動捲動。
 - 版本號改由 `/api/meta` 從 `package.json` 讀取。
@@ -589,7 +591,7 @@ aipc-agent/
   - 工作日誌右側經驗庫 tab 重塑為「知識庫」風格，卡片更緊湊。
   - 摘要預設限制顯示 3 行，滑鼠懸停 (Hover) 時自動展開內容。
   - 新增「⬇ 匯出」按鈕，可將累積經驗匯出為 Markdown。
-  - 安裝任務結束後，自動將 log 摘要寫入 `%APPDATA%\aipc-agent\經驗庫\exp-yyyymmdd.md`。
+  - 安裝任務結束後，自動將 log 摘要寫入 `%APPDATA%\visual-agent\經驗庫\exp-yyyymmdd.md`。
 - **視窗持久化與最大化**：
   - 程式現在會記住上次視窗大小與位置，下次開啟自動還原。
   - 首次啟動預設以最大化視窗呈現。
@@ -618,7 +620,7 @@ aipc-agent/
 
 - 任務完成後，AI 對話區會回報 `success`、`failed`、`skipped`。
 - SOP 載入時會依 `id` 去重，優先使用正式檔名。
-- 內建 SOP、skill、plugin 內容更新後會同步到 `%APPDATA%\aipc-agent\`。
+- 內建 SOP、skill、plugin 內容更新後會同步到 `%APPDATA%\visual-agent\`。
 - `Verify` 階段若明確輸出 `false`，會視為真正失敗。
 - 工作日誌只在使用者停在底部時自動捲動。
 - 版本號改由 `/api/meta` 從 `package.json` 讀取。
@@ -643,7 +645,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 因為這些 SOP 需要系統管理員權限。現在 install 階段會自動走共用提權流程，若使用者取消 UAC，任務會直接失敗。
 
 **Q: 新增 SOP 後沒有出現？**  
-確認檔案放在 `sops/` 或 `%APPDATA%\aipc-agent\sops\`，再重新整理頁面。
+確認檔案放在 `sops/` 或 `%APPDATA%\visual-agent\sops\`，再重新整理頁面。
 
 **Q: AI 指示燈是紅色或黃色？**  
 通常代表 Ollama 尚未安裝、未啟動，或模型尚未下載完成。

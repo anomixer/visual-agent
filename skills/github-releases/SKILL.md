@@ -38,6 +38,6 @@ When the user wants a repeatable download workflow, emit:
 
 ## SOP Generation Rules
 
-- Default download destination: `Downloads\AI PC Agent Downloads`.
+- Default download destination: `Downloads\Visual Agent Downloads`.
 - Include `Check` (asset exists), `Install` (download), `Verify` (file hash or launch), `Uninstall` (delete downloaded file).
 - **Do not assume silent install support** – many GitHub releases are interactive installers.
