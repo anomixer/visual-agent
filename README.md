@@ -337,6 +337,11 @@ aipc-agent/
 
 ## 近期更新
 
+### 2026.06.23
+- **版本更新**：套件版本更新為 `2026.06.23`。
+- **多國語言 SOP 穩定化**：英文、繁中、簡中、日文語系 SOP 改以目前使用者語言清單作為安裝/卸載成功判準，避免 Windows 底層語言包或 optional capability 回報不一致時誤判失敗。
+- **安裝/卸載容錯**：`Install-Language`、`Uninstall-Language` 與 OCR/語音/手寫等 optional capability 改為 best-effort；真正必須成功的是加入或移除 `Get-WinUserLanguageList`，同時保留原始安裝語言與最後一個語言不可移除的安全檢查。
+
 ### 2026.06.17
 - **版本更新**：套件版本更新為 `2026.06.17`。
 - **Chalkboard Markdown 表格純文字化**：AI 將 Markdown table 寫入黑板時，前端會把表格轉成 `欄位: 值 / 欄位: 值` 的短句，不再直接畫 `|---|` 等表格骨架。
@@ -649,4 +654,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `aipc-spec.md`。
-- 目前套件版本：`2026.06.17`.
+- 目前套件版本：`2026.06.23`.

@@ -18,20 +18,11 @@ Network: Required (internet connection needed to download language packs)
 Commands (PowerShell):
 ```powershell
 $target = 'zh-CN'
-function Get-AipcLanguageTags {
-    $tags = @()
-    if (Get-Command Get-InstalledLanguage -ErrorAction SilentlyContinue) {
-        $tags += @(Get-InstalledLanguage -ErrorAction SilentlyContinue | ForEach-Object {
-            $_.LanguageId; $_.LanguageTag; $_.LocaleName; $_.Language
-        })
-    }
-    $tags += @(Get-WinUserLanguageList -ErrorAction SilentlyContinue | ForEach-Object { $_.LanguageTag })
-    $tags | Where-Object { $_ } | Select-Object -Unique
-}
-@(Get-AipcLanguageTags) -contains $target
+$userTags = @(Get-WinUserLanguageList -ErrorAction SilentlyContinue | ForEach-Object { $_.LanguageTag })
+$userTags -contains $target
 ```
 
-Expected Result: Return True when the language pack is already installed or already in the user language list.
+Expected Result: Return True when the language is already enabled in the current user's language list.
 
 ## Install
 Commands (PowerShell):
@@ -43,15 +34,28 @@ function Install-AipcLanguagePack {
     param([string]$LanguageTag)
     if (Get-Command Install-Language -ErrorAction SilentlyContinue) {
         try {
-            Install-Language -Language $LanguageTag -ErrorAction Stop
+            $params = @{ Language = $LanguageTag; ErrorAction = 'Stop' }
+            if ((Get-Command Install-Language).Parameters.ContainsKey('CopyToSettings')) {
+                $params.CopyToSettings = $false
+            }
+            Install-Language @params
             return
         } catch {
             Write-Warning "Install-Language failed, falling back to Windows Capability install: $($_.Exception.Message)"
         }
     }
 
+    $requiredCapability = "Language.Basic~~~$LanguageTag~0.0.1.0"
+    try {
+        $cap = Get-WindowsCapability -Online -Name $requiredCapability -ErrorAction Stop
+        if ($cap.State -ne 'Installed') {
+            Add-WindowsCapability -Online -Name $requiredCapability -ErrorAction Stop | Out-Null
+        }
+    } catch {
+        Write-Warning "Basic language capability $requiredCapability was not installed: $($_.Exception.Message)"
+    }
+
     $capabilities = @(
-        "Language.Basic~~~$LanguageTag~0.0.1.0",
         "Language.Handwriting~~~$LanguageTag~0.0.1.0",
         "Language.OCR~~~$LanguageTag~0.0.1.0",
         "Language.TextToSpeech~~~$LanguageTag~0.0.1.0",
@@ -80,6 +84,10 @@ if (-not (@($langList | ForEach-Object { $_.LanguageTag }) -contains $target)) {
     }
     [void]$newList.Add($newEntry)
     Set-WinUserLanguageList -LanguageList $newList -Force -ErrorAction Stop
+}
+$userTags = @(Get-WinUserLanguageList -ErrorAction Stop | ForEach-Object { $_.LanguageTag })
+if (-not ($userTags -contains $target)) {
+    throw "The $target language could not be added to the current user's language list."
 }
 UI Message: "Requesting the Simplified Chinese language pack from Microsoft. This may take a few minutes..."
 ```
@@ -153,18 +161,25 @@ if ($newList.Count -eq 0) {
 Set-WinUserLanguageList -LanguageList $newList -Force -ErrorAction Stop
 
 if (Get-Command Uninstall-Language -ErrorAction SilentlyContinue) {
-    Uninstall-Language -Language $target -ErrorAction Stop
-} else {
-    foreach ($capability in @("Language.Basic~~~$target~0.0.1.0", "Language.Handwriting~~~$target~0.0.1.0", "Language.OCR~~~$target~0.0.1.0", "Language.TextToSpeech~~~$target~0.0.1.0", "Language.Speech~~~$target~0.0.1.0")) {
-        try {
-            $cap = Get-WindowsCapability -Online -Name $capability -ErrorAction Stop
-            if ($cap.State -eq 'Installed') {
-                Remove-WindowsCapability -Online -Name $capability -ErrorAction Stop | Out-Null
-            }
-        } catch {
-            Write-Warning "Optional language capability $capability was not removed: $($_.Exception.Message)"
-        }
+    try {
+        Uninstall-Language -Language $target -ErrorAction Stop
+    } catch {
+        Write-Warning "Windows kept the $target language package installed: $($_.Exception.Message)"
     }
+}
+foreach ($capability in @("Language.Basic~~~$target~0.0.1.0", "Language.Handwriting~~~$target~0.0.1.0", "Language.OCR~~~$target~0.0.1.0", "Language.TextToSpeech~~~$target~0.0.1.0", "Language.Speech~~~$target~0.0.1.0")) {
+    try {
+        $cap = Get-WindowsCapability -Online -Name $capability -ErrorAction Stop
+        if ($cap.State -eq 'Installed') {
+            Remove-WindowsCapability -Online -Name $capability -ErrorAction Stop | Out-Null
+        }
+    } catch {
+        Write-Warning "Optional language capability $capability was not removed: $($_.Exception.Message)"
+    }
+}
+$remainingUserTags = @(Get-WinUserLanguageList -ErrorAction Stop | ForEach-Object { $_.LanguageTag })
+if ($remainingUserTags -contains $target) {
+    throw "The $target language is still present in the current user's language list."
 }
 ```
 

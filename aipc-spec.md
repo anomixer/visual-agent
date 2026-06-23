@@ -1,4 +1,4 @@
-# AI PC Agent — 實作需求規格書 (2026.06.09 Updated)
+# AI PC Agent — 實作需求規格書 (2026.06.23 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.06.09 Updated] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.06.23 Updated] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -705,3 +705,20 @@ $true
 - AI 將 Markdown table 寫入 Chalkboard 時，前端不得直接把 `| 欄位 |`、`|---|` 或 GFM 表格骨架畫到 canvas。
 - Chalkboard draft 進入畫布前必須將 table rows 轉為短句格式，例如：`欄位A: 值A / 欄位B: 值B`。
 - `##CHALKBOARD##` block、auto draft 與實際 canvas render 前都必須套用相同正規化規則，避免後端 draft normalization 或遠端同步後重新帶回 markdown 表格。
+
+## 20. 2026.06.23 Language SOP 安裝/卸載穩定化
+
+### 20.1 版本
+- Runtime 版本號更新為 `2026.06.23`。
+- 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
+
+### 20.2 成功判準
+- 多國語言 SOP 的 Check 階段必須以目前使用者的 `Get-WinUserLanguageList` 為主要判準；語言存在於使用者語言清單時，install action 可視為已完成。
+- Install 階段的硬性成功條件是目標語系成功加入目前使用者語言清單；底層 Windows language package 或 optional capability 不得作為唯一成功判準。
+- Uninstall 階段的硬性成功條件是目標語系成功自目前使用者語言清單移除；若 Windows 保留底層語言包但使用者語言清單已移除，應視為可接受結果並記錄 warning。
+
+### 20.3 容錯與安全
+- `Install-Language` 應優先使用，並在支援時帶入 `CopyToSettings = false`，避免不必要地修改系統/歡迎畫面語系。
+- `Install-Language` 失敗時可 fallback 至 `Add-WindowsCapability`；`Language.Basic` 盡量安裝，OCR、Speech、TextToSpeech、Handwriting 等 optional capability 應 best-effort 處理並記錄 warning。
+- `Uninstall-Language` 與 `Remove-WindowsCapability` 應 best-effort 處理；Windows 因原始安裝語言、目前 UI 語言、版本限制或功能包鎖定而拒絕移除時，不得在使用者語言清單已移除的情況下誤判整體卸載失敗。
+- SOP 必須保留原始 Windows 安裝語言不可移除、以及系統至少保留一個使用者語言的防呆檢查。

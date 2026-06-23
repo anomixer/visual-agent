@@ -5,6 +5,17 @@
 
 ---
 
+## 📌 2026.06.23 — Language SOP 安裝/卸載穩定化
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.06.23`。
+
+### 多國語言 SOP 修正
+- `install-language-en-us`、`install-language-zh-tw`、`install-language-zh-cn`、`install-language-ja` 的 Check / Install / Uninstall 流程改以目前使用者的 `Get-WinUserLanguageList` 為主要成功判準。
+- 安裝時仍會優先嘗試 `Install-Language`，再 fallback 到 Windows Capability；但 OCR、Speech、TextToSpeech、Handwriting 等 optional capability 改為 best-effort warning，不再讓整個 SOP 因為 Windows 版本或功能包缺失而失敗。
+- 卸載時先從使用者語言清單移除目標語系，`Uninstall-Language` 與 capability 移除改為 best-effort；若 Windows 保留底層語言包但使用者語言清單已移除，視為可接受結果。
+- 保留原始 Windows 安裝語言與最後一個語言不可移除的安全檢查，避免把系統語言設定弄到不可用狀態。
+
 ## 📌 2026.06.17 — Chalkboard Markdown 表格純文字化
 
 ### 版本同步
