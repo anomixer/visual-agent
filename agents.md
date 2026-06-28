@@ -5,33 +5,53 @@
 
 ---
 
-## 📌 2026.06.28 — Observe-after-Act 強固化與即時資訊查詢修復
+## 📌 2026.06.28 — Agent Loop 重構：從 Observe-after-Act 到 Hermes-style 真正 Agent Loop
 
 ### 版本同步
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.06.28`。
 
-### Bug 修復：Browser Use 自動完成鏈路
+### Bug 修復：從根本重構 Agent Loop 機制
 
 **問題根因**：
-1. **天氣查詢只列連結**：AI 執行 `[ACTION:BROWSER_USE action="search"]` 後，後端只回傳「已開始搜尋」就停住，沒有自動進入 Observe-after-Act 階段抓取完整內容並整理答案
-2. **思考中卡住**：ReAct 流程只完成 Act（送 action），未自動進入 Observe（檢查結果並回報），導致使用者必須手動催促才能拿到最終答案
+1. **天氣查詢只列連結**：AI 執行 `[ACTION:BROWSER_USE action="search"]` 後，後端只回傳搜尋結果連結就停住，沒有自動進入下一步抓取網頁內容並整理答案
+2. **Observe-after-Act 機制根本錯誤**：舊版實作只執行「一次 LLM → 執行 tool → 再一次 LLM」就停止，與真正的 Agent Loop 概念不符
+3. **使用者必須催促**：問「明天台北天氣」時，AI 只回傳一堆網址連結，使用者還要再問「然後咧？」才會繼續，完全不符 AI Agent 應有的自主性
+
+**Hermes Agent 研究發現**：
+研究了 Hermes Agent 的 [agent loop 文件](https://hermes-agent.nousresearch.com/docs/developer-guide/agent-loop/)，發現正確的 Agent Loop 應該是：
+
+```
+Turn Lifecycle (回合生命週期):
+1. Append user message
+2. Build API messages  
+3. Make API call
+4. If tool_calls: execute them, append results, loop back to step 2
+5. If text response: return to user
+```
+
+關鍵是「**loop back to step 2**」——執行完 tool 後要「**立即再次呼叫 LLM**」，並把 tool 執行結果當作對話歷史的一部分，持續循環直到 LLM 不再輸出 tool_calls、改為輸出最終文字答案為止。
 
 **修復內容**（`server.js`）：
-- **移除過嚴條件**：原本 Observe-after-Act 只在 `actionSummaries.length > 0 && !executeTaskId` 時啟動，導致有執行任務時被略過。現改為只要 `actionSummaries.length > 0` 就一律進入二次回合
-- **強化 Prompt**：
-  - 舊版：「Continue the answer」（語氣溫和，AI 可能敷衍）
-  - 新版：「**Critical / 重要**」+ 「MUST now synthesize」+ 「Do NOT say please wait」+ 「Provide answer NOW / 立刻給出答案」
-  - 明確要求：如果是查詢類問題，**必須**從工具結果中抽取並整理關鍵發現，附 Markdown 來源連結 `[標題](網址)`
-- **System Context 補強**：新增「Do not wait for user follow-up / 不要等使用者追問」，確保 AI 理解這是最後一輪，不能再卡住
+- **完全移除 Observe-after-Act**：舊版的兩階段機制（Act → Observe）已被徹底移除
+- **實作 Hermes-style Agent Loop**：
+  - 建立 `conversationMessages` 陣列，持續追加 user/assistant/tool 訊息
+  - 首次 LLM call 後，若有 ACTION 標籤就執行 tool，將結果以 `role: 'tool'` 加入對話
+  - **立即再次呼叫 LLM**，讓它看到 tool 執行結果
+  - 持續循環最多 8 輪 (`MAX_AGENT_TURNS`)，直到 LLM 不再輸出新的 ACTION 為止
+  - 最後一輪的 LLM 回覆（不含 ACTION 標籤）就是給使用者的最終答案
+- **System Context 強化**：每一輪都會告訴 AI 目前在第幾輪、如果搜尋結果只有網址就應該用 `extract_text` 抓取內容
+- **完整 Conversation History**：所有的 tool 執行結果都會保留在對話歷史中，讓 AI 能基於完整上下文做決策
 
 **預期效果**：
-- 問「今天台北天氣」→ AI 呼叫 Browser Use search → **自動再回合**整理天氣結果（溫度、降雨、來源連結），不再只列一堆網址
-- 問「GTA V 攻略」→ Browser Use search → **立即整理** 2-3 篇攻略摘要 + YouTube 影片連結
-- **徹底消除「思考中」卡住**，使用者不再需要催促
+- 問「今天台北天氣」→ AI 自動：search → 看到網址 → extract_text → 整理溫度/降雨/來源 → 一次回答完成
+- 問「GTA V 攻略」→ AI 自動：search → 選最相關網址 → extract_text → 整理攻略重點 + 影片連結
+- **徹底消除「只列網址」問題**：使用者再也不需要催促「然後咧？」或「查得怎樣？」
+- **真正的 AI Agent 行為**：主動調用工具、取得資訊、整合並回答，符合 Hermes Agent / OpenClaw 等成熟 Agent 的使用者體驗
 
 ### 行為對齊
-- Visual Agent 現在真正符合 AI Agent 定位：**主動調用 Skills、整理資訊、給出可用答案**，而非只是「搜尋引擎包裝器」列出一堆連結要使用者自己點
-- 對齊 OpenClaw、Hermes Agent 等成熟 Agent 的使用者體驗
+- Visual Agent 現在是**真正的 Agent Loop 實作**，不再是「一次性工具呼叫 + 人工催促」的偽 Agent
+- 對齊業界標準：Hermes Agent、LangChain Agent、AutoGPT 等都採用「loop until no tool_calls」模式
+- Agent 回合數會在回應中回傳 (`agentTurns`)，方便除錯與監控
 
 ---
 

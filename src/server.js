@@ -4441,137 +4441,154 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             }
 
             if (hasActionTaken) saveTasks();
-            // 4. 更新對話紀錄
-            const cleanReply = llmReply
+
+            // ═══════════════════════════════════════════════════════════════
+            // Agent Loop (Hermes-style): Keep calling LLM until no tool_calls
+            // ═══════════════════════════════════════════════════════════════
+            const MAX_AGENT_TURNS = 8;
+            let agentTurnCount = 0;
+            let currentLlmReply = llmReply;
+            let currentActions = actions;
+            let currentActionSummaries = actionSummaries;
+            let conversationMessages = [...requestHistory];
+
+            // Add user message to conversation
+            conversationMessages.push({
+                role: 'user',
+                content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message
+            });
+
+            // Add first assistant reply
+            conversationMessages.push({
+                role: 'assistant',
+                content: currentLlmReply
+            });
+
+            // Add tool results if any
+            if (currentActionSummaries.length > 0) {
+                conversationMessages.push({
+                    role: 'tool',
+                    content: currentActionSummaries.join('\n\n')
+                });
+            }
+
+            // Agent loop: keep executing tools and calling LLM until we get a text-only response
+            while (currentActionSummaries.length > 0 && agentTurnCount < MAX_AGENT_TURNS) {
+                agentTurnCount++;
+                console.log(`[Agent Loop] Turn ${agentTurnCount}: executing ${currentActionSummaries.length} tool results`);
+
+                try {
+                    // Call LLM again with tool results
+                    const loopReply = await llm.chatWithLLM(
+                        '', // Empty message - we're using the conversation history
+                        conversationMessages,
+                        {
+                            systemContext: [
+                                chatOptions.systemContext || '',
+                                locale === 'en-US'
+                                    ? `You are in agent loop turn ${agentTurnCount}/${MAX_AGENT_TURNS}. Tool execution results are above. If they only contain URLs and you need actual content, output another [ACTION:BROWSER_USE mode="extract_text" url="<url>"] to fetch it. When you have enough information to answer the user's original question with REAL DATA (numbers, facts, specifics), provide that answer. Do NOT just list links — extract and synthesize the information.`
+                                    : `你正在 agent loop 第 ${agentTurnCount}/${MAX_AGENT_TURNS} 回合。工具執行結果在上方。如果結果只有網址而你需要實際內容，輸出另一個 [ACTION:BROWSER_USE mode="extract_text" url="<網址>"] 來抓取。當你有足夠資訊以**實際數據**（數字、事實、具體內容）回答使用者的原始問題時，提供該答案。**不要**只列出連結——抽取並整合資訊。`,
+                            ].filter(Boolean).join('\n'),
+                        },
+                        locale
+                    );
+
+                    // Parse actions from this loop reply
+                    const loopActionRegex = /\[(?:ACTION\s*[:=]\s*|Action\s*=\s*)(.*?)\]/gi;
+                    const loopActions = [];
+                    let loopMatch;
+                    while ((loopMatch = loopActionRegex.exec(loopReply)) !== null) {
+                        loopActions.push(normalizeActionString(loopMatch[1]));
+                    }
+
+                    // Add assistant reply to conversation
+                    conversationMessages.push({
+                        role: 'assistant',
+                        content: loopReply
+                    });
+
+                    // Execute new actions
+                    const newActionSummaries = [];
+                    for (const actionStr of loopActions) {
+                        if (actionStr.startsWith('BROWSER_USE')) {
+                            const mode = parseActionArg(actionStr, 'mode') || 'search';
+                            const query = parseActionArg(actionStr, 'query');
+                            const url = parseActionArg(actionStr, 'url');
+                            try {
+                                const browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
+                                if (browserResult?.success) {
+                                    if (mode === 'search' && Array.isArray(browserResult.results)) {
+                                        const items = browserResult.results.slice(0, 3);
+                                        if (items.length > 0) {
+                                            newActionSummaries.push(
+                                                (locale === 'en-US' ? `Search results:\n` : `搜尋結果：\n`) +
+                                                items.map((item, i) => `${i + 1}. ${item.title} - ${item.url}`).join('\n')
+                                            );
+                                        }
+                                    } else if (mode === 'extract_text' && browserResult.text) {
+                                        newActionSummaries.push(
+                                            (locale === 'en-US' ? `Extracted content from ${url}:\n` : `從 ${url} 抓取的內容：\n`) +
+                                            String(browserResult.text).slice(0, 2000)
+                                        );
+                                    } else if (mode === 'fetch_title' && browserResult.title) {
+                                        newActionSummaries.push(
+                                            (locale === 'en-US' ? `Page title: ${browserResult.title}` : `頁面標題：${browserResult.title}`)
+                                        );
+                                    } else if (mode === 'open') {
+                                        newActionSummaries.push(
+                                            locale === 'en-US'
+                                                ? `Opened ${url || query} in Browser tab`
+                                                : `已在 Browser 分頁開啟 ${url || query}`
+                                        );
+                                    }
+                                } else {
+                                    newActionSummaries.push(
+                                        (locale === 'en-US' ? `Browser Use failed: ` : `Browser Use 失敗：`) +
+                                        (browserResult?.error || 'unknown error')
+                                    );
+                                }
+                            } catch (err) {
+                                newActionSummaries.push(
+                                    (locale === 'en-US' ? `Browser Use error: ` : `Browser Use 錯誤：`) + err.message
+                                );
+                            }
+                        }
+                    }
+
+                    // If no new actions, we're done - use this reply as final
+                    if (newActionSummaries.length === 0) {
+                        currentLlmReply = loopReply;
+                        currentActionSummaries = [];
+                        break;
+                    }
+
+                    // Add tool results to conversation and continue loop
+                    conversationMessages.push({
+                        role: 'tool',
+                        content: newActionSummaries.join('\n\n')
+                    });
+                    currentActionSummaries = newActionSummaries;
+                    currentLlmReply = loopReply;
+
+                } catch (loopError) {
+                    console.warn(`[Agent Loop] Turn ${agentTurnCount} failed:`, loopError.message);
+                    break;
+                }
+            }
+
+            // Clean final reply
+            const cleanReply = currentLlmReply
                 .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
                 .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
                 .replace(/\[SUGGEST:.*?\]/g, '')
                 .trim();
-            let finalReply = [
-                cleanReply,
-                actionSummaries.length ? actionSummaries.join('\n\n') : '',
-            ].filter(Boolean).join('\n\n') || (
+
+            const finalReply = cleanReply || (
                 locale === 'en-US'
                     ? 'Done. I executed the requested action.'
                     : '已執行指定動作。'
             );
-            if (actionSummaries.length > 0) {
-                let observeDepth = 0;
-                const MAX_OBSERVE_DEPTH = 2;
-                let currentActionSummaries = actionSummaries;
-                
-                while (observeDepth < MAX_OBSERVE_DEPTH) {
-                    try {
-                        const observedReply = await llm.chatWithLLM(
-                            [
-                                locale === 'en-US'
-                                    ? '**CRITICAL**: The tool/action you requested has COMPLETED. You are FORBIDDEN from giving link-only responses. You MUST now extract ACTUAL DATA (numbers, facts, specifics) and present them in a structured format. If search results only returned URLs, you MUST use Browser Use to open 1-2 top results and extract the real content. Do NOT say "here are some links" or "please wait" — the user wants ANSWERS with DATA, not a link list.'
-                                    : '**嚴格要求**：你請求的工具/動作已經**完成**。你**絕對禁止**只給連結的回答。你**必須**抽取**實際數據**（數字、事實、具體內容）並以結構化格式呈現。如果搜尋結果只回傳網址，你**必須**用 Browser Use 開啟前 1-2 個結果並抽取真實內容。**不要**說「這裡有一些連結」或「請稍候」——使用者要的是**帶數據的答案**，不是連結清單。',
-                                `Original user request:\n${message}`,
-                                cleanReply ? `Your earlier plan/reply:\n${cleanReply}` : '',
-                                `Tool execution results:\n${currentActionSummaries.join('\n\n')}`,
-                                locale === 'en-US'
-                                    ? '**EXAMPLE OUTPUT** (if search returned URLs):\n[ACTION:BROWSER_USE mode="extract_text" url="https://www.cwa.gov.tw/V8/C/W/week.html"]\n\n**MANDATORY**:\n1. Output the ACTION tag on a new line EXACTLY as shown above\n2. Use the most relevant URL from search results\n3. After I execute it, you will receive the extracted content and can provide the final answer\n4. Do NOT just say "I will fetch..." — OUTPUT THE TAG'
-                                    : '**範例輸出**（如果搜尋只回傳網址）：\n[ACTION:BROWSER_USE mode="extract_text" url="https://www.cwa.gov.tw/V8/C/W/week.html"]\n\n**強制要求**：\n1. 另起一行，**完全照上面格式**輸出 ACTION 標籤\n2. 使用搜尋結果中最相關的網址\n3. 我執行後你會收到抓取的內容，再給最終答案\n4. **不要**只說「我會去抓取...」——**直接輸出標籤**',
-                            ].filter(Boolean).join('\n\n'),
-                            requestHistory,
-                            {
-                                systemContext: [
-                                    chatOptions.systemContext || '',
-                                    locale === 'en-US'
-                                        ? 'You are in Observe-after-Act mode. A tool just completed. If it returned only URLs, output [ACTION:BROWSER_USE mode="extract_text" url="<url>"] tag RIGHT NOW — it will execute immediately. Link-only responses are FORBIDDEN. Output the ACTION tag, not just text saying you will do it.'
-                                        : '你正處於 Observe-after-Act 模式。工具剛執行完畢。如果只回傳網址，**立即**輸出 [ACTION:BROWSER_USE mode="extract_text" url="<網址>"] 標籤——它會立即執行。**禁止**只給連結的回答。要輸出 ACTION 標籤，不是只說「我會去做」。',
-                                ].filter(Boolean).join('\n'),
-                            },
-                            locale
-                        );
 
-                        // Parse actions from observe reply
-                        const observeActionRegex = /\[(?:ACTION\s*[:=]\s*|Action\s*=\s*)(.*?)\]/gi;
-                        const observeActions = [];
-                        let observeMatch;
-                        while ((observeMatch = observeActionRegex.exec(observedReply)) !== null) {
-                            observeActions.push(normalizeActionString(observeMatch[1]));
-                        }
-
-                        // Auto-fallback: If no actions found but we have URLs from search, extract first relevant URL
-                        if (observeActions.length === 0 && observeDepth === 0 && currentActionSummaries.length > 0) {
-                            const summaryText = currentActionSummaries.join('\n');
-                            const urlMatch = summaryText.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/);
-                            if (urlMatch) {
-                                const autoUrl = urlMatch[0];
-                                console.log('[Observe] AI did not output ACTION, auto-extracting from:', autoUrl);
-                                observeActions.push(`BROWSER_USE mode="extract_text" url="${autoUrl}"`);
-                            }
-                        }
-
-                        // Execute observe actions
-                        const newActionSummaries = [];
-                        for (const actionStr of observeActions) {
-                            if (actionStr.startsWith('BROWSER_USE')) {
-                                const mode = parseActionArg(actionStr, 'mode') || 'search';
-                                const query = parseActionArg(actionStr, 'query');
-                                const url = parseActionArg(actionStr, 'url');
-                                try {
-                                    const browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
-                                    if (browserResult?.success) {
-                                        if (mode === 'search' && Array.isArray(browserResult.results)) {
-                                            const items = browserResult.results.slice(0, 3);
-                                            if (items.length > 0) {
-                                                newActionSummaries.push(
-                                                    (locale === 'en-US' ? `Search results:\n` : `搜尋結果：\n`) +
-                                                    items.map((item, i) => `${i + 1}. ${item.title} - ${item.url}`).join('\n')
-                                                );
-                                            }
-                                        } else if (mode === 'extract_text' && browserResult.text) {
-                                            newActionSummaries.push(
-                                                (locale === 'en-US' ? `Extracted content from ${url}:\n` : `從 ${url} 抓取的內容：\n`) +
-                                                String(browserResult.text).slice(0, 1200)
-                                            );
-                                        } else if (mode === 'open') {
-                                            newActionSummaries.push(
-                                                locale === 'en-US'
-                                                    ? `Opened ${url || query} in Browser tab`
-                                                    : `已在 Browser 分頁開啟 ${url || query}`
-                                            );
-                                        }
-                                    } else {
-                                        newActionSummaries.push(
-                                            (locale === 'en-US' ? `Browser Use failed: ` : `Browser Use 失敗：`) +
-                                            (browserResult?.error || 'unknown error')
-                                        );
-                                    }
-                                } catch (err) {
-                                    newActionSummaries.push(
-                                        (locale === 'en-US' ? `Browser Use error: ` : `Browser Use 錯誤：`) + err.message
-                                    );
-                                }
-                            }
-                        }
-
-                        const observedClean = String(observedReply || '')
-                            .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
-                            .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
-                            .replace(/\[SUGGEST:.*?\]/g, '')
-                            .trim();
-
-                        if (newActionSummaries.length > 0) {
-                            // Actions found or auto-executed, loop again
-                            currentActionSummaries = newActionSummaries;
-                            observeDepth++;
-                        } else {
-                            // No more actions, use final reply
-                            if (observedClean) {
-                                finalReply = observedClean;
-                            }
-                            break;
-                        }
-                    } catch (observeError) {
-                        console.warn('[Observe-after-Act] Follow-up failed:', observeError.message);
-                        break;
-                    }
-                }
-            }
             const trimmedHistory = [
                 ...baseHistory,
                 { role: 'user', content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message },
@@ -4591,6 +4608,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 sopChanged,
                 executeTaskId,
                 llmUsed: true,
+                agentTurns: agentTurnCount, // Report how many agent loop turns were executed
                 modelSource: req.__modelSource || {
                     type: 'local',
                     provider: llm.getCurrentProvider(),
