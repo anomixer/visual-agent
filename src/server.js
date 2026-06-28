@@ -4471,16 +4471,16 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                 cleanReply ? `Your earlier plan/reply:\n${cleanReply}` : '',
                                 `Tool execution results:\n${currentActionSummaries.join('\n\n')}`,
                                 locale === 'en-US'
-                                    ? '**MANDATORY OUTPUT FORMAT for current-info queries (weather, prices, news, etc.)**:\n1. If search results only have URLs, output `[ACTION:BROWSER_USE mode="open" url="<most-relevant-url>"]` or `[ACTION:BROWSER_USE mode="extract_text" url="<url>"]` to fetch real data NOW (this will execute immediately)\n2. After getting real data, structure your answer with:\n   - **Key Facts** (numbers, temperatures, prices, dates)\n   - **Source**: [Title](url)\n   - Summary in 2-3 sentences\n3. For weather: MUST include temperature range (high/low), rain probability %, and source link\n4. Do NOT output generic background info without specific data\n5. Do NOT say "you can visit..." or "I will fetch..." — output the ACTION tag and I will execute it for you RIGHT NOW'
-                                    : '**即時資訊查詢（天氣、物價、新聞等）的強制輸出格式**：\n1. 如果搜尋結果只有網址，輸出 `[ACTION:BROWSER_USE mode="open" url="<最相關網址>"]` 或 `[ACTION:BROWSER_USE mode="extract_text" url="<網址>"]` 來抓取真實數據（這會立即執行）\n2. 拿到真實數據後，結構化你的答案：\n   - **關鍵數據**（數字、溫度、價格、日期）\n   - **來源**：[標題](網址)\n   - 2-3 句摘要\n3. 天氣查詢：**必須**包含溫度區間（高/低溫）、降雨機率 %、來源連結\n4. **不要**只輸出通用背景知識而沒有具體數據\n5. **不要**說「你可以前往...」或「我會去抓取...」——直接輸出 ACTION 標籤，我會**立即**幫你執行',
+                                    ? '**EXAMPLE OUTPUT** (if search returned URLs):\n[ACTION:BROWSER_USE mode="extract_text" url="https://www.cwa.gov.tw/V8/C/W/week.html"]\n\n**MANDATORY**:\n1. Output the ACTION tag on a new line EXACTLY as shown above\n2. Use the most relevant URL from search results\n3. After I execute it, you will receive the extracted content and can provide the final answer\n4. Do NOT just say "I will fetch..." — OUTPUT THE TAG'
+                                    : '**範例輸出**（如果搜尋只回傳網址）：\n[ACTION:BROWSER_USE mode="extract_text" url="https://www.cwa.gov.tw/V8/C/W/week.html"]\n\n**強制要求**：\n1. 另起一行，**完全照上面格式**輸出 ACTION 標籤\n2. 使用搜尋結果中最相關的網址\n3. 我執行後你會收到抓取的內容，再給最終答案\n4. **不要**只說「我會去抓取...」——**直接輸出標籤**',
                             ].filter(Boolean).join('\n\n'),
                             requestHistory,
                             {
                                 systemContext: [
                                     chatOptions.systemContext || '',
                                     locale === 'en-US'
-                                        ? 'You are in Observe-after-Act mode. A tool just completed. If it returned only URLs, output [ACTION:BROWSER_USE ...] tags RIGHT NOW to extract real content — they will execute immediately. After execution, you will see the results and can synthesize the final answer. Link-only responses are FORBIDDEN. Do not wait for user follow-up.'
-                                        : '你正處於 Observe-after-Act 模式。工具剛執行完畢。如果只回傳網址，**立即**輸出 [ACTION:BROWSER_USE ...] 標籤來抓取真實內容——它們會立即執行。執行後你會看到結果，再整理最終答案。**禁止**只給連結的回答。不要等使用者追問。',
+                                        ? 'You are in Observe-after-Act mode. A tool just completed. If it returned only URLs, output [ACTION:BROWSER_USE mode="extract_text" url="<url>"] tag RIGHT NOW — it will execute immediately. Link-only responses are FORBIDDEN. Output the ACTION tag, not just text saying you will do it.'
+                                        : '你正處於 Observe-after-Act 模式。工具剛執行完畢。如果只回傳網址，**立即**輸出 [ACTION:BROWSER_USE mode="extract_text" url="<網址>"] 標籤——它會立即執行。**禁止**只給連結的回答。要輸出 ACTION 標籤，不是只說「我會去做」。',
                                 ].filter(Boolean).join('\n'),
                             },
                             locale
@@ -4492,6 +4492,17 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         let observeMatch;
                         while ((observeMatch = observeActionRegex.exec(observedReply)) !== null) {
                             observeActions.push(normalizeActionString(observeMatch[1]));
+                        }
+
+                        // Auto-fallback: If no actions found but we have URLs from search, extract first relevant URL
+                        if (observeActions.length === 0 && observeDepth === 0 && currentActionSummaries.length > 0) {
+                            const summaryText = currentActionSummaries.join('\n');
+                            const urlMatch = summaryText.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/);
+                            if (urlMatch) {
+                                const autoUrl = urlMatch[0];
+                                console.log('[Observe] AI did not output ACTION, auto-extracting from:', autoUrl);
+                                observeActions.push(`BROWSER_USE mode="extract_text" url="${autoUrl}"`);
+                            }
                         }
 
                         // Execute observe actions
@@ -4514,8 +4525,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                             }
                                         } else if (mode === 'extract_text' && browserResult.text) {
                                             newActionSummaries.push(
-                                                (locale === 'en-US' ? `Extracted content:\n` : `抓取內容：\n`) +
-                                                String(browserResult.text).slice(0, 800)
+                                                (locale === 'en-US' ? `Extracted content from ${url}:\n` : `從 ${url} 抓取的內容：\n`) +
+                                                String(browserResult.text).slice(0, 1200)
                                             );
                                         } else if (mode === 'open') {
                                             newActionSummaries.push(
@@ -4545,7 +4556,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             .trim();
 
                         if (newActionSummaries.length > 0) {
-                            // Actions found, loop again
+                            // Actions found or auto-executed, loop again
                             currentActionSummaries = newActionSummaries;
                             observeDepth++;
                         } else {
