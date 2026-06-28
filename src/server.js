@@ -4047,6 +4047,9 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     `Built-in Browser tab availability: Playwright module=${isPlaywrightAvailable() ? 'yes' : 'no'}, Chromium binary=${hasPlaywrightBrowserBinary() ? 'yes' : 'no'}.`,
                     'When web/current-info tasks are needed, prefer Browser Use actions. If Browser Use is unavailable, say so briefly and still provide text/link fallback from available search results.',
                     'Remote model proxy is removed. Use remote chat collaboration when another AI should help.',
+                    locale === 'en-US'
+                        ? 'CRITICAL: NEVER put [ACTION:...] tags inside ##CHALKBOARD## blocks. Always output ACTION tags in plain text OUTSIDE chalkboard blocks, then optionally add chalkboard summary after.'
+                        : '**重要**：絕對不要把 [ACTION:...] 標籤放在 ##CHALKBOARD## 區塊裡面。永遠在一般文字區輸出 ACTION 標籤（在黑板區塊外），然後可選擇性地加上黑板摘要。',
                     onDemandGuidance || '',
                 ].join('\n'),
             };
@@ -4391,7 +4394,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             }
 
 
+            // ═══════════════════════════════════════════════════════════════
+            // 強制 Current-Info Fallback：如果 LLM 沒輸出 ACTION 但這是即時資訊查詢
+            // ═══════════════════════════════════════════════════════════════
             if (!actionSummaries.length && isCurrentInfoRequest(message)) {
+                console.log('[Agent Loop] Current-info request detected but LLM did not output ACTION. Forcing fallback search...');
                 const query = buildCurrentInfoSearchQuery(message, locale || 'zh-TW');
                 try {
                     const browserResult = await runBrowserUseOperation({ mode: 'search', query, limit: 5 });
@@ -4471,8 +4478,15 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
             let currentLlmReply = llmReply;
 
+            console.log(`[Agent Loop] Initialization: actionSummaries.length = ${actionSummaries.length}, llmReply length = ${llmReply.length}`);
+
             // Agent loop: keep calling LLM until no more actions
-            while (actionSummaries.length > 0 && agentTurnCount < MAX_AGENT_TURNS) {
+            // CRITICAL: For current-info requests, ensure loop runs at least once even if first LLM reply had no actions
+            const isCurrentInfo = isCurrentInfoRequest(message);
+            let loopMustRunOnce = isCurrentInfo && actionSummaries.length > 0;
+            
+            while ((actionSummaries.length > 0 || loopMustRunOnce) && agentTurnCount < MAX_AGENT_TURNS) {
+                loopMustRunOnce = false; // Clear flag after first iteration
                 agentTurnCount++;
                 console.log(`[Agent Loop] Turn ${agentTurnCount}/${MAX_AGENT_TURNS}, tool results: ${actionSummaries.length} items`);
 
@@ -4485,8 +4499,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             systemContext: [
                                 chatOptions.systemContext || '',
                                 locale === 'en-US'
-                                    ? `[Agent Loop Turn ${agentTurnCount}/${MAX_AGENT_TURNS}] Tool execution results are in the conversation above. If results only contain URLs and you need actual content (e.g., weather data, article text), output [ACTION:BROWSER_USE mode="extract_text" url="<url>"] to fetch it. When you have sufficient information to fully answer the user's original question with REAL DATA (temperature, prices, facts), provide that final answer. Do NOT just list links.`
-                                    : `[Agent Loop 第 ${agentTurnCount}/${MAX_AGENT_TURNS} 回合] 工具執行結果在上方對話中。如果結果只有網址而你需要實際內容（例如天氣數據、文章內容），輸出 [ACTION:BROWSER_USE mode="extract_text" url="<網址>"] 來抓取。當你有足夠資訊以**實際數據**（溫度、價格、事實）完整回答使用者的原始問題時，提供最終答案。**不要**只列網址。`,
+                                    ? `[Agent Loop Turn ${agentTurnCount}/${MAX_AGENT_TURNS}] CRITICAL RULES:\n1. If tool results above only show URLs without actual weather/price/news DATA, you MUST output [ACTION:BROWSER_USE mode="extract_text" url="<first-url>"] OUTSIDE any ##CHALKBOARD## block\n2. NEVER put [ACTION:...] tags inside ##CHALKBOARD## blocks - they will not execute\n3. Output ACTION tags in plain text first, then optionally add ##CHALKBOARD## summary after\n4. Only after you have REAL DATA (temperature numbers, prices, facts), provide final answer with actual information\n5. Do NOT respond with only ##CHALKBOARD## blocks - always include plain text explanation`
+                                    : `[Agent Loop 第 ${agentTurnCount}/${MAX_AGENT_TURNS} 回合] **關鍵規則**：\n1. 如果上方工具結果只有網址而無實際天氣/物價/新聞**數據**，你必須輸出 [ACTION:BROWSER_USE mode="extract_text" url="<第一個網址>"] 且**不可放在** ##CHALKBOARD## 區塊內\n2. **絕對禁止**把 [ACTION:...] 標籤寫在 ##CHALKBOARD## 區塊裡 - 這樣不會被執行\n3. 先在一般文字輸出 ACTION 標籤，再選擇性地加上 ##CHALKBOARD## 摘要\n4. 只有在取得**實際數據**（溫度數字、價格、事實）後，才提供包含具體資訊的最終答案\n5. **禁止**只輸出 ##CHALKBOARD## 區塊 - 回覆中必須包含一般文字說明`,
                             ].filter(Boolean).join('\n'),
                         },
                         locale
@@ -4557,6 +4571,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     // If no new actions, we're done
                     if (newActionSummaries.length === 0) {
                         currentLlmReply = loopReply;
+                        console.log(`[Agent Loop] Turn ${agentTurnCount} complete: no new actions. Final reply length = ${loopReply.length}`);
                         break;
                     }
 
@@ -4567,12 +4582,15 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     });
                     actionSummaries = newActionSummaries;
                     currentLlmReply = loopReply;
+                    console.log(`[Agent Loop] Turn ${agentTurnCount} complete: ${newActionSummaries.length} new actions. Continuing loop...`);
 
                 } catch (loopError) {
                     console.warn(`[Agent Loop] Turn ${agentTurnCount} failed:`, loopError.message);
                     break;
                 }
             }
+
+            console.log(`[Agent Loop] Exit: agentTurnCount = ${agentTurnCount}, final currentLlmReply length = ${currentLlmReply.length}`);
 
             // Clean final reply (remove ACTION tags)
             const cleanReply = currentLlmReply
