@@ -1,6 +1,6 @@
 {
   "name": "visual-agent",
-  "version": "2026.06.23",
+  "version": "2026.06.28",
   "description": "Visual Agent — 可視化、可塗鴉、可協作的本地 AI PC Agent",
   "main": "src/server.js",
   "bin": "src/server.js",

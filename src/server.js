@@ -4455,25 +4455,27 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     ? 'Done. I executed the requested action.'
                     : '已執行指定動作。'
             );
-            if (actionSummaries.length > 0 && !executeTaskId) {
+            if (actionSummaries.length > 0) {
                 try {
                     const observedReply = await llm.chatWithLLM(
                         [
                             locale === 'en-US'
-                                ? 'The tool/action step finished. Continue the answer without waiting for the user to poke you again.'
-                                : '工具/動作步驟已完成。請直接接續回答，不要等使用者再提醒。',
+                                ? '**Critical**: The tool/action you requested has completed. You MUST now synthesize the results into a final useful answer for the user. Do NOT say "I will continue after the task" or "please wait" — the tool already ran. Provide the answer NOW.'
+                                : '**重要**：你剛才請求的工具/動作已經完成。你**必須現在**把結果整理成最終可用答案給使用者。**不要**說「任務完成後我會接續回答」或「請稍候」——工具已經跑完了。**立刻**給出答案。',
                             `Original user request:\n${message}`,
-                            cleanReply ? `Your prior visible plan/reply:\n${cleanReply}` : '',
-                            `Tool observations:\n${actionSummaries.join('\n\n')}`,
+                            cleanReply ? `Your earlier plan/reply:\n${cleanReply}` : '',
+                            `Tool execution results:\n${actionSummaries.join('\n\n')}`,
                             locale === 'en-US'
-                                ? 'Now provide the final useful answer. If this is research/current-info, summarize the result with source links. Do not output ACTION or SUGGEST tags unless another user-approved step is truly required.'
-                                : '現在請給出最後可用答案。若這是查詢/即時資訊，請整理結果並附來源連結。除非真的還需要下一個經使用者同意的步驟，否則不要輸出 ACTION 或 SUGGEST 標籤。',
+                                ? '**Now provide the complete final answer**. If this is web research or current-info query, extract and summarize the key findings with source links in Markdown format `[Title](url)`. If the tool returned search results, pick the most relevant 2-3 items, open them if needed, and synthesize a coherent answer. Do NOT output ACTION or SUGGEST tags unless another step requiring user approval is truly needed.'
+                                : '**現在請給出完整的最終答案**。若這是網路查詢或即時資訊，請從工具結果中抽取並整理關鍵發現，附上來源連結（Markdown 格式 `[標題](網址)`）。如果工具回傳了搜尋結果，請挑選最相關的 2-3 項，必要時開啟連結並整理成連貫答案。除非真的還需要下一個需使用者同意的步驟，否則**不要**輸出 ACTION 或 SUGGEST 標籤。',
                         ].filter(Boolean).join('\n\n'),
                         requestHistory,
                         {
                             systemContext: [
                                 chatOptions.systemContext || '',
-                                'You are in Observe-after-Act mode. A tool already ran. Synthesize the observation into a final answer now.',
+                                locale === 'en-US'
+                                    ? 'You are in Observe-after-Act mode. A tool just completed. Synthesize the observation into a complete, self-contained answer immediately. Do not wait for user follow-up.'
+                                    : '你正處於 Observe-after-Act 模式。工具剛執行完畢。立即把觀察結果整理成完整、自足的答案。不要等使用者追問。',
                             ].filter(Boolean).join('\n'),
                         },
                         locale
@@ -4487,7 +4489,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         finalReply = observedClean;
                     }
                 } catch (observeError) {
-                    console.warn('Observe-after-Act follow-up failed:', observeError.message);
+                    console.warn('[Observe-after-Act] Follow-up failed:', observeError.message);
                 }
             }
             const trimmedHistory = [

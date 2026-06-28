@@ -5,6 +5,36 @@
 
 ---
 
+## 📌 2026.06.28 — Observe-after-Act 強固化與即時資訊查詢修復
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.06.28`。
+
+### Bug 修復：Browser Use 自動完成鏈路
+
+**問題根因**：
+1. **天氣查詢只列連結**：AI 執行 `[ACTION:BROWSER_USE action="search"]` 後，後端只回傳「已開始搜尋」就停住，沒有自動進入 Observe-after-Act 階段抓取完整內容並整理答案
+2. **思考中卡住**：ReAct 流程只完成 Act（送 action），未自動進入 Observe（檢查結果並回報），導致使用者必須手動催促才能拿到最終答案
+
+**修復內容**（`server.js`）：
+- **移除過嚴條件**：原本 Observe-after-Act 只在 `actionSummaries.length > 0 && !executeTaskId` 時啟動，導致有執行任務時被略過。現改為只要 `actionSummaries.length > 0` 就一律進入二次回合
+- **強化 Prompt**：
+  - 舊版：「Continue the answer」（語氣溫和，AI 可能敷衍）
+  - 新版：「**Critical / 重要**」+ 「MUST now synthesize」+ 「Do NOT say please wait」+ 「Provide answer NOW / 立刻給出答案」
+  - 明確要求：如果是查詢類問題，**必須**從工具結果中抽取並整理關鍵發現，附 Markdown 來源連結 `[標題](網址)`
+- **System Context 補強**：新增「Do not wait for user follow-up / 不要等使用者追問」，確保 AI 理解這是最後一輪，不能再卡住
+
+**預期效果**：
+- 問「今天台北天氣」→ AI 呼叫 Browser Use search → **自動再回合**整理天氣結果（溫度、降雨、來源連結），不再只列一堆網址
+- 問「GTA V 攻略」→ Browser Use search → **立即整理** 2-3 篇攻略摘要 + YouTube 影片連結
+- **徹底消除「思考中」卡住**，使用者不再需要催促
+
+### 行為對齊
+- Visual Agent 現在真正符合 AI Agent 定位：**主動調用 Skills、整理資訊、給出可用答案**，而非只是「搜尋引擎包裝器」列出一堆連結要使用者自己點
+- 對齊 OpenClaw、Hermes Agent 等成熟 Agent 的使用者體驗
+
+---
+
 ## 📌 2026.06.23 — Language SOP 安裝/卸載穩定化
 
 ### 版本同步
@@ -322,7 +352,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ### 亂碼修復
 - agents.md：修復 nvidia-smi ENOENT 行的 Big5 亂碼、°C 溫度符號、以及重複貼入的 Big5 亂碼 Browser 區段。
-- visual-agent-spec.md：修復「Browser (未安裝)」的 Big5 亂碼。
+- spec.md：修復「Browser (未安裝)」的 Big5 亂碼。
 
 ### Planner / Builder / Learn 代理流程
 - **Planner**：AI 優先返回規劃回應，總結意圖並提出下一步建議。
