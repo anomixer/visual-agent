@@ -832,10 +832,13 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         }
         return content;
     }
-    const historyMessages = history.map(m => ({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: typeof m.content === 'string' ? m.content : String(m.content || '')
-    })).filter((m) => m.content.trim());
+    // *** FIX: 正確處理所有 role 類型，包括 'tool' ***
+    const historyMessages = history
+        .map(m => ({
+            role: m.role, // 保留原始 role，不要強制轉換成 user
+            content: typeof m.content === 'string' ? m.content : String(m.content || '')
+        }))
+        .filter((m) => m.content.trim());
 
     const messages = meta.type === 'ollama'
         ? [
@@ -865,7 +868,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         chatUrl = baseUrl.endsWith('/') ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`;
     }
     
-    console.log(`[LLM] Sending chat: Provider=${provider}, URL=${chatUrl}, Model=${modelName}`);
+    console.log(`[LLM] Sending chat: Provider=${provider}, URL=${chatUrl}, Model=${modelName}, History length=${history.length}`);
 
     const body = meta.type === 'ollama'
         ? {

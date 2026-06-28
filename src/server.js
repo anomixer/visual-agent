@@ -4443,57 +4443,56 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             if (hasActionTaken) saveTasks();
 
             // ═══════════════════════════════════════════════════════════════
-            // Agent Loop (Hermes-style): Keep calling LLM until no tool_calls
+            // Hermes-style Agent Loop: Loop until LLM stops outputting ACTIONs
             // ═══════════════════════════════════════════════════════════════
             const MAX_AGENT_TURNS = 8;
             let agentTurnCount = 0;
-            let currentLlmReply = llmReply;
-            let currentActions = actions;
-            let currentActionSummaries = actionSummaries;
-            let conversationMessages = [...requestHistory];
+            let conversationHistory = []; // Start fresh conversation for this request
 
-            // Add user message to conversation
-            conversationMessages.push({
+            // Add user message
+            conversationHistory.push({
                 role: 'user',
-                content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message
+                content: message
             });
 
             // Add first assistant reply
-            conversationMessages.push({
+            conversationHistory.push({
                 role: 'assistant',
-                content: currentLlmReply
+                content: llmReply
             });
 
-            // Add tool results if any
-            if (currentActionSummaries.length > 0) {
-                conversationMessages.push({
+            // If first reply had actions, add their results as tool messages
+            if (actionSummaries.length > 0) {
+                conversationHistory.push({
                     role: 'tool',
-                    content: currentActionSummaries.join('\n\n')
+                    content: actionSummaries.join('\n\n')
                 });
             }
 
-            // Agent loop: keep executing tools and calling LLM until we get a text-only response
-            while (currentActionSummaries.length > 0 && agentTurnCount < MAX_AGENT_TURNS) {
+            let currentLlmReply = llmReply;
+
+            // Agent loop: keep calling LLM until no more actions
+            while (actionSummaries.length > 0 && agentTurnCount < MAX_AGENT_TURNS) {
                 agentTurnCount++;
-                console.log(`[Agent Loop] Turn ${agentTurnCount}: executing ${currentActionSummaries.length} tool results`);
+                console.log(`[Agent Loop] Turn ${agentTurnCount}/${MAX_AGENT_TURNS}, tool results: ${actionSummaries.length} items`);
 
                 try {
-                    // Call LLM again with tool results
+                    // Call LLM with full conversation history including tool results
                     const loopReply = await llm.chatWithLLM(
-                        '', // Empty message - we're using the conversation history
-                        conversationMessages,
+                        '', // Empty - we're using conversation history
+                        conversationHistory,
                         {
                             systemContext: [
                                 chatOptions.systemContext || '',
                                 locale === 'en-US'
-                                    ? `You are in agent loop turn ${agentTurnCount}/${MAX_AGENT_TURNS}. Tool execution results are above. If they only contain URLs and you need actual content, output another [ACTION:BROWSER_USE mode="extract_text" url="<url>"] to fetch it. When you have enough information to answer the user's original question with REAL DATA (numbers, facts, specifics), provide that answer. Do NOT just list links — extract and synthesize the information.`
-                                    : `你正在 agent loop 第 ${agentTurnCount}/${MAX_AGENT_TURNS} 回合。工具執行結果在上方。如果結果只有網址而你需要實際內容，輸出另一個 [ACTION:BROWSER_USE mode="extract_text" url="<網址>"] 來抓取。當你有足夠資訊以**實際數據**（數字、事實、具體內容）回答使用者的原始問題時，提供該答案。**不要**只列出連結——抽取並整合資訊。`,
+                                    ? `[Agent Loop Turn ${agentTurnCount}/${MAX_AGENT_TURNS}] Tool execution results are in the conversation above. If results only contain URLs and you need actual content (e.g., weather data, article text), output [ACTION:BROWSER_USE mode="extract_text" url="<url>"] to fetch it. When you have sufficient information to fully answer the user's original question with REAL DATA (temperature, prices, facts), provide that final answer. Do NOT just list links.`
+                                    : `[Agent Loop 第 ${agentTurnCount}/${MAX_AGENT_TURNS} 回合] 工具執行結果在上方對話中。如果結果只有網址而你需要實際內容（例如天氣數據、文章內容），輸出 [ACTION:BROWSER_USE mode="extract_text" url="<網址>"] 來抓取。當你有足夠資訊以**實際數據**（溫度、價格、事實）完整回答使用者的原始問題時，提供最終答案。**不要**只列網址。`,
                             ].filter(Boolean).join('\n'),
                         },
                         locale
                     );
 
-                    // Parse actions from this loop reply
+                    // Parse actions from loop reply
                     const loopActionRegex = /\[(?:ACTION\s*[:=]\s*|Action\s*=\s*)(.*?)\]/gi;
                     const loopActions = [];
                     let loopMatch;
@@ -4501,13 +4500,13 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         loopActions.push(normalizeActionString(loopMatch[1]));
                     }
 
-                    // Add assistant reply to conversation
-                    conversationMessages.push({
+                    // Add this assistant reply to conversation
+                    conversationHistory.push({
                         role: 'assistant',
                         content: loopReply
                     });
 
-                    // Execute new actions
+                    // Execute actions and collect results
                     const newActionSummaries = [];
                     for (const actionStr of loopActions) {
                         if (actionStr.startsWith('BROWSER_USE')) {
@@ -4518,10 +4517,10 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                 const browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
                                 if (browserResult?.success) {
                                     if (mode === 'search' && Array.isArray(browserResult.results)) {
-                                        const items = browserResult.results.slice(0, 3);
+                                        const items = browserResult.results.slice(0, 5);
                                         if (items.length > 0) {
                                             newActionSummaries.push(
-                                                (locale === 'en-US' ? `Search results:\n` : `搜尋結果：\n`) +
+                                                (locale === 'en-US' ? `Search results for "${query}":\n` : `「${query}」搜尋結果：\n`) +
                                                 items.map((item, i) => `${i + 1}. ${item.title} - ${item.url}`).join('\n')
                                             );
                                         }
@@ -4534,7 +4533,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                         newActionSummaries.push(
                                             (locale === 'en-US' ? `Page title: ${browserResult.title}` : `頁面標題：${browserResult.title}`)
                                         );
-                                    } else if (mode === 'open') {
+                                    } else if (mode === 'open' || mode === 'navigate') {
                                         newActionSummaries.push(
                                             locale === 'en-US'
                                                 ? `Opened ${url || query} in Browser tab`
@@ -4543,31 +4542,30 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                     }
                                 } else {
                                     newActionSummaries.push(
-                                        (locale === 'en-US' ? `Browser Use failed: ` : `Browser Use 失敗：`) +
+                                        (locale === 'en-US' ? `Browser Use failed (${mode}): ` : `Browser Use 失敗（${mode}）：`) +
                                         (browserResult?.error || 'unknown error')
                                     );
                                 }
                             } catch (err) {
                                 newActionSummaries.push(
-                                    (locale === 'en-US' ? `Browser Use error: ` : `Browser Use 錯誤：`) + err.message
+                                    (locale === 'en-US' ? `Browser Use error (${mode}): ` : `Browser Use 錯誤（${mode}）：`) + err.message
                                 );
                             }
                         }
                     }
 
-                    // If no new actions, we're done - use this reply as final
+                    // If no new actions, we're done
                     if (newActionSummaries.length === 0) {
                         currentLlmReply = loopReply;
-                        currentActionSummaries = [];
                         break;
                     }
 
                     // Add tool results to conversation and continue loop
-                    conversationMessages.push({
+                    conversationHistory.push({
                         role: 'tool',
                         content: newActionSummaries.join('\n\n')
                     });
-                    currentActionSummaries = newActionSummaries;
+                    actionSummaries = newActionSummaries;
                     currentLlmReply = loopReply;
 
                 } catch (loopError) {
@@ -4576,7 +4574,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
             }
 
-            // Clean final reply
+            // Clean final reply (remove ACTION tags)
             const cleanReply = currentLlmReply
                 .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
                 .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
@@ -4589,6 +4587,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     : '已執行指定動作。'
             );
 
+            // Update chat history for future conversations
             const trimmedHistory = [
                 ...baseHistory,
                 { role: 'user', content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message },
