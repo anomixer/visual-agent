@@ -4460,22 +4460,22 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const observedReply = await llm.chatWithLLM(
                         [
                             locale === 'en-US'
-                                ? '**Critical**: The tool/action you requested has completed. You MUST now synthesize the results into a final useful answer for the user. Do NOT say "I will continue after the task" or "please wait" — the tool already ran. Provide the answer NOW.'
-                                : '**重要**：你剛才請求的工具/動作已經完成。你**必須現在**把結果整理成最終可用答案給使用者。**不要**說「任務完成後我會接續回答」或「請稍候」——工具已經跑完了。**立刻**給出答案。',
+                                ? '**CRITICAL**: The tool/action you requested has COMPLETED. You are FORBIDDEN from giving link-only responses. You MUST now extract ACTUAL DATA (numbers, facts, specifics) and present them in a structured format. If search results only returned URLs, you MUST use Browser Use to open 1-2 top results and extract the real content. Do NOT say "here are some links" or "please wait" — the user wants ANSWERS with DATA, not a link list.'
+                                : '**嚴格要求**：你請求的工具/動作已經**完成**。你**絕對禁止**只給連結的回答。你**必須**抽取**實際數據**（數字、事實、具體內容）並以結構化格式呈現。如果搜尋結果只回傳網址，你**必須**用 Browser Use 開啟前 1-2 個結果並抽取真實內容。**不要**說「這裡有一些連結」或「請稍候」——使用者要的是**帶數據的答案**，不是連結清單。',
                             `Original user request:\n${message}`,
                             cleanReply ? `Your earlier plan/reply:\n${cleanReply}` : '',
                             `Tool execution results:\n${actionSummaries.join('\n\n')}`,
                             locale === 'en-US'
-                                ? '**Now provide the complete final answer**. If this is web research or current-info query, extract and summarize the key findings with source links in Markdown format `[Title](url)`. If the tool returned search results, pick the most relevant 2-3 items, open them if needed, and synthesize a coherent answer. Do NOT output ACTION or SUGGEST tags unless another step requiring user approval is truly needed.'
-                                : '**現在請給出完整的最終答案**。若這是網路查詢或即時資訊，請從工具結果中抽取並整理關鍵發現，附上來源連結（Markdown 格式 `[標題](網址)`）。如果工具回傳了搜尋結果，請挑選最相關的 2-3 項，必要時開啟連結並整理成連貫答案。除非真的還需要下一個需使用者同意的步驟，否則**不要**輸出 ACTION 或 SUGGEST 標籤。',
+                                ? '**MANDATORY OUTPUT FORMAT for current-info queries (weather, prices, news, etc.)**:\n1. If search results only have URLs, output `[ACTION:BROWSER_USE mode="open" url="<most-relevant-url>"]` or `[ACTION:BROWSER_USE mode="extract_text" url="<url>"]` to fetch real data\n2. After getting real data, structure your answer with:\n   - **Key Facts** (numbers, temperatures, prices, dates)\n   - **Source**: [Title](url)\n   - Summary in 2-3 sentences\n3. For weather: MUST include temperature range (high/low), rain probability %, and source link\n4. Do NOT output generic background info without specific data\n5. Do NOT say "you can visit..." — fetch and show the data yourself'
+                                : '**即時資訊查詢（天氣、物價、新聞等）的強制輸出格式**：\n1. 如果搜尋結果只有網址，輸出 `[ACTION:BROWSER_USE mode="open" url="<最相關網址>"]` 或 `[ACTION:BROWSER_USE mode="extract_text" url="<網址>"]` 來抓取真實數據\n2. 拿到真實數據後，結構化你的答案：\n   - **關鍵數據**（數字、溫度、價格、日期）\n   - **來源**：[標題](網址)\n   - 2-3 句摘要\n3. 天氣查詢：**必須**包含溫度區間（高/低溫）、降雨機率 %、來源連結\n4. **不要**只輸出通用背景知識而沒有具體數據\n5. **不要**說「你可以前往...」——自己抓取並顯示數據',
                         ].filter(Boolean).join('\n\n'),
                         requestHistory,
                         {
                             systemContext: [
                                 chatOptions.systemContext || '',
                                 locale === 'en-US'
-                                    ? 'You are in Observe-after-Act mode. A tool just completed. Synthesize the observation into a complete, self-contained answer immediately. Do not wait for user follow-up.'
-                                    : '你正處於 Observe-after-Act 模式。工具剛執行完畢。立即把觀察結果整理成完整、自足的答案。不要等使用者追問。',
+                                    ? 'You are in Observe-after-Act mode. A tool just completed. If it returned only URLs, call Browser Use again to extract real content. Synthesize actual data into a structured answer. Link-only responses are FORBIDDEN. Do not wait for user follow-up.'
+                                    : '你正處於 Observe-after-Act 模式。工具剛執行完畢。如果只回傳網址，再次呼叫 Browser Use 抓取真實內容。把實際數據整理成結構化答案。**禁止**只給連結的回答。不要等使用者追問。',
                             ].filter(Boolean).join('\n'),
                         },
                         locale
