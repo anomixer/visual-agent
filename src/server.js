@@ -4456,40 +4456,109 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     : '已執行指定動作。'
             );
             if (actionSummaries.length > 0) {
-                try {
-                    const observedReply = await llm.chatWithLLM(
-                        [
-                            locale === 'en-US'
-                                ? '**CRITICAL**: The tool/action you requested has COMPLETED. You are FORBIDDEN from giving link-only responses. You MUST now extract ACTUAL DATA (numbers, facts, specifics) and present them in a structured format. If search results only returned URLs, you MUST use Browser Use to open 1-2 top results and extract the real content. Do NOT say "here are some links" or "please wait" — the user wants ANSWERS with DATA, not a link list.'
-                                : '**嚴格要求**：你請求的工具/動作已經**完成**。你**絕對禁止**只給連結的回答。你**必須**抽取**實際數據**（數字、事實、具體內容）並以結構化格式呈現。如果搜尋結果只回傳網址，你**必須**用 Browser Use 開啟前 1-2 個結果並抽取真實內容。**不要**說「這裡有一些連結」或「請稍候」——使用者要的是**帶數據的答案**，不是連結清單。',
-                            `Original user request:\n${message}`,
-                            cleanReply ? `Your earlier plan/reply:\n${cleanReply}` : '',
-                            `Tool execution results:\n${actionSummaries.join('\n\n')}`,
-                            locale === 'en-US'
-                                ? '**MANDATORY OUTPUT FORMAT for current-info queries (weather, prices, news, etc.)**:\n1. If search results only have URLs, output `[ACTION:BROWSER_USE mode="open" url="<most-relevant-url>"]` or `[ACTION:BROWSER_USE mode="extract_text" url="<url>"]` to fetch real data\n2. After getting real data, structure your answer with:\n   - **Key Facts** (numbers, temperatures, prices, dates)\n   - **Source**: [Title](url)\n   - Summary in 2-3 sentences\n3. For weather: MUST include temperature range (high/low), rain probability %, and source link\n4. Do NOT output generic background info without specific data\n5. Do NOT say "you can visit..." — fetch and show the data yourself'
-                                : '**即時資訊查詢（天氣、物價、新聞等）的強制輸出格式**：\n1. 如果搜尋結果只有網址，輸出 `[ACTION:BROWSER_USE mode="open" url="<最相關網址>"]` 或 `[ACTION:BROWSER_USE mode="extract_text" url="<網址>"]` 來抓取真實數據\n2. 拿到真實數據後，結構化你的答案：\n   - **關鍵數據**（數字、溫度、價格、日期）\n   - **來源**：[標題](網址)\n   - 2-3 句摘要\n3. 天氣查詢：**必須**包含溫度區間（高/低溫）、降雨機率 %、來源連結\n4. **不要**只輸出通用背景知識而沒有具體數據\n5. **不要**說「你可以前往...」——自己抓取並顯示數據',
-                        ].filter(Boolean).join('\n\n'),
-                        requestHistory,
-                        {
-                            systemContext: [
-                                chatOptions.systemContext || '',
+                let observeDepth = 0;
+                const MAX_OBSERVE_DEPTH = 2;
+                let currentActionSummaries = actionSummaries;
+                
+                while (observeDepth < MAX_OBSERVE_DEPTH) {
+                    try {
+                        const observedReply = await llm.chatWithLLM(
+                            [
                                 locale === 'en-US'
-                                    ? 'You are in Observe-after-Act mode. A tool just completed. If it returned only URLs, call Browser Use again to extract real content. Synthesize actual data into a structured answer. Link-only responses are FORBIDDEN. Do not wait for user follow-up.'
-                                    : '你正處於 Observe-after-Act 模式。工具剛執行完畢。如果只回傳網址，再次呼叫 Browser Use 抓取真實內容。把實際數據整理成結構化答案。**禁止**只給連結的回答。不要等使用者追問。',
-                            ].filter(Boolean).join('\n'),
-                        },
-                        locale
-                    );
-                    const observedClean = String(observedReply || '')
-                        .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
-                        .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
-                        .replace(/\[SUGGEST:.*?\]/g, '')
-                        .trim();
-                    if (observedClean) {
-                        finalReply = observedClean;
+                                    ? '**CRITICAL**: The tool/action you requested has COMPLETED. You are FORBIDDEN from giving link-only responses. You MUST now extract ACTUAL DATA (numbers, facts, specifics) and present them in a structured format. If search results only returned URLs, you MUST use Browser Use to open 1-2 top results and extract the real content. Do NOT say "here are some links" or "please wait" — the user wants ANSWERS with DATA, not a link list.'
+                                    : '**嚴格要求**：你請求的工具/動作已經**完成**。你**絕對禁止**只給連結的回答。你**必須**抽取**實際數據**（數字、事實、具體內容）並以結構化格式呈現。如果搜尋結果只回傳網址，你**必須**用 Browser Use 開啟前 1-2 個結果並抽取真實內容。**不要**說「這裡有一些連結」或「請稍候」——使用者要的是**帶數據的答案**，不是連結清單。',
+                                `Original user request:\n${message}`,
+                                cleanReply ? `Your earlier plan/reply:\n${cleanReply}` : '',
+                                `Tool execution results:\n${currentActionSummaries.join('\n\n')}`,
+                                locale === 'en-US'
+                                    ? '**MANDATORY OUTPUT FORMAT for current-info queries (weather, prices, news, etc.)**:\n1. If search results only have URLs, output `[ACTION:BROWSER_USE mode="open" url="<most-relevant-url>"]` or `[ACTION:BROWSER_USE mode="extract_text" url="<url>"]` to fetch real data NOW (this will execute immediately)\n2. After getting real data, structure your answer with:\n   - **Key Facts** (numbers, temperatures, prices, dates)\n   - **Source**: [Title](url)\n   - Summary in 2-3 sentences\n3. For weather: MUST include temperature range (high/low), rain probability %, and source link\n4. Do NOT output generic background info without specific data\n5. Do NOT say "you can visit..." or "I will fetch..." — output the ACTION tag and I will execute it for you RIGHT NOW'
+                                    : '**即時資訊查詢（天氣、物價、新聞等）的強制輸出格式**：\n1. 如果搜尋結果只有網址，輸出 `[ACTION:BROWSER_USE mode="open" url="<最相關網址>"]` 或 `[ACTION:BROWSER_USE mode="extract_text" url="<網址>"]` 來抓取真實數據（這會立即執行）\n2. 拿到真實數據後，結構化你的答案：\n   - **關鍵數據**（數字、溫度、價格、日期）\n   - **來源**：[標題](網址)\n   - 2-3 句摘要\n3. 天氣查詢：**必須**包含溫度區間（高/低溫）、降雨機率 %、來源連結\n4. **不要**只輸出通用背景知識而沒有具體數據\n5. **不要**說「你可以前往...」或「我會去抓取...」——直接輸出 ACTION 標籤，我會**立即**幫你執行',
+                            ].filter(Boolean).join('\n\n'),
+                            requestHistory,
+                            {
+                                systemContext: [
+                                    chatOptions.systemContext || '',
+                                    locale === 'en-US'
+                                        ? 'You are in Observe-after-Act mode. A tool just completed. If it returned only URLs, output [ACTION:BROWSER_USE ...] tags RIGHT NOW to extract real content — they will execute immediately. After execution, you will see the results and can synthesize the final answer. Link-only responses are FORBIDDEN. Do not wait for user follow-up.'
+                                        : '你正處於 Observe-after-Act 模式。工具剛執行完畢。如果只回傳網址，**立即**輸出 [ACTION:BROWSER_USE ...] 標籤來抓取真實內容——它們會立即執行。執行後你會看到結果，再整理最終答案。**禁止**只給連結的回答。不要等使用者追問。',
+                                ].filter(Boolean).join('\n'),
+                            },
+                            locale
+                        );
+
+                        // Parse actions from observe reply
+                        const observeActionRegex = /\[(?:ACTION\s*[:=]\s*|Action\s*=\s*)(.*?)\]/gi;
+                        const observeActions = [];
+                        let observeMatch;
+                        while ((observeMatch = observeActionRegex.exec(observedReply)) !== null) {
+                            observeActions.push(normalizeActionString(observeMatch[1]));
+                        }
+
+                        // Execute observe actions
+                        const newActionSummaries = [];
+                        for (const actionStr of observeActions) {
+                            if (actionStr.startsWith('BROWSER_USE')) {
+                                const mode = parseActionArg(actionStr, 'mode') || 'search';
+                                const query = parseActionArg(actionStr, 'query');
+                                const url = parseActionArg(actionStr, 'url');
+                                try {
+                                    const browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
+                                    if (browserResult?.success) {
+                                        if (mode === 'search' && Array.isArray(browserResult.results)) {
+                                            const items = browserResult.results.slice(0, 3);
+                                            if (items.length > 0) {
+                                                newActionSummaries.push(
+                                                    (locale === 'en-US' ? `Search results:\n` : `搜尋結果：\n`) +
+                                                    items.map((item, i) => `${i + 1}. ${item.title} - ${item.url}`).join('\n')
+                                                );
+                                            }
+                                        } else if (mode === 'extract_text' && browserResult.text) {
+                                            newActionSummaries.push(
+                                                (locale === 'en-US' ? `Extracted content:\n` : `抓取內容：\n`) +
+                                                String(browserResult.text).slice(0, 800)
+                                            );
+                                        } else if (mode === 'open') {
+                                            newActionSummaries.push(
+                                                locale === 'en-US'
+                                                    ? `Opened ${url || query} in Browser tab`
+                                                    : `已在 Browser 分頁開啟 ${url || query}`
+                                            );
+                                        }
+                                    } else {
+                                        newActionSummaries.push(
+                                            (locale === 'en-US' ? `Browser Use failed: ` : `Browser Use 失敗：`) +
+                                            (browserResult?.error || 'unknown error')
+                                        );
+                                    }
+                                } catch (err) {
+                                    newActionSummaries.push(
+                                        (locale === 'en-US' ? `Browser Use error: ` : `Browser Use 錯誤：`) + err.message
+                                    );
+                                }
+                            }
+                        }
+
+                        const observedClean = String(observedReply || '')
+                            .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
+                            .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
+                            .replace(/\[SUGGEST:.*?\]/g, '')
+                            .trim();
+
+                        if (newActionSummaries.length > 0) {
+                            // Actions found, loop again
+                            currentActionSummaries = newActionSummaries;
+                            observeDepth++;
+                        } else {
+                            // No more actions, use final reply
+                            if (observedClean) {
+                                finalReply = observedClean;
+                            }
+                            break;
+                        }
+                    } catch (observeError) {
+                        console.warn('[Observe-after-Act] Follow-up failed:', observeError.message);
+                        break;
                     }
-                } catch (observeError) {
-                    console.warn('[Observe-after-Act] Follow-up failed:', observeError.message);
                 }
             }
             const trimmedHistory = [
