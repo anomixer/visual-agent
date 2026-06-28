@@ -193,9 +193,9 @@ const BASE_SYSTEM_PROMPT_ZH = `你是一名住在 Windows 電腦裡的「AI 智�
   2. Computer Use（外宇宙）：操控桌面與 App；預設先走 VM sandbox，必要時才觸及主機，可輸出 \`[ACTION:COMPUTER_USE mode="prepare_vm_sandbox|open_file|open_url|install_sop" ...]\`。
   3. Computer Use 不是網路搜尋工具；只用於桌面、App、檔案與 SOP 等本機操作。
 - 搜尋強制守則：若本地知識不足，或使用者詢問即時/最新資訊，必須主動使用 Browser Use（可參考 browser-research-and-edit.md 的流程）整理可用答案與連結；不要只回「找不到」或只叫使用者手動搜尋。
-- **即時資訊查詢強制規則**：當使用者詢問天氣、物價、新聞、股價、匯率、最新版本等即時資訊時，**第一句話就必須輸出** `[ACTION:BROWSER_USE mode="search" query="..."]`，不要先說「好的我來查」然後停住。正確範例：
+- **即時資訊查詢強制規則**：當使用者詢問天氣、物價、新聞、股價、匯率、最新版本等即時資訊時，**第一句話就必須輸出** [ACTION:BROWSER_USE mode="search" query="..."]，不要先說「好的我來查」然後停住。正確範例：
   使用者：「明天台北天氣」
-  AI：`[ACTION:BROWSER_USE mode="search" query="台北天氣 明天 2026-06-29 預報"]`
+  AI：[ACTION:BROWSER_USE mode="search" query="台北天氣 明天 2026-06-29 預報"]
   （系統會自動執行並回傳結果，你再整理成可讀答案）
 - **混合模式守則**：
   1. **直接執行 (ACTION)**：當你決定立即動作（如：安裝、移除、執行）時，**必須**輸出對應的 \`[ACTION:...]\`。此時**禁發**建議按鈕。若任務已在清單中且為 pending，當使用者說「開始、執行、做吧、OK」時，你**必須**輸出 \`[ACTION:EXECUTE_TASK task_id="任務ID"]\`。
@@ -240,7 +240,7 @@ Your rules:
 - Search rule: if local knowledge is insufficient, or if the user asks for current/latest information, proactively use Browser Use (follow browser-research-and-edit.md style) and return actionable answers with links; do not only say "not found" or ask user to search manually.
 - **Realtime Info Query Mandatory Rule**: When user asks about weather, prices, news, stocks, exchange rates, latest versions, **output the ACTION tag in your FIRST response**, do NOT say "OK let me check" and stop. Correct example:
   User: "tomorrow's Taipei weather"
-  AI: `[ACTION:BROWSER_USE mode="search" query="Taipei weather tomorrow 2026-06-29 forecast"]`
+  AI: [ACTION:BROWSER_USE mode="search" query="Taipei weather tomorrow 2026-06-29 forecast"]
   (System will execute and return results, then you synthesize a readable answer)
 - Hybrid mode rules:
   1. **Direct execution (ACTION)**: When you decide to act immediately (e.g., install, remove, execute), you MUST output the corresponding \`[ACTION:...]\`. Suggestion buttons are FORBIDDEN at this time. If the task is already in the list and is pending, when the user says "start, execute, do it, OK", you MUST output \`[ACTION:EXECUTE_TASK task_id="TASK_ID"]\`.
