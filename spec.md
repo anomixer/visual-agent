@@ -758,3 +758,8 @@ $true
 - 遊戲攻略查詢不得只回傳攻略文章與 YouTube 連結清單。
 - Game research workflow 必須抽取至少 1-2 個高品質攻略來源內容，先整理可執行攻略重點，再附來源文章與影片連結。
 - 若 LLM 不可用，runtime 仍應從已抽取來源文字產生 fallback 摘要，避免使用者只拿到 link list。
+
+### 22.5 Startup Port Guard
+- 後端啟動前必須檢查 HTTP API `3210` 與 Remote Agent TCP `19168` 是否可用。
+- 若 port 已被既有 Visual Agent 或其他程序佔用，啟動程序必須明確輸出佔用 port 與 PID，並以非零 exit code 結束。
+- 不得在 port 佔用時輸出誤導性的 started 訊息，避免使用者誤以為 `npm start` 已常駐。

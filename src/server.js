@@ -10,6 +10,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { execSync, spawnSync, spawn } = require('child_process');
 const os = require('os');
+const net = require('net');
 
 const appDataDir = process.env.APPDATA || path.join(os.homedir(), '.config');
 const visualAgentDir = path.join(appDataDir, 'visual-agent');
@@ -359,7 +360,7 @@ const remoteAgent = new RemoteAgentService({
         });
     }
 });
-remoteAgent.start();
+let remoteAgentStarted = false;
 // ── In-memory state ─────────────────────────────────────────────────
 let todoList = [];
 let logs = [];
@@ -5650,7 +5651,64 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
-app.listen(PORT, async () => {
+function getPortOwnerHint(port) {
+    if (process.platform !== 'win32') return '';
+    try {
+        const cmd = [
+            `$items = Get-NetTCPConnection -LocalPort ${Number(port)} -State Listen -ErrorAction SilentlyContinue`,
+            '$items | Select-Object -First 5 LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Compress',
+        ].join('; ');
+        const output = execSync(`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "${cmd}"`, {
+            encoding: 'utf8',
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        if (!output) return '';
+        const parsed = JSON.parse(output);
+        const rows = Array.isArray(parsed) ? parsed : [parsed];
+        return rows
+            .filter(Boolean)
+            .map((item) => `${item.LocalAddress}:${item.LocalPort} PID ${item.OwningProcess}`)
+            .join(', ');
+    } catch {
+        return '';
+    }
+}
+
+function canListenOnPort(port, host = '0.0.0.0') {
+    return new Promise((resolve) => {
+        const tester = net.createServer();
+        tester.once('error', (error) => {
+            tester.close(() => resolve({ available: false, error }));
+        });
+        tester.once('listening', () => {
+            tester.close(() => resolve({ available: true, error: null }));
+        });
+        tester.listen(port, host);
+    });
+}
+
+async function assertPortAvailable(port, label) {
+    const check = await canListenOnPort(port);
+    if (check.available) return;
+    const owner = getPortOwnerHint(port);
+    const message = `${label} port ${port} is already in use${owner ? ` (${owner})` : ''}. Stop the existing Visual Agent process or use that running instance.`;
+    console.error(`\n  ❌ ${message}\n`);
+    fileLog(`Startup blocked: ${message}`);
+    process.exitCode = 1;
+    throw new Error(message);
+}
+
+async function startVisualAgentServer() {
+    await assertPortAvailable(PORT, 'HTTP API');
+    await assertPortAvailable(DEFAULT_REMOTE_PORT, 'Remote Agent TCP');
+
+    if (!remoteAgentStarted) {
+        remoteAgent.start();
+        remoteAgentStarted = true;
+    }
+
+    const httpServer = app.listen(PORT, async () => {
     const startMsg = `Visual Agent started! (PID: ${process.pid}, Path: ${process.execPath})`;
     console.log(`\n  🖥️  ${startMsg}`);
     fileLog(startMsg);
@@ -5694,4 +5752,20 @@ app.listen(PORT, async () => {
     }
 
 
+    });
+
+    httpServer.on('error', (error) => {
+        const owner = getPortOwnerHint(PORT);
+        const message = `HTTP API port ${PORT} failed to listen: ${error.message}${owner ? ` (${owner})` : ''}`;
+        console.error(`\n  ❌ ${message}\n`);
+        fileLog(message);
+        process.exit(1);
+    });
+}
+
+startVisualAgentServer().catch((error) => {
+    if (process.exitCode) return;
+    console.error(`\n  ❌ Visual Agent failed to start: ${error.message}\n`);
+    fileLog(`Visual Agent failed to start: ${error.message}`);
+    process.exit(1);
 });

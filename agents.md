@@ -17,11 +17,13 @@
 - Agent Loop 的工具結果回填改為可攜的「工具觀察結果」user message，避免部分 OpenAI-compatible provider 不支援自訂 `[ACTION:...]` 流程中的 `role: tool` 而拒收或忽略。
 - 遊戲攻略 workflow 不再只列文章/影片連結；現在會抽取來源攻略頁內容，優先用 LLM 整理「攻略重點」，LLM 不可用時也會以來源文字產生 fallback 重點。
 - `skills/game-research/SKILL.md` 同步更新：要求先抽取攻略內容、先回答可執行重點，再附來源連結。
+- 啟動流程新增 port guard：啟動前檢查 HTTP `3210` 與 Remote TCP `19168`，若已有舊 Visual Agent 行程佔用，會明確顯示 PID 並停止，不再假裝啟動成功後回到 prompt。
 
 ### 驗證
 - `node --check src\server.js` 通過。
 - `/api/agent/browser-use` 實測 `extract_text https://example.com` 可回傳文字。
 - 實測中央氣象署臺北市頁面可抽取內容，天氣查詢不再只能拿到網址列表。
+- 實測第一個 `node src/server.js` 可常駐並佔用 `3210/19168`；第二個實例會以 exit code 1 顯示 port 佔用與 PID。
 
 ---
 
