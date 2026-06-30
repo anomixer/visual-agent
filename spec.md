@@ -1,4 +1,4 @@
-# Visual Agent — 實作需求規格書 (2026.06.28 Updated)
+# Visual Agent — 實作需求規格書 (2026.06.30 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.06.28] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.6.30] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -738,3 +738,18 @@ $true
 - 新安裝與新資料應寫入 `%APPDATA%\visual-agent`。
 - 因專案尚未公開發布，不保留舊 `aipc-agent` AppData、localStorage 或 package name 相容層。
 - Browser runtime、LLM config、tasks、SOP、skills、plugins 與 experience logs 皆以 `visual-agent` 作為唯一資料根目錄。
+
+## 22. 2026.06.30 Browser Use / Agent Loop 即時查詢規格
+
+### 22.1 版本
+- Runtime 版本號更新為 `2026.6.30`。
+- 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
+
+### 22.2 Browser Use 內容取得
+- `BROWSER_USE mode="extract_text"` 若帶有 `url`，runtime 必須先開啟或抓取該 URL，再抽取頁面文字；不得忽略 URL 而只讀取目前 Browser session。
+- 若 Playwright Chromium 尚未安裝，`extract_text url="..."` 應 fallback 到 server-side fetch，將 HTML 轉成可讀純文字。
+- `search` 只回網址不足以完成天氣、新聞、價格、股價等 current-info 任務；runtime 必須自動抽取至少前 1-2 個可信搜尋結果內容，再交給 LLM 整理答案。
+
+### 22.3 Agent Loop Observation
+- Visual Agent 使用自訂 `[ACTION:...]` 協議時，工具結果回填需使用可攜的「工具觀察結果」訊息，避免 OpenAI-compatible provider 不支援原生 `role: tool` 而拒收或忽略。
+- Agent Loop 收到工具觀察結果後，若已有足夠事實必須直接回答使用者；若結果只有連結或空內容，才繼續輸出下一個 ACTION。

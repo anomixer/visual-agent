@@ -1554,6 +1554,13 @@ function buildCurrentInfoSearchQuery(text = '', locale = 'zh-TW') {
     return [base, dateHint].filter(Boolean).join(' ');
 }
 
+function buildToolObservation(content = '', locale = 'zh-TW') {
+    const body = String(content || '').trim();
+    return locale === 'en-US'
+        ? `[Tool Observation]\n${body}\n\nUse this tool result to decide the next step. If it contains enough facts, answer the user directly. If it only contains links or empty text, call another ACTION.`
+        : `[工具觀察結果]\n${body}\n\n請根據這份工具結果決定下一步。若已有足夠事實，直接回答使用者；若只有連結或空內容，繼續呼叫下一個 ACTION。`;
+}
+
 function buildModelCapabilityProfile() {
     const model = llm.getCurrentModel();
     const provider = llm.getCurrentProvider();
@@ -1737,6 +1744,32 @@ async function runBrowserUseOperation(params = {}) {
         return { success: true, mode, ...snap };
     }
     if (mode === 'extract_text') {
+        const targetUrl = normalizeNavigateUrl(params.url || '');
+        if (targetUrl) {
+            if (!isPlaywrightAvailable() || !hasPlaywrightBrowserBinary()) {
+                const fetched = await fetchReadablePageText(targetUrl);
+                return {
+                    success: true,
+                    mode,
+                    url: targetUrl,
+                    title: fetched.title,
+                    text: fetched.text,
+                    source: 'fetch',
+                };
+            }
+            const page = await ensureBrowserSession();
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(60000, Number(params.timeoutMs) || 30000) });
+            await page.waitForTimeout(600).catch(() => null);
+            const text = await page.evaluate(() => (document.body?.innerText || '').slice(0, 12000));
+            return {
+                success: true,
+                mode,
+                url: page.url(),
+                title: await page.title().catch(() => ''),
+                text: String(text || '').trim(),
+                source: 'browser',
+            };
+        }
         const page = await ensureBrowserSession();
         const text = await page.evaluate(() => (document.body?.innerText || '').slice(0, 12000));
         return {
@@ -1873,6 +1906,75 @@ function decodeHtmlEntities(value = '') {
         .replace(/&#39;/g, "'")
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>');
+}
+
+function htmlToReadableText(html = '') {
+    return decodeHtmlEntities(String(html || '')
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|section|article|li|tr|h[1-6])>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/[ \t\f\v]+/g, ' ')
+        .replace(/\n\s+/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim());
+}
+
+async function fetchReadablePageText(url = '') {
+    const targetUrl = normalizeNavigateUrl(url);
+    if (!targetUrl) throw new Error('Missing URL');
+    const response = await fetch(targetUrl, {
+        method: 'GET',
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(25000),
+    });
+    if (!response.ok) {
+        throw new Error(`fetch failed (${response.status})`);
+    }
+    const contentType = response.headers.get('content-type') || '';
+    const raw = await response.text();
+    const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = decodeHtmlEntities((titleMatch?.[1] || '').replace(/\s+/g, ' ').trim());
+    const text = contentType.includes('text/plain')
+        ? raw.trim()
+        : htmlToReadableText(raw);
+    return {
+        url: response.url || targetUrl,
+        title,
+        text: String(text || '').slice(0, 12000).trim(),
+    };
+}
+
+async function extractTextFromSearchResults(results = [], limit = 2) {
+    const items = Array.isArray(results) ? results : [];
+    const extracted = [];
+    for (const item of items.slice(0, Math.max(1, limit))) {
+        const url = String(item?.url || '').trim();
+        if (!url) continue;
+        try {
+            const page = await runBrowserUseOperation({ mode: 'extract_text', url });
+            if (page?.success && page.text) {
+                extracted.push({
+                    title: page.title || item.title || '',
+                    url: page.url || url,
+                    text: String(page.text || '').slice(0, 2500),
+                });
+            }
+        } catch (error) {
+            extracted.push({
+                title: item.title || '',
+                url,
+                text: `EXTRACT_FAILED: ${error.message || String(error)}`,
+            });
+        }
+    }
+    return extracted;
 }
 
 function normalizeDuckDuckGoUrl(url = '') {
@@ -4264,6 +4366,21 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                     ? `Search results for "${query || message}":\n`
                                     : `「${query || message}」搜尋結果：\n`) + lines.join('\n')
                             );
+                            if (isCurrentInfoRequest(message)) {
+                                const extracted = await extractTextFromSearchResults(items, 2);
+                                if (extracted.length > 0) {
+                                    actionSummaries.push(
+                                        (locale === 'en-US'
+                                            ? 'Extracted source content:\n'
+                                            : '已自動抓取來源內容：\n') +
+                                        extracted.map((item, index) => [
+                                            `Source ${index + 1}: ${item.title || '(untitled)'}`,
+                                            `URL: ${item.url}`,
+                                            item.text,
+                                        ].filter(Boolean).join('\n')).join('\n\n')
+                                    );
+                                }
+                            }
                         } else {
                             actionSummaries.push(
                                 locale === 'en-US'
@@ -4271,6 +4388,13 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                     : `已完成搜尋，但沒有解析到可用結果（${query || message}）。`
                             );
                         }
+                    } else if (browserResult?.success && mode === 'extract_text') {
+                        actionSummaries.push(
+                            (locale === 'en-US'
+                                ? `Extracted content from ${browserResult.url || url}:\n`
+                                : `從 ${browserResult.url || url} 抓取的內容：\n`) +
+                            String(browserResult.text || '').slice(0, 2500)
+                        );
                     } else if (browserResult?.success) {
                         actionSummaries.push(
                             locale === 'en-US'
@@ -4417,6 +4541,19 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                 ...items.map((item, index) => `${index + 1}. ${item.title} - ${item.url}`),
                             ].filter(Boolean).join('\n')
                         );
+                        const extracted = await extractTextFromSearchResults(items, 2);
+                        if (extracted.length > 0) {
+                            actionSummaries.push(
+                                (locale === 'en-US'
+                                    ? 'Extracted source content:\n'
+                                    : '已自動抓取來源內容：\n') +
+                                extracted.map((item, index) => [
+                                    `Source ${index + 1}: ${item.title || '(untitled)'}`,
+                                    `URL: ${item.url}`,
+                                    item.text,
+                                ].filter(Boolean).join('\n')).join('\n\n')
+                            );
+                        }
                     } else {
                         if (browserResult?.browserUnavailable) {
                             const queued = queueSopTaskById(
@@ -4471,8 +4608,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             // If first reply had actions, add their results as tool messages
             if (actionSummaries.length > 0) {
                 conversationHistory.push({
-                    role: 'tool',
-                    content: actionSummaries.join('\n\n')
+                    role: 'user',
+                    content: buildToolObservation(actionSummaries.join('\n\n'), locale)
                 });
             }
 
@@ -4537,6 +4674,19 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                                 (locale === 'en-US' ? `Search results for "${query}":\n` : `「${query}」搜尋結果：\n`) +
                                                 items.map((item, i) => `${i + 1}. ${item.title} - ${item.url}`).join('\n')
                                             );
+                                            if (isCurrentInfoRequest(message)) {
+                                                const extracted = await extractTextFromSearchResults(items, 2);
+                                                if (extracted.length > 0) {
+                                                    newActionSummaries.push(
+                                                        (locale === 'en-US' ? 'Extracted source content:\n' : '已自動抓取來源內容：\n') +
+                                                        extracted.map((item, i) => [
+                                                            `Source ${i + 1}: ${item.title || '(untitled)'}`,
+                                                            `URL: ${item.url}`,
+                                                            item.text,
+                                                        ].filter(Boolean).join('\n')).join('\n\n')
+                                                    );
+                                                }
+                                            }
                                         }
                                     } else if (mode === 'extract_text' && browserResult.text) {
                                         newActionSummaries.push(
@@ -4577,8 +4727,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
                     // Add tool results to conversation and continue loop
                     conversationHistory.push({
-                        role: 'tool',
-                        content: newActionSummaries.join('\n\n')
+                        role: 'user',
+                        content: buildToolObservation(newActionSummaries.join('\n\n'), locale)
                     });
                     actionSummaries = newActionSummaries;
                     currentLlmReply = loopReply;

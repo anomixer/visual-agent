@@ -5,6 +5,24 @@
 
 ---
 
+## 📌 2026.06.30 — Browser Use 即時查詢修正：工具結果必須變答案
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.6.30`。
+
+### Agent Loop 與 Browser Use 修正
+- 修正 `src/server.js` 的 `BROWSER_USE mode="extract_text"`：現在會使用 action 內的 `url` 先導頁或 fetch，再抽取實際頁面文字，不再誤抓目前空白 Browser session。
+- Browser runtime / Chromium 尚未安裝時，`extract_text url="..."` 會改用 server-side fetch 讀取 HTML 並轉純文字，避免工具流程直接中斷。
+- 天氣、新聞、股價、價格等 current-info 查詢在搜尋後，後端會自動抓取前 2 個搜尋結果的頁面內容，再把來源文字交回 Agent Loop，避免只把 link list 丟給模型。
+- Agent Loop 的工具結果回填改為可攜的「工具觀察結果」user message，避免部分 OpenAI-compatible provider 不支援自訂 `[ACTION:...]` 流程中的 `role: tool` 而拒收或忽略。
+
+### 驗證
+- `node --check src\server.js` 通過。
+- `/api/agent/browser-use` 實測 `extract_text https://example.com` 可回傳文字。
+- 實測中央氣象署臺北市頁面可抽取內容，天氣查詢不再只能拿到網址列表。
+
+---
+
 ## 📌 2026.06.28 — Agent Loop 徹底重構：修正 role: 'tool' 訊息遺失的致命 Bug
 
 ### 版本同步

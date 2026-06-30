@@ -21,7 +21,7 @@
 - **🌐 Double Agent Mode**：支援兩台實體電腦透過專用通訊協議連線，本地 AI 先答、遠端 AI 隨後補充，輕鬆實現多機協同對話與管理。或請遠端朋友與AI一起幫你解決電腦問題。
 - **🎨 互動式黑板 (Chalkboard) 共享**：內建粉筆畫布與多模態視覺理解。遠端連線時可即時共享黑板快照，隨手塗鴉、放圖、標記即可讓 AI 看懂並提供精準建議。
 - **📊 圓圈式 (Circular Gauge) 硬體環形監控**：即時探測 CPU、GPU、RAM、Disk，並能透過專屬插件精準監控 NVIDIA 顯示卡的溫度、VRAM 與即時負載。
-- **🔍 Browser Use 聯網即時查詢**：當本地知識不足時，AI 能夠自動呼叫並控制 Playwright 瀏覽器進行即時網頁檢索與 DOM 解析，完美回答天氣、新聞與最新股價。
+- **🔍 Browser Use 聯網即時查詢**：當本地知識不足時，AI 能夠自動呼叫 Browser Use 搜尋、抽取來源頁面文字並整理答案，支援天氣、新聞與最新股價等即時資訊。
 - **⚡ 雙向自動化軟體管理**：整合 winget、Microsoft Store、GitHub Releases，為 Chrome、Steam、Office 等常用工具打造防錯的「安裝與移除」雙向 SOP 執行鏈。
 - **⚗️ 整合 19 個 Hermes Agent 領域知識庫**：融合來自 NousResearch 專業級 Hermes Agent 的 19 大領域 Skills，在 AI 對話時動態注入，涵蓋 Data Science、DevOps、Red Teaming、自動化代理等深度背景，回答更專業。
 - **🛡️ Consent-before-action 安全防護**：AI 執行任何系統變更（如安裝、修改設定）前，均會先將其新增至待辦任務清單，等待使用者手動點擊確認後才執行，防止無人值守的自動修改與潛在風險。
@@ -365,4 +365,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `spec.md`。
-- 目前套件版本：`2026.06.28`.
+- 目前套件版本：`2026.6.30`.
