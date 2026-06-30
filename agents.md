@@ -15,6 +15,8 @@
 - Browser runtime / Chromium 尚未安裝時，`extract_text url="..."` 會改用 server-side fetch 讀取 HTML 並轉純文字，避免工具流程直接中斷。
 - 天氣、新聞、股價、價格等 current-info 查詢在搜尋後，後端會自動抓取前 2 個搜尋結果的頁面內容，再把來源文字交回 Agent Loop，避免只把 link list 丟給模型。
 - Agent Loop 的工具結果回填改為可攜的「工具觀察結果」user message，避免部分 OpenAI-compatible provider 不支援自訂 `[ACTION:...]` 流程中的 `role: tool` 而拒收或忽略。
+- 遊戲攻略 workflow 不再只列文章/影片連結；現在會抽取來源攻略頁內容，優先用 LLM 整理「攻略重點」，LLM 不可用時也會以來源文字產生 fallback 重點。
+- `skills/game-research/SKILL.md` 同步更新：要求先抽取攻略內容、先回答可執行重點，再附來源連結。
 
 ### 驗證
 - `node --check src\server.js` 通過。

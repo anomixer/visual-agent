@@ -13,8 +13,9 @@ metadata:
 
 1. Extract the game name and topic keyword from the user's message.
 2. Search web guides and YouTube videos via Browser Use.
-3. Return concise Markdown links grouped by type (guides / videos).
-4. Include a short Chalkboard draft for quick visual sharing.
+3. Open/extract the best guide pages before answering.
+4. Return concise actionable guide takeaways first, then source links grouped by type.
+5. Include a short Chalkboard draft for quick visual sharing.
 
 ## Output Format
 
@@ -22,6 +23,10 @@ metadata:
 ## 🎮 <topic>
 
 ### 攻略
+- <actionable takeaway 1>
+- <actionable takeaway 2>
+
+### 來源
 - [Guide Title](https://...)
 
 ### 影片
@@ -36,6 +41,7 @@ metadata:
 
 ```
 [ACTION:BROWSER_USE action="search" query="<game> <topic> guide site:reddit.com OR youtube.com"]
+[ACTION:BROWSER_USE action="extract_text" url="<best-guide-url>"]
 [ACTION:BROWSER_USE action="fetch_title" url="<url>"]
 ```
 
@@ -43,5 +49,6 @@ metadata:
 
 - Prefer practical result links over wiki/theory pages.
 - Keep each list to 3–5 items; omit low-quality or irrelevant results.
+- Do not stop at links. If guide pages can be opened, extract content and summarize what the user should do.
 - If no useful result is found, ask the user for a more specific keyword.
 - Do not fabricate URLs or guide content.

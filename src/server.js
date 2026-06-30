@@ -2646,6 +2646,87 @@ function extractGameTopic(message = '') {
     return cleaned || 'latest popular games';
 }
 
+function selectGameGuideFallbackLines(extractedGuides = [], limit = 5) {
+    const useful = [];
+    const keyword = /(攻略|教學|打法|配裝|任務|關卡|boss|build|weapon|armor|mission|quest|unlock|level|upgrade|farm|money|tip|tips|guide|walkthrough|strategy|location|reward|技能|武器|裝備|升級|解鎖|位置|獎勵|賺錢)/i;
+    for (const source of extractedGuides) {
+        const text = String(source?.text || '')
+            .replace(/\r/g, '\n')
+            .split(/\n|(?<=[。！？.!?])\s+/)
+            .map((line) => line.replace(/\s+/g, ' ').trim())
+            .filter((line) => line.length >= 24 && line.length <= 180)
+            .filter((line) => !/(cookie|privacy|subscribe|sign in|login|advertisement|copyright|網站導覽|回首頁|意見箱)/i.test(line));
+        const picked = text.filter((line) => keyword.test(line)).slice(0, 2);
+        for (const line of (picked.length ? picked : text.slice(0, 1))) {
+            useful.push(line);
+            if (useful.length >= limit) return useful;
+        }
+    }
+    return useful;
+}
+
+async function buildGameGuideTakeaways(topic = '', guideResults = [], locale = 'zh-TW') {
+    const extractedGuides = await extractTextFromSearchResults(guideResults, 2);
+    const usableGuides = extractedGuides.filter((item) =>
+        item?.text && !/^EXTRACT_FAILED:/i.test(String(item.text || ''))
+    );
+    if (!usableGuides.length) {
+        return {
+            text: '',
+            bullets: [],
+            extractedGuides,
+            llmUsed: false,
+        };
+    }
+
+    try {
+        const status = await llm.checkOllamaStatus();
+        if (status.available && status.modelReady) {
+            const sourceText = usableGuides.map((item, index) => [
+                `Source ${index + 1}: ${item.title || '(untitled)'}`,
+                `URL: ${item.url}`,
+                String(item.text || '').slice(0, 2500),
+            ].join('\n')).join('\n\n');
+            const prompt = locale === 'en-US'
+                ? `Summarize actionable game guide takeaways for "${topic}". Do not just list links. Use the source text below. Return 5 concise bullets and avoid inventing facts.\n\n${sourceText}`
+                : `請根據以下來源內容，整理「${topic}」的可執行遊戲攻略重點。不要只列連結，不要編造來源沒有的內容。請輸出 5 個精簡條列重點。\n\n${sourceText}`;
+            const summary = await llm.chatWithLLM(
+                prompt,
+                [],
+                {
+                    systemContext: locale === 'en-US'
+                        ? 'You summarize game guide sources into practical steps. Keep it concise and cite source titles when useful.'
+                        : '你負責把遊戲攻略來源整理成實用步驟。回答要精簡，必要時提到來源標題。',
+                },
+                locale
+            );
+            const bullets = String(summary || '')
+                .split(/\r?\n/)
+                .map((line) => line.replace(/^[-*]\s*/, '').replace(/^\d+[.)、]\s*/, '').trim())
+                .filter(Boolean)
+                .slice(0, 6);
+            return {
+                text: String(summary || '').trim(),
+                bullets,
+                extractedGuides: usableGuides,
+                llmUsed: true,
+            };
+        }
+    } catch (error) {
+        fileLog(`[GameResearch] LLM source summary failed: ${error.message}`);
+    }
+
+    const fallbackLines = selectGameGuideFallbackLines(usableGuides, 5);
+    return {
+        text: fallbackLines.length
+            ? fallbackLines.map((line) => `- ${line}`).join('\n')
+            : '',
+        bullets: fallbackLines,
+        extractedGuides: usableGuides,
+        llmUsed: false,
+    };
+}
+
 function findOfficeInstallSop(sops = []) {
     const exact = sops.find((item) => item.id === 'rec_office');
     if (exact) return exact;
@@ -2859,6 +2940,9 @@ async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW')
     const topic = extractGameTopicV3(message);
     const guideResults = await searchGameGuideArticles(topic, 5);
     const videoResults = await searchPlayableYouTubeVideos(topic, 5);
+    const guideTakeaways = guideResults.length
+        ? await buildGameGuideTakeaways(topic, guideResults, locale)
+        : { text: '', bullets: [], extractedGuides: [], llmUsed: false };
 
     if (!guideResults.length && !videoResults.length) {
         return {
@@ -2874,7 +2958,10 @@ async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW')
         };
     }
 
-    const chalkboardBullets = guideResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    const takeawayBullets = guideTakeaways.bullets.length
+        ? guideTakeaways.bullets.slice(0, 5)
+        : guideResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
+    const chalkboardBullets = takeawayBullets;
     const fallbackBullets = videoResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
     const boardLines = (chalkboardBullets.length > 0 ? chalkboardBullets : fallbackBullets).slice(0, 6);
     const chalkboardControlBlock = [
@@ -2891,7 +2978,12 @@ async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW')
             ? '_Filtered: removed trailers/reactions/invalid links; prioritized practical guides._'
             : '_已過濾：排除預告片、反應片與失效連結，優先實用攻略。_',
         '',
-        locale === 'en-US' ? '### Guides' : '### 攻略文章',
+        locale === 'en-US' ? '### Takeaways' : '### 攻略重點',
+        ...(guideTakeaways.text
+            ? [guideTakeaways.text]
+            : (takeawayBullets.length ? takeawayBullets.map((line) => `- ${line}`) : ['- N/A'])),
+        '',
+        locale === 'en-US' ? '### Source Guides' : '### 來源攻略',
         ...(guideResults.length ? guideResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
         '',
         locale === 'en-US' ? '### Videos' : '### YouTube 教學影片',
@@ -2914,7 +3006,7 @@ async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW')
             ? ['Find more videos', 'Search another game']
             : ['再找更多影片', '改查其他遊戲'],
         task: false,
-        llmUsed: false,
+        llmUsed: guideTakeaways.llmUsed,
     };
 }
 

@@ -753,3 +753,8 @@ $true
 ### 22.3 Agent Loop Observation
 - Visual Agent 使用自訂 `[ACTION:...]` 協議時，工具結果回填需使用可攜的「工具觀察結果」訊息，避免 OpenAI-compatible provider 不支援原生 `role: tool` 而拒收或忽略。
 - Agent Loop 收到工具觀察結果後，若已有足夠事實必須直接回答使用者；若結果只有連結或空內容，才繼續輸出下一個 ACTION。
+
+### 22.4 Game Research
+- 遊戲攻略查詢不得只回傳攻略文章與 YouTube 連結清單。
+- Game research workflow 必須抽取至少 1-2 個高品質攻略來源內容，先整理可執行攻略重點，再附來源文章與影片連結。
+- 若 LLM 不可用，runtime 仍應從已抽取來源文字產生 fallback 摘要，避免使用者只拿到 link list。
