@@ -3098,6 +3098,102 @@ app.get('/api/meta', (req, res) => {
     });
 });
 
+function readDebugLogTail(maxLines = 80) {
+    const logPath = path.join(visualAgentDir, 'debug.log');
+    try {
+        if (!fs.existsSync(logPath)) {
+            return { path: logPath, lines: [], exists: false };
+        }
+        const text = fs.readFileSync(logPath, 'utf8');
+        const lines = text.split(/\r?\n/).filter(Boolean).slice(-Math.max(1, maxLines));
+        return { path: logPath, lines, exists: true };
+    } catch (error) {
+        return { path: logPath, lines: [`Failed to read debug log: ${error.message}`], exists: false };
+    }
+}
+
+function getListenPortDiagnostic(port) {
+    const owner = getPortOwnerHint(port);
+    return {
+        port,
+        expectedOwnerPid: process.pid,
+        listening: Boolean(owner),
+        owner,
+        ownedByCurrentProcess: owner.includes(`PID ${process.pid}`),
+    };
+}
+
+app.get('/api/diagnostics', async (req, res) => {
+    try {
+        const browserExecutable = resolvePlaywrightBrowserExecutable();
+        const llmStatus = await llm.checkOllamaStatus().catch((error) => ({
+            available: false,
+            modelReady: false,
+            error: error.message,
+        }));
+        loadTasks();
+        const tasks = Array.isArray(todoList) ? todoList : [];
+        const sops = loadAllSOPs(SOPS_DIR);
+        const skills = loadSkillDocuments();
+        const debugLog = readDebugLogTail(Number(req.query?.tail) || 80);
+        res.json({
+            success: true,
+            generatedAt: new Date().toISOString(),
+            app: {
+                name: pkg.name || 'visual-agent',
+                version: APP_VERSION,
+                pid: process.pid,
+                node: process.version,
+                platform: `${process.platform} ${os.release()}`,
+                cwd: process.cwd(),
+                executable: process.execPath,
+            },
+            paths: {
+                appData: visualAgentDir,
+                sops: SOPS_DIR,
+                skills: SKILLS_DIR,
+                plugins: PLUGINS_DIR,
+                exps: EXPS_DIR,
+                debugLog: debugLog.path,
+                browserRuntime: process.env.PLAYWRIGHT_BROWSERS_PATH || '',
+            },
+            ports: {
+                http: getListenPortDiagnostic(PORT),
+                remote: getListenPortDiagnostic(DEFAULT_REMOTE_PORT),
+            },
+            browser: {
+                playwrightModuleAvailable: isPlaywrightAvailable(),
+                browserAvailable: Boolean(browserExecutable),
+                browserExecutable,
+                searchPaths: getPlaywrightBrowserDirCandidates(),
+                installSopId: 'install_playwright_chromium',
+            },
+            llm: {
+                provider: llm.getCurrentProvider(),
+                baseUrl: llm.getCurrentBaseUrl(),
+                model: llm.getCurrentModel(),
+                visionModel: llm.getCurrentVisionModel(),
+                available: Boolean(llmStatus.available),
+                modelReady: Boolean(llmStatus.modelReady),
+                version: llmStatus.version || '',
+                modelName: llmStatus.modelName || '',
+                error: llmStatus.error || '',
+            },
+            data: {
+                taskCount: tasks.length,
+                pendingTaskCount: tasks.filter((task) => String(task.status || '') === 'pending').length,
+                runningTaskCount: tasks.filter((task) => String(task.status || '') === 'running').length,
+                sopCount: sops.length,
+                skillCount: skills.length,
+                logCount: logs.length,
+            },
+            debugLog,
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 app.post('/api/open-external-url', (req, res) => {
     try {
         const raw = String(req.body?.url || '').trim();

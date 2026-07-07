@@ -3387,3 +3387,64 @@ select.form-input option,
   letter-spacing: 0.03em;
   flex-shrink: 0;
 }
+
+/* ── Diagnostics Modal ───────────────────────────────────────── */
+.diagnostics-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.diagnostics-section {
+  border-top: 1px solid var(--border-color);
+  padding: 10px 0;
+}
+
+.diagnostics-section h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.diag-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 160px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.12);
+}
+
+.diag-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.diag-value,
+.diag-log {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.diag-log {
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.diag-ok .diag-value {
+  color: var(--accent-green);
+}
+
+.diag-warn .diag-value,
+.diag-warn {
+  color: var(--accent-red);
+}

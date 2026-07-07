@@ -5,6 +5,23 @@
 
 ---
 
+## 📌 2026.07.07 — Public Readiness Pass：診斷、文件與乾淨機器驗收
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.7.7`。
+
+### Public preview 準備
+- README 新增 public preview 檢查清單與乾淨機器驗收流程，明確列出 `npm install`、`npm start`、Ollama、Browser runtime、即時查詢、遊戲攻略與低風險 SOP 驗收項目。
+- README 常見問題新增 `npm start` 立刻回到 prompt 的 port 佔用說明，以及 issue 回報時應提供診斷摘要。
+- 後端新增 `/api/diagnostics`，一次回傳版本、PID、Node/Windows runtime、AppData 路徑、HTTP/Remote port owner、Ollama/provider 狀態、Browser runtime 狀態、SOP/Skill/Task 數量與 debug log tail。
+- 前端右上角新增「診斷資訊」按鈕，使用既有 modal 顯示診斷結果，並提供複製診斷摘要功能。
+
+### 驗收
+- `node --check src\server.js` 通過。
+- `/api/diagnostics` 可在不依賴 LLM 對話的情況下回傳本機診斷資訊。
+
+---
+
 ## 📌 2026.06.30 — Browser Use 即時查詢修正：工具結果必須變答案
 
 ### 版本同步

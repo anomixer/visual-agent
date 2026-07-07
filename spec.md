@@ -1,4 +1,4 @@
-# Visual Agent — 實作需求規格書 (2026.06.30 Updated)
+# Visual Agent — 實作需求規格書 (2026.07.07 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.6.30] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.7.7] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -763,3 +763,22 @@ $true
 - 後端啟動前必須檢查 HTTP API `3210` 與 Remote Agent TCP `19168` 是否可用。
 - 若 port 已被既有 Visual Agent 或其他程序佔用，啟動程序必須明確輸出佔用 port 與 PID，並以非零 exit code 結束。
 - 不得在 port 佔用時輸出誤導性的 started 訊息，避免使用者誤以為 `npm start` 已常駐。
+
+## 23. 2026.07.07 Public Readiness 與診斷規格
+
+### 23.1 版本
+- Runtime 版本號更新為 `2026.7.7`。
+- 狀態列與 `/api/meta` 顯示版本仍以 `package.json` 為單一真相來源。
+
+### 23.2 診斷 API
+- 後端必須提供 `GET /api/diagnostics`，回傳 app 版本、PID、Node 版本、平台、AppData 路徑、HTTP/Remote port owner、LLM provider/model 狀態、Browser runtime 狀態、任務/SOP/Skill 數量與 debug log tail。
+- 診斷 API 不得依賴 LLM 對話成功；即使 Ollama 或 Browser runtime 缺失，也必須回傳可讀狀態。
+- debug log 僅回傳末段，避免一次暴露過多本機紀錄。
+
+### 23.3 UI 診斷
+- UI 必須提供「診斷資訊」入口，讓使用者在回報 issue 前可複製診斷摘要。
+- 診斷資訊需明確標示 Browser Use、Ollama/model、port、AppData 與 debug log 末段。
+
+### 23.4 Public Preview 驗收
+- README 必須包含 public preview 檢查清單與乾淨機器驗收流程。
+- 乾淨機器驗收至少涵蓋 `npm install`、`npm start`、首次 UI 啟動、AI 引擎狀態、Browser runtime 補裝、即時資訊查詢、遊戲攻略摘要與低風險 SOP 任務執行。

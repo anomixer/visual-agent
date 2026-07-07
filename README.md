@@ -1,7 +1,7 @@
 # Visual Agent
 
 > [!NOTE]
-> **本程式還在開發與優化中**，若發現任何問題，或有任何想要貢獻的程式與想法，都非常歡迎提供。
+> **本程式目前建議視為 public preview 候選版本**。它已能完成主要本地 Agent 工作流，但仍可能因模型、Browser runtime、Windows 權限或網路狀態而失敗。執行系統變更前請先確認任務內容。
 
 > 可視化、可塗鴉、可協作的 AI 管家
 > by [anomixer](https://github.com/anomixer)
@@ -105,6 +105,42 @@ npm start
 ```text
 http://localhost:3210
 ```
+
+---
+
+## Public Preview 檢查清單
+
+公開前至少確認：
+
+- `npm install` 可在乾淨 clone 後完成，若 PowerShell script policy 擋住，README 有替代命令。
+- `npm start` 會常駐；若 `3210` 或 `19168` 被佔用，console 會明確顯示佔用 PID。
+- 首次啟動 UI 可進入主畫面，不會卡在 splash。
+- AI 引擎未就緒時，狀態列與工作日誌能明確顯示 Ollama / 模型狀態。
+- Browser runtime 未安裝時，Browser tab 不會誤顯示可用，且可透過 `install-playwright-chromium` SOP 補裝。
+- 問「今天天氣」這類即時資訊時，AI 會搜尋、抽取來源內容並整理答案，不只列連結。
+- 問遊戲攻略時，AI 會先輸出攻略重點，再附來源文章與影片。
+- 工作清單、SOP 清單、Skills 清單可載入，且任務執行失敗會留下可讀 log。
+- 右上角「診斷資訊」可顯示版本、port、Ollama、Browser runtime、AppData 路徑與 debug log 末段。
+
+## 乾淨機器驗收流程
+
+建議用全新 Windows 使用者或乾淨 VM 驗收：
+
+```powershell
+git clone https://github.com/anomixer/visual-agent.git
+cd visual-agent
+npm install
+npm start
+```
+
+開啟 `http://localhost:3210` 後驗收：
+
+1. 查看右上角「診斷資訊」，確認 HTTP `3210`、Remote TCP `19168`、AppData 路徑與 debug log 可讀。
+2. 若 AI 未就緒，依 UI 任務安裝 Ollama / 下載模型；或到 AI 引擎設定改用其他 Provider。
+3. 若 Browser 不可用，執行 `install-playwright-chromium` SOP。
+4. 詢問「今天台北天氣」確認即時查詢會回具體天氣摘要。
+5. 詢問「幫我查 GTA5 賺錢攻略」確認回覆包含攻略重點與來源連結。
+6. 新增一個低風險 SOP 任務，確認工作日誌、任務狀態與失敗訊息正常。
 
 ---
 
@@ -350,14 +386,20 @@ powershell -ExecutionPolicy Bypass -Command "npm install"
 powershell -ExecutionPolicy Bypass -Command "npm run start"
 ```
 
-**Q: 為什麼有些 SOP 會跳出 UAC 視窗？**  
+**Q: 為什麼有些 SOP 會跳出 UAC 視窗？**
 因為這些 SOP 需要系統管理員權限。現在 install 階段會自動走共用提權流程，若使用者取消 UAC，任務會直接失敗。
 
-**Q: 新增 SOP 後沒有出現？**  
+**Q: 新增 SOP 後沒有出現？**
 確認檔案放在 `sops/` 或 `%APPDATA%\visual-agent\sops\`，再重新整理頁面。
 
-**Q: AI 指示燈是紅色或黃色？**  
+**Q: AI 指示燈是紅色或黃色？**
 通常代表 Ollama 尚未安裝、未啟動，或模型尚未下載完成。
+
+**Q: `npm start` 立刻回到 prompt？**
+通常是 `3210` 或 `19168` 已被另一個 Visual Agent 行程佔用。新版啟動時會顯示佔用 PID。請先關閉舊行程，或直接使用已在跑的 `http://localhost:3210`。
+
+**Q: 要怎麼回報問題？**
+點右上角「診斷資訊」，複製診斷摘要，連同操作步驟與 debug log 末段一起附上。
 
 ---
 
@@ -365,4 +407,4 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `spec.md`。
-- 目前套件版本：`2026.6.30`.
+- 目前套件版本：`2026.7.7`.

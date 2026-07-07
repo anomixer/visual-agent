@@ -144,6 +144,7 @@ const remoteFileInput = $('#remoteFileInput');
 const btnDisconnectRemote = $('#btnDisconnectRemote');
 const recSearchInput = $('#recSearchInput');
 const btnTheme = $('#btnTheme');
+const btnDiagnostics = $('#btnDiagnostics');
 const btnExport = $('#btnExport');
 const btnImport = $('#btnImport');
 const importFileInput = $('#importFileInput');
@@ -507,6 +508,24 @@ const I18N = {
             importSuccess: '任務清單已匯入',
             importFailed: '匯入失敗：JSON 格式錯誤',
         },
+        diagnostics: {
+            title: '診斷資訊',
+            loading: '正在收集診斷資訊...',
+            failed: '診斷資訊讀取失敗：{error}',
+            copy: '複製診斷摘要',
+            copied: '診斷摘要已複製',
+            app: '應用程式',
+            runtime: 'Runtime',
+            ports: '連接埠',
+            browser: 'Browser Use',
+            llm: 'AI 引擎',
+            data: '資料狀態',
+            debugLog: 'Debug log 末段',
+            ready: '就緒',
+            missing: '缺失',
+            ok: '正常',
+            warning: '需處理',
+        },
         todo: {
             emptyTitle: '目前沒有執行中的任務',
             emptyHint: '您可以從左側推薦清單或透過對話新增任務',
@@ -847,6 +866,24 @@ const I18N = {
             exportFallback: 'Native export failed, fallback to browser download: {error}',
             importSuccess: 'Task list imported',
             importFailed: 'Import failed: JSON format error',
+        },
+        diagnostics: {
+            title: 'Diagnostics',
+            loading: 'Collecting diagnostics...',
+            failed: 'Failed to load diagnostics: {error}',
+            copy: 'Copy Diagnostic Summary',
+            copied: 'Diagnostic summary copied',
+            app: 'Application',
+            runtime: 'Runtime',
+            ports: 'Ports',
+            browser: 'Browser Use',
+            llm: 'AI Engine',
+            data: 'Data State',
+            debugLog: 'Debug log tail',
+            ready: 'Ready',
+            missing: 'Missing',
+            ok: 'OK',
+            warning: 'Needs attention',
         },
         todo: {
             emptyTitle: 'No running tasks at the moment',
@@ -5465,6 +5502,7 @@ function updateLocaleUI() {
     if (btnToggleSidebar) btnToggleSidebar.title = t('titlebar.toggleSidebar');
     if (btnTogglePanel) btnTogglePanel.title = t('titlebar.toggleLog');
     if (btnToggleChat) btnToggleChat.title = t('titlebar.toggleChat');
+    if (btnDiagnostics) btnDiagnostics.title = t('diagnostics.title');
     const sidebarTabRecommend = document.querySelector('.sidebar-tab[data-sidebar-tab="recommend"] span');
     const sidebarTabSops = document.querySelector('.sidebar-tab[data-sidebar-tab="sops"] span');
     const sidebarTabSkills = document.querySelector('.sidebar-tab[data-sidebar-tab="skills"] span');
@@ -6723,6 +6761,129 @@ function addUILog(msg, level = 'info') {
     addLogEntry({ message: msg, level, timestamp: new Date().toISOString() });
 }
 
+function formatDiagnosticValue(value) {
+    if (value === true) return t('diagnostics.ready');
+    if (value === false || value === '' || value === null || value === undefined) return t('diagnostics.missing');
+    if (Array.isArray(value)) return value.length ? value.join('\n') : t('diagnostics.missing');
+    if (typeof value === 'object') return JSON.stringify(value, null, 2);
+    return String(value);
+}
+
+function renderDiagnosticRows(rows = []) {
+    return rows.map(([label, value, state]) => {
+        const statusClass = state === 'warn' ? 'diag-warn' : (state === 'ok' ? 'diag-ok' : '');
+        return `<div class="diag-row ${statusClass}">
+            <div class="diag-label">${escapeHtml(label)}</div>
+            <pre class="diag-value">${escapeHtml(formatDiagnosticValue(value))}</pre>
+        </div>`;
+    }).join('');
+}
+
+function buildDiagnosticsSummary(data = {}) {
+    return [
+        `Visual Agent ${data.app?.version || 'dev'} (${data.generatedAt || ''})`,
+        `PID: ${data.app?.pid || ''}`,
+        `Node: ${data.app?.node || ''}`,
+        `HTTP 3210: ${data.ports?.http?.owner || 'not listening'}`,
+        `Remote 19168: ${data.ports?.remote?.owner || 'not listening'}`,
+        `LLM: ${data.llm?.provider || ''} / ${data.llm?.modelName || data.llm?.model || ''} / available=${Boolean(data.llm?.available)} / modelReady=${Boolean(data.llm?.modelReady)}`,
+        `Browser: module=${Boolean(data.browser?.playwrightModuleAvailable)} / runtime=${Boolean(data.browser?.browserAvailable)} / exe=${data.browser?.browserExecutable || ''}`,
+        `AppData: ${data.paths?.appData || ''}`,
+        `Counts: tasks=${data.data?.taskCount ?? ''}, sops=${data.data?.sopCount ?? ''}, skills=${data.data?.skillCount ?? ''}`,
+    ].join('\n');
+}
+
+async function copyDiagnosticsSummary(data = {}) {
+    const summary = buildDiagnosticsSummary(data);
+    try {
+        await navigator.clipboard.writeText(summary);
+        addUILog(t('diagnostics.copied'), 'success');
+    } catch {
+        const textarea = document.createElement('textarea');
+        textarea.value = summary;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+        addUILog(t('diagnostics.copied'), 'success');
+    }
+}
+
+async function openDiagnosticsModal() {
+    if (!modalOverlay || !modalTitle || !modalBody) return;
+    modalTitle.textContent = t('diagnostics.title');
+    modalBody.innerHTML = `<p>${escapeHtml(t('diagnostics.loading'))}</p>`;
+    modalOverlay.classList.add('visible');
+    try {
+        const data = await api('/api/diagnostics');
+        if (!data.success) throw new Error(data.error || 'unknown error');
+        const browserOk = Boolean(data.browser?.playwrightModuleAvailable && data.browser?.browserAvailable);
+        const llmOk = Boolean(data.llm?.available && data.llm?.modelReady);
+        const portOk = Boolean(data.ports?.http?.ownedByCurrentProcess && data.ports?.remote?.ownedByCurrentProcess);
+        const debugLines = Array.isArray(data.debugLog?.lines) ? data.debugLog.lines : [];
+        modalBody.innerHTML = `
+            <div class="diagnostics-actions">
+                <button class="btn-secondary" id="btnCopyDiagnostics">${escapeHtml(t('diagnostics.copy'))}</button>
+            </div>
+            <div class="diagnostics-section">
+                <h4>${escapeHtml(t('diagnostics.app'))}</h4>
+                ${renderDiagnosticRows([
+                    ['Version', data.app?.version || 'dev', 'ok'],
+                    ['PID', data.app?.pid || '', 'ok'],
+                    ['Node', data.app?.node || '', 'ok'],
+                    ['Platform', data.app?.platform || '', 'ok'],
+                    ['Executable', data.app?.executable || '', 'ok'],
+                ])}
+            </div>
+            <div class="diagnostics-section">
+                <h4>${escapeHtml(t('diagnostics.ports'))}</h4>
+                ${renderDiagnosticRows([
+                    ['HTTP 3210', data.ports?.http?.owner || 'not listening', portOk ? 'ok' : 'warn'],
+                    ['Remote TCP 19168', data.ports?.remote?.owner || 'not listening', portOk ? 'ok' : 'warn'],
+                ])}
+            </div>
+            <div class="diagnostics-section">
+                <h4>${escapeHtml(t('diagnostics.llm'))}</h4>
+                ${renderDiagnosticRows([
+                    ['Provider', data.llm?.provider || '', 'ok'],
+                    ['Base URL', data.llm?.baseUrl || '', 'ok'],
+                    ['Model', data.llm?.modelName || data.llm?.model || '', llmOk ? 'ok' : 'warn'],
+                    ['Available', Boolean(data.llm?.available), llmOk ? 'ok' : 'warn'],
+                    ['Model Ready', Boolean(data.llm?.modelReady), llmOk ? 'ok' : 'warn'],
+                    ['Error', data.llm?.error || '', data.llm?.error ? 'warn' : 'ok'],
+                ])}
+            </div>
+            <div class="diagnostics-section">
+                <h4>${escapeHtml(t('diagnostics.browser'))}</h4>
+                ${renderDiagnosticRows([
+                    ['Playwright module', Boolean(data.browser?.playwrightModuleAvailable), data.browser?.playwrightModuleAvailable ? 'ok' : 'warn'],
+                    ['Chromium runtime', Boolean(data.browser?.browserAvailable), browserOk ? 'ok' : 'warn'],
+                    ['Executable', data.browser?.browserExecutable || '', browserOk ? 'ok' : 'warn'],
+                    ['Search paths', data.browser?.searchPaths || [], 'ok'],
+                    ['Install SOP', data.browser?.installSopId || '', 'ok'],
+                ])}
+            </div>
+            <div class="diagnostics-section">
+                <h4>${escapeHtml(t('diagnostics.data'))}</h4>
+                ${renderDiagnosticRows([
+                    ['AppData', data.paths?.appData || '', 'ok'],
+                    ['Tasks', `${data.data?.taskCount || 0} (${data.data?.pendingTaskCount || 0} pending, ${data.data?.runningTaskCount || 0} running)`, 'ok'],
+                    ['SOPs', data.data?.sopCount || 0, 'ok'],
+                    ['Skills', data.data?.skillCount || 0, 'ok'],
+                    ['Debug log', data.paths?.debugLog || '', 'ok'],
+                ])}
+            </div>
+            <div class="diagnostics-section">
+                <h4>${escapeHtml(t('diagnostics.debugLog'))}</h4>
+                <pre class="diag-log">${escapeHtml(debugLines.join('\n') || '(empty)')}</pre>
+            </div>
+        `;
+        document.getElementById('btnCopyDiagnostics')?.addEventListener('click', () => copyDiagnosticsSummary(data));
+    } catch (error) {
+        modalBody.innerHTML = `<p class="diag-warn">${escapeHtml(t('diagnostics.failed', { error: error.message }))}</p>`;
+    }
+}
+
 function expandLog() {
     if (isLogCollapsed) {
         isLogCollapsed = false;
@@ -7229,6 +7390,7 @@ function setupEventListeners() {
 
     // Clear Chat
     btnClearChat?.addEventListener('click', clearChatMessages);
+    btnDiagnostics?.addEventListener('click', openDiagnosticsModal);
     btnRemoteConnect?.addEventListener('click', connectRemotePeer);
     btnSaveRemoteProfile?.addEventListener('click', saveRemoteProfile);
     btnShareScreen?.addEventListener('click', shareRemoteScreen);
