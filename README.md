@@ -119,6 +119,7 @@ http://localhost:3210
 - Browser runtime 未安裝時，Browser tab 不會誤顯示可用，且可透過 `install-playwright-chromium` SOP 補裝。
 - 問「今天天氣」這類即時資訊時，AI 會搜尋、抽取來源內容並整理答案，不只列連結。
 - 問遊戲攻略時，AI 會先輸出攻略重點，再附來源文章與影片。
+- 問「最近有什麼新遊戲」這類遊戲新作/推薦資訊時，AI 會走即時查詢 fallback，不應停在「馬上幫你查」。
 - 工作清單、SOP 清單、Skills 清單可載入，且任務執行失敗會留下可讀 log。
 - 右上角「診斷資訊」可顯示版本、port、Ollama、Browser runtime、AppData 路徑與 debug log 末段。
 

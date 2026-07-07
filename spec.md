@@ -782,3 +782,7 @@ $true
 ### 23.4 Public Preview 驗收
 - README 必須包含 public preview 檢查清單與乾淨機器驗收流程。
 - 乾淨機器驗收至少涵蓋 `npm install`、`npm start`、首次 UI 啟動、AI 引擎狀態、Browser runtime 補裝、即時資訊查詢、遊戲攻略摘要與低風險 SOP 任務執行。
+
+### 23.5 遊戲新作與推薦查詢
+- 「最近有什麼新遊戲」、「最新 Steam 新作」、「PS5 / Switch / Xbox 新遊戲推薦」屬於即時資訊查詢。
+- 若模型未輸出 Browser Use ACTION，runtime 必須自動補 current-info search，抽取來源內容後再交回 Agent Loop，不得只回「馬上幫你查」就停止。

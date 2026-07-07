@@ -20,6 +20,10 @@
 - `node --check src\server.js` 通過。
 - `/api/diagnostics` 可在不依賴 LLM 對話的情況下回傳本機診斷資訊。
 
+### 纖小修正：遊戲新作查詢
+- 「最近有什麼新遊戲」、「Steam 新作推薦」這類遊戲 discovery 查詢納入 current-info fallback。
+- 若模型只回「馬上幫你查」但沒有輸出 Browser Use ACTION，後端會自動補搜尋、抽取來源，再進 Agent Loop 整理答案。
+
 ---
 
 ## 📌 2026.06.30 — Browser Use 即時查詢修正：工具結果必須變答案
