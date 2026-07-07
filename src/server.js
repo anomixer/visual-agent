@@ -1540,8 +1540,17 @@ function getRuntimeDateContext(locale = 'zh-TW') {
         : `今天日期：${todayIso}（${today.weekday}，時區 ${timeZone}）。明天是 ${tomorrowIso}（${tomorrow.weekday}）。所有「今天/明天/昨天」都必須以這個日期解析，不可自行猜舊日期。`;
 }
 
+function isGameDiscoveryRequest(text = '') {
+    const raw = String(text || '');
+    const hasGame = /(\u904a\u6232|game|games|steam|ps5|switch|xbox|nintendo|playstation)/i.test(raw);
+    const hasDiscovery = /(\u6700\u8fd1|\u6700\u65b0|\u65b0\u904a\u6232|\u65b0\u4f5c|\u4e0a\u5e02|\u767c\u552e|\u63a8\u85a6|\u6392\u884c|\u6709\u4ec0\u9ebc|latest|recent|new games?|upcoming|release|released|recommend|best|top)/i.test(raw);
+    return hasGame && hasDiscovery;
+}
+
 function isCurrentInfoRequest(text = '') {
-    return /(天氣|氣溫|降雨|颱風|物價|價格|報價|新聞|最新|今天|明天|昨日|昨天|匯率|股價|股票|油價|金價|weather|forecast|temperature|rain|price|quote|news|latest|today|tomorrow|yesterday|exchange rate|stock)/i.test(String(text || ''));
+    const raw = String(text || '');
+    return /(天氣|氣溫|降雨|颱風|物價|價格|報價|新聞|最新|今天|明天|昨日|昨天|匯率|股價|股票|油價|金價|weather|forecast|temperature|rain|price|quote|news|latest|today|tomorrow|yesterday|exchange rate|stock)/i.test(raw)
+        || isGameDiscoveryRequest(raw);
 }
 
 function buildCurrentInfoSearchQuery(text = '', locale = 'zh-TW') {
@@ -1552,7 +1561,13 @@ function buildCurrentInfoSearchQuery(text = '', locale = 'zh-TW') {
     const dateHint = /(明天|tomorrow)/i.test(base)
         ? tomorrowMatch?.[1]
         : (/(今天|today)/i.test(base) ? todayMatch?.[1] : '');
-    return [base, dateHint].filter(Boolean).join(' ');
+    const yearHint = todayMatch?.[1]?.slice(0, 4) || '';
+    const gameDiscoveryHint = isGameDiscoveryRequest(base)
+        ? (locale === 'en-US'
+            ? `latest new game releases ${yearHint} Steam PS5 Switch Xbox reviews`
+            : `最新 新遊戲 上市 推薦 ${yearHint} Steam PS5 Switch Xbox 評價`)
+        : '';
+    return [base, dateHint, gameDiscoveryHint].filter(Boolean).join(' ');
 }
 
 function buildToolObservation(content = '', locale = 'zh-TW') {
