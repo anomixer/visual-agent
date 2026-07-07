@@ -120,6 +120,8 @@ http://localhost:3210
 - 問「今天天氣」這類即時資訊時，AI 會搜尋、抽取來源內容並整理答案，不只列連結。
 - 問遊戲攻略時，AI 會先輸出攻略重點，再附來源文章與影片。
 - 問「最近有什麼新遊戲」這類遊戲新作/推薦資訊時，AI 會走即時查詢 fallback，不應停在「馬上幫你查」。
+- Web research 類問題若模型沒吐 ACTION，後端會保底搜尋、抽取前 2 筆來源，再交回 Agent Loop 整理。
+- Chat 思考泡泡需顯示 Agent 狀態：規劃中、搜尋即時來源、抽取來源內容、整理答案、完成。
 - 工作清單、SOP 清單、Skills 清單可載入，且任務執行失敗會留下可讀 log。
 - 右上角「診斷資訊」可顯示版本、port、Ollama、Browser runtime、AppData 路徑與 debug log 末段。
 

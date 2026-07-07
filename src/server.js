@@ -1547,10 +1547,21 @@ function isGameDiscoveryRequest(text = '') {
     return hasGame && hasDiscovery;
 }
 
+function detectGameNewsIntent(text = '') {
+    return isGameDiscoveryRequest(text);
+}
+
 function isCurrentInfoRequest(text = '') {
     const raw = String(text || '');
     return /(天氣|氣溫|降雨|颱風|物價|價格|報價|新聞|最新|今天|明天|昨日|昨天|匯率|股價|股票|油價|金價|weather|forecast|temperature|rain|price|quote|news|latest|today|tomorrow|yesterday|exchange rate|stock)/i.test(raw)
         || isGameDiscoveryRequest(raw);
+}
+
+function isWebResearchIntent(text = '') {
+    const raw = String(text || '');
+    return isCurrentInfoRequest(raw)
+        || detectGameResearchIntentV3(raw)
+        || /(查|搜尋|搜索|找|整理|比較|推薦|攻略|資料|來源|web|網路|網頁|search|find|research|compare|recommend|guide|walkthrough|source)/i.test(raw);
 }
 
 function buildCurrentInfoSearchQuery(text = '', locale = 'zh-TW') {
@@ -1570,11 +1581,67 @@ function buildCurrentInfoSearchQuery(text = '', locale = 'zh-TW') {
     return [base, dateHint, gameDiscoveryHint].filter(Boolean).join(' ');
 }
 
+function buildWebResearchSearchQuery(text = '', locale = 'zh-TW') {
+    if (isCurrentInfoRequest(text)) return buildCurrentInfoSearchQuery(text, locale);
+    return String(text || '').trim();
+}
+
 function buildToolObservation(content = '', locale = 'zh-TW') {
     const body = String(content || '').trim();
     return locale === 'en-US'
         ? `[Tool Observation]\n${body}\n\nUse this tool result to decide the next step. If it contains enough facts, answer the user directly. If it only contains links or empty text, call another ACTION.`
         : `[工具觀察結果]\n${body}\n\n請根據這份工具結果決定下一步。若已有足夠事實，直接回答使用者；若只有連結或空內容，繼續呼叫下一個 ACTION。`;
+}
+
+function buildToolObservationMessage(content = '', locale = 'zh-TW') {
+    return {
+        role: 'user',
+        content: buildToolObservation(content, locale),
+    };
+}
+
+const AGENT_STATUS_TTL_MS = 10 * 60 * 1000;
+const agentRunStatuses = new Map();
+
+function normalizeAgentRunId(value = '') {
+    return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+}
+
+function setAgentRunStatus(runId = '', phase = 'planning', locale = 'zh-TW', detail = '') {
+    const id = normalizeAgentRunId(runId);
+    if (!id) return;
+    const labels = locale === 'en-US'
+        ? {
+            planning: 'Planning',
+            searching: 'Searching live sources',
+            extracting: 'Extracting source content',
+            summarizing: 'Summarizing findings',
+            done: 'Done',
+            error: 'Stopped',
+        }
+        : {
+            planning: '規劃中',
+            searching: '搜尋即時來源',
+            extracting: '抽取來源內容',
+            summarizing: '整理答案',
+            done: '完成',
+            error: '已停止',
+        };
+    agentRunStatuses.set(id, {
+        success: true,
+        runId: id,
+        phase,
+        label: labels[phase] || phase,
+        detail: String(detail || ''),
+        updatedAt: new Date().toISOString(),
+    });
+}
+
+function pruneAgentRunStatuses() {
+    const cutoff = Date.now() - AGENT_STATUS_TTL_MS;
+    for (const [id, status] of agentRunStatuses.entries()) {
+        if (Date.parse(status.updatedAt || '') < cutoff) agentRunStatuses.delete(id);
+    }
 }
 
 function buildModelCapabilityProfile() {
@@ -4053,8 +4120,23 @@ app.get('/api/task/:taskId/status', (req, res) => {
     res.json({ success: true, task });
 });
 // POST /api/chat 處理對話輸入（LLM 優先，fallback 到關鍵字比對）
+app.get('/api/agent-status/:runId', (req, res) => {
+    pruneAgentRunStatuses();
+    const runId = normalizeAgentRunId(req.params.runId);
+    res.json(agentRunStatuses.get(runId) || {
+        success: true,
+        runId,
+        phase: 'planning',
+        label: 'Planning',
+        detail: '',
+        updatedAt: '',
+    });
+});
+
 app.post('/api/chat', async (req, res) => {
     const { message, locale } = req.body;
+    const agentRunId = normalizeAgentRunId(req.body?.agentRunId || '');
+    setAgentRunStatus(agentRunId, 'planning', locale || 'zh-TW');
     const localChatSessionId = String(req.body?.localChatSessionId || '').trim();
     const requestedHistory = Array.isArray(req.body?.history) ? req.body.history : null;
     const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
@@ -4550,6 +4632,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const url = parseActionArg(actionStr, 'url');
                     let browserResult;
                     try {
+                        setAgentRunStatus(agentRunId, mode === 'extract_text' ? 'extracting' : 'searching', locale || 'zh-TW', query || url || mode);
                         browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
                     } catch (browserError) {
                         browserResult = {
@@ -4570,7 +4653,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                     ? `Search results for "${query || message}":\n`
                                     : `「${query || message}」搜尋結果：\n`) + lines.join('\n')
                             );
-                            if (isCurrentInfoRequest(message)) {
+                            if (isWebResearchIntent(message)) {
+                                setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query || message);
                                 const extracted = await extractTextFromSearchResults(items, 2);
                                 if (extracted.length > 0) {
                                     actionSummaries.push(
@@ -4723,12 +4807,13 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
             // ═══════════════════════════════════════════════════════════════
-            // 強制 Current-Info Fallback：如果 LLM 沒輸出 ACTION 但這是即時資訊查詢
+            // 強制 Web Research Fallback：如果 LLM 沒輸出 ACTION 但這是網路查詢
             // ═══════════════════════════════════════════════════════════════
-            if (!actionSummaries.length && isCurrentInfoRequest(message)) {
-                console.log('[Agent Loop] Current-info request detected but LLM did not output ACTION. Forcing fallback search...');
-                const query = buildCurrentInfoSearchQuery(message, locale || 'zh-TW');
+            if (!actionSummaries.length && isWebResearchIntent(message)) {
+                console.log('[Agent Loop] Web research request detected but LLM did not output ACTION. Forcing fallback search...');
+                const query = buildWebResearchSearchQuery(message, locale || 'zh-TW');
                 try {
+                    setAgentRunStatus(agentRunId, 'searching', locale || 'zh-TW', query);
                     const browserResult = await runBrowserUseOperation({ mode: 'search', query, limit: 5 });
                     const items = Array.isArray(browserResult?.results) ? browserResult.results.slice(0, 5) : [];
                     if (items.length > 0) {
@@ -4745,6 +4830,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                 ...items.map((item, index) => `${index + 1}. ${item.title} - ${item.url}`),
                             ].filter(Boolean).join('\n')
                         );
+                        setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query);
                         const extracted = await extractTextFromSearchResults(items, 2);
                         if (extracted.length > 0) {
                             actionSummaries.push(
@@ -4811,10 +4897,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
             // If first reply had actions, add their results as tool messages
             if (actionSummaries.length > 0) {
-                conversationHistory.push({
-                    role: 'user',
-                    content: buildToolObservation(actionSummaries.join('\n\n'), locale)
-                });
+                conversationHistory.push(buildToolObservationMessage(actionSummaries.join('\n\n'), locale));
             }
 
             let currentLlmReply = llmReply;
@@ -4832,6 +4915,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 console.log(`[Agent Loop] Turn ${agentTurnCount}/${MAX_AGENT_TURNS}, tool results: ${actionSummaries.length} items`);
 
                 try {
+                    setAgentRunStatus(agentRunId, 'summarizing', locale || 'zh-TW', `turn ${agentTurnCount}`);
                     // Call LLM with full conversation history including tool results
                     const loopReply = await llm.chatWithLLM(
                         '', // Empty - we're using conversation history
@@ -4869,6 +4953,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             const query = parseActionArg(actionStr, 'query');
                             const url = parseActionArg(actionStr, 'url');
                             try {
+                                setAgentRunStatus(agentRunId, mode === 'extract_text' ? 'extracting' : 'searching', locale || 'zh-TW', query || url || mode);
                                 const browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
                                 if (browserResult?.success) {
                                     if (mode === 'search' && Array.isArray(browserResult.results)) {
@@ -4878,7 +4963,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                                 (locale === 'en-US' ? `Search results for "${query}":\n` : `「${query}」搜尋結果：\n`) +
                                                 items.map((item, i) => `${i + 1}. ${item.title} - ${item.url}`).join('\n')
                                             );
-                                            if (isCurrentInfoRequest(message)) {
+                                            if (isWebResearchIntent(message)) {
+                                                setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query || message);
                                                 const extracted = await extractTextFromSearchResults(items, 2);
                                                 if (extracted.length > 0) {
                                                     newActionSummaries.push(
@@ -4930,10 +5016,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     }
 
                     // Add tool results to conversation and continue loop
-                    conversationHistory.push({
-                        role: 'user',
-                        content: buildToolObservation(newActionSummaries.join('\n\n'), locale)
-                    });
+                    conversationHistory.push(buildToolObservationMessage(newActionSummaries.join('\n\n'), locale));
                     actionSummaries = newActionSummaries;
                     currentLlmReply = loopReply;
                     console.log(`[Agent Loop] Turn ${agentTurnCount} complete: ${newActionSummaries.length} new actions. Continuing loop...`);
@@ -4971,6 +5054,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 chatHistory = trimmedHistory;
             }
             const finalSuggestions = parseStructuredSuggestions(llmReply, locale, suggestions);
+            setAgentRunStatus(agentRunId, 'done', locale || 'zh-TW');
             return res.json({
                 success: true,
                 reply: finalReply,
@@ -4993,6 +5077,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             });
         } catch (llmErr) {
             console.error('[LLM] AI Agent processing failed:', llmErr);
+            setAgentRunStatus(agentRunId, 'error', locale || 'zh-TW', llmErr.message || String(llmErr));
             llmErrorForFallback = llmErr.message;
             // 發生錯誤不中斷，讓它往下走到關鍵字比對模式
         }

@@ -6123,6 +6123,12 @@ async function sendChat() {
             : '已先顯示 Agent 處理計畫，背景工作繼續執行。', 'info');
     }
     const thinkId = appendThinking(currentMode === 'remote' ? remoteChatMessages : chatMessages);
+    const agentRunId = currentMode === 'local'
+        ? `agent-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+        : '';
+    const stopAgentStatusPolling = agentRunId
+        ? startAgentStatusPolling(agentRunId, thinkId, currentMode === 'remote' ? remoteChatMessages : chatMessages)
+        : () => {};
 
     // 初始化中斷控制
     const requestAbortController = new AbortController();
@@ -6230,6 +6236,7 @@ async function sendChat() {
                     remoteSessionId: '',
                     localChatSessionId: currentLocalSession?.id || '',
                     history: currentLocalSession?.history || [],
+                    agentRunId,
                 },
                 signal: requestAbortController.signal
             });
@@ -6289,6 +6296,7 @@ async function sendChat() {
             });
         }
     } finally {
+        stopAgentStatusPolling();
         // 恢復按鈕狀態
         btnSend.classList.remove('stop');
         if (currentMode === 'remote') {
@@ -6452,7 +6460,7 @@ function appendThinking(container = chatMessages, forcedId = '') {
     const div = document.createElement('div');
     div.className = 'message ai-message';
     div.id = id;
-    div.innerHTML = `<div class="msg-avatar">🤖</div><div class="msg-bubble thinking-dots">${currentLocale === "en-US" ? "Thinking..." : "思考中"}</div>`;
+    div.innerHTML = `<div class="msg-avatar">🤖</div><div class="msg-bubble thinking-dots"><span class="thinking-status-text">${currentLocale === "en-US" ? "Thinking..." : "思考中"}</span></div>`;
     const avatarEl = div.querySelector('.msg-avatar');
     if (avatarEl) avatarEl.innerHTML = '&#129302;';
     container.appendChild(div);
@@ -6460,6 +6468,43 @@ function appendThinking(container = chatMessages, forcedId = '') {
         container.scrollTop = container.scrollHeight;
     }
     return id;
+}
+
+function updateThinkingStatus(id, status = {}) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const target = el.querySelector('.thinking-status-text') || el.querySelector('.msg-bubble');
+    if (!target) return;
+    const label = status.label || (currentLocale === 'en-US' ? 'Thinking' : '思考中');
+    const detail = status.detail ? ` · ${status.detail}` : '';
+    target.textContent = `${label}${detail}`;
+}
+
+function startAgentStatusPolling(runId, thinkId, container = chatMessages) {
+    let stopped = false;
+    let lastPhase = '';
+    const poll = async () => {
+        if (stopped || !document.getElementById(thinkId)) return;
+        try {
+            const status = await api(`/api/agent-status/${encodeURIComponent(runId)}`);
+            if (stopped) return;
+            if (status.phase && (status.phase !== lastPhase || status.detail)) {
+                lastPhase = status.phase;
+                updateThinkingStatus(thinkId, status);
+                if (isContainerPinnedToBottom(container)) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+        } catch {
+            // Best-effort status only; the chat response remains authoritative.
+        }
+    };
+    poll();
+    const timer = setInterval(poll, 900);
+    return () => {
+        stopped = true;
+        clearInterval(timer);
+    };
 }
 function removeThinking(id) { document.getElementById(id)?.remove(); }
 

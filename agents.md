@@ -24,6 +24,12 @@
 - 「最近有什麼新遊戲」、「Steam 新作推薦」這類遊戲 discovery 查詢納入 current-info fallback。
 - 若模型只回「馬上幫你查」但沒有輸出 Browser Use ACTION，後端會自動補搜尋、抽取來源，再進 Agent Loop 整理答案。
 
+### Agent Loop 補強：Web research 保底與狀態
+- 新增 `isWebResearchIntent()`，web research 類問題在模型未輸出 ACTION 時，後端會自動 search、extract 前 2 筆來源，再餵回 Agent Loop summarizing。
+- 新增 `detectGameNewsIntent()`，專門覆蓋新遊戲、最近上市、Steam/PS5/Switch/Xbox 推薦與新作查詢。
+- Tool observation 統一改由 `buildToolObservationMessage()` 封裝，避免各處手寫 observation message。
+- 新增 `/api/agent-status/:runId`，前端 chat thinking bubble 會輪詢並顯示 planning/searching/extracting/summarizing/done。
+
 ---
 
 ## 📌 2026.06.30 — Browser Use 即時查詢修正：工具結果必須變答案

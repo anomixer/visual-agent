@@ -786,3 +786,8 @@ $true
 ### 23.5 遊戲新作與推薦查詢
 - 「最近有什麼新遊戲」、「最新 Steam 新作」、「PS5 / Switch / Xbox 新遊戲推薦」屬於即時資訊查詢。
 - 若模型未輸出 Browser Use ACTION，runtime 必須自動補 current-info search，抽取來源內容後再交回 Agent Loop，不得只回「馬上幫你查」就停止。
+
+### 23.6 Web Research Agent Loop 保底
+- 只要判定為 web research intent，若模型未輸出 ACTION，runtime 必須自動執行 search，抽取前 2 筆來源內容，再交回 Agent Loop summarizing。
+- Agent Loop observation 必須集中封裝，避免各 action 路徑自行拼接不一致的 observation message。
+- 前端必須顯示 Agent 狀態事件：planning、searching、extracting、summarizing、done；不得只顯示靜態「思考中」。
