@@ -1417,9 +1417,94 @@ function updateWorkbookWithNvidiaSnapshot(filePath = '', snapshot = {}, env = {}
 }
 
 function parseActionArg(actionStr = '', key = '') {
-    const regex = new RegExp(`${key}="(.*?)"`);
-    const match = String(actionStr || '').match(regex);
-    return match ? match[1] : '';
+    const src = String(actionStr || '');
+    const keyEsc = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!keyEsc) return '';
+    const quoted = src.match(new RegExp(`${keyEsc}\\s*=\\s*"([^"]*)"`, 'i'))
+        || src.match(new RegExp(`${keyEsc}\\s*=\\s*'([^']*)'`, 'i'));
+    if (quoted) return quoted[1];
+    const bare = src.match(new RegExp(`${keyEsc}\\s*=\\s*([^\\s\\]]+)`, 'i'));
+    return bare ? bare[1] : '';
+}
+
+function parseBrowserUseMode(actionStr = '') {
+    const mode = parseActionArg(actionStr, 'mode') || parseActionArg(actionStr, 'action') || 'search';
+    return String(mode || 'search').trim().toLowerCase() || 'search';
+}
+
+function stripControlTagsFromReply(text = '') {
+    return String(text || '')
+        .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
+        .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
+        .replace(/\[SUGGEST:.*?\]/g, '')
+        .replace(/##CHALKBOARD##[\s\S]*?(?:##ENDCHALKBOARD##|$)/gi, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function isUsableAgentFinalReply(text = '') {
+    const clean = stripControlTagsFromReply(text);
+    if (clean.length < 12) return false;
+    if (/^(已執行指定動作|Done\.?\s*I executed the requested action\.?|馬上幫你查|好的[，,]?\s*我來查|我來幫你查|收到|了解|OK\.?|Sure\.?)[。.!！…]*$/i.test(clean)) {
+        return false;
+    }
+    // Pure "I'll look it up" without facts
+    if (
+        clean.length < 60
+        && /(馬上|立刻|正在|先查|幫你查|looking up|let me (check|search|look)|I'll (check|search|look))/i.test(clean)
+        && !/(https?:\/\/|來源|°C|℃|NT\$|評分|上市|release|steam|ps5|switch|xbox|\d{4})/i.test(clean)
+    ) {
+        return false;
+    }
+    return true;
+}
+
+function buildFallbackAnswerFromToolSummaries(summaries = [], userMessage = '', locale = 'zh-TW') {
+    const blocks = (Array.isArray(summaries) ? summaries : [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+    if (!blocks.length) {
+        return locale === 'en-US'
+            ? 'I could not finish the lookup with usable sources. Please try again, or install Browser runtime if Browser Use is unavailable.'
+            : '這次查詢沒有整理出可用來源。請再試一次；若 Browser Use 不可用，請先安裝 Playwright Chromium。';
+    }
+    const joined = blocks.join('\n\n');
+    const lines = joined.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const linkLines = lines
+        .filter((line) => /^\d+\.\s+/.test(line) && /https?:\/\//i.test(line))
+        .slice(0, 6);
+    const contentChunks = [];
+    const parts = joined.split(/(?=Source \d+:|已自動抓取來源內容|Extracted source content|Extracted content from|從\s+https?:\/\/)/i);
+    for (const part of parts) {
+        const chunk = String(part || '').trim();
+        if (chunk.length > 50 && /(Source |URL:|抓取|Extracted|從\s+https?:\/\/)/i.test(chunk)) {
+            contentChunks.push(chunk.slice(0, 1000));
+        }
+        if (contentChunks.length >= 3) break;
+    }
+    if (locale === 'en-US') {
+        return [
+            `Here is what I found for: ${userMessage}`,
+            contentChunks.length ? contentChunks.join('\n\n---\n\n') : joined.slice(0, 2000),
+            linkLines.length ? `### Sources\n${linkLines.join('\n')}` : '',
+        ].filter(Boolean).join('\n\n');
+    }
+    return [
+        `針對「${userMessage}」，目前查到的重點如下：`,
+        contentChunks.length ? contentChunks.join('\n\n---\n\n') : joined.slice(0, 2000),
+        linkLines.length ? `### 來源\n${linkLines.join('\n')}` : '',
+    ].filter(Boolean).join('\n\n');
+}
+
+function buildAgentLoopContinuePrompt(locale = 'zh-TW', turn = 1, forceFinal = false) {
+    if (locale === 'en-US') {
+        return forceFinal
+            ? '[Agent Loop] You already have tool results above. Give the user a complete final answer NOW in plain language with concrete facts and source links. Do NOT output ACTION tags. Do NOT say only "done" or "executed".'
+            : `[Agent Loop turn ${turn}] If tool results already contain enough facts, answer the user completely now. Only output ACTION if you still lack necessary page content. Never reply with only control tags.`;
+    }
+    return forceFinal
+        ? '[Agent Loop] 上方已有工具結果。請立刻用繁體中文給使用者完整最終答案：具體重點 + 來源連結。禁止再輸出 ACTION。禁止只回「已執行指定動作」。'
+        : `[Agent Loop 第 ${turn} 回合] 若工具結果已有足夠事實，請直接給完整答案；只有缺內容時才輸出 ACTION。禁止只輸出控制碼或空話。`;
 }
 
 function formatDiskFreePart(health = null) {
@@ -1589,8 +1674,8 @@ function buildWebResearchSearchQuery(text = '', locale = 'zh-TW') {
 function buildToolObservation(content = '', locale = 'zh-TW') {
     const body = String(content || '').trim();
     return locale === 'en-US'
-        ? `[Tool Observation]\n${body}\n\nUse this tool result to decide the next step. If it contains enough facts, answer the user directly. If it only contains links or empty text, call another ACTION.`
-        : `[工具觀察結果]\n${body}\n\n請根據這份工具結果決定下一步。若已有足夠事實，直接回答使用者；若只有連結或空內容，繼續呼叫下一個 ACTION。`;
+        ? `[Tool Observation]\n${body}\n\nUse this tool result to decide the next step. If it contains enough facts, answer the user directly with concrete details (do not say only "done" or "executed"). If it only contains links or empty text, call another ACTION.`
+        : `[工具觀察結果]\n${body}\n\n請根據這份工具結果決定下一步。若已有足夠事實，直接用具體內容回答使用者（禁止只回「已執行指定動作」）；若只有連結或空內容，繼續呼叫下一個 ACTION。`;
 }
 
 function buildToolObservationMessage(content = '', locale = 'zh-TW') {
@@ -4514,7 +4599,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             let hasActionTaken = false;
             let taskListChanged = false;
             let sopChanged = false;
-            const actionSummaries = [];
+            let actionSummaries = [];
             if (hasSuggestions && isQuestioning) {
                 actions.length = 0; // 攔截待確認動作
             }
@@ -4627,8 +4712,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
 
                 if (actionStr.startsWith('BROWSER_USE')) {
-                    const mode = parseActionArg(actionStr, 'mode') || 'search';
-                    const query = parseActionArg(actionStr, 'query');
+                    const mode = parseBrowserUseMode(actionStr);
+                    const query = parseActionArg(actionStr, 'query') || String(message || '').trim();
                     const url = parseActionArg(actionStr, 'url');
                     let browserResult;
                     try {
@@ -4882,6 +4967,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             const MAX_AGENT_TURNS = 8;
             let agentTurnCount = 0;
             let conversationHistory = []; // Start fresh conversation for this request
+            let lastToolBundle = actionSummaries.slice();
 
             // Add user message
             conversationHistory.push({
@@ -4895,37 +4981,33 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 content: llmReply
             });
 
-            // If first reply had actions, add their results as tool messages
-            if (actionSummaries.length > 0) {
-                conversationHistory.push(buildToolObservationMessage(actionSummaries.join('\n\n'), locale));
+            // If first reply had actions / web fallback, add their results as tool messages
+            if (lastToolBundle.length > 0) {
+                conversationHistory.push(buildToolObservationMessage(lastToolBundle.join('\n\n'), locale));
             }
 
             let currentLlmReply = llmReply;
+            let emptyFinalRetries = 0;
 
-            console.log(`[Agent Loop] Initialization: actionSummaries.length = ${actionSummaries.length}, llmReply length = ${llmReply.length}`);
+            console.log(`[Agent Loop] Initialization: actionSummaries.length = ${lastToolBundle.length}, llmReply length = ${llmReply.length}, usableFirst=${isUsableAgentFinalReply(llmReply)}`);
 
-            // Agent loop: keep calling LLM until no more actions
-            // CRITICAL: For current-info requests, ensure loop runs at least once even if first LLM reply had no actions
-            const isCurrentInfo = isCurrentInfoRequest(message);
-            let loopMustRunOnce = isCurrentInfo && actionSummaries.length > 0;
-            
-            while ((actionSummaries.length > 0 || loopMustRunOnce) && agentTurnCount < MAX_AGENT_TURNS) {
-                loopMustRunOnce = false; // Clear flag after first iteration
+            // Always enter loop when we have tool results to convert into a real user-facing answer
+            while (lastToolBundle.length > 0 && agentTurnCount < MAX_AGENT_TURNS) {
                 agentTurnCount++;
-                console.log(`[Agent Loop] Turn ${agentTurnCount}/${MAX_AGENT_TURNS}, tool results: ${actionSummaries.length} items`);
+                const forceFinal = emptyFinalRetries > 0 || agentTurnCount >= 3;
+                console.log(`[Agent Loop] Turn ${agentTurnCount}/${MAX_AGENT_TURNS}, tool results: ${lastToolBundle.length} items, forceFinal=${forceFinal}`);
 
                 try {
                     setAgentRunStatus(agentRunId, 'summarizing', locale || 'zh-TW', `turn ${agentTurnCount}`);
-                    // Call LLM with full conversation history including tool results
                     const loopReply = await llm.chatWithLLM(
-                        '', // Empty - we're using conversation history
+                        buildAgentLoopContinuePrompt(locale || 'zh-TW', agentTurnCount, forceFinal),
                         conversationHistory,
                         {
                             systemContext: [
                                 chatOptions.systemContext || '',
                                 locale === 'en-US'
-                                    ? `[Agent Loop Turn ${agentTurnCount}/${MAX_AGENT_TURNS}] CRITICAL RULES:\n1. If tool results above only show URLs without actual weather/price/news DATA, you MUST output [ACTION:BROWSER_USE mode="extract_text" url="<first-url>"] OUTSIDE any ##CHALKBOARD## block\n2. NEVER put [ACTION:...] tags inside ##CHALKBOARD## blocks - they will not execute\n3. Output ACTION tags in plain text first, then optionally add ##CHALKBOARD## summary after\n4. Only after you have REAL DATA (temperature numbers, prices, facts), provide final answer with actual information\n5. Do NOT respond with only ##CHALKBOARD## blocks - always include plain text explanation`
-                                    : `[Agent Loop 第 ${agentTurnCount}/${MAX_AGENT_TURNS} 回合] **關鍵規則**：\n1. 如果上方工具結果只有網址而無實際天氣/物價/新聞**數據**，你必須輸出 [ACTION:BROWSER_USE mode="extract_text" url="<第一個網址>"] 且**不可放在** ##CHALKBOARD## 區塊內\n2. **絕對禁止**把 [ACTION:...] 標籤寫在 ##CHALKBOARD## 區塊裡 - 這樣不會被執行\n3. 先在一般文字輸出 ACTION 標籤，再選擇性地加上 ##CHALKBOARD## 摘要\n4. 只有在取得**實際數據**（溫度數字、價格、事實）後，才提供包含具體資訊的最終答案\n5. **禁止**只輸出 ##CHALKBOARD## 區塊 - 回覆中必須包含一般文字說明`,
+                                    ? `[Agent Loop Turn ${agentTurnCount}/${MAX_AGENT_TURNS}] CRITICAL RULES:\n1. If tool results above only show URLs without actual weather/price/news DATA, you MUST output [ACTION:BROWSER_USE mode="extract_text" url="<first-url>"] OUTSIDE any ##CHALKBOARD## block\n2. NEVER put [ACTION:...] tags inside ##CHALKBOARD## blocks - they will not execute\n3. Output ACTION tags in plain text first, then optionally add ##CHALKBOARD## summary after\n4. Only after you have REAL DATA (temperature numbers, prices, facts), provide final answer with actual information\n5. Do NOT respond with only ##CHALKBOARD## blocks - always include plain text explanation\n6. NEVER answer with only "Done" / "executed the action" when tool facts exist`
+                                    : `[Agent Loop 第 ${agentTurnCount}/${MAX_AGENT_TURNS} 回合] **關鍵規則**：\n1. 如果上方工具結果只有網址而無實際天氣/物價/新聞**數據**，你必須輸出 [ACTION:BROWSER_USE mode="extract_text" url="<第一個網址>"] 且**不可放在** ##CHALKBOARD## 區塊內\n2. **絕對禁止**把 [ACTION:...] 標籤寫在 ##CHALKBOARD## 區塊裡 - 這樣不會被執行\n3. 先在一般文字輸出 ACTION 標籤，再選擇性地加上 ##CHALKBOARD## 摘要\n4. 只有在取得**實際數據**（溫度數字、價格、事實）後，才提供包含具體資訊的最終答案\n5. **禁止**只輸出 ##CHALKBOARD## 區塊 - 回覆中必須包含一般文字說明\n6. **禁止**在已有工具結果時只回「已執行指定動作」`,
                             ].filter(Boolean).join('\n'),
                         },
                         locale
@@ -4936,6 +5018,10 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const loopActions = [];
                     let loopMatch;
                     while ((loopMatch = loopActionRegex.exec(loopReply)) !== null) {
+                        loopActions.push(normalizeActionString(loopMatch[1]));
+                    }
+                    const bareLoopActionRegex = /(?:^|\n)\s*Action\s*=\s*([A-Za-z_]+[^\r\n]*)/gi;
+                    while ((loopMatch = bareLoopActionRegex.exec(loopReply)) !== null) {
                         loopActions.push(normalizeActionString(loopMatch[1]));
                     }
 
@@ -4949,8 +5035,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const newActionSummaries = [];
                     for (const actionStr of loopActions) {
                         if (actionStr.startsWith('BROWSER_USE')) {
-                            const mode = parseActionArg(actionStr, 'mode') || 'search';
-                            const query = parseActionArg(actionStr, 'query');
+                            const mode = parseBrowserUseMode(actionStr);
+                            const query = parseActionArg(actionStr, 'query') || String(message || '').trim();
                             const url = parseActionArg(actionStr, 'url');
                             try {
                                 setAgentRunStatus(agentRunId, mode === 'extract_text' ? 'extracting' : 'searching', locale || 'zh-TW', query || url || mode);
@@ -5008,17 +5094,30 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         }
                     }
 
-                    // If no new actions, we're done
+                    // If no new actions, check whether reply is usable
                     if (newActionSummaries.length === 0) {
                         currentLlmReply = loopReply;
-                        console.log(`[Agent Loop] Turn ${agentTurnCount} complete: no new actions. Final reply length = ${loopReply.length}`);
-                        break;
+                        console.log(`[Agent Loop] Turn ${agentTurnCount} complete: no new actions. Final reply length = ${loopReply.length}, usable=${isUsableAgentFinalReply(loopReply)}`);
+                        if (isUsableAgentFinalReply(loopReply) || forceFinal || emptyFinalRetries >= 1) {
+                            break;
+                        }
+                        // Model returned only control tags / boilerplate — force one more summarize pass
+                        emptyFinalRetries += 1;
+                        conversationHistory.push({
+                            role: 'user',
+                            content: locale === 'en-US'
+                                ? 'Your previous reply was empty or only control tags. Using the same tool results, answer the user completely now. No ACTION tags.'
+                                : '你上一則回覆是空的或只有控制碼。請用相同工具結果直接回答使用者完整答案，不要再輸出 ACTION。',
+                        });
+                        continue;
                     }
 
                     // Add tool results to conversation and continue loop
                     conversationHistory.push(buildToolObservationMessage(newActionSummaries.join('\n\n'), locale));
+                    lastToolBundle = newActionSummaries;
                     actionSummaries = newActionSummaries;
                     currentLlmReply = loopReply;
+                    emptyFinalRetries = 0;
                     console.log(`[Agent Loop] Turn ${agentTurnCount} complete: ${newActionSummaries.length} new actions. Continuing loop...`);
 
                 } catch (loopError) {
@@ -5029,17 +5128,46 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
             console.log(`[Agent Loop] Exit: agentTurnCount = ${agentTurnCount}, final currentLlmReply length = ${currentLlmReply.length}`);
 
-            // Clean final reply (remove ACTION tags)
-            const cleanReply = currentLlmReply
-                .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, '')
-                .replace(/(?:^|\n)\s*Action\s*=\s*[A-Za-z_]+[^\r\n]*/gi, '')
-                .replace(/\[SUGGEST:.*?\]/g, '')
-                .trim();
+            // Clean final reply (remove ACTION / control tags)
+            let cleanReply = stripControlTagsFromReply(currentLlmReply);
+
+            // If still unusable but we have tool data, one last forced summarize, then local fallback
+            if (!isUsableAgentFinalReply(cleanReply) && lastToolBundle.length > 0) {
+                try {
+                    setAgentRunStatus(agentRunId, 'summarizing', locale || 'zh-TW', 'force-final');
+                    const forceReply = await llm.chatWithLLM(
+                        buildAgentLoopContinuePrompt(locale || 'zh-TW', agentTurnCount + 1, true),
+                        conversationHistory,
+                        {
+                            systemContext: [
+                                chatOptions.systemContext || '',
+                                locale === 'en-US'
+                                    ? 'Final pass: answer with concrete findings and links only. No ACTION tags.'
+                                    : '最後一輪：只用具體查詢結果與來源連結回答。禁止 ACTION。',
+                            ].filter(Boolean).join('\n'),
+                        },
+                        locale
+                    );
+                    if (isUsableAgentFinalReply(forceReply)) {
+                        cleanReply = stripControlTagsFromReply(forceReply);
+                        currentLlmReply = forceReply;
+                    }
+                } catch (forceError) {
+                    console.warn('[Agent Loop] Force-final summarize failed:', forceError.message);
+                }
+            }
+
+            if (!isUsableAgentFinalReply(cleanReply) && lastToolBundle.length > 0) {
+                cleanReply = buildFallbackAnswerFromToolSummaries(lastToolBundle, message, locale || 'zh-TW');
+                console.log('[Agent Loop] Used local fallback answer from tool summaries');
+            }
 
             const finalReply = cleanReply || (
-                locale === 'en-US'
-                    ? 'Done. I executed the requested action.'
-                    : '已執行指定動作。'
+                lastToolBundle.length > 0
+                    ? buildFallbackAnswerFromToolSummaries(lastToolBundle, message, locale || 'zh-TW')
+                    : (locale === 'en-US'
+                        ? 'I could not complete this request with a usable answer. Please try again.'
+                        : '這次沒有產生可用答案，請再試一次。')
             );
 
             // Update chat history for future conversations

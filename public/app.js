@@ -6056,32 +6056,9 @@ async function deleteTask(taskId) {
 // ════════════════════════════════════════════════════════
 //  CHAT
 // ════════════════════════════════════════════════════════
-function shouldShowInterimPlan(message = '') {
-    const text = String(message || '').trim();
-    if (!text) return false;
-    if (text.length >= 80) return true;
-    return /(攻略|查|搜尋|找|整理|比較|規劃|計畫|步驟|安裝|設定|修|除錯|新聞|天氣|物價|機票|票價|匯率|股價|最新|walkthrough|guide|search|find|research|compare|plan|install|setup|debug|fix|news|weather|price|flight|latest)/i.test(text);
-}
-
-function buildInterimPlanMessage(message = '') {
-    const isEnglish = currentLocale === 'en-US';
-    const text = String(message || '');
-    const isSearch = /(攻略|查|搜尋|找|新聞|天氣|物價|機票|票價|匯率|股價|最新|walkthrough|guide|search|find|research|news|weather|price|flight|latest)/i.test(text);
-    const isSystemTask = /(安裝|設定|修|除錯|移除|執行|install|setup|fix|debug|remove|execute)/i.test(text);
-    if (isEnglish) {
-        const steps = isSystemTask
-            ? ['Clarify the target and risk.', 'Check existing SOP/tasks first.', 'Run or queue the approved action, then report the result.']
-            : (isSearch
-                ? ['Search live sources first.', 'Compare the useful results.', 'Summarize the answer with links and next steps.']
-                : ['Break the request into steps.', 'Work through the needed checks/tools.', 'Return the final result once ready.']);
-        return `I’ll start with a quick plan, then work in the background:\n${steps.map((step, idx) => `${idx + 1}. ${step}`).join('\n')}`;
-    }
-    const steps = isSystemTask
-        ? ['先確認目標與風險。', '優先檢查現有 SOP / 工作清單。', '需要執行時會加入或啟動任務，完成後回報結果。']
-        : (isSearch
-            ? ['先查即時來源。', '比對可用結果。', '整理重點、連結與下一步建議。']
-            : ['先拆解需求。', '依序跑必要檢查或工具。', '完成後回報最後結果。']);
-    return `我先給你一個處理計畫，接著會在背景繼續做：\n${steps.map((step, idx) => `${idx + 1}. ${step}`).join('\n')}`;
+// Interim plan bubble disabled: redundant noise. Progress is shown via agent-status on the thinking bubble.
+function shouldShowInterimPlan(_message = '') {
+    return false;
 }
 
 async function sendChat() {
@@ -6119,12 +6096,6 @@ async function sendChat() {
     }
     const currentMode = activeChatMode;
     const currentLocalSession = currentMode === 'local' ? getActiveLocalChatSession() : null;
-    if (currentMode === 'local' && shouldShowInterimPlan(msg)) {
-        appendChatBubble('ai', buildInterimPlanMessage(msg), [], { skipHistory: true });
-        addUILog(currentLocale === 'en-US'
-            ? 'Agent interim plan shown; background work continues.'
-            : '已先顯示 Agent 處理計畫，背景工作繼續執行。', 'info');
-    }
     const thinkId = appendThinking(currentMode === 'remote' ? remoteChatMessages : chatMessages);
     const agentRunId = currentMode === 'local'
         ? `agent-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
