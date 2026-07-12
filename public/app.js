@@ -144,8 +144,8 @@ const remoteFileInput = $('#remoteFileInput');
 const btnDisconnectRemote = $('#btnDisconnectRemote');
 const recSearchInput = $('#recSearchInput');
 const btnTheme = $('#btnTheme');
-const btnDiagnostics = $('#btnDiagnostics');
 const btnExport = $('#btnExport');
+const GITHUB_REPO_URL = 'https://github.com/anomixer/visual-agent';
 const btnImport = $('#btnImport');
 const importFileInput = $('#importFileInput');
 const btnToggleSidebar = $('#btnToggleSidebar');
@@ -269,6 +269,8 @@ const I18N = {
             file: '檔案',
             view: '檢視',
             help: '說明',
+            diagnostics: '診斷資訊',
+            about: '關於',
             aiReady: 'AI 就緒',
             modelNotReady: '模型未就緒',
             engineNotReady: 'AI 引擎未就緒',
@@ -628,6 +630,8 @@ const I18N = {
             file: 'File',
             view: 'View',
             help: 'Help',
+            diagnostics: 'Diagnostics',
+            about: 'About',
             aiReady: 'AI Ready',
             modelNotReady: 'Model Not Ready',
             engineNotReady: 'AI Engine Not Ready',
@@ -5491,10 +5495,10 @@ function updateLocaleUI() {
     if (splashText && !document.getElementById('splashOverlay')?.classList.contains('hidden')) {
         splashText.textContent = localStorage.getItem('visual_agent_has_run') ? t('splash.starting') : t('splash.firstRun');
     }
-    const menuFile = document.getElementById('menuFile');
+    const menuFileTextEl = document.getElementById('menuFileText');
     const menuView = document.getElementById('menuView');
     const menuHelp = document.getElementById('menuHelp');
-    if (menuFile) menuFile.textContent = t('titlebar.file');
+    if (menuFileTextEl) menuFileTextEl.textContent = t('titlebar.file');
     if (menuView) menuView.textContent = t('titlebar.view');
     if (menuHelp) menuHelp.textContent = t('titlebar.help');
     const llmTitle = document.getElementById('llmStatus');
@@ -5502,7 +5506,6 @@ function updateLocaleUI() {
     if (btnToggleSidebar) btnToggleSidebar.title = t('titlebar.toggleSidebar');
     if (btnTogglePanel) btnTogglePanel.title = t('titlebar.toggleLog');
     if (btnToggleChat) btnToggleChat.title = t('titlebar.toggleChat');
-    if (btnDiagnostics) btnDiagnostics.title = t('diagnostics.title');
     const sidebarTabRecommend = document.querySelector('.sidebar-tab[data-sidebar-tab="recommend"] span');
     const sidebarTabSops = document.querySelector('.sidebar-tab[data-sidebar-tab="sops"] span');
     const sidebarTabSkills = document.querySelector('.sidebar-tab[data-sidebar-tab="skills"] span');
@@ -7435,7 +7438,6 @@ function setupEventListeners() {
 
     // Clear Chat
     btnClearChat?.addEventListener('click', clearChatMessages);
-    btnDiagnostics?.addEventListener('click', openDiagnosticsModal);
     btnRemoteConnect?.addEventListener('click', connectRemotePeer);
     btnSaveRemoteProfile?.addEventListener('click', saveRemoteProfile);
     btnShareScreen?.addEventListener('click', shareRemoteScreen);
@@ -7615,7 +7617,16 @@ function setupEventListeners() {
     });
 
     // Menu Bar
+    $('#menuFile')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fd = document.getElementById('fileDropdown');
+        if (!fd) return;
+        const willOpen = fd.style.display !== 'block';
+        closeFloatingMenus();
+        fd.style.display = willOpen ? 'block' : 'none';
+    });
     $('#menuView')?.addEventListener('click', toggleViewMenu);
+    $('#menuHelp')?.addEventListener('click', toggleHelpMenu);
     switchBottomTab(activeBottomTab);
 }
 
@@ -7684,12 +7695,45 @@ function closeTab(tabId) {
     }
 }
 
+// ── Menu helpers ────────────────────────────────────────
+function closeFloatingMenus(exceptClass = '') {
+    document.querySelectorAll('.view-dropdown, .help-dropdown').forEach((el) => {
+        if (exceptClass && el.classList.contains(exceptClass)) return;
+        el.remove();
+    });
+    const fileDropdown = document.getElementById('fileDropdown');
+    if (fileDropdown && exceptClass !== 'file-dropdown') {
+        fileDropdown.style.display = 'none';
+    }
+}
+
+function placeFloatingMenu(menu, anchorEl) {
+    document.body.appendChild(menu);
+    const rect = (anchorEl || {}).getBoundingClientRect?.() || { bottom: 0, left: 0 };
+    menu.style.top = `${rect.bottom}px`;
+    menu.style.left = `${rect.left}px`;
+    setTimeout(() => {
+        const closer = (ev) => {
+            if (!menu.contains(ev.target) && ev.target !== anchorEl && !anchorEl?.contains?.(ev.target)) {
+                menu.remove();
+                document.removeEventListener('click', closer);
+            }
+        };
+        document.addEventListener('click', closer);
+    }, 0);
+}
+
 // ── View Menu Logic ─────────────────────────────────────
 function toggleViewMenu(e) {
-    let menu = document.querySelector('.view-dropdown');
-    if (menu) { menu.remove(); return; }
+    e?.stopPropagation?.();
+    const existing = document.querySelector('.view-dropdown');
+    if (existing) {
+        existing.remove();
+        return;
+    }
+    closeFloatingMenus();
 
-    menu = document.createElement('div');
+    const menu = document.createElement('div');
     menu.className = 'view-dropdown menu-dropdown';
 
     const items = [
@@ -7718,21 +7762,49 @@ function toggleViewMenu(e) {
         menu.appendChild(div);
     });
 
-    document.body.appendChild(menu);
-    const rect = e.target.getBoundingClientRect();
-    menu.style.top = rect.bottom + 'px';
-    menu.style.left = rect.left + 'px';
+    placeFloatingMenu(menu, e.currentTarget || e.target);
+}
 
-    // Close on outside click
-    setTimeout(() => {
-        const closer = (ev) => {
-            if (!menu.contains(ev.target)) {
-                menu.remove();
-                document.removeEventListener('click', closer);
-            }
+// ── Help Menu Logic ─────────────────────────────────────
+function toggleHelpMenu(e) {
+    e?.stopPropagation?.();
+    const existing = document.querySelector('.help-dropdown');
+    if (existing) {
+        existing.remove();
+        return;
+    }
+    closeFloatingMenus();
+
+    const menu = document.createElement('div');
+    menu.className = 'help-dropdown menu-dropdown';
+
+    const items = [
+        {
+            id: 'diagnostics',
+            label: t('titlebar.diagnostics'),
+            icon: '🩺',
+            onClick: () => openDiagnosticsModal(),
+        },
+        {
+            id: 'about',
+            label: t('titlebar.about'),
+            icon: 'ℹ️',
+            onClick: () => openExternalUrl(GITHUB_REPO_URL),
+        },
+    ];
+
+    items.forEach((item) => {
+        const div = document.createElement('div');
+        div.className = 'menu-dropdown-item';
+        div.innerHTML = `<span>${item.icon} ${escapeHtml(item.label)}</span>`;
+        div.onclick = () => {
+            menu.remove();
+            item.onClick();
         };
-        document.addEventListener('click', closer);
-    }, 0);
+        menu.appendChild(div);
+    });
+
+    placeFloatingMenu(menu, e.currentTarget || e.target);
 }
 
 // ════════════════════════════════════════════════════════
