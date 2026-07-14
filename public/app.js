@@ -3966,9 +3966,9 @@ function buildAutoChalkboardDraft(userText = '', replyText = '') {
     if (isNewsSummary) {
         const sourceLines = String(replyText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
         const headlines = sourceLines
-            .filter((line) => /^\*\*.+\*\*$/.test(line) || /^\s*(?:\d+[.)、]|[\d\uFE0F\u20E3]+)\s+/.test(line))
+            .filter((line) => /^\s*(?:[-*•]\s*)?\*\*.+\*\*$/.test(line) || /^\s*(?:[-*•]\s*)?(?:\d+[.)、]|[\d\uFE0F\u20E3]+)\s+/.test(line))
             .map((line) => normalizeChalkboardTextForCanvas(line)
-                .replace(/^[\d\uFE0F\u20E3\s]+[.)、:：]?\s*/, '')
+                .replace(/^(?:[-*•]\s*)?[\d\uFE0F\u20E3\s]+[.)、:：]?\s*/, '')
                 .slice(0, 52))
             .filter((line) => line && !/(一句話總結|one.?line summary|總結)/i.test(line))
             .slice(0, 5);
@@ -6281,7 +6281,7 @@ async function sendChat() {
                 }
                 const chalkControl = extractChalkboardControlFromReply(data.reply || '');
                 appendChatBubble('ai', chalkControl.displayText || data.reply, data.suggestions);
-                const autoDraft = chalkControl.draft || buildAutoChalkboardDraft(msg, chalkControl.displayText || data.reply || '');
+                const autoDraft = data.chalkboardDraft || chalkControl.draft || buildAutoChalkboardDraft(msg, chalkControl.displayText || data.reply || '');
                 if (autoDraft) {
                     applyAgentChalkboardDraft(autoDraft, { actorScope: 'local' });
                 }

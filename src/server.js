@@ -51,7 +51,13 @@ app.use((req, res, next) => {
     next();
 });
 app.use(express.json({ limit: '15mb' }));
-app.use(express.static(path.join(__dirname, '../public')));
+app.use(express.static(path.join(__dirname, '../public'), {
+    setHeaders(res, filePath) {
+        if (/(?:index\.html|app\.js)$/i.test(filePath)) {
+            res.setHeader('Cache-Control', 'no-store');
+        }
+    },
+}));
 const isPkg = typeof process.pkg !== 'undefined';
 
 function getPlaywrightBrowserDirCandidates() {
