@@ -1,4 +1,4 @@
-# Visual Agent — 實作需求規格書 (2026.07.07 Updated)
+# Visual Agent — 實作需求規格書 (2026.07.15 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.7.7] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.7.15] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -791,3 +791,17 @@ $true
 - 只要判定為 web research intent，若模型未輸出 ACTION，runtime 必須自動執行 search，抽取前 2 筆來源內容，再交回 Agent Loop summarizing。
 - Agent Loop observation 必須集中封裝，避免各 action 路徑自行拼接不一致的 observation message。
 - 前端必須顯示 Agent 狀態事件：planning、searching、extracting、summarizing、done；不得只顯示靜態「思考中」。
+
+## 24. 2026.07.15 意圖辨識與 Chalkboard 內容規格
+
+### 24.1 版本
+- Runtime 版本號為 `2026.7.15`；`package.json` 是版本單一真相來源。
+
+### 24.2 創作/開發意圖
+- 使用者要求設計、撰寫或修改程式、網站、小遊戲時，必須視為創作或開發請求，直接協助實作。
+- 不得因訊息含有「遊戲」就新增或建議 Steam；LLM 不可用的 fallback 也只能在明確出現 `Steam` 時建立 Steam 任務。
+
+### 24.3 Chalkboard 清空與摘要
+- UI 的「清空」必須同步清除畫布、Undo history 與 Redo future；清空後 Undo 不得還原先前內容。
+- AI 黑板僅可呈現新的可執行結論：最多 4 條、每條最多 64 字、去除重複與 Markdown/數字前綴。
+- Canvas renderer 不得自行為 AI 黑板條目加上數字編號；完整說明保留在聊天面板。

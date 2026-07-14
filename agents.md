@@ -5,6 +5,25 @@
 
 ---
 
+## 📌 2026.07.15 — 意圖辨識與 Chalkboard 刪除/摘要修正
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.7.15`。
+
+### Agent 意圖辨識
+- 強化 system prompt：程式、網站與小遊戲的設計/撰寫需求一律視為創作或開發，不得因出現「遊戲」就導向安裝 Steam。
+- LLM 不可用時的 keyword fallback 僅在使用者明確提及 `Steam` 時才建立 Steam 任務，移除泛用「遊戲」誤判。
+
+### Chalkboard 行為
+- 「清空」改為真正不可復原：同步清除畫布、Undo history 與 Redo future，避免舊內容被 Undo 還原。
+- AI 摘要收斂為最多 4 條、64 字內且去重；畫布不再自動加上 `1.`、`2.` 編號。
+- Prompt 明定黑板只寫新的可執行結論，禁止重述聊天、前後言與編號。
+
+### 驗收
+- `node --check src\\server.js`、`node --check src\\llm.js`、`node --check public\\app.js` 通過。
+
+---
+
 ## 📌 2026.07.07 — Public Readiness Pass：診斷、文件與乾淨機器驗收
 
 ### 版本同步

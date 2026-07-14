@@ -5292,7 +5292,9 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
         if (/簡中|簡體中文|simplified chinese|zh-cn/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_lang_zh_cn');
         if (/chrome|谷歌|瀏覽器/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_install_chrome');
         if (/ollama|llm|語言模型|ai引擎/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_install_ollama');
-        if (/steam|steam|遊戲/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_steam');
+        // 「寫個小遊戲」等創作請求不能因為含有「遊戲」就誤新增 Steam。
+        // 僅在使用者明確提及 Steam 時，備援模式才建立 Steam 任務。
+        if (/\bsteam\b/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'rec_steam');
         if (/備份|backup|備分|同步檔案/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_backup_user_files');
         if (/還原|restore|回復檔案/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_restore_user_files');
         if (matchedSOP) {
@@ -5453,7 +5455,7 @@ app.post('/api/chalkboard/draft', (req, res) => {
     const clear = req.body?.clear !== false;
     const replaceLane = req.body?.replaceLane !== false;
     const bullets = Array.isArray(req.body?.bullets)
-        ? req.body.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
+        ? req.body.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4)
         : [];
     if (!title && bullets.length === 0) {
         return res.status(400).json({ success: false, error: 'Empty chalkboard draft.' });

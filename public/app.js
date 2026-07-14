@@ -3343,7 +3343,9 @@ function clearChalkboard() {
     if (!confirm(t('chalkboard.tools.clearConfirm'))) return;
     chalkboardState.hasInteracted = true;
     chalkboardState.hintDrawn = false;
-    pushChalkHistory();
+    // 「清空」是不可復原的刪除操作；不能讓 Undo 把已清掉的內容帶回來。
+    chalkboardState.history = [];
+    chalkboardState.future = [];
     cancelPendingChalkPreview(false);
     hidePendingTextBox();
     clearSelectionBox();
@@ -3749,10 +3751,16 @@ function normalizeChalkboardTextForCanvas(value = '') {
         .trim();
 }
 
-function normalizeChalkboardBulletsForCanvas(lines = [], limit = 6) {
+function normalizeChalkboardBulletsForCanvas(lines = [], limit = 4) {
+    const seen = new Set();
     return markdownTableToChalkLines(lines)
-        .map((line) => normalizeChalkboardTextForCanvas(line).slice(0, 96))
-        .filter(Boolean)
+        .map((line) => normalizeChalkboardTextForCanvas(line).slice(0, 64))
+        .filter((line) => {
+            const key = line.replace(/\s+/g, '').toLowerCase();
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
         .slice(0, limit);
 }
 
@@ -3761,7 +3769,7 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
     const collaborativeDraft = normalizeCollaborativeChalkboardDraft(draft, options);
     const title = normalizeChalkboardTextForCanvas(collaborativeDraft.title || '').slice(0, 52);
     const bullets = Array.isArray(collaborativeDraft.bullets)
-        ? normalizeChalkboardBulletsForCanvas(collaborativeDraft.bullets, 8)
+        ? normalizeChalkboardBulletsForCanvas(collaborativeDraft.bullets, 4)
         : [];
     if (!title && bullets.length === 0) return;
 
@@ -3817,7 +3825,7 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
 
             const finalTitle = normalizeChalkboardTextForCanvas(normalizedDraft.title || title || 'Chalkboard Draft').slice(0, 52);
             const finalBullets = Array.isArray(normalizedDraft.bullets)
-                ? normalizeChalkboardBulletsForCanvas(normalizedDraft.bullets, 8)
+                ? normalizeChalkboardBulletsForCanvas(normalizedDraft.bullets, 4)
                 : bullets;
             showChalkboardFloatHint(finalTitle);
 
@@ -3840,9 +3848,9 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             });
             cursorY += 40;
             const linesToDraw = finalBullets.length > 0 ? finalBullets : [currentLocale === 'en-US' ? 'No bullet points. See chat panel for details.' : '暫無條列摘要，請看右側聊天內容。'];
-            linesToDraw.forEach((line, index) => {
+            linesToDraw.forEach((line) => {
                 const wrappedLines = drawWrappedChalkText(
-                    `${index + 1}. ${line}`,
+                    line,
                     padX,
                     cursorY,
                     maxWidth,
@@ -3945,7 +3953,11 @@ function buildAutoChalkboardDraft(userText = '', replyText = '') {
         .replace(/\[(?:ACTION|SUGGEST)[\s\S]*?\]/gi, '')
         .replace(/[#>*_`]/g, '')
         .trim();
-    const lines = normalizeChalkboardBulletsForCanvas(plain.split(/\r?\n/), 6);
+    const sentences = plain
+        .split(/\r?\n|(?<=[。！？!?])\s*/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const lines = normalizeChalkboardBulletsForCanvas(sentences, 4);
     if (!lines.length) return null;
     return {
         title: currentLocale === 'en-US' ? 'AI Summary' : 'AI 摘要',
