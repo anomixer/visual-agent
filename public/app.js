@@ -168,6 +168,10 @@ const chalkModeButtons = $$('.chalk-mode');
 const chalkSizeButtons = $$('.chalk-size');
 const chalkSaveButton = $('#chalkSaveButton');
 const chalkClearButton = $('#chalkClearButton');
+const chalkPagePrevButton = $('#chalkPagePrevButton');
+const chalkPageNextButton = $('#chalkPageNextButton');
+const chalkPageAddButton = $('#chalkPageAddButton');
+const chalkPageIndicator = $('#chalkPageIndicator');
 const chalkUndoButton = $('#chalkUndoButton');
 const chalkRedoButton = $('#chalkRedoButton');
 const chalkCopyButton = $('#chalkCopyButton');
@@ -484,8 +488,8 @@ const I18N = {
                 copy: '複製',
                 cut: '剪下',
                 paste: '貼上',
-                clear: '刪除選取',
-                clearConfirm: '請先選取要刪除的黑板內容。',
+                clear: '刪除目前頁',
+                clearConfirm: '確定刪除目前黑板頁嗎？',
                 undo: 'Undo',
                 upload: '上傳圖片',
                 save: '存成圖片',
@@ -845,8 +849,8 @@ const I18N = {
                 copy: 'Copy',
                 cut: 'Cut',
                 paste: 'Paste',
-                clear: 'Delete selection',
-                clearConfirm: 'Select the Chalkboard content you want to delete first.',
+                clear: 'Delete current page',
+                clearConfirm: 'Delete the current Chalkboard page?',
                 undo: 'Undo',
                 upload: 'Upload Image',
                 save: 'Save Image',
@@ -1071,7 +1075,9 @@ const chalkboardState = {
     textToolResolver: null,
     history: [],
     future: [],
-    hasUserContent: false
+    hasUserContent: false,
+    pages: [{ snapshot: null, hasInteracted: false, hasUserContent: false, history: [], future: [] }],
+    activePageIndex: 0,
 };
 
 const LOCAL_NOAUTH_PROVIDERS = ['Ollama', 'vLLM', 'SGLang', 'LM Studio'];
@@ -2383,6 +2389,11 @@ function debounce(fn, delay) {
 
 function markChalkboardUserContent(hasContent = true) {
     chalkboardState.hasUserContent = Boolean(hasContent);
+    const page = chalkboardState.pages[chalkboardState.activePageIndex];
+    if (page) {
+        page.hasUserContent = chalkboardState.hasUserContent;
+        page.hasInteracted = chalkboardState.hasInteracted;
+    }
     syncChalkboardUI();
     if (hasContent || chalkboardState.hasInteracted) {
         scheduleRemoteChalkboardSync(Boolean(hasContent));
@@ -2777,6 +2788,9 @@ function setupChalkboard() {
     chalkImageInput?.addEventListener('change', handleChalkImageUpload);
     chalkSaveButton?.addEventListener('click', saveChalkboardImage);
     chalkClearButton?.addEventListener('click', clearChalkboard);
+    chalkPagePrevButton?.addEventListener('click', () => switchChalkboardPage(chalkboardState.activePageIndex - 1));
+    chalkPageNextButton?.addEventListener('click', () => switchChalkboardPage(chalkboardState.activePageIndex + 1));
+    chalkPageAddButton?.addEventListener('click', () => createChalkboardPage());
     chalkUndoButton?.addEventListener('click', undoChalkAction);
     chalkRedoButton?.addEventListener('click', redoChalkAction);
     chalkCopyButton?.addEventListener('click', () => copySelectionToClipboard(false));
@@ -2832,7 +2846,15 @@ function syncChalkboardUI() {
     });
 
     chalkSaveButton && (chalkSaveButton.disabled = toolsLocked);
-    chalkClearButton && (chalkClearButton.disabled = toolsLocked);
+    chalkClearButton && (chalkClearButton.disabled = !chalkboardState.pages.length);
+    chalkPagePrevButton && (chalkPagePrevButton.disabled = chalkboardState.activePageIndex <= 0);
+    chalkPageNextButton && (chalkPageNextButton.disabled = chalkboardState.activePageIndex >= chalkboardState.pages.length - 1);
+    chalkPageAddButton && (chalkPageAddButton.disabled = false);
+    if (chalkPageIndicator) {
+        chalkPageIndicator.textContent = currentLocale === 'en-US'
+            ? `Page ${chalkboardState.activePageIndex + 1} / ${chalkboardState.pages.length}`
+            : `第 ${chalkboardState.activePageIndex + 1} / ${chalkboardState.pages.length} 頁`;
+    }
     chalkUndoButton && (chalkUndoButton.disabled = toolsLocked || !chalkboardState.history.length);
     chalkRedoButton && (chalkRedoButton.disabled = toolsLocked || !chalkboardState.future.length);
     chalkCopyButton && (chalkCopyButton.disabled = toolsLocked || !chalkboardState.selectionRect);
@@ -3338,27 +3360,62 @@ function redoChalkAction() {
     markChalkboardUserContent(true);
 }
 
-function clearChalkboard() {
-    if (!chalkboardState.ctx || !chalkboardCanvas) return;
-    const selection = chalkboardState.selectionRect;
-    if (selection) {
-        // 有選取範圍時，垃圾桶只刪除目前項目（例如第 2 條），保留其他內容。
-        chalkboardState.ctx.clearRect(selection.left, selection.top, selection.width, selection.height);
-        chalkboardState.history = [];
-        chalkboardState.future = [];
-        chalkboardState.hasInteracted = true;
-        clearSelectionBox();
-        markChalkboardUserContent(true);
-        addUILog(currentLocale === 'en-US' ? 'Selected Chalkboard content deleted permanently.' : '已永久刪除選取的黑板內容。', 'success');
-        return;
+function persistActiveChalkboardPage() {
+    const page = chalkboardState.pages[chalkboardState.activePageIndex];
+    if (!page || !chalkboardState.ctx || !chalkboardCanvas) return;
+    page.snapshot = createCanvasSnapshot();
+    page.history = chalkboardState.history.slice();
+    page.future = chalkboardState.future.slice();
+    page.hasInteracted = chalkboardState.hasInteracted;
+    page.hasUserContent = chalkboardState.hasUserContent;
+}
+
+function restoreChalkboardPage(page) {
+    if (!page || !chalkboardState.ctx) return;
+    cancelPendingChalkPreview(false);
+    hidePendingTextBox();
+    clearSelectionBox();
+    chalkboardState.history = Array.isArray(page.history) ? page.history.slice() : [];
+    chalkboardState.future = Array.isArray(page.future) ? page.future.slice() : [];
+    chalkboardState.hasInteracted = Boolean(page.hasInteracted);
+    chalkboardState.hasUserContent = Boolean(page.hasUserContent);
+    clearChalkboardSurface();
+    if (page.snapshot) {
+        chalkboardState.ctx.drawImage(page.snapshot, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+    } else if (!chalkboardState.hasInteracted) {
+        drawChalkboardWelcome();
     }
-    // 垃圾桶永遠不得在未選取時清空整張黑板，避免誤刪其他項目。
-    showChalkboardFloatHint(currentLocale === 'en-US'
-        ? 'Select content first, then delete it.'
-        : '請先用「選取」框住要刪除的內容。');
-    addUILog(currentLocale === 'en-US'
-        ? 'Delete skipped: no Chalkboard selection.'
-        : '未選取黑板內容，已略過刪除。', 'warn');
+    syncChalkboardUI();
+}
+
+function switchChalkboardPage(index) {
+    if (index < 0 || index >= chalkboardState.pages.length || index === chalkboardState.activePageIndex) return;
+    persistActiveChalkboardPage();
+    chalkboardState.activePageIndex = index;
+    restoreChalkboardPage(chalkboardState.pages[index]);
+}
+
+function createChalkboardPage() {
+    if (!chalkboardState.ctx) return;
+    persistActiveChalkboardPage();
+    chalkboardState.pages.push({ snapshot: null, hasInteracted: true, hasUserContent: false, history: [], future: [] });
+    chalkboardState.activePageIndex = chalkboardState.pages.length - 1;
+    restoreChalkboardPage(chalkboardState.pages[chalkboardState.activePageIndex]);
+    showChalkboardFloatHint(currentLocale === 'en-US' ? 'New Chalkboard page created.' : '已新增黑板頁。');
+}
+
+function clearChalkboard() {
+    if (!chalkboardState.pages.length) return;
+    const removedPage = chalkboardState.activePageIndex;
+    if (chalkboardState.pages.length === 1) {
+        chalkboardState.pages[0] = { snapshot: null, hasInteracted: true, hasUserContent: false, history: [], future: [] };
+        chalkboardState.activePageIndex = 0;
+    } else {
+        chalkboardState.pages.splice(removedPage, 1);
+        chalkboardState.activePageIndex = Math.min(removedPage, chalkboardState.pages.length - 1);
+    }
+    restoreChalkboardPage(chalkboardState.pages[chalkboardState.activePageIndex]);
+    addUILog(currentLocale === 'en-US' ? 'Current Chalkboard page deleted.' : '已刪除目前黑板頁。', 'success');
 }
 
 function saveChalkboardImage() {
@@ -3841,6 +3898,9 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             if (!chalkboardState.ctx) return;
             if (!chalkboardState.hasInteracted) {
                 activateChalkboard();
+            }
+            if (normalizedDraft.clear !== false && chalkboardState.hasUserContent) {
+                createChalkboardPage();
             }
             cancelPendingChalkPreview(false);
             hidePlacementGuide();

@@ -1004,6 +1004,23 @@ ol {
     0 10px 26px rgba(0, 0, 0, 0.22);
 }
 
+.chalk-page-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.chalk-page-indicator {
+  min-width: 68px;
+  color: #f4efe2;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .chalk-tool {
   position: relative;
   flex-shrink: 0;

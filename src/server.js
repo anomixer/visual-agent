@@ -53,7 +53,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, '../public'), {
     setHeaders(res, filePath) {
-        if (/(?:index\.html|app\.js)$/i.test(filePath)) {
+        if (/(?:index\.html|app\.js|style\.css)$/i.test(filePath)) {
             res.setHeader('Cache-Control', 'no-store');
         }
     },

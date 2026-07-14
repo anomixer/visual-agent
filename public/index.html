@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title id="appTitle">Visual Agent - 系統管家</title>
   <meta name="description" content="可視化、可塗鴉、可協作的本地 AI PC Agent">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2026.7.15-paged">
   <style>
     .splash-overlay {
       position: fixed;
@@ -292,7 +292,13 @@
                     </div>
                   </div>
                   <div class="chalkboard-tray">
-                    <button class="tray-action tray-icon danger" id="chalkClearButton" type="button" title="刪除選取內容（未選取時不動作）" aria-label="刪除選取的黑板內容">🗑️</button>
+                    <div class="chalk-page-controls" aria-label="黑板頁面">
+                      <button class="tray-action tray-icon" id="chalkPagePrevButton" type="button" title="上一頁" aria-label="上一頁">‹</button>
+                      <span class="chalk-page-indicator" id="chalkPageIndicator">第 1 / 1 頁</span>
+                      <button class="tray-action tray-icon" id="chalkPageNextButton" type="button" title="下一頁" aria-label="下一頁">›</button>
+                      <button class="tray-action tray-icon" id="chalkPageAddButton" type="button" title="新增黑板頁" aria-label="新增黑板頁">＋</button>
+                    </div>
+                    <button class="tray-action tray-icon danger" id="chalkClearButton" type="button" title="刪除目前黑板頁" aria-label="刪除目前黑板頁">🗑️</button>
                     <button class="tray-action tray-icon" id="chalkUndoButton" type="button" title="Undo">↶</button>
                     <button class="tray-action tray-icon" id="chalkRedoButton" type="button" title="Redo">↷</button>
                     <button class="chalk-tool chalk-mode eraser active" id="chalkEraser" type="button" data-tool="eraser" title="局部板擦"></button>
@@ -750,6 +756,6 @@
     </div>
   </div>
   <script src="marked.min.js"></script>
-  <script src="app.js?v=2026.7.15"></script>
+  <script src="app.js?v=2026.7.15-paged"></script>
 </body>
 </html>
