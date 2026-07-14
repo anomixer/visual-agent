@@ -484,8 +484,8 @@ const I18N = {
                 copy: '複製',
                 cut: '剪下',
                 paste: '貼上',
-                clear: '刪除選取／清空',
-                clearConfirm: '未選取內容，確定要清空整張黑板嗎？此動作無法直接復原。',
+                clear: '刪除選取',
+                clearConfirm: '請先選取要刪除的黑板內容。',
                 undo: 'Undo',
                 upload: '上傳圖片',
                 save: '存成圖片',
@@ -845,8 +845,8 @@ const I18N = {
                 copy: 'Copy',
                 cut: 'Cut',
                 paste: 'Paste',
-                clear: 'Delete selection / Clear',
-                clearConfirm: 'No content is selected. Clear the entire Chalkboard? This cannot be undone.',
+                clear: 'Delete selection',
+                clearConfirm: 'Select the Chalkboard content you want to delete first.',
                 undo: 'Undo',
                 upload: 'Upload Image',
                 save: 'Save Image',
@@ -3352,22 +3352,13 @@ function clearChalkboard() {
         addUILog(currentLocale === 'en-US' ? 'Selected Chalkboard content deleted permanently.' : '已永久刪除選取的黑板內容。', 'success');
         return;
     }
-    if (!confirm(t('chalkboard.tools.clearConfirm'))) return;
-    chalkboardState.hasInteracted = true;
-    chalkboardState.hintDrawn = false;
-    // 「清空」是不可復原的刪除操作；不能讓 Undo 把已清掉的內容帶回來。
-    chalkboardState.history = [];
-    chalkboardState.future = [];
-    cancelPendingChalkPreview(false);
-    hidePendingTextBox();
-    clearSelectionBox();
-    chalkboardState.pendingText = null;
-    chalkboardState.pendingTextRect = null;
-    chalkboardState.pendingTextSnapshot = null;
-    chalkboardState.pendingTextPreviewUrl = null;
-    chalkboardState.textManipulation = null;
-    chalkboardState.ctx.clearRect(0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
-    markChalkboardUserContent(false);
+    // 垃圾桶永遠不得在未選取時清空整張黑板，避免誤刪其他項目。
+    showChalkboardFloatHint(currentLocale === 'en-US'
+        ? 'Select content first, then delete it.'
+        : '請先用「選取」框住要刪除的內容。');
+    addUILog(currentLocale === 'en-US'
+        ? 'Delete skipped: no Chalkboard selection.'
+        : '未選取黑板內容，已略過刪除。', 'warn');
 }
 
 function saveChalkboardImage() {
@@ -3752,6 +3743,37 @@ function markdownTableToChalkLines(lines = []) {
     return output;
 }
 
+function buildGameReleaseTableDraft(sourceLines = []) {
+    for (let index = 0; index + 2 < sourceLines.length; index += 1) {
+        const header = splitMarkdownTableRow(sourceLines[index]);
+        if (!header || !isMarkdownTableSeparator(sourceLines[index + 1])) continue;
+        const nameIndex = header.findIndex((cell) => /(遊戲名稱|game\s*name|title|名稱)/i.test(cell));
+        if (nameIndex < 0) continue;
+        const dateIndex = header.findIndex((cell) => /(發售日|日期|date|release)/i.test(cell));
+        const typeIndex = header.findIndex((cell) => /(類型|type|genre)/i.test(cell));
+        const rows = [];
+        for (let rowIndex = index + 2; rowIndex < sourceLines.length; rowIndex += 1) {
+            const row = splitMarkdownTableRow(sourceLines[rowIndex]);
+            if (!row) break;
+            const name = normalizeChalkboardTextForCanvas(row[nameIndex] || '');
+            if (!name) continue;
+            const date = normalizeChalkboardTextForCanvas(row[dateIndex] || '');
+            const type = normalizeChalkboardTextForCanvas(row[typeIndex] || '');
+            rows.push([date, name, type].filter(Boolean).join('｜').slice(0, 64));
+        }
+        if (rows.length >= 2) {
+            return {
+                title: currentLocale === 'en-US' ? 'PC releases at a glance' : 'PC 新作速覽',
+                bullets: [...rows.slice(0, 5), currentLocale === 'en-US' ? `${rows.length} releases found; sorted by date.` : `共 ${rows.length} 款，依發售日整理。`],
+                layout: 'news',
+                position: 'full',
+                clear: true,
+            };
+        }
+    }
+    return null;
+}
+
 function normalizeChalkboardTextForCanvas(value = '') {
     return String(value || '')
         .replace(/\[(?:ACTION|SUGGEST)[\s\S]*?\]/gi, '')
@@ -3962,9 +3984,11 @@ function shouldAutoDraftChalkboard(userText = '', replyText = '') {
 
 function buildAutoChalkboardDraft(userText = '', replyText = '') {
     if (!shouldAutoDraftChalkboard(userText, replyText)) return null;
+    const sourceLines = String(replyText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const gameReleaseTableDraft = buildGameReleaseTableDraft(sourceLines);
+    if (gameReleaseTableDraft) return gameReleaseTableDraft;
     const isNewsSummary = /(新聞|news|今日|today|本日|latest)/i.test(`${userText}\n${replyText}`);
     if (isNewsSummary) {
-        const sourceLines = String(replyText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
         const headlines = sourceLines
             .filter((line) => /^\s*(?:[-*•]\s*)?\*\*.+\*\*$/.test(line) || /^\s*(?:[-*•]\s*)?(?:\d+[.)、]|[\d\uFE0F\u20E3]+)\s+/.test(line))
             .map((line) => normalizeChalkboardTextForCanvas(line)
