@@ -26,6 +26,10 @@
 - `/api/chat` 僅在安裝、移除、執行任務等系統請求才更新所有 SOP runtime state；一般對話改用既有快取/預設狀態。
 - 僅在硬碟、CPU、GPU、RAM 等硬體問題才執行 PowerShell 硬體探測，避免一般聊天被 WMI、GPU counter 與 NVIDIA probe 阻塞。
 
+### 追問語意承接
+- 新增新聞/即時研究追問推論：上一則使用者訊息是遊戲新聞時，後續短句含 PC、Steam、平台、純、限定等篩選條件，會自動轉成延續查詢。
+- 例：`找一下最新遊戲新聞` → `純 PC game 平台`，會搜尋「最新 PC 遊戲新聞」，不得改為介紹 PC 遊戲平台。
+
 ### 驗收
 - `node --check src\\server.js`、`node --check src\\llm.js`、`node --check public\\app.js` 通過。
 

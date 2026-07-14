@@ -1668,6 +1668,21 @@ function isWebResearchIntent(text = '') {
         || /(查|搜尋|搜索|找|整理|比較|推薦|攻略|資料|來源|web|網路|網頁|search|find|research|compare|recommend|guide|walkthrough|source)/i.test(raw);
 }
 
+function inferFollowUpResearchQuery(message = '', history = []) {
+    const current = String(message || '').trim();
+    if (!current || current.length > 100 || !Array.isArray(history)) return '';
+    const previousUserMessage = [...history].reverse()
+        .find((entry) => entry?.role === 'user' && String(entry.content || '').trim());
+    const previous = String(previousUserMessage?.content || '').trim();
+    const followsGameNews = /(遊戲|game|steam|ps5|switch|xbox|nintendo|playstation)/i.test(previous)
+        && /(新聞|最新|最近|新作|上市|news|latest|recent|release)/i.test(previous);
+    const isPlatformFilter = /(純|只|限定|改成|那|這|pc|steam|epic|gog|itch|xbox|ps5|switch|平台)/i.test(current);
+    if (!followsGameNews || !isPlatformFilter) return '';
+
+    const platform = /(pc|電腦|steam|epic|gog|itch)/i.test(current) ? 'PC' : '';
+    return `${platform ? `${platform} ` : ''}最新遊戲新聞（延續上一題的篩選條件：${current}）`;
+}
+
 function buildCurrentInfoSearchQuery(text = '', locale = 'zh-TW') {
     const base = String(text || '').trim();
     const context = getRuntimeDateContext(locale);
@@ -4245,6 +4260,10 @@ app.post('/api/chat', async (req, res) => {
     const requestedHistory = Array.isArray(req.body?.history) ? req.body.history : null;
     const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
     if (!message) return res.json({ success: false, error: 'Please enter a message' });
+    const historyForIntent = requestedHistory
+        || (localChatSessionId ? (localChatHistoryBySession.get(localChatSessionId) || []) : chatHistory);
+    const followUpResearchQuery = inferFollowUpResearchQuery(message, historyForIntent);
+    const researchIntentMessage = followUpResearchQuery || message;
     const sops = loadAllSOPs(SOPS_DIR);
     // 一般聊天不應先對每一個 SOP 啟動 PowerShell 偵測；這會讓第一句話卡住十多秒。
     // 僅在確實涉及系統任務時更新即時安裝狀態，其他情況沿用快取或預設值。
@@ -4547,6 +4566,9 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     `Built-in Browser tab availability: Playwright module=${isPlaywrightAvailable() ? 'yes' : 'no'}, Chromium binary=${hasPlaywrightBrowserBinary() ? 'yes' : 'no'}.`,
                     'When web/current-info tasks are needed, prefer Browser Use actions. If Browser Use is unavailable, say so briefly and still provide text/link fallback from available search results.',
                     'Remote model proxy is removed. Use remote chat collaboration when another AI should help.',
+                    followUpResearchQuery
+                        ? `This is a follow-up filter for the previous news search. Interpret the user message as: ${followUpResearchQuery}. Search and answer that topic; do not explain the platform itself.`
+                        : '',
                     locale === 'en-US'
                         ? 'CRITICAL: NEVER put [ACTION:...] tags inside ##CHALKBOARD## blocks. Always output ACTION tags in plain text OUTSIDE chalkboard blocks, then optionally add chalkboard summary after.'
                         : '**重要**：絕對不要把 [ACTION:...] 標籤放在 ##CHALKBOARD## 區塊裡面。永遠在一般文字區輸出 ACTION 標籤（在黑板區塊外），然後可選擇性地加上黑板摘要。',
@@ -4740,7 +4762,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
                 if (actionStr.startsWith('BROWSER_USE')) {
                     const mode = parseBrowserUseMode(actionStr);
-                    const query = parseActionArg(actionStr, 'query') || String(message || '').trim();
+                    const query = parseActionArg(actionStr, 'query') || String(researchIntentMessage || '').trim();
                     const url = parseActionArg(actionStr, 'url');
                     let browserResult;
                     try {
@@ -4765,7 +4787,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                     ? `Search results for "${query || message}":\n`
                                     : `「${query || message}」搜尋結果：\n`) + lines.join('\n')
                             );
-                            if (isWebResearchIntent(message)) {
+                            if (isWebResearchIntent(researchIntentMessage)) {
                                 setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query || message);
                                 const extracted = await extractTextFromSearchResults(items, 2);
                                 if (extracted.length > 0) {
@@ -4921,9 +4943,9 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             // ═══════════════════════════════════════════════════════════════
             // 強制 Web Research Fallback：如果 LLM 沒輸出 ACTION 但這是網路查詢
             // ═══════════════════════════════════════════════════════════════
-            if (!actionSummaries.length && isWebResearchIntent(message)) {
+            if (!actionSummaries.length && isWebResearchIntent(researchIntentMessage)) {
                 console.log('[Agent Loop] Web research request detected but LLM did not output ACTION. Forcing fallback search...');
-                const query = buildWebResearchSearchQuery(message, locale || 'zh-TW');
+                const query = buildWebResearchSearchQuery(researchIntentMessage, locale || 'zh-TW');
                 try {
                     setAgentRunStatus(agentRunId, 'searching', locale || 'zh-TW', query);
                     const browserResult = await runBrowserUseOperation({ mode: 'search', query, limit: 5 });
@@ -5063,7 +5085,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     for (const actionStr of loopActions) {
                         if (actionStr.startsWith('BROWSER_USE')) {
                             const mode = parseBrowserUseMode(actionStr);
-                            const query = parseActionArg(actionStr, 'query') || String(message || '').trim();
+                            const query = parseActionArg(actionStr, 'query') || String(researchIntentMessage || '').trim();
                             const url = parseActionArg(actionStr, 'url');
                             try {
                                 setAgentRunStatus(agentRunId, mode === 'extract_text' ? 'extracting' : 'searching', locale || 'zh-TW', query || url || mode);
@@ -5076,7 +5098,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                                 (locale === 'en-US' ? `Search results for "${query}":\n` : `「${query}」搜尋結果：\n`) +
                                                 items.map((item, i) => `${i + 1}. ${item.title} - ${item.url}`).join('\n')
                                             );
-                                            if (isWebResearchIntent(message)) {
+                                            if (isWebResearchIntent(researchIntentMessage)) {
                                                 setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query || message);
                                                 const extracted = await extractTextFromSearchResults(items, 2);
                                                 if (extracted.length > 0) {
