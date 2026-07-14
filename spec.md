@@ -803,5 +803,10 @@ $true
 
 ### 24.3 Chalkboard 清空與摘要
 - UI 的「清空」必須同步清除畫布、Undo history 與 Redo future；清空後 Undo 不得還原先前內容。
+- 垃圾桶有選取範圍時必須只永久刪除選取範圍，保留其餘內容；未選取時才可詢問後清空整張畫布。
 - AI 黑板僅可呈現新的可執行結論：最多 4 條、每條最多 64 字、去除重複與 Markdown/數字前綴。
 - Canvas renderer 不得自行為 AI 黑板條目加上數字編號；完整說明保留在聊天面板。
+
+### 24.4 一般聊天效能
+- 一般對話不得為了建構 prompt 對全部 SOP 執行 runtime check；只有系統任務才更新即時 SOP 狀態。
+- WMI、GPU counter 與 NVIDIA 硬體探測僅限硬體查詢，非硬體對話必須跳過。

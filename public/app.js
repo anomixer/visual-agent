@@ -484,8 +484,8 @@ const I18N = {
                 copy: '複製',
                 cut: '剪下',
                 paste: '貼上',
-                clear: '清空',
-                clearConfirm: '確定要清空黑板內容嗎？此動作無法直接復原。',
+                clear: '刪除選取／清空',
+                clearConfirm: '未選取內容，確定要清空整張黑板嗎？此動作無法直接復原。',
                 undo: 'Undo',
                 upload: '上傳圖片',
                 save: '存成圖片',
@@ -845,8 +845,8 @@ const I18N = {
                 copy: 'Copy',
                 cut: 'Cut',
                 paste: 'Paste',
-                clear: 'Clear',
-                clearConfirm: 'Clear the Chalkboard? This cannot be directly undone.',
+                clear: 'Delete selection / Clear',
+                clearConfirm: 'No content is selected. Clear the entire Chalkboard? This cannot be undone.',
                 undo: 'Undo',
                 upload: 'Upload Image',
                 save: 'Save Image',
@@ -3340,6 +3340,18 @@ function redoChalkAction() {
 
 function clearChalkboard() {
     if (!chalkboardState.ctx || !chalkboardCanvas) return;
+    const selection = chalkboardState.selectionRect;
+    if (selection) {
+        // 有選取範圍時，垃圾桶只刪除目前項目（例如第 2 條），保留其他內容。
+        chalkboardState.ctx.clearRect(selection.left, selection.top, selection.width, selection.height);
+        chalkboardState.history = [];
+        chalkboardState.future = [];
+        chalkboardState.hasInteracted = true;
+        clearSelectionBox();
+        markChalkboardUserContent(true);
+        addUILog(currentLocale === 'en-US' ? 'Selected Chalkboard content deleted permanently.' : '已永久刪除選取的黑板內容。', 'success');
+        return;
+    }
     if (!confirm(t('chalkboard.tools.clearConfirm'))) return;
     chalkboardState.hasInteracted = true;
     chalkboardState.hintDrawn = false;

@@ -950,6 +950,19 @@ function isLocalHardwareStatusQuestion(text = '') {
     return /(free\s*space|disk\s*space|磁碟|硬碟|容量|剩餘空間|ram|記憶體|cpu|gpu|顯卡|硬體)/i.test(String(text || ''));
 }
 
+function requiresSopRuntimeState(message = '') {
+    return /(安裝|移除|解除安裝|更新|修復|執行|開始|工作清單|任務|sop|install|uninstall|update|repair|run|start|task)/i.test(String(message || ''));
+}
+
+function getCachedOrDefaultSopState(sop = {}) {
+    const cached = sopStateCache.get(sop.id)?.state;
+    return cached || {
+        installed: false,
+        supportsUninstall: Boolean(sop?.steps?.uninstall?.commands?.length),
+        recommendedAction: 'install',
+    };
+}
+
 async function buildLocalHardwareStatusReply(locale = 'zh-TW') {
     const profile = getRemoteProfile();
     const health = await getSystemHealth();
@@ -4227,7 +4240,12 @@ app.post('/api/chat', async (req, res) => {
     const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
     if (!message) return res.json({ success: false, error: 'Please enter a message' });
     const sops = loadAllSOPs(SOPS_DIR);
-    const sopsWithState = await annotateSOPRuntimeState(sops);
+    // 一般聊天不應先對每一個 SOP 啟動 PowerShell 偵測；這會讓第一句話卡住十多秒。
+    // 僅在確實涉及系統任務時更新即時安裝狀態，其他情況沿用快取或預設值。
+    const needsSopRuntimeState = requiresSopRuntimeState(message);
+    const sopsWithState = needsSopRuntimeState
+        ? await annotateSOPRuntimeState(sops)
+        : sops.map((sop) => ({ ...sop, ...getCachedOrDefaultSopState(sop) }));
     if (/(執行|開始|安裝|run|start|execute|install)/i.test(message)) {
         const pendingBrowserInstall = [...todoList].reverse().find((task) =>
             String(task.skillId || '') === 'install_playwright_chromium'
@@ -4299,7 +4317,9 @@ app.post('/api/chat', async (req, res) => {
     let suggestions = []; // Suggestion buttons disabled; use plain text and task list actions instead.
     let llmErrorForFallback = null;
     // 1. 快速蒐集背景資訊
-    const sopCatalog = sopsWithState.map(s => `- ID: ${s.id}, Name: ${s.name}, Status: ${s.installed ? 'installed' : 'not installed'}, Action: ${s.recommendedAction}`).join('\n');
+    const sopCatalog = needsSopRuntimeState
+        ? sopsWithState.map(s => `- ID: ${s.id}, Name: ${s.name}, Status: ${s.installed ? 'installed' : 'not installed'}, Action: ${s.recommendedAction}`).join('\n')
+        : '(not requested for this conversation)';
     const taskContext = todoList.map(t => `- ID: ${t.id}, Title: ${t.title}, Status: ${t.status}`).join('\n');
     const experienceContext = loadExperienceContext(message, 3);
     const wingetRecommendation = shouldSearchWingetForRecommendations(message)
@@ -4437,7 +4457,9 @@ app.post('/api/chat', async (req, res) => {
 
     let systemHealth = null;
     try {
-        systemHealth = await getSystemHealth();
+        if (isLocalHardwareStatusQuestion(message)) {
+            systemHealth = await getSystemHealth();
+        }
     } catch {
         systemHealth = null;
     }
@@ -4445,8 +4467,7 @@ app.post('/api/chat', async (req, res) => {
 
     const hardwareSummary = (() => {
         if (!systemHealth) {
-            const ramUsage = Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100);
-            return `CPU: ${os.cpus()[0].model.trim()}, RAM: ${Math.round(os.totalmem() / 1024 / 1024 / 1024)}GB (Usage: ${ramUsage}%)`;
+            return 'Not requested for this conversation.';
         }
 
 

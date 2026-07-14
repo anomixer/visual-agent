@@ -16,8 +16,13 @@
 
 ### Chalkboard 行為
 - 「清空」改為真正不可復原：同步清除畫布、Undo history 與 Redo future，避免舊內容被 Undo 還原。
+- 垃圾桶偵測到選取範圍時，僅永久刪除該範圍並保留其他黑板內容；未選取時才確認清空整張黑板。
 - AI 摘要收斂為最多 4 條、64 字內且去重；畫布不再自動加上 `1.`、`2.` 編號。
 - Prompt 明定黑板只寫新的可執行結論，禁止重述聊天、前後言與編號。
+
+### 一般對話延遲
+- `/api/chat` 僅在安裝、移除、執行任務等系統請求才更新所有 SOP runtime state；一般對話改用既有快取/預設狀態。
+- 僅在硬碟、CPU、GPU、RAM 等硬體問題才執行 PowerShell 硬體探測，避免一般聊天被 WMI、GPU counter 與 NVIDIA probe 阻塞。
 
 ### 驗收
 - `node --check src\\server.js`、`node --check src\\llm.js`、`node --check public\\app.js` 通過。
