@@ -3780,8 +3780,9 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
     if (!draft) return;
     const collaborativeDraft = normalizeCollaborativeChalkboardDraft(draft, options);
     const title = normalizeChalkboardTextForCanvas(collaborativeDraft.title || '').slice(0, 52);
+    const maxBullets = collaborativeDraft.layout === 'news' || /(?:新聞|news)/i.test(title) ? 6 : 4;
     const bullets = Array.isArray(collaborativeDraft.bullets)
-        ? normalizeChalkboardBulletsForCanvas(collaborativeDraft.bullets, 4)
+        ? normalizeChalkboardBulletsForCanvas(collaborativeDraft.bullets, maxBullets)
         : [];
     if (!title && bullets.length === 0) return;
 
@@ -3792,6 +3793,7 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             position: collaborativeDraft.position,
             clear: collaborativeDraft.clear,
             replaceLane: collaborativeDraft.replaceLane,
+            layout: collaborativeDraft.layout,
         };
         try {
             const normalized = await api('/api/chalkboard/draft', {
@@ -3837,7 +3839,7 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
 
             const finalTitle = normalizeChalkboardTextForCanvas(normalizedDraft.title || title || 'Chalkboard Draft').slice(0, 52);
             const finalBullets = Array.isArray(normalizedDraft.bullets)
-                ? normalizeChalkboardBulletsForCanvas(normalizedDraft.bullets, 4)
+                ? normalizeChalkboardBulletsForCanvas(normalizedDraft.bullets, maxBullets)
                 : bullets;
             showChalkboardFloatHint(finalTitle);
 
@@ -3960,6 +3962,31 @@ function shouldAutoDraftChalkboard(userText = '', replyText = '') {
 
 function buildAutoChalkboardDraft(userText = '', replyText = '') {
     if (!shouldAutoDraftChalkboard(userText, replyText)) return null;
+    const isNewsSummary = /(新聞|news|今日|today|本日|latest)/i.test(`${userText}\n${replyText}`);
+    if (isNewsSummary) {
+        const sourceLines = String(replyText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const headlines = sourceLines
+            .filter((line) => /^\*\*.+\*\*$/.test(line) || /^\s*(?:\d+[.)、]|[\d\uFE0F\u20E3]+)\s+/.test(line))
+            .map((line) => normalizeChalkboardTextForCanvas(line)
+                .replace(/^[\d\uFE0F\u20E3\s]+[.)、:：]?\s*/, '')
+                .slice(0, 52))
+            .filter((line) => line && !/(一句話總結|one.?line summary|總結)/i.test(line))
+            .slice(0, 5);
+        const summaryLine = sourceLines.find((line) => /(一句話總結|one.?line summary|總結)/i.test(line));
+        const summary = summaryLine
+            ? normalizeChalkboardTextForCanvas(summaryLine).slice(0, 64)
+            : '';
+        const bullets = normalizeChalkboardBulletsForCanvas([...headlines, summary], 6);
+        if (headlines.length >= 2) {
+            return {
+                title: currentLocale === 'en-US' ? 'News at a glance' : '新聞重點速覽',
+                bullets,
+                layout: 'news',
+                position: 'full',
+                clear: true,
+            };
+        }
+    }
     const plain = String(replyText || '')
         .replace(/```[\s\S]*?```/g, '')
         .replace(/\[(?:ACTION|SUGGEST)[\s\S]*?\]/gi, '')

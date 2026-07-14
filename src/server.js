@@ -5475,8 +5475,9 @@ app.post('/api/chalkboard/draft', (req, res) => {
         : 'full';
     const clear = req.body?.clear !== false;
     const replaceLane = req.body?.replaceLane !== false;
+    const layout = String(req.body?.layout || '').toLowerCase() === 'news' ? 'news' : '';
     const bullets = Array.isArray(req.body?.bullets)
-        ? req.body.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4)
+        ? req.body.bullets.map((item) => String(item || '').trim()).filter(Boolean).slice(0, layout === 'news' ? 6 : 4)
         : [];
     if (!title && bullets.length === 0) {
         return res.status(400).json({ success: false, error: 'Empty chalkboard draft.' });
@@ -5489,6 +5490,7 @@ app.post('/api/chalkboard/draft', (req, res) => {
             position,
             clear,
             replaceLane,
+            layout,
             createdAt: new Date().toISOString(),
         },
     });
