@@ -1,4 +1,4 @@
-# Visual Agent — 實作需求規格書 (2026.07.15 Updated)
+# Visual Agent — 實作需求規格書 (2026.07.16 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -24,7 +24,7 @@
 │  ←→ drag  ─┤──────────────────────────│  ←→ drag            │
 │            │  📖 工作日誌   ↕ drag     │  [使用者輸入框]      │
 ├────────────┴──────────────────────────┴─────────────────────┤
-│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.7.15] │
+│ StatusBar  [🟢 AI就緒] │ [N個任務]              [v2026.7.16] │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -776,7 +776,8 @@ $true
 - debug log 僅回傳末段，避免一次暴露過多本機紀錄。
 
 ### 23.3 UI 診斷
-- UI 必須提供「診斷資訊」入口，讓使用者在回報 issue 前可複製診斷摘要。
+- UI 必須提供「診斷資訊」入口（標題列「說明」選單），讓使用者在回報 issue 前可複製診斷摘要。
+- 「說明」選單另提供「關於」，開啟專案 GitHub repository。
 - 診斷資訊需明確標示 Browser Use、Ollama/model、port、AppData 與 debug log 末段。
 
 ### 23.4 Public Preview 驗收
@@ -791,6 +792,7 @@ $true
 - 只要判定為 web research intent，若模型未輸出 ACTION，runtime 必須自動執行 search，抽取前 2 筆來源內容，再交回 Agent Loop summarizing。
 - Agent Loop observation 必須集中封裝，避免各 action 路徑自行拼接不一致的 observation message。
 - 前端必須顯示 Agent 狀態事件：planning、searching、extracting、summarizing、done；不得只顯示靜態「思考中」。
+- 有工具結果時，最終回覆必須是可讀答案；禁止只回「已執行指定動作」或空控制碼。模型仍不可用時，runtime 必須以來源摘要做 fallback。
 
 ## 24. 2026.07.15 意圖辨識與 Chalkboard 內容規格
 
@@ -817,3 +819,27 @@ $true
 ### 24.5 研究型追問承接
 - 當上一則使用者訊息為遊戲新聞/即時研究，後續 100 字內的平台或篩選短句必須繼承前題，產生具體研究 query 並啟用 Browser Use fallback。
 - 平台篩選追問不得退化成名詞解釋；例如「最新遊戲新聞」後的「純 PC 平台」必須回答最新 PC 遊戲新聞。
+
+## 25. 2026.07.16 Agent Loop 與說明選單規格
+
+### 25.1 版本
+- Runtime 版本號為 `2026.7.16`；`package.json` 是版本單一真相來源。
+
+### 25.2 說明選單
+- 標題列「說明」必須提供下拉：診斷資訊、關於。
+- 診斷資訊開啟既有 diagnostics modal 與複製摘要能力。
+- 關於必須開啟 GitHub repo `https://github.com/anomixer/visual-agent`。
+
+### 25.3 禁止冗長 interim plan
+- 前端不得在送出查詢後先插入「我先給你一個處理計畫…」這類固定計畫泡泡。
+- 長任務進度以 thinking bubble + `/api/agent-status/:runId` 顯示。
+
+### 25.4 Agent Loop 最終答案
+- 有 web 工具觀察結果時必須進入 summarize loop；最終回覆不得只剩 ACTION 控制碼或「已執行指定動作」。
+- 空回覆、純控制碼、空話（馬上幫你查）視為不可用，需重試 summarize 或以抽取來源做 fallback。
+- 本機任務類 ACTION（ADD_TASK / EXECUTE_TASK / INSTALL_SOP / CREATE_*_SOP）必須寫入可讀 action summary，且不必強制走 web research loop。
+- Browser Use 參數需相容 `mode`/`action` 與有無引號；search 缺 query 時以使用者原句或 research intent 補上。
+
+### 25.5 LLM 傳輸
+- chat history 的 role 必須可被 OpenAI-compatible / Ollama 接受；無 tool_call_id 的 tool role 需映射為 user。
+- 回應解析需相容 array content 與 reasoning 欄位，避免被誤判為空內容。

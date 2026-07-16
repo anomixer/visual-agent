@@ -4642,25 +4642,34 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
             // ── 執行安全攔截 ──
+            // 只看「一般文字」是否在徵詢同意；ACTION 的 query="...?" 不應觸發攔截
+            const proseForConsent = String(llmReply || '')
+                .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, ' ')
+                .replace(/\[SUGGEST:.*?\]/gi, ' ');
             const hasSuggestions = actions.length > 0 && llmReply.includes('[SUGGEST:');
-            const isQuestioning = /[\?？]|是否要|確認點選|要不要執行|您是否同意/.test(llmReply);
+            const isQuestioning = /是否要|確認點選|要不要執行|您是否同意|要我幫|shall I|would you like|do you want/i.test(proseForConsent);
             let executeTaskId = null;
             let hasActionTaken = false;
             let taskListChanged = false;
             let sopChanged = false;
             let actionSummaries = [];
             if (hasSuggestions && isQuestioning) {
-                actions.length = 0; // 攔截待確認動作
+                // 只擋「待確認」的系統變更；Browser Use 查詢仍應執行
+                for (let i = actions.length - 1; i >= 0; i--) {
+                    if (!String(actions[i] || '').startsWith('BROWSER_USE')) {
+                        actions.splice(i, 1);
+                    }
+                }
             }
 
 
             for (const actionStr of actions) {
                 if (actionStr.startsWith('ADD_TASK')) {
-                    const idMatch = actionStr.match(/sop_id="(.*?)"/);
+                    const idMatch = actionStr.match(/sop_id="(.*?)"/) || actionStr.match(/sop_id=([^\s\]]+)/i);
                     if (idMatch) {
                         const mSop = sopsWithState.find(s => s.id === idMatch[1]);
                         if (mSop) {
-                            todoList.push({
+                            const task = {
                                 id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
                                 title: buildTaskTitle(mSop, mSop.recommendedAction),
                                 description: `Scheduled by AI Agent`,
@@ -4669,9 +4678,15 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                 category: mSop.category || 'Maintenance',
                                 status: 'pending', progress: 0, logs: [],
                                 createdAt: new Date().toISOString()
-                            });
+                            };
+                            todoList.push(task);
                             hasActionTaken = true;
                             taskListChanged = true;
+                            actionSummaries.push(
+                                locale === 'en-US'
+                                    ? `Added task to list: ${task.title} (${task.id})`
+                                    : `已加入工作清單：${task.title}（${task.id}）`
+                            );
                         }
 
 
@@ -4682,11 +4697,17 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
                 if (actionStr.startsWith('REMOVE_TASK')) {
-                    const idMatch = actionStr.match(/task_id="(.*?)"/);
+                    const idMatch = actionStr.match(/task_id="(.*?)"/) || actionStr.match(/task_id=([^\s\]]+)/i);
                     if (idMatch) {
+                        const removed = todoList.find((t) => t.id === idMatch[1]);
                         todoList = todoList.filter(t => t.id !== idMatch[1]);
                         hasActionTaken = true;
                         taskListChanged = true;
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Removed task: ${removed?.title || idMatch[1]}`
+                                : `已移除任務：${removed?.title || idMatch[1]}`
+                        );
                     }
 
 
@@ -4694,12 +4715,21 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
                 if (actionStr.startsWith('EXECUTE_TASK')) {
-                    const idMatch = actionStr.match(/task_id="(.*?)"/);
-                    if (idMatch) executeTaskId = idMatch[1];
+                    const idMatch = actionStr.match(/task_id="(.*?)"/) || actionStr.match(/task_id=([^\s\]]+)/i);
+                    if (idMatch) {
+                        executeTaskId = idMatch[1];
+                        hasActionTaken = true;
+                        const target = todoList.find((t) => t.id === idMatch[1]);
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Starting task: ${target?.title || idMatch[1]}`
+                                : `開始執行任務：${target?.title || idMatch[1]}`
+                        );
+                    }
                 }
 
                 if (actionStr.startsWith('INSTALL_SOP')) {
-                    const idMatch = actionStr.match(/sop_id="(.*?)"/);
+                    const idMatch = actionStr.match(/sop_id="(.*?)"/) || actionStr.match(/sop_id=([^\s\]]+)/i);
                     if (idMatch) {
                         const mSop = sopsWithState.find((s) => s.id === idMatch[1]);
                         if (mSop) {
@@ -4717,6 +4747,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             hasActionTaken = true;
                             taskListChanged = true;
                             executeTaskId = task.id;
+                            actionSummaries.push(
+                                locale === 'en-US'
+                                    ? `Queued and starting SOP task: ${task.title} (${task.id})`
+                                    : `已建立並開始 SOP 任務：${task.title}（${task.id}）`
+                            );
                         }
                     }
                 }
@@ -4726,12 +4761,23 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     todoList = [];
                     hasActionTaken = true;
                     taskListChanged = true;
+                    actionSummaries.push(
+                        locale === 'en-US' ? 'Cleared all tasks.' : '已清空全部任務。'
+                    );
                 }
 
 
                 if (actionStr.startsWith('SWITCH_MODEL')) {
-                    const nameMatch = actionStr.match(/name="(.*?)"/);
-                    if (nameMatch) llm.setCurrentModel(nameMatch[1]);
+                    const nameMatch = actionStr.match(/name="(.*?)"/) || actionStr.match(/name=([^\s\]]+)/i);
+                    if (nameMatch) {
+                        llm.setCurrentModel(nameMatch[1]);
+                        hasActionTaken = true;
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Switched model to: ${nameMatch[1]}`
+                                : `已切換模型：${nameMatch[1]}`
+                        );
+                    }
                 }
 
                 if (actionStr.startsWith('OPEN_FILE')) {
@@ -4889,12 +4935,17 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const idMatch = actionStr.match(/package_id="(.*?)"/);
                     const nameMatch = actionStr.match(/package_name="(.*?)"/);
                     if (idMatch) {
-                        createWingetSopFile({
+                        const created = createWingetSopFile({
                             id: idMatch[1],
                             name: nameMatch ? nameMatch[1] : idMatch[1],
                         });
                         hasActionTaken = true;
                         sopChanged = true;
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Created winget SOP: ${created?.fileName || idMatch[1]}`
+                                : `已建立 winget SOP：${created?.fileName || idMatch[1]}`
+                        );
                     }
 
 
@@ -4905,13 +4956,18 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const idMatch = actionStr.match(/package_id="(.*?)"/);
                     const nameMatch = actionStr.match(/package_name="(.*?)"/);
                     if (idMatch) {
-                        createMicrosoftStoreSopFile({
+                        const created = createMicrosoftStoreSopFile({
                             id: idMatch[1],
                             name: nameMatch ? nameMatch[1] : idMatch[1],
                             source: 'msstore',
                         });
                         hasActionTaken = true;
                         sopChanged = true;
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Created Microsoft Store SOP: ${created?.fileName || idMatch[1]}`
+                                : `已建立 Microsoft Store SOP：${created?.fileName || idMatch[1]}`
+                        );
                     }
 
 
@@ -4923,7 +4979,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     const assetMatch = actionStr.match(/asset_name="(.*?)"/);
                     const urlMatch = actionStr.match(/download_url="(.*?)"/);
                     if (repoMatch && assetMatch && urlMatch) {
-                        createGitHubReleaseSopFile({
+                        const created = createGitHubReleaseSopFile({
                             fullName: repoMatch[1],
                             name: repoMatch[1].split('/').pop(),
                             assetName: assetMatch[1],
@@ -4931,6 +4987,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         });
                         hasActionTaken = true;
                         sopChanged = true;
+                        actionSummaries.push(
+                            locale === 'en-US'
+                                ? `Created GitHub release SOP: ${created?.fileName || repoMatch[1]}`
+                                : `已建立 GitHub Release SOP：${created?.fileName || repoMatch[1]}`
+                        );
                     }
 
 
@@ -5017,6 +5078,12 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             let agentTurnCount = 0;
             let conversationHistory = []; // Start fresh conversation for this request
             let lastToolBundle = actionSummaries.slice();
+            const looksLikeWebObservation = (bundle = []) => (Array.isArray(bundle) ? bundle : []).some((item) =>
+                /(搜尋結果|search results|來源內容|Extracted|即時資訊|Current-info|Browser Use|extract|URL:|https?:\/\/)/i.test(String(item || ''))
+            );
+            // 只有 web 工具結果才進 Agent Loop；ADD_TASK 等本機動作不必再叫 LLM 重講一次
+            const shouldRunAgentLoop = looksLikeWebObservation(lastToolBundle)
+                || (isWebResearchIntent(researchIntentMessage) && lastToolBundle.length > 0 && !isUsableAgentFinalReply(llmReply));
 
             // Add user message
             conversationHistory.push({
@@ -5031,17 +5098,17 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             });
 
             // If first reply had actions / web fallback, add their results as tool messages
-            if (lastToolBundle.length > 0) {
+            if (lastToolBundle.length > 0 && shouldRunAgentLoop) {
                 conversationHistory.push(buildToolObservationMessage(lastToolBundle.join('\n\n'), locale));
             }
 
             let currentLlmReply = llmReply;
             let emptyFinalRetries = 0;
 
-            console.log(`[Agent Loop] Initialization: actionSummaries.length = ${lastToolBundle.length}, llmReply length = ${llmReply.length}, usableFirst=${isUsableAgentFinalReply(llmReply)}`);
+            console.log(`[Agent Loop] Initialization: actionSummaries.length = ${lastToolBundle.length}, llmReply length = ${llmReply.length}, usableFirst=${isUsableAgentFinalReply(llmReply)}, shouldLoop=${shouldRunAgentLoop}`);
 
-            // Always enter loop when we have tool results to convert into a real user-facing answer
-            while (lastToolBundle.length > 0 && agentTurnCount < MAX_AGENT_TURNS) {
+            // Enter loop when web tool results need to become a real user-facing answer
+            while (shouldRunAgentLoop && lastToolBundle.length > 0 && agentTurnCount < MAX_AGENT_TURNS) {
                 agentTurnCount++;
                 const forceFinal = emptyFinalRetries > 0 || agentTurnCount >= 3;
                 console.log(`[Agent Loop] Turn ${agentTurnCount}/${MAX_AGENT_TURNS}, tool results: ${lastToolBundle.length} items, forceFinal=${forceFinal}`);
@@ -5180,8 +5247,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             // Clean final reply (remove ACTION / control tags)
             let cleanReply = stripControlTagsFromReply(currentLlmReply);
 
-            // If still unusable but we have tool data, one last forced summarize, then local fallback
-            if (!isUsableAgentFinalReply(cleanReply) && lastToolBundle.length > 0) {
+            // If still unusable but we have web tool data, one last forced summarize, then local fallback
+            if (!isUsableAgentFinalReply(cleanReply) && shouldRunAgentLoop && looksLikeWebObservation(lastToolBundle)) {
                 try {
                     setAgentRunStatus(agentRunId, 'summarizing', locale || 'zh-TW', 'force-final');
                     const forceReply = await llm.chatWithLLM(
@@ -5206,17 +5273,24 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
             }
 
-            if (!isUsableAgentFinalReply(cleanReply) && lastToolBundle.length > 0) {
+            if (!isUsableAgentFinalReply(cleanReply) && looksLikeWebObservation(lastToolBundle)) {
                 cleanReply = buildFallbackAnswerFromToolSummaries(lastToolBundle, message, locale || 'zh-TW');
                 console.log('[Agent Loop] Used local fallback answer from tool summaries');
             }
 
+            // 非 web 工具類 ACTION（加任務等）也要有可讀回覆
+            if (!isUsableAgentFinalReply(cleanReply) && actionSummaries.length > 0) {
+                cleanReply = actionSummaries.join('\n');
+            }
+
             const finalReply = cleanReply || (
-                lastToolBundle.length > 0
+                looksLikeWebObservation(lastToolBundle)
                     ? buildFallbackAnswerFromToolSummaries(lastToolBundle, message, locale || 'zh-TW')
-                    : (locale === 'en-US'
-                        ? 'I could not complete this request with a usable answer. Please try again.'
-                        : '這次沒有產生可用答案，請再試一次。')
+                    : (actionSummaries.length > 0
+                        ? actionSummaries.join('\n')
+                        : (locale === 'en-US'
+                            ? 'I could not complete this request with a usable answer. Please try again.'
+                            : '這次沒有產生可用答案，請再試一次。'))
             );
 
             // Update chat history for future conversations

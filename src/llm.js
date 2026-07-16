@@ -194,7 +194,7 @@ const BASE_SYSTEM_PROMPT_ZH = `你是一名住在 Windows 電腦裡的「AI 智�
   2. Computer Use（外宇宙）：操控桌面與 App；預設先走 VM sandbox，必要時才觸及主機，可輸出 \`[ACTION:COMPUTER_USE mode="prepare_vm_sandbox|open_file|open_url|install_sop" ...]\`。
   3. Computer Use 不是網路搜尋工具；只用於桌面、App、檔案與 SOP 等本機操作。
 - 搜尋強制守則：若本地知識不足，或使用者詢問即時/最新資訊，必須主動使用 Browser Use（可參考 browser-research-and-edit.md 的流程）整理可用答案與連結；不要只回「找不到」或只叫使用者手動搜尋。
-- **即時資訊查詢強制規則**：當使用者詢問天氣、物價、新聞、股價、匯率、最新版本等即時資訊時，**第一句話就必須輸出** [ACTION:BROWSER_USE mode="search" query="..."]，不要先說「好的我來查」然後停住。正確範例：使用者詢問「明天台北天氣」時，你必須直接輸出 [ACTION:BROWSER_USE mode="search" query="台北天氣 明天 2026-06-29 預報"]，系統會自動執行並回傳結果，你再整理成可讀答案。
+- **即時資訊查詢強制規則**：當使用者詢問天氣、物價、新聞、股價、匯率、最新版本、**最新遊戲/新作推薦**等即時資訊時，**第一句話就必須輸出** [ACTION:BROWSER_USE mode="search" query="..."]，不要先說「好的我來查」然後停住，也**禁止**只回「已執行指定動作」。正確範例：使用者詢問「明天台北天氣」或「最新的新遊戲」時，你必須直接輸出 [ACTION:BROWSER_USE mode="search" query="..."]，系統會自動執行並回傳結果，你再整理成可讀答案。
 - **混合模式守則**：
   1. **直接執行 (ACTION)**：當你決定立即動作（如：安裝、移除、執行）時，**必須**輸出對應的 \`[ACTION:...]\`。此時**禁發**建議按鈕。若任務已在清單中且為 pending，當使用者說「開始、執行、做吧、OK」時，你**必須**輸出 \`[ACTION:EXECUTE_TASK task_id="任務ID"]\`。
   2. **提供選項 (SUGGEST)**：當你決定「提供建議/詢問」時（例如：要我幫您安裝...嗎？），你**必須**提供結構化建議按鈕 \`[SUGGEST: button_text="顯示文字" action="add_task|execute_task|computer_use" sop_id="..." task_id="..." mode="..."]\`。安裝/語系/系統變更一律先用 \`action="add_task"\` 加入工作清單，不要用 \`computer_use\` 直接執行；使用者之後可在工作清單按執行，或再請 AI 代為執行。在此回覆中**絕對禁止**出現 \`[ACTION:...]\` 標籤。
@@ -237,9 +237,9 @@ Your rules:
   2. Computer Use (outer universe): desktop/app operations with VM sandbox first via \`[ACTION:COMPUTER_USE mode="prepare_vm_sandbox|open_file|open_url|install_sop" ...]\`.
   3. Computer Use is not the web-search tool; reserve it for desktop/app/file/SOP operations.
 - Search rule: if local knowledge is insufficient, or if the user asks for current/latest information, proactively use Browser Use (follow browser-research-and-edit.md style) and return actionable answers with links; do not only say "not found" or ask user to search manually.
-- **Realtime Info Query Mandatory Rule**: When user asks about weather, prices, news, stocks, exchange rates, latest versions, **output the ACTION tag in your FIRST response**, do NOT say "OK let me check" and stop. Correct example:
-  User: "tomorrow's Taipei weather"
-  AI: [ACTION:BROWSER_USE mode="search" query="Taipei weather tomorrow 2026-06-29 forecast"]
+- **Realtime Info Query Mandatory Rule**: When user asks about weather, prices, news, stocks, exchange rates, latest versions, or **latest/new game releases**, **output the ACTION tag in your FIRST response**, do NOT say "OK let me check" and stop, and NEVER reply with only "Done / executed". Correct example:
+  User: "tomorrow's Taipei weather" or "latest new games"
+  AI: [ACTION:BROWSER_USE mode="search" query="..."]
   (System will execute and return results, then you synthesize a readable answer)
 - Hybrid mode rules:
   1. **Direct execution (ACTION)**: When you decide to act immediately (e.g., install, remove, execute), you MUST output the corresponding \`[ACTION:...]\`. Suggestion buttons are FORBIDDEN at this time. If the task is already in the list and is pending, when the user says "start, execute, do it, OK", you MUST output \`[ACTION:EXECUTE_TASK task_id="TASK_ID"]\`.
@@ -839,12 +839,28 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         }
         return content;
     }
-    // *** FIX: 正確處理所有 role 類型，包括 'tool' ***
+    // 正規化 history：
+    // - 多數 OpenAI-compatible / Ollama 不接受無 tool_call_id 的 role:tool
+    // - 工具觀察結果應以 user 訊息帶入（server 已用 user；此處再保底）
     const historyMessages = history
-        .map(m => ({
-            role: m.role, // 保留原始 role，不要強制轉換成 user
-            content: typeof m.content === 'string' ? m.content : String(m.content || '')
-        }))
+        .map((m) => {
+            const rawRole = String(m?.role || 'user');
+            const role = rawRole === 'assistant'
+                ? 'assistant'
+                : (rawRole === 'system' ? 'system' : 'user');
+            let content = m?.content;
+            if (Array.isArray(content)) {
+                content = content.map((part) => {
+                    if (typeof part === 'string') return part;
+                    return part?.text || part?.content || '';
+                }).join('\n');
+            } else if (content == null) {
+                content = '';
+            } else if (typeof content !== 'string') {
+                content = String(content);
+            }
+            return { role, content };
+        })
         .filter((m) => m.content.trim());
 
     const messages = meta.type === 'ollama'
@@ -923,25 +939,49 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
 
     const data = await res.json();
     
-    // 兼顧 OpenAI 與 Ollama 的各種欄位格式
+    // 兼顧 OpenAI 與 Ollama 的各種欄位格式（含 reasoning / array content）
+    const normalizeContent = (value) => {
+        if (value == null) return '';
+        if (typeof value === 'string') return value;
+        if (Array.isArray(value)) {
+            return value.map((part) => {
+                if (typeof part === 'string') return part;
+                return part?.text || part?.content || '';
+            }).join('\n');
+        }
+        if (typeof value === 'object') {
+            return value.text || value.content || JSON.stringify(value);
+        }
+        return String(value);
+    };
+
     let content = '';
-    if (data && data.choices && data.choices[0]?.message) {
-        content = data.choices[0].message.content;
-    } else if (data && data.message) {
-        content = data.message.content;
-    } else if (data && data.content) {
-        content = data.content;
-    } else if (data && data.response) {
-        content = data.response; // 支援 Ollama /api/generate 格式混用
+    const choiceMsg = data?.choices?.[0]?.message;
+    if (choiceMsg) {
+        content = normalizeContent(choiceMsg.content)
+            || normalizeContent(choiceMsg.reasoning_content)
+            || normalizeContent(choiceMsg.reasoning)
+            || normalizeContent(data.choices[0].text);
+    } else if (data?.message) {
+        content = normalizeContent(data.message.content)
+            || normalizeContent(data.message.reasoning_content);
+    } else if (data?.content) {
+        content = normalizeContent(data.content);
+    } else if (data?.response) {
+        content = normalizeContent(data.response); // Ollama /api/generate
     }
 
-    content = (content || '').trim();
+    content = String(content || '').trim();
 
     // 處理思考標籤 (Thought Tags)
     // 如果模型只回傳了 <think>...</think>，我們保留它（或者至少不轉為空字串導致報錯）
-    const thoughtMatch = content.match(/<think>([\s\S]*?)<\/think>/i);
+    const thoughtMatch = content.match(/<think>([\s\S]*?)<\/think>/i)
+        || content.match(/<reasoning>([\s\S]*?)<\/reasoning>/i);
     const thought = thoughtMatch ? thoughtMatch[1].trim() : null;
-    const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    const cleanContent = content
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+        .trim();
 
     const finalReply = cleanContent || thought || '';
 

@@ -5,6 +5,40 @@
 
 ---
 
+## 📌 2026.07.16 — Agent Loop 可讀答案、說明選單與 interim plan 收斂
+
+### 版本同步
+- `package.json` / `package-lock.json` 版本同步更新為 `2026.7.16`。
+- `public/index.html` 前端資源 cache-bust 更新為 `2026.7.16-agentloop`。
+
+### 說明選單
+- 標題列「說明」改為下拉選單：診斷資訊、關於。
+- 「診斷資訊」由右上角按鈕移入說明選單，仍開啟既有 `/api/diagnostics` modal。
+- 「關於」以 `openExternalUrl` 開啟 GitHub：`https://github.com/anomixer/visual-agent`。
+
+### 對話體感
+- 關閉前端 interim plan 泡泡（「我先給你一個處理計畫…」），避免查詢前冗長廢話；進度改由 thinking bubble 的 agent-status 顯示。
+
+### Agent Loop / 即時查詢
+- 工具結果存在時必須整理成可讀答案；禁止只回「已執行指定動作」。
+- 回覆可用性判斷：空字串、純 ACTION/控制碼、空話（馬上幫你查）視為不可用。
+- 最終仍無可用文字時，以來源搜尋/抽取結果做 local fallback 答案。
+- `actionSummaries` 改為可跨輪更新；loop 續問改用明確 summarize prompt，不再塞空字串。
+- 只有 web 工具觀察結果才進 Agent Loop；ADD_TASK / 安裝 SOP 等本機動作直接回可讀摘要。
+- `parseActionArg` 支援無引號參數；`action=` 可當 Browser Use `mode` 別名；search query 空值 fallback 為使用者原句。
+- SUGGEST 待確認攔截不再因 ACTION 內 `query="...?"` 的問號誤擋；Browser Use 仍可執行。
+- ADD_TASK / EXECUTE_TASK / INSTALL_SOP / CREATE_*_SOP 等執行後寫入 actionSummaries，避免空白回覆。
+
+### LLM 相容
+- history role 正規化：無 `tool_call_id` 的 `tool` 改為 `user`，避免 OpenAI-compatible / Ollama 拒收。
+- 回應解析支援 array content、`reasoning_content`、`<think>` / `<reasoning>` 標籤。
+- system prompt 明確要求：最新遊戲/新作也必須走 Browser Use，禁止只回 done/executed。
+
+### 驗收
+- `node --check src\server.js`、`node --check src\llm.js`、`node --check public\app.js` 通過。
+
+---
+
 ## 📌 2026.07.15 — 意圖辨識與 Chalkboard 刪除/摘要修正
 
 ### 版本同步

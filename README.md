@@ -123,7 +123,7 @@ http://localhost:3210
 - Web research 類問題若模型沒吐 ACTION，後端會保底搜尋、抽取前 2 筆來源，再交回 Agent Loop 整理。
 - Chat 思考泡泡需顯示 Agent 狀態：規劃中、搜尋即時來源、抽取來源內容、整理答案、完成。
 - 工作清單、SOP 清單、Skills 清單可載入，且任務執行失敗會留下可讀 log。
-- 右上角「診斷資訊」可顯示版本、port、Ollama、Browser runtime、AppData 路徑與 debug log 末段。
+- 標題列「說明 → 診斷資訊」可顯示版本、port、Ollama、Browser runtime、AppData 路徑與 debug log 末段。
 
 ## 乾淨機器驗收流程
 
@@ -138,7 +138,7 @@ npm start
 
 開啟 `http://localhost:3210` 後驗收：
 
-1. 查看右上角「診斷資訊」，確認 HTTP `3210`、Remote TCP `19168`、AppData 路徑與 debug log 可讀。
+1. 查看「說明 → 診斷資訊」，確認 HTTP `3210`、Remote TCP `19168`、AppData 路徑與 debug log 可讀。
 2. 若 AI 未就緒，依 UI 任務安裝 Ollama / 下載模型；或到 AI 引擎設定改用其他 Provider。
 3. 若 Browser 不可用，執行 `install-playwright-chromium` SOP。
 4. 詢問「今天台北天氣」確認即時查詢會回具體天氣摘要。
@@ -402,7 +402,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 通常是 `3210` 或 `19168` 已被另一個 Visual Agent 行程佔用。新版啟動時會顯示佔用 PID。請先關閉舊行程，或直接使用已在跑的 `http://localhost:3210`。
 
 **Q: 要怎麼回報問題？**
-點右上角「診斷資訊」，複製診斷摘要，連同操作步驟與 debug log 末段一起附上。
+點標題列「說明 → 診斷資訊」，複製診斷摘要，連同操作步驟與 debug log 末段一起附上。
 
 ---
 
@@ -410,9 +410,17 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `spec.md`。
-- 目前套件版本：`2026.7.15`。
+- 目前套件版本：`2026.7.16`。
 
 ---
+
+## 2026.7.16 修正重點
+
+- Agent Loop：有工具結果時必須整理成可讀答案，不再只回「已執行指定動作」。
+- 關閉冗長 interim plan；進度改由思考泡泡 agent-status 顯示。
+- 「說明」選單提供診斷資訊與關於（開啟 GitHub）。
+- 最新遊戲/新作與即時查詢：空 ACTION 回覆會保底搜尋、抽來源並 fallback 整理。
+- 本機任務 ACTION（加任務、建 SOP 等）會回可讀摘要；web 與本機 loop 分流。
 
 ## 2026.7.15 修正重點
 
