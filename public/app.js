@@ -3816,19 +3816,114 @@ function buildGameReleaseTableDraft(sourceLines = []) {
             if (!name) continue;
             const date = normalizeChalkboardTextForCanvas(row[dateIndex] || '');
             const type = normalizeChalkboardTextForCanvas(row[typeIndex] || '');
-            rows.push([date, name, type].filter(Boolean).join('｜').slice(0, 64));
+            rows.push([date, name, type].filter(Boolean).join('｜').slice(0, 90));
         }
         if (rows.length >= 2) {
             return {
                 title: currentLocale === 'en-US' ? 'PC releases at a glance' : 'PC 新作速覽',
-                bullets: [...rows.slice(0, 5), currentLocale === 'en-US' ? `${rows.length} releases found; sorted by date.` : `共 ${rows.length} 款，依發售日整理。`],
-                layout: 'news',
+                bullets: [...rows.slice(0, 7), currentLocale === 'en-US' ? `${rows.length} releases found; sorted by date.` : `共 ${rows.length} 款，依發售日整理。`],
+                layout: 'list',
                 position: 'full',
                 clear: true,
             };
         }
     }
     return null;
+}
+
+function isGameListDraftIntent(userText = '', replyText = '') {
+    const combined = `${userText || ''}\n${replyText || ''}`;
+    const hasGame = /(遊戲|game|steam|ps5|switch|xbox|nintendo|playstation|ns2?)/i.test(combined);
+    const hasList = /(新遊戲|新作|上市|發售|本月|這個月|值得關注|推薦|release|new games?|upcoming)/i.test(combined);
+    const hasDateTitle = /\d{1,2}\/\d{1,2}\s*《[^》]+》/.test(replyText || '')
+        || /《[^》]+》\s*[:：]/.test(replyText || '');
+    return hasGame && (hasList || hasDateTitle);
+}
+
+function isGameEntryTitleLine(line = '') {
+    const text = String(line || '').trim();
+    if (!text || text.length > 120) return false;
+    if (/^(以下是|重點|資料來源|趨勢總結|來源|source|trend)/i.test(text)) return false;
+    // 7/2《節奏天國：奇蹟之星》（NS/NS2）
+    if (/^\d{1,2}\/\d{1,2}\s*《[^》]+》/.test(text)) return true;
+    // 《卡爾朵聖譜》：卡牌策略...
+    if (/^《[^》]+》\s*[:：]/.test(text)) return true;
+    // 1. 《節奏天國》 or 1. 節奏天國（PC）
+    if (/^(?:\d+[.)、]|[-*•])\s*《[^》]+》/.test(text)) return true;
+    if (/^(?:\d+[.)、])\s*.{2,40}(?:（|\()/.test(text) && /(PC|PS5|Xbox|Switch|NS|Steam)/i.test(text)) return true;
+    return false;
+}
+
+function isGameListStopLine(line = '') {
+    return /^(趨勢總結|資料來源|來源|source|trend|one.?line summary)/i.test(String(line || '').trim());
+}
+
+function buildGameDiscoveryListDraft(userText = '', replyText = '') {
+    if (!isGameListDraftIntent(userText, replyText)) return null;
+    const sourceLines = String(replyText || '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const bullets = [];
+    for (let i = 0; i < sourceLines.length; i += 1) {
+        const line = sourceLines[i];
+        if (!isGameEntryTitleLine(line)) continue;
+
+        let titlePart = normalizeChalkboardTextForCanvas(line)
+            .replace(/^(?:[-*•]\s*)?\d+[.)、]\s*/, '')
+            .trim();
+        // Collect one short blurb from following non-title lines
+        const descParts = [];
+        let j = i + 1;
+        while (j < sourceLines.length) {
+            const next = sourceLines[j];
+            if (isGameEntryTitleLine(next) || isGameListStopLine(next)) break;
+            if (/^(重點|以下是|###|##)/i.test(next)) {
+                j += 1;
+                continue;
+            }
+            const cleaned = normalizeChalkboardTextForCanvas(next);
+            if (cleaned) descParts.push(cleaned);
+            // one short sentence is enough for chalkboard density
+            if (descParts.join('').length >= 28) break;
+            j += 1;
+        }
+        const blurb = normalizeChalkboardTextForCanvas(descParts.join(' '))
+            .replace(/^(?:[-*•]\s*)/, '')
+            .slice(0, 42);
+        // Prefer compact: "7/2 《節奏天國》NS/NS2 — 15 年回歸…"
+        let bullet = titlePart;
+        if (blurb && !titlePart.includes(blurb.slice(0, 10))) {
+            bullet = `${titlePart} — ${blurb}`;
+        }
+        bullets.push(bullet.slice(0, 96));
+        if (bullets.length >= 7) break;
+    }
+
+    if (bullets.length < 2) return null;
+
+    const trendLine = sourceLines.find((line) => /趨勢總結|trend/i.test(line));
+    if (trendLine) {
+        const trend = normalizeChalkboardTextForCanvas(trendLine)
+            .replace(/^趨勢總結\s*[:：]?\s*/i, '')
+            .replace(/^trend\s*[:：]?\s*/i, '')
+            .slice(0, 72);
+        if (trend) bullets.push((currentLocale === 'en-US' ? `Trend: ${trend}` : `趨勢：${trend}`).slice(0, 96));
+    } else {
+        bullets.push(
+            currentLocale === 'en-US'
+                ? `${bullets.length} releases highlighted this month.`
+                : `共整理 ${bullets.length} 款本月新作重點。`
+        );
+    }
+
+    return {
+        title: currentLocale === 'en-US' ? 'New games this month' : '本月新作速覽',
+        bullets: normalizeChalkboardBulletsForCanvas(bullets, 8, 96),
+        layout: 'list',
+        position: 'full',
+        clear: true,
+    };
 }
 
 function normalizeChalkboardTextForCanvas(value = '') {
@@ -3842,10 +3937,20 @@ function normalizeChalkboardTextForCanvas(value = '') {
         .trim();
 }
 
-function normalizeChalkboardBulletsForCanvas(lines = [], limit = 4) {
+function getChalkboardLayoutLimits(layout = '', title = '') {
+    const kind = String(layout || '').toLowerCase();
+    const isExpanded = kind === 'news' || kind === 'list'
+        || /(?:新聞|news|新作|遊戲|releases?)/i.test(String(title || ''));
+    return {
+        maxBullets: isExpanded ? 8 : 4,
+        maxChars: isExpanded ? 96 : 64,
+    };
+}
+
+function normalizeChalkboardBulletsForCanvas(lines = [], limit = 4, maxChars = 64) {
     const seen = new Set();
     return markdownTableToChalkLines(lines)
-        .map((line) => normalizeChalkboardTextForCanvas(line).slice(0, 64))
+        .map((line) => normalizeChalkboardTextForCanvas(line).slice(0, Math.max(24, maxChars)))
         .filter((line) => {
             const key = line.replace(/\s+/g, '').toLowerCase();
             if (!key || seen.has(key)) return false;
@@ -3859,9 +3964,9 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
     if (!draft) return;
     const collaborativeDraft = normalizeCollaborativeChalkboardDraft(draft, options);
     const title = normalizeChalkboardTextForCanvas(collaborativeDraft.title || '').slice(0, 52);
-    const maxBullets = collaborativeDraft.layout === 'news' || /(?:新聞|news)/i.test(title) ? 6 : 4;
+    const { maxBullets, maxChars } = getChalkboardLayoutLimits(collaborativeDraft.layout, title);
     const bullets = Array.isArray(collaborativeDraft.bullets)
-        ? normalizeChalkboardBulletsForCanvas(collaborativeDraft.bullets, maxBullets)
+        ? normalizeChalkboardBulletsForCanvas(collaborativeDraft.bullets, maxBullets, maxChars)
         : [];
     if (!title && bullets.length === 0) return;
 
@@ -3920,8 +4025,9 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             }
 
             const finalTitle = normalizeChalkboardTextForCanvas(normalizedDraft.title || title || 'Chalkboard Draft').slice(0, 52);
+            const finalLimits = getChalkboardLayoutLimits(normalizedDraft.layout || collaborativeDraft.layout, finalTitle);
             const finalBullets = Array.isArray(normalizedDraft.bullets)
-                ? normalizeChalkboardBulletsForCanvas(normalizedDraft.bullets, maxBullets)
+                ? normalizeChalkboardBulletsForCanvas(normalizedDraft.bullets, finalLimits.maxBullets, finalLimits.maxChars)
                 : bullets;
             showChalkboardFloatHint(finalTitle);
 
@@ -4021,10 +4127,16 @@ function extractChalkboardControlFromReply(text = '') {
         }
     });
 
-    const compactBullets = normalizeChalkboardBulletsForCanvas(bullets, 6);
+    const compactBullets = normalizeChalkboardBulletsForCanvas(bullets, 8, 96);
     const finalTitle = (title || (currentLocale === 'en-US' ? 'AI Chalkboard Notes' : 'AI 黑板重點')).slice(0, 52);
     const draft = compactBullets.length > 0
-        ? { title: normalizeChalkboardTextForCanvas(finalTitle).slice(0, 52), bullets: compactBullets, position, clear }
+        ? {
+            title: normalizeChalkboardTextForCanvas(finalTitle).slice(0, 52),
+            bullets: compactBullets,
+            position,
+            clear,
+            layout: compactBullets.length >= 5 ? 'list' : '',
+        }
         : null;
     return {
         displayText,
@@ -4047,20 +4159,28 @@ function buildAutoChalkboardDraft(userText = '', replyText = '') {
     const sourceLines = String(replyText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const gameReleaseTableDraft = buildGameReleaseTableDraft(sourceLines);
     if (gameReleaseTableDraft) return gameReleaseTableDraft;
-    const isNewsSummary = /(新聞|news|今日|today|本日|latest)/i.test(`${userText}\n${replyText}`);
+    const gameListDraft = buildGameDiscoveryListDraft(userText, replyText);
+    if (gameListDraft) return gameListDraft;
+    const isNewsSummary = /(新聞|news|今日|today|本日|latest|新遊戲|新作)/i.test(`${userText}\n${replyText}`);
     if (isNewsSummary) {
         const headlines = sourceLines
-            .filter((line) => /^\s*(?:[-*•]\s*)?\*\*.+\*\*$/.test(line) || /^\s*(?:[-*•]\s*)?(?:\d+[.)、]|[\d\uFE0F\u20E3]+)\s+/.test(line))
+            .filter((line) => (
+                /^\s*(?:[-*•]\s*)?\*\*.+\*\*$/.test(line)
+                || /^\s*(?:[-*•]\s*)?(?:\d+[.)、]|[\d\uFE0F\u20E3]+)\s+/.test(line)
+                || isGameEntryTitleLine(line)
+            ))
             .map((line) => normalizeChalkboardTextForCanvas(line)
                 .replace(/^(?:[-*•]\s*)?[\d\uFE0F\u20E3\s]+[.)、:：]?\s*/, '')
-                .slice(0, 52))
-            .filter((line) => line && !/(一句話總結|one.?line summary|總結)/i.test(line))
-            .slice(0, 5);
-        const summaryLine = sourceLines.find((line) => /(一句話總結|one.?line summary|總結)/i.test(line));
+                .slice(0, 90))
+            .filter((line) => line && !/(一句話總結|one.?line summary|趨勢總結|資料來源)/i.test(line))
+            .slice(0, 7);
+        const summaryLine = sourceLines.find((line) => /(一句話總結|one.?line summary|趨勢總結)/i.test(line));
         const summary = summaryLine
-            ? normalizeChalkboardTextForCanvas(summaryLine).slice(0, 64)
+            ? normalizeChalkboardTextForCanvas(summaryLine)
+                .replace(/^(?:一句話總結|趨勢總結|one.?line summary)\s*[:：]?\s*/i, '')
+                .slice(0, 90)
             : '';
-        const bullets = normalizeChalkboardBulletsForCanvas([...headlines, summary], 6);
+        const bullets = normalizeChalkboardBulletsForCanvas([...headlines, summary].filter(Boolean), 8, 96);
         if (headlines.length >= 2) {
             return {
                 title: currentLocale === 'en-US' ? 'News at a glance' : '新聞重點速覽',
@@ -4076,15 +4196,17 @@ function buildAutoChalkboardDraft(userText = '', replyText = '') {
         .replace(/\[(?:ACTION|SUGGEST)[\s\S]*?\]/gi, '')
         .replace(/[#>*_`]/g, '')
         .trim();
+    // Prefer content lines over generic intros when splitting
     const sentences = plain
         .split(/\r?\n|(?<=[。！？!?])\s*/)
         .map((line) => line.trim())
-        .filter(Boolean);
-    const lines = normalizeChalkboardBulletsForCanvas(sentences, 4);
+        .filter((line) => line && !/^(以下是|重點遊戲清單|資料來源)/i.test(line));
+    const lines = normalizeChalkboardBulletsForCanvas(sentences, 6, 80);
     if (!lines.length) return null;
     return {
         title: currentLocale === 'en-US' ? 'AI Summary' : 'AI 摘要',
         bullets: lines,
+        layout: lines.length >= 5 ? 'list' : '',
         position: 'full',
         clear: true,
     };
