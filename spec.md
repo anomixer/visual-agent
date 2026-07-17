@@ -843,3 +843,9 @@ $true
 ### 25.5 LLM 傳輸
 - chat history 的 role 必須可被 OpenAI-compatible / Ollama 接受；無 tool_call_id 的 tool role 需映射為 user。
 - 回應解析需相容 array content 與 reasoning 欄位，避免被誤判為空內容。
+
+### 25.6 Chalkboard 本月新作 / 遊戲清單草稿
+- 當回覆為本月新作、新遊戲推薦、上市清單時，auto draft 必須解析遊戲條目，不得只取前 1–2 句 intro。
+- 支援格式至少包含：`7/2《遊戲名》（平台）` 換行簡介、以及 `《遊戲名》：一句話`。
+- list/news layout 允許最多 8 條、每條最多 96 字；可含 1 行趨勢總結。
+- 黑板標題優先使用「本月新作速覽」類短標題，完整長文仍保留在聊天面板。

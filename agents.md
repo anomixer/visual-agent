@@ -5,11 +5,11 @@
 
 ---
 
-## 📌 2026.07.16 — Agent Loop 可讀答案、說明選單與 interim plan 收斂
+## 📌 2026.07.16 — Agent Loop 可讀答案、說明選單、interim plan 收斂與黑板新作清單
 
 ### 版本同步
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.7.16`。
-- `public/index.html` 前端資源 cache-bust 更新為 `2026.7.16-agentloop`。
+- `public/index.html` 前端資源 cache-bust 更新為 `2026.7.16-chalk-games`。
 
 ### 說明選單
 - 標題列「說明」改為下拉選單：診斷資訊、關於。
@@ -29,6 +29,12 @@
 - SUGGEST 待確認攔截不再因 ACTION 內 `query="...?"` 的問號誤擋；Browser Use 仍可執行。
 - ADD_TASK / EXECUTE_TASK / INSTALL_SOP / CREATE_*_SOP 等執行後寫入 actionSummaries，避免空白回覆。
 
+### Chalkboard 本月新作 / 遊戲清單
+- 自動黑板不再把長篇新作回覆裁成 4×64 字的「半截第一款」。
+- 新增 `buildGameDiscoveryListDraft`：辨識 `7/2《遊戲名》`、`《遊戲名》：簡介` 等條目，最多 7 款 + 趨勢總結。
+- `list` / `news` layout 上限改為 **8 條、96 字**；`/api/chalkboard/draft` 同步放寬。
+- 每款優先寫「標題 + 一句短評」，標題列改為「本月新作速覽」。
+
 ### LLM 相容
 - history role 正規化：無 `tool_call_id` 的 `tool` 改為 `user`，避免 OpenAI-compatible / Ollama 拒收。
 - 回應解析支援 array content、`reasoning_content`、`<think>` / `<reasoning>` 標籤。
@@ -36,6 +42,7 @@
 
 ### 驗收
 - `node --check src\server.js`、`node --check src\llm.js`、`node --check public\app.js` 通過。
+- 黑板遊戲條目標題 pattern 單元檢查：7 款範例可完整辨識。
 
 ---
 
