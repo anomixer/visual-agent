@@ -4025,7 +4025,9 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             }
 
             const finalTitle = normalizeChalkboardTextForCanvas(normalizedDraft.title || title || 'Chalkboard Draft').slice(0, 52);
-            const finalLimits = getChalkboardLayoutLimits(normalizedDraft.layout || collaborativeDraft.layout, finalTitle);
+            const layoutKind = String(normalizedDraft.layout || collaborativeDraft.layout || '').toLowerCase();
+            const isDenseList = layoutKind === 'news' || layoutKind === 'list';
+            const finalLimits = getChalkboardLayoutLimits(layoutKind, finalTitle);
             const finalBullets = Array.isArray(normalizedDraft.bullets)
                 ? normalizeChalkboardBulletsForCanvas(normalizedDraft.bullets, finalLimits.maxBullets, finalLimits.maxChars)
                 : bullets;
@@ -4042,31 +4044,67 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
                 maxWidth = Math.max(200, chalkboardState.cssWidth / 2 - 40);
             }
 
-            let cursorY = 62;
-            drawChalkText(finalTitle, padX, cursorY, {
-                font: '700 28px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
-                color: '#f4efe2',
-                alpha: 0.95,
-            });
-            cursorY += 40;
-            const linesToDraw = finalBullets.length > 0 ? finalBullets : [currentLocale === 'en-US' ? 'No bullet points. See chat panel for details.' : '暫無條列摘要，請看右側聊天內容。'];
-            linesToDraw.forEach((line) => {
+            // list/news: denser type so 7+1 game rows fit; overflow spills to next page
+            const titleFontSize = isDenseList ? 24 : 28;
+            const bodyFontSize = isDenseList ? 18 : 22;
+            const bodyLineHeight = isDenseList ? 22 : 28;
+            const bodyGap = isDenseList ? 6 : 10;
+            const titleStep = isDenseList ? 34 : 40;
+            const bottomPad = 28;
+            const pageBottom = Math.max(180, chalkboardState.cssHeight - bottomPad);
+
+            const linesToDraw = finalBullets.length > 0
+                ? finalBullets
+                : [currentLocale === 'en-US' ? 'No bullet points. See chat panel for details.' : '暫無條列摘要，請看右側聊天內容。'];
+
+            const drawTitleBlock = (titleText, pageLabel = '') => {
+                let cursorY = 54;
+                const label = pageLabel ? `${titleText} ${pageLabel}` : titleText;
+                drawChalkText(label, padX, cursorY, {
+                    font: `700 ${titleFontSize}px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive`,
+                    color: '#f4efe2',
+                    alpha: 0.95,
+                });
+                return cursorY + titleStep;
+            };
+
+            let cursorY = drawTitleBlock(finalTitle);
+            let pageIndex = 1;
+            linesToDraw.forEach((line, lineIndex) => {
+                // Estimate wrapped height before drawing; if it would overflow, open a new page
+                const estimatedWrap = Math.max(1, Math.ceil(String(line || '').length / Math.max(18, Math.floor(maxWidth / (bodyFontSize * 0.85)))));
+                const estimatedHeight = Math.max(bodyLineHeight + bodyGap, estimatedWrap * bodyLineHeight + bodyGap);
+                if (cursorY + estimatedHeight > pageBottom && lineIndex > 0) {
+                    markChalkboardUserContent(true);
+                    persistActiveChalkboardPage();
+                    createChalkboardPage();
+                    pageIndex += 1;
+                    cursorY = drawTitleBlock(
+                        finalTitle,
+                        currentLocale === 'en-US' ? `(p.${pageIndex})` : `（續 ${pageIndex}）`
+                    );
+                }
                 const wrappedLines = drawWrappedChalkText(
                     line,
                     padX,
                     cursorY,
                     maxWidth,
-                    28,
+                    bodyLineHeight,
                     {
-                        font: '600 22px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive',
+                        font: `600 ${bodyFontSize}px "Comic Sans MS", "Bradley Hand", "Segoe Print", cursive`,
                         color: '#eef0df',
                         alpha: 0.9,
                     }
                 );
-                cursorY += Math.max(40, wrappedLines * 28 + 10);
+                cursorY += Math.max(bodyLineHeight + bodyGap, wrappedLines * bodyLineHeight + bodyGap);
             });
             markChalkboardUserContent(true);
-            addUILog(currentLocale === 'en-US' ? 'Agent draft rendered on Chalkboard.' : '已將 Agent 摘要寫入 Chalkboard。', 'success');
+            addUILog(
+                currentLocale === 'en-US'
+                    ? `Agent draft rendered on Chalkboard${pageIndex > 1 ? ` (${pageIndex} pages)` : ''}.`
+                    : `已將 Agent 摘要寫入 Chalkboard${pageIndex > 1 ? `（共 ${pageIndex} 頁）` : ''}。`,
+                'success'
+            );
         };
         requestAnimationFrame(() => renderDraft(0));
     } catch (err) {

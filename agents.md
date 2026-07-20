@@ -34,6 +34,7 @@
 - 新增 `buildGameDiscoveryListDraft`：辨識 `7/2《遊戲名》`、`《遊戲名》：簡介` 等條目，最多 7 款 + 趨勢總結。
 - `list` / `news` layout 上限改為 **8 條、96 字**；`/api/chalkboard/draft` 同步放寬。
 - 每款優先寫「標題 + 一句短評」，標題列改為「本月新作速覽」。
+- list/news 渲染改用較密字級（標題 24 / 內文 18），內容超出畫布時自動換下一頁續寫，避免只看到前幾行。
 
 ### LLM 相容
 - history role 正規化：無 `tool_call_id` 的 `tool` 改為 `user`，避免 OpenAI-compatible / Ollama 拒收。

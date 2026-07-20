@@ -422,6 +422,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 - 最新遊戲/新作與即時查詢：空 ACTION 回覆會保底搜尋、抽來源並 fallback 整理。
 - 本機任務 ACTION（加任務、建 SOP 等）會回可讀摘要；web 與本機 loop 分流。
 - 黑板「本月新作」自動摘要：解析多款 `日期《遊戲》` 條目（最多 7 款 + 趨勢），不再只剩半截第一款。
+- 黑板 list/news 改密排，超出畫面會自動續寫下一頁。
 
 ## 2026.7.15 修正重點
 
