@@ -19,6 +19,7 @@
 - 視覺模型或 Provider 不支援圖片時，回覆會清楚提示使用者設定 Vision Model 或補上文字，不再假裝辨識成功。
 - 修正文字模型靜默忽略圖片的情況：只要目前模型不支援視覺且找不到可切換模型，後端會直接確認「圖片已收到、模型不支援辨識」，不再回覆「沒有收到圖片」。
 - 只要黑板已啟用，附圖開關會匯出目前可見畫布；Undo、頁面還原後不再因 `hasUserContent` 狀態誤判而漏附。
+- 修正 `qwen2.5vl:7b` 類無連字號名稱被誤判為非 Vision Model 的 regex；前後端模型清單與後端送圖判斷同步支援。
 
 ### 驗收
 - `node --check src\server.js`、`node --check src\llm.js`、`node --check public\app.js` 通過。

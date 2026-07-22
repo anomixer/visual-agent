@@ -2749,7 +2749,7 @@ function toggleChalkboardAttachment() {
 }
 
 function isVisionCapableModelName(modelName) {
-    return /(vision|vlm|multimodal|nano-vl|paligemma|kosmos|fuyu|neva|vila|deplot|-vl\b)/i.test(String(modelName || ''));
+    return /(vision|vlm|multimodal|nano-vl|paligemma|kosmos|fuyu|neva|vila|deplot|-vl\b|\bqwen[\w.-]*vl\b|gemma[-_ ]?3\b|gpt-4o|gpt-4\.1|gemini|claude[-_ ]?3|claude[-_ ]?4)/i.test(String(modelName || ''));
 }
 
 function syncVisionModelInputs(useDropdown, visionModel = '', models = []) {

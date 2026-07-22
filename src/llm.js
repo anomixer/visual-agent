@@ -344,7 +344,8 @@ function buildOllamaMessage(role, text, attachment) {
 function modelSupportsVision(modelName = '') {
     const normalized = String(modelName || '').toLowerCase();
     if (!normalized) return false;
-    return /(vision|vlm|multimodal|nano-vl|paligemma|kosmos|fuyu|neva|vila|deplot|-vl\b|qwen[\w.-]*\bvl\b|gemma[-_ ]?3\b|gpt-4o|gpt-4\.1|gemini|claude[-_ ]?3|claude[-_ ]?4)/i.test(normalized);
+    // Qwen uses names such as qwen2.5vl:7b (no separator before "vl").
+    return /(vision|vlm|multimodal|nano-vl|paligemma|kosmos|fuyu|neva|vila|deplot|-vl\b|\bqwen[\w.-]*vl\b|gemma[-_ ]?3\b|gpt-4o|gpt-4\.1|gemini|claude[-_ ]?3|claude[-_ ]?4)/i.test(normalized);
 }
 
 /**
