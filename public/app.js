@@ -2401,23 +2401,73 @@ function markChalkboardUserContent(hasContent = true) {
 }
 
 function buildChalkboardChatAttachment() {
-    if (!chalkboardCanvas || !chalkboardState.ctx || !chalkboardState.hasUserContent) {
+    // `hasUserContent` is intentionally not the gate here. It can be false after
+    // undo/page restore even though the user is looking at a valid board. Once the
+    // board has been activated, the Attach toggle must export what is on screen.
+    if (!chalkboardCanvas || !chalkboardState.ctx || !chalkboardState.hasInteracted) {
         return null;
     }
 
+    // The drawing canvas is transparent outside the actual ink.  Sending the whole
+    // board as JPEG made fine chalk marks blurry and left the vision model looking
+    // at mostly empty background. Crop to the meaningful area before export.
+    const sourceCtx = chalkboardCanvas.getContext('2d', { willReadFrequently: true });
+    if (!sourceCtx) return null;
+    const sourceWidth = chalkboardCanvas.width;
+    const sourceHeight = chalkboardCanvas.height;
+    let left = sourceWidth;
+    let top = sourceHeight;
+    let right = -1;
+    let bottom = -1;
+    try {
+        const pixels = sourceCtx.getImageData(0, 0, sourceWidth, sourceHeight).data;
+        // Sample every two pixels; this keeps the operation responsive on 4K boards
+        // while preserving a generous padding around thin strokes.
+        for (let y = 0; y < sourceHeight; y += 2) {
+            for (let x = 0; x < sourceWidth; x += 2) {
+                if (pixels[((y * sourceWidth) + x) * 4 + 3] < 16) continue;
+                left = Math.min(left, x);
+                top = Math.min(top, y);
+                right = Math.max(right, x + 2);
+                bottom = Math.max(bottom, y + 2);
+            }
+        }
+    } catch {
+        // Canvas readback can be blocked in unusual browser contexts. Fall back to
+        // the full board rather than silently dropping the attachment.
+        left = 0;
+        top = 0;
+        right = sourceWidth;
+        bottom = sourceHeight;
+    }
+
+    if (right < left || bottom < top) return null;
+    const padding = Math.round(Math.min(sourceWidth, sourceHeight) * 0.035);
+    left = Math.max(0, left - padding);
+    top = Math.max(0, top - padding);
+    right = Math.min(sourceWidth, right + padding);
+    bottom = Math.min(sourceHeight, bottom + padding);
+    const cropWidth = Math.max(1, right - left);
+    const cropHeight = Math.max(1, bottom - top);
+    const maxEdge = 1600;
+    const scale = Math.min(1, maxEdge / Math.max(cropWidth, cropHeight));
     const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = chalkboardCanvas.width;
-    exportCanvas.height = chalkboardCanvas.height;
+    exportCanvas.width = Math.max(1, Math.round(cropWidth * scale));
+    exportCanvas.height = Math.max(1, Math.round(cropHeight * scale));
     const exportCtx = exportCanvas.getContext('2d');
     if (!exportCtx) return null;
 
     exportCtx.fillStyle = '#173b2f';
     exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-    exportCtx.drawImage(chalkboardCanvas, 0, 0);
+    exportCtx.imageSmoothingEnabled = true;
+    exportCtx.imageSmoothingQuality = 'high';
+    exportCtx.drawImage(chalkboardCanvas, left, top, cropWidth, cropHeight, 0, 0, exportCanvas.width, exportCanvas.height);
 
     return {
-        mimeType: 'image/jpeg',
-        dataUrl: exportCanvas.toDataURL('image/jpeg', 0.86),
+        // PNG avoids JPEG artefacts that make handwriting and small chalk labels
+        // unreadable to vision models.
+        mimeType: 'image/png',
+        dataUrl: exportCanvas.toDataURL('image/png'),
         width: exportCanvas.width,
         height: exportCanvas.height
     };
@@ -2689,7 +2739,7 @@ function syncChalkAttachButton() {
     if (!btnChalkAttach) return;
     btnChalkAttach.classList.toggle('active', isChalkboardAttachmentEnabled);
     btnChalkAttach.setAttribute('aria-pressed', isChalkboardAttachmentEnabled ? 'true' : 'false');
-    btnChalkAttach.title = isChalkboardAttachmentEnabled ? '已啟用 Chalkboard 附圖' : '附上 Chalkboard';
+    btnChalkAttach.title = isChalkboardAttachmentEnabled ? '本次對話會附上目前 Chalkboard 圖片' : '附上 Chalkboard';
 }
 
 function toggleChalkboardAttachment() {
@@ -6387,7 +6437,11 @@ async function sendChat() {
             actorScope: 'local',
         });
     } else {
-        appendChatBubble('user', chalkboardAttachment ? `${msg}\n\n[已附上 Chalkboard 草圖供 AI 參考]` : msg);
+        appendChatBubble('user', chalkboardAttachment
+            ? `${msg}\n\n[已附上 Chalkboard 圖片供 AI 參考]`
+            : (isChalkboardAttachmentEnabled
+                ? `${msg}\n\n[Chalkboard 附件失敗：目前畫布沒有可傳送的內容]`
+                : msg));
     }
     const currentMode = activeChatMode;
     const currentLocalSession = currentMode === 'local' ? getActiveLocalChatSession() : null;

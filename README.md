@@ -398,6 +398,9 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 **Q: AI 指示燈是紅色或黃色？**
 通常代表 Ollama 尚未安裝、未啟動，或模型尚未下載完成。
 
+**Q: AI 看不懂附上的 Chalkboard 圖？**
+黑板附件會以裁切後 PNG 傳送；目前文字模型不支援辨識時，系統會直接告知「圖片已收到」。請在設定選擇支援圖片的 Vision Model，再重新送出；若仍失敗，請補上關鍵文字或改用較清楚的字跡/截圖。
+
 **Q: `npm start` 立刻回到 prompt？**
 通常是 `3210` 或 `19168` 已被另一個 Visual Agent 行程佔用。新版啟動時會顯示佔用 PID。請先關閉舊行程，或直接使用已在跑的 `http://localhost:3210`。
 
@@ -410,9 +413,15 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 - 開發日誌請見 `agents.md`。
 - 產品規格請見 `spec.md`。
-- 目前套件版本：`2026.7.16`。
+- 目前套件版本：`2026.7.22`。
 
 ---
+
+## 2026.7.22 修正重點
+
+- Chalkboard 圖片附件改為內容裁切後的 PNG，保留手寫與細粉筆筆觸；最長邊限制 1600px。
+- 視覺模型會被明確要求檢視圖中文字、圖表、箭頭與置入圖片；看不清時不得臆測。
+- 擴充 Vision Model 自動辨識，並在 Provider/模型無法讀圖時清楚提示設定 Vision Model 或補充文字。
 
 ## 2026.7.16 修正重點
 

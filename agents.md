@@ -5,6 +5,26 @@
 
 ---
 
+## 📌 2026.07.22 — Chalkboard 視覺辨識修正
+
+### 版本同步
+- `package.json` / `package-lock.json` 更新為 `2026.7.22`。
+- `public/index.html` 前端資源 cache-bust 更新為 `2026.7.22-chalk-vision`。
+
+### Chalkboard 圖片附件
+- 附件由整張 JPEG 改為 **內容裁切後的 PNG**；保留細小粉筆筆觸與手寫文字，避免 JPEG 壓縮失真。
+- 依實際筆跡、文字、圖片範圍加留白後輸出，最長邊限制 1600px，讓視覺模型聚焦內容並控制傳輸大小。
+- 有附件時明確要求模型檢視文字、標籤、圖表、箭頭與圖片；看不清必須說明，不可臆測。
+- 擴充 Vision Model 自動辨識：支援 Qwen VL、Gemma 3、GPT-4o/4.1、Gemini、Claude 3/4 等常見命名。
+- 視覺模型或 Provider 不支援圖片時，回覆會清楚提示使用者設定 Vision Model 或補上文字，不再假裝辨識成功。
+- 修正文字模型靜默忽略圖片的情況：只要目前模型不支援視覺且找不到可切換模型，後端會直接確認「圖片已收到、模型不支援辨識」，不再回覆「沒有收到圖片」。
+- 只要黑板已啟用，附圖開關會匯出目前可見畫布；Undo、頁面還原後不再因 `hasUserContent` 狀態誤判而漏附。
+
+### 驗收
+- `node --check src\server.js`、`node --check src\llm.js`、`node --check public\app.js` 通過。
+
+---
+
 ## 📌 2026.07.16 — Agent Loop 可讀答案、說明選單、interim plan 收斂與黑板新作清單
 
 ### 版本同步

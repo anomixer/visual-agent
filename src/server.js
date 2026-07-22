@@ -576,8 +576,10 @@ function buildOnDemandSkillAndSopContext(message = '', sops = [], locale = 'zh-T
 function normalizeChalkboardAttachment(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const dataUrl = typeof raw.dataUrl === 'string' ? raw.dataUrl.trim() : '';
-    const mimeType = typeof raw.mimeType === 'string' ? raw.mimeType.trim() : 'image/jpeg';
+    const mimeType = typeof raw.mimeType === 'string' ? raw.mimeType.trim() : 'image/png';
     if (!dataUrl.startsWith('data:image/')) return null;
+    // Avoid forwarding malformed or unexpectedly huge visual payloads to a model.
+    if (dataUrl.length > 14 * 1024 * 1024) return null;
     return {
         dataUrl,
         mimeType,
@@ -4577,6 +4579,9 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             };
             if (chalkboardAttachment) {
                 chatOptions.chalkboardAttachment = chalkboardAttachment;
+                chatOptions.systemContext += locale === 'en-US'
+                    ? '\nA cropped, lossless Chalkboard image is attached. Inspect all handwriting, labels, diagrams, arrows, and placed images before answering. State clearly when a detail is unreadable; never claim you saw details that are absent.'
+                    : '\n已附上裁切後、無失真的 Chalkboard 圖。回答前必須檢視所有手寫文字、標籤、圖表、箭頭與置入圖片；看不清的細節要明確說明，不可臆測。';
                 const preferredVisionModel = llm.getCurrentVisionModel();
                 if (preferredVisionModel) {
                     chatOptions.modelOverride = preferredVisionModel;
@@ -4609,18 +4614,28 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     sessionId: '',
                     expiresAt: '',
                 };
-                llmReply = await llm.chatWithLLM(
-                    composedMessage,
-                    requestHistory,
-                    chatOptions,
-                    locale
-                );
+                const effectiveModel = chatOptions.modelOverride || llm.getCurrentModel();
+                if (chalkboardAttachment && !llm.modelSupportsVision(effectiveModel)) {
+                    // Many local text-only models accept the request without an HTTP
+                    // error, silently discard images, then claim no image was sent.
+                    // Do not let that misleading response reach the user.
+                    llmReply = locale === 'en-US'
+                        ? `The Chalkboard image was received, but the current model (${effectiveModel || 'unknown'}) cannot read images. Set a Vision Model in Settings (for example a Qwen VL, Llama Vision, Gemma 3, GPT-4o, Gemini, or Claude vision model), then send the message again.`
+                        : `已收到 Chalkboard 圖片，但目前模型（${effectiveModel || '未知模型'}）不支援圖片辨識。請在「設定 → Vision 多模態模型」選擇或填入可看圖模型（例如 Qwen VL、Llama Vision、Gemma 3、GPT-4o、Gemini 或 Claude 視覺模型），再重新送出。`;
+                } else {
+                    llmReply = await llm.chatWithLLM(
+                        composedMessage,
+                        requestHistory,
+                        chatOptions,
+                        locale
+                    );
+                }
                 req.__modelSource = modelSource;
             } catch (visionErr) {
                 if (!chalkboardAttachment) throw visionErr;
                 console.warn('[LLM] Chalkboard vision failed, retrying as text:', visionErr.message);
                 llmReply = await llm.chatWithLLM(
-                    `${message}\n\n${contextNote}${wingetPromptNote}${microsoftStorePromptNote}${githubPromptNote}\n\n[[Experience Log]]\n${experienceContext || '(No experience entries yet)'}\n\n[System] The user attached a Chalkboard image, but this model/provider failed to process it. Please inform the user of the failure, then assist based on the text request.`,
+                    `${message}\n\n${contextNote}${wingetPromptNote}${microsoftStorePromptNote}${githubPromptNote}\n\n[[Experience Log]]\n${experienceContext || '(No experience entries yet)'}\n\n[System] The attached Chalkboard image could not be processed by the configured vision model/provider. Start by explicitly telling the user that visual recognition failed and ask them to select a Vision Model in Settings or provide the key text, then assist with the text request.`,
                     requestHistory,
                     { systemContext: chatOptions.systemContext },
                     locale
