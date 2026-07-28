@@ -1,7 +1,7 @@
-# Visual Agent
+# Visual Agent Beta
 
 > [!NOTE]
-> **本程式目前建議視為 public preview 候選版本**。它已能完成主要本地 Agent 工作流，但仍可能因模型、Browser runtime、Windows 權限或網路狀態而失敗。執行系統變更前請先確認任務內容。
+> **本程式目前建議視為 public beta 版本**。它已能完成主要本地 Agent 工作流，但仍可能因模型、Browser runtime、Windows 權限或網路狀態而失敗。執行系統變更前請先確認任務內容。
 
 > 可視化、可塗鴉、可協作的 AI 管家
 > by [anomixer](https://github.com/anomixer)
@@ -108,7 +108,7 @@ http://localhost:3210
 
 ---
 
-## Public Preview 檢查清單
+## Public Beta 檢查清單
 
 公開前至少確認：
 
