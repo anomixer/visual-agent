@@ -820,51 +820,51 @@ $true
 - 當上一則使用者訊息為遊戲新聞/即時研究，後續 100 字內的平台或篩選短句必須繼承前題，產生具體研究 query 並啟用 Browser Use fallback。
 - 平台篩選追問不得退化成名詞解釋；例如「最新遊戲新聞」後的「純 PC 平台」必須回答最新 PC 遊戲新聞。
 
-## 25. 2026.07.28 Chalkboard 視覺辨識規格
+## 25. 2026.07.16 Agent Loop 與說明選單規格
 
 ### 25.1 版本
+- Runtime 版本號為 `2026.7.16`；此節為歷史規格，現行版本以第 26 節為準。
+
+### 25.2 說明選單
+- 標題列「說明」必須提供下拉：診斷資訊、關於。
+- 診斷資訊開啟既有 diagnostics modal 與複製摘要能力。
+- 關於必須開啟 GitHub repo `https://github.com/anomixer/visual-agent`。
+
+### 25.3 禁止冗長 interim plan
+- 前端不得在送出查詢後先插入「我先給你一個處理計畫…」這類固定計畫泡泡。
+- 長任務進度以 thinking bubble + `/api/agent-status/:runId` 顯示。
+
+### 25.4 Agent Loop 最終答案
+- 有 web 工具觀察結果時必須進入 summarize loop；最終回覆不得只剩 ACTION 控制碼或「已執行指定動作」。
+- 空回覆、純控制碼、空話（馬上幫你查）視為不可用，需重試 summarize 或以抽取來源做 fallback。
+- 本機任務類 ACTION（ADD_TASK / EXECUTE_TASK / INSTALL_SOP / CREATE_*_SOP）必須寫入可讀 action summary，且不必強制走 web research loop。
+- Browser Use 參數需相容 `mode`/`action` 與有無引號；search 缺 query 時以使用者原句或 research intent 補上。
+
+### 25.5 LLM 傳輸
+- chat history 的 role 必須可被 OpenAI-compatible / Ollama 接受；無 tool_call_id 的 tool role 需映射為 user。
+- 回應解析需相容 array content 與 reasoning 欄位，避免被誤判為空內容。
+
+### 25.6 Chalkboard 本月新作 / 遊戲清單草稿
+- 當回覆為本月新作、新遊戲推薦、上市清單時，auto draft 必須解析遊戲條目，不得只取前 1–2 句 intro。
+- 支援格式至少包含：`7/2《遊戲名》（平台）` 換行簡介、以及 `《遊戲名》：一句話`。
+- list/news layout 允許最多 8 條、每條最多 96 字；可含 1 行趨勢總結。
+- Chalkboard 標題優先使用「本月新作速覽」類短標題，完整長文仍保留在聊天面板。
+- list/news 渲染應使用較密字級；若條目超出目前頁可用高度，必須自動建立下一頁續寫，不得靜默裁切。
+
+## 26. 2026.07.28 Chalkboard 視覺辨識規格
+
+### 26.1 版本
 - Runtime 版本號為 `2026.7.28`；`package.json` 是版本單一真相來源。
 
-### 25.2 圖片附件品質與模型行為
+### 26.2 圖片附件品質與模型行為
 - Chalkboard 附件必須輸出為 PNG，不得以 JPEG 壓縮細小粉筆筆觸或手寫文字。
 - 附件應裁切至實際畫面內容並保留適當留白，最長邊不得超過 1600px；空白畫布不得送出附件。
 - 有附件時，模型必須優先檢視手寫文字、標籤、圖表、箭頭與置入圖片。細節無法辨識時必須明確告知，不得猜測。
 - 優先使用使用者設定的 Vision Model；未設定且目前模型不支援視覺時，應自動從可用模型選擇可辨識視覺的模型。
 - Provider 或模型拒絕圖片時，系統必須以文字清楚告知「圖片辨識失敗」，並提示設定 Vision Model 或補充關鍵文字後再提供文字協助。
 - 文字模型若靜默接受請求卻忽略圖片，系統必須攔截該路徑，明確回覆「圖片已收到，但模型不支援辨識」；不得讓模型誤稱未收到附件。
-- 附圖開關啟用後，已啟用的Chalkboard必須匯出目前可見畫布，不得因 `hasUserContent` 與 Undo／頁面還原狀態不同而漏送。
+- 附圖開關啟用後，已啟用的 Chalkboard 必須匯出目前可見畫布，不得因 `hasUserContent` 與 Undo／頁面還原狀態不同而漏送。
 - Vision Model 偵測必須支援 `qwen2.5vl:7b` 等無連字號的 Qwen VL 命名，並同步套用於設定 UI 與實際送圖路徑。
-
-## 26. 2026.07.16 Agent Loop 與說明選單規格
-
-### 26.1 版本
-- Runtime 版本號為 `2026.7.16`；此節為歷史規格，現行版本以第 25 節為準。
-
-### 26.2 說明選單
-- 標題列「說明」必須提供下拉：診斷資訊、關於。
-- 診斷資訊開啟既有 diagnostics modal 與複製摘要能力。
-- 關於必須開啟 GitHub repo `https://github.com/anomixer/visual-agent`。
-
-### 26.3 禁止冗長 interim plan
-- 前端不得在送出查詢後先插入「我先給你一個處理計畫…」這類固定計畫泡泡。
-- 長任務進度以 thinking bubble + `/api/agent-status/:runId` 顯示。
-
-### 26.4 Agent Loop 最終答案
-- 有 web 工具觀察結果時必須進入 summarize loop；最終回覆不得只剩 ACTION 控制碼或「已執行指定動作」。
-- 空回覆、純控制碼、空話（馬上幫你查）視為不可用，需重試 summarize 或以抽取來源做 fallback。
-- 本機任務類 ACTION（ADD_TASK / EXECUTE_TASK / INSTALL_SOP / CREATE_*_SOP）必須寫入可讀 action summary，且不必強制走 web research loop。
-- Browser Use 參數需相容 `mode`/`action` 與有無引號；search 缺 query 時以使用者原句或 research intent 補上。
-
-### 26.5 LLM 傳輸
-- chat history 的 role 必須可被 OpenAI-compatible / Ollama 接受；無 tool_call_id 的 tool role 需映射為 user。
-- 回應解析需相容 array content 與 reasoning 欄位，避免被誤判為空內容。
-
-### 26.6 Chalkboard 本月新作 / 遊戲清單草稿
-- 當回覆為本月新作、新遊戲推薦、上市清單時，auto draft 必須解析遊戲條目，不得只取前 1–2 句 intro。
-- 支援格式至少包含：`7/2《遊戲名》（平台）` 換行簡介、以及 `《遊戲名》：一句話`。
-- list/news layout 允許最多 8 條、每條最多 96 字；可含 1 行趨勢總結。
-- Chalkboard標題優先使用「本月新作速覽」類短標題，完整長文仍保留在聊天面板。
-- list/news 渲染應使用較密字級；若條目超出目前頁可用高度，必須自動建立下一頁續寫，不得靜默裁切。
 
 
 
