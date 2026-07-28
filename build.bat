@@ -264,6 +264,7 @@ if exist "%BUNDLE%\nsis" (
         echo    %%~nxF  ^(%%~zF bytes^)
         echo    Path: %CD%\%BUNDLE%\nsis\%%~nxF
     )
+    powershell -NoProfile -Command "$d = (Get-Date).ToString('yyyyMMdd'); $items = Get-ChildItem -LiteralPath '%CD%\%BUNDLE%\nsis' -Filter '*.exe'; $src = $null; foreach ($item in $items) { if ($item.Name -notlike 'Visual-Agent_*') { $src = $item; break } }; if ($src) { $dst = 'Visual-Agent_{0}_x64-setup.exe' -f $d; $target = Join-Path $src.DirectoryName $dst; if (Test-Path $target) { Remove-Item -LiteralPath $target -Force }; Rename-Item -LiteralPath $src.FullName -NewName $dst; Write-Host ('  [OK] Renamed installer to: ' + $dst); Write-Host ('  Path: ' + $target) } else { Write-Host '  [WARN] Installer rename failed.' }"
     echo.
 )
 if exist "%BUNDLE%\msi" (
