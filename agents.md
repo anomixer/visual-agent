@@ -5,7 +5,7 @@
 
 ---
 
-## 📌 2026.07.22 — Chalkboard 視覺辨識修正
+## 📌 2026.07.28 — Chalkboard 視覺辨識修正
 
 ### 版本同步
 - `package.json` / `package-lock.json` 更新為 `2026.7.28`。
