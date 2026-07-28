@@ -120,9 +120,11 @@
       if (!splashText) return;
       try {
         const hasRun = localStorage.getItem('visual_agent_has_run');
+        const locale = localStorage.getItem('ui_locale') || '';
+        const isEn = locale === 'en-US';
         splashText.textContent = hasRun
-          ? '啟動後端伺服器中，請稍候...'
-          : '首次執行本程式，正設定環境中，請稍候...';
+          ? (isEn ? 'Starting backend server, please wait...' : '啟動後端伺服器中，請稍候...')
+          : (isEn ? 'First launch. Preparing the environment, please wait...' : '首次執行本程式，正設定環境中，請稍候...');
       } catch {
         splashText.textContent = '啟動後端伺服器中，請稍候...';
       }

@@ -1,4 +1,4 @@
-# Visual Agent Beta
+﻿# Visual Agent Beta
 
 > [!NOTE]
 > **本程式目前建議視為 public preview 候選版本**。它已能完成主要本地 Agent 工作流，但仍可能因模型、Browser runtime、Windows 權限或網路狀態而失敗。執行系統變更前請先確認任務內容。
@@ -10,6 +10,8 @@
 [![Ollama](https://img.shields.io/badge/Ollama-0.17%2B-blue)](https://ollama.com/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4)](https://www.microsoft.com/windows)
 
+English: [README-en.md](./README-en.md)
+
 ---
 
 ## 這是什麼？
@@ -19,7 +21,7 @@
 不僅能透過直觀的對話與標準作業程序（SOP）來自動化設定、監控與修復您的 PC，更具備以下突破性優勢：
 
 - **🌐 Double Agent Mode**：支援兩台實體電腦透過專用通訊協議連線，本地 AI 先答、遠端 AI 隨後補充，輕鬆實現多機協同對話與管理。或請遠端朋友與AI一起幫你解決電腦問題。
-- **🎨 互動式黑板 (Chalkboard) 共享**：內建粉筆畫布與多模態視覺理解。遠端連線時可即時共享黑板快照，隨手塗鴉、放圖、標記即可讓 AI 看懂並提供精準建議。
+- **🎨 互動式 Chalkboard 共享**：內建粉筆畫布與多模態視覺理解。遠端連線時可即時共享 Chalkboard快照，隨手塗鴉、放圖、標記即可讓 AI 看懂並提供精準建議。
 - **📊 圓圈式 (Circular Gauge) 硬體環形監控**：即時探測 CPU、GPU、RAM、Disk，並能透過專屬插件精準監控 NVIDIA 顯示卡的溫度、VRAM 與即時負載。
 - **🔍 Browser Use 聯網即時查詢**：當本地知識不足時，AI 能夠自動呼叫 Browser Use 搜尋、抽取來源頁面文字並整理答案，支援天氣、新聞與最新股價等即時資訊。
 - **⚡ 雙向自動化軟體管理**：整合 winget、Microsoft Store、GitHub Releases，為 Chrome、Steam、Office 等常用工具打造防錯的「安裝與移除」雙向 SOP 執行鏈。
@@ -46,7 +48,7 @@
 | 安全互動 | 採用 consent-before-action，先建議再由使用者確認執行 |
 | 工作日誌 | 即時顯示 SOP 執行輸出，進度類訊息會原地更新 |
 | 經驗庫 | 自動累積任務經驗摘要，支援搜尋、SOP 篩選與老司機備忘錄 |
-| Chalkboard | 中央黑板支援粉筆塗寫、局部板擦、圖形、圖片放置、文字框與 PNG 匯出 |
+| Chalkboard | 中央 Chalkboard支援粉筆塗寫、局部板擦、圖形、圖片放置、文字框與 PNG 匯出 |
 | 硬體監控 | 顯示 CPU、GPU、RAM、Disk 與 NVIDIA GPU 溫度資訊 |
 | 插件系統 | 可用 `.js` 擴充系統監控能力 |
 | 自動初始化 | 首次執行可自動安裝 Ollama 與預設模型 |
@@ -408,7 +410,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 通常代表 Ollama 尚未安裝、未啟動，或模型尚未下載完成。
 
 **Q: AI 看不懂附上的 Chalkboard 圖？**
-黑板附件會以裁切後 PNG 傳送；目前文字模型不支援辨識時，系統會直接告知「圖片已收到」。請在設定選擇支援圖片的 Vision Model，再重新送出；若仍失敗，請補上關鍵文字或改用較清楚的字跡/截圖。
+Chalkboard 附件會以裁切後 PNG 傳送；目前文字模型不支援辨識時，系統會直接告知「圖片已收到」。請在設定選擇支援圖片的 Vision Model，再重新送出；若仍失敗，請補上關鍵文字或改用較清楚的字跡/截圖。
 
 **Q: `npm start` 立刻回到 prompt？**
 通常是 `3210` 或 `19168` 已被另一個 Visual Agent 行程佔用。新版啟動時會顯示佔用 PID。請先關閉舊行程，或直接使用已在跑的 `http://localhost:3210`。
@@ -425,7 +427,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 這個專案本來就偏實驗性，很多設計都是在做新的協作方式與互動模式，例如：
 
 - 雙人協作 / Double Agent Mode
-- Chalkboard 黑板協作
+- Chalkboard 協作
 - SOP / Skills 的自動化流程
 - 即時查詢、Agent Loop、Browser Use
 - 各種你覺得更順手、更好玩的 UI / workflow
@@ -455,17 +457,20 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 - 「說明」選單提供診斷資訊與關於（開啟 GitHub）。
 - 最新遊戲/新作與即時查詢：空 ACTION 回覆會保底搜尋、抽來源並 fallback 整理。
 - 本機任務 ACTION（加任務、建 SOP 等）會回可讀摘要；web 與本機 loop 分流。
-- 黑板「本月新作」自動摘要：解析多款 `日期《遊戲》` 條目（最多 7 款 + 趨勢），不再只剩半截第一款。
-- 黑板 list/news 改密排，超出畫面會自動續寫下一頁。
+- Chalkboard「本月新作」自動摘要：解析多款 `日期《遊戲》` 條目（最多 7 款 + 趨勢），不再只剩半截第一款。
+- Chalkboard list/news 改密排，超出畫面會自動續寫下一頁。
 
 ## 2026.7.15 修正重點
 
 - 創作與開發請求（例如「寫個小精靈遊戲」）不再被備援規則誤判為 Steam 安裝任務。
-- 按「清空」黑板後會永久清除內容與復原/重做歷史，Undo 不會帶回舊資料。
-- AI 黑板改為最多 4 條去重重點、移除強制數字前綴，避免重述聊天內容。
-- 垃圾桶在有選取範圍時只會永久刪除該範圍；未選取時才會確認清空整張黑板。
+- 按「清空」Chalkboard後會永久清除內容與復原/重做歷史，Undo 不會帶回舊資料。
+- AI Chalkboard改為最多 4 條去重重點、移除強制數字前綴，避免重述聊天內容。
+- 垃圾桶在有選取範圍時只會永久刪除該範圍；未選取時才會確認清空整張Chalkboard。
 - 一般聊天不再執行完整 SOP/硬體即時偵測，降低首次回覆前的固定等待。
-- 新聞摘要黑板會擷取最多 5 個短標題與 1 行趨勢總結，不再截取第一則新聞內文。
-- 前端入口與 `app.js` 採 no-store，避免更新後仍使用舊版自動黑板邏輯。
+- 新聞摘要Chalkboard會擷取最多 5 個短標題與 1 行趨勢總結，不再截取第一則新聞內文。
+- 前端入口與 `app.js` 採 no-store，避免更新後仍使用舊版自動Chalkboard邏輯。
 - 對新聞查詢的短句追問會承接前題篩選；例如「最新遊戲新聞」後的「純 PC 平台」會自動改查最新 PC 遊戲新聞。
 - Chalkboard 支援多頁；垃圾桶只刪除目前頁，其他頁保留。Steam/PC 新作表格會轉為 5 款遊戲加 1 行總結。
+
+
+

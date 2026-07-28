@@ -282,8 +282,8 @@ const I18N = {
             toggleSidebar: '切換側邊欄 (Ctrl+B)',
             toggleLog: '切換任務日誌 (Ctrl+J)',
             toggleChat: '切換 AI 對話 (Ctrl+Alt+B)',
-            refresh: 'Refresh畫面',
-            exit: 'Exit',
+            refresh: '重新整理',
+            exit: '離開',
         },
         footer: {
             tasks: '{count} 個任務',
@@ -300,6 +300,8 @@ const I18N = {
             emptyMessage: '等待任務執行...',
             exps: '🧠 經驗庫',
             aiChat: '💬 AI 對話',
+            skills: '🧩 Skills',
+            browser: '瀏覽器',
             chalkboard: 'Chalkboard',
         },
         hardware: {
@@ -319,6 +321,19 @@ const I18N = {
             warn: '⚠️ AI Agent 很強大，但也可能犯錯，導致系統有風險，敬請仔細查證並小心下指令。',
             hintTitle: '用粉筆直接畫',
             hintBody: '選一支粉筆，直接在黑板上塗寫，板擦可清空畫布。也可把想法畫出來給 AI 看。',
+            kicker: '互動黑板',
+        },
+        browser: {
+            installChromium: '安裝 Chromium',
+            addedToTask: '已加入任務',
+            installSopMissing: '找不到安裝 SOP',
+            runningInstallSop: '正在執行 Playwright Chromium 安裝 SOP...',
+            unavailablePrefix: 'Browser 無法使用：',
+            runtimeReady: 'Browser runtime 已就緒：{browserExecutable}',
+            runtimeNotDetected: '尚未偵測到 Browser runtime。搜尋路徑：{searchPaths}',
+        },
+        models: {
+            noResult: '找不到相符的模型',
         },
         ui: {
             opened: '（已開啟）',
@@ -413,6 +428,11 @@ const I18N = {
             authOAuth: 'OAuth 2.0 Client Credentials',
             apiKey: 'API Key',
             apiKeyPlaceholder: 'Bearer Token / API Key',
+            tokenUrl: 'Token URL',
+            clientId: 'Client ID',
+            clientSecret: 'Client Secret',
+            scope: 'Scope',
+            audience: 'Audience / Resource',
             modelName: '模型名稱 (Model Name)',
             modelNamePlaceholder: '例如: gemma4:e2b-it-qat',
             visionModel: 'Vision 多模態模型',
@@ -521,11 +541,32 @@ const I18N = {
             copy: '複製診斷摘要',
             copied: '診斷摘要已複製',
             app: '應用程式',
-            runtime: 'Runtime',
+            version: '版本',
+            pid: 'PID',
+            node: 'Node',
+            platform: '平台',
+            executable: '執行檔',
+            runtime: '執行環境',
             ports: '連接埠',
+            httpPort: 'HTTP 3210',
+            remotePort: 'Remote TCP 19168',
             browser: 'Browser Use',
             llm: 'AI 引擎',
             data: '資料狀態',
+            provider: 'Provider',
+            baseUrl: 'Base URL',
+            model: '模型',
+            available: '可用',
+            modelReady: '模型就緒',
+            error: '錯誤',
+            playwrightModule: 'Playwright 模組',
+            chromiumRuntime: 'Chromium runtime',
+            searchPaths: '搜尋路徑',
+            installSop: '安裝 SOP',
+            appData: 'AppData',
+            tasks: '任務',
+            sops: 'SOP',
+            skills: 'Skills',
             debugLog: 'Debug log 末段',
             ready: '就緒',
             missing: '缺失',
@@ -540,6 +581,8 @@ const I18N = {
             collapse: '收起 ▼',
             execute: '執行',
             delete: '刪除',
+            addedToTask: '已加入任務',
+            installChromium: '安裝 Chromium',
         },
         task: {
             general: '一般',
@@ -648,7 +691,7 @@ const I18N = {
         },
         footer: {
             tasks: '{count} tasks',
-            switchTo: 'Switch to 繁體中文',
+            switchTo: 'Switch to Traditional Chinese',
             importTasks: 'Import Task List',
             exportTasks: 'Export Task List',
         },
@@ -661,6 +704,8 @@ const I18N = {
             emptyMessage: 'Waiting for task execution...',
             exps: '🧠 Exp. Log',
             aiChat: '💬 AI Chat',
+            skills: '🧩 Skills',
+            browser: 'Browser',
             chalkboard: 'Chalkboard',
         },
         hardware: {
@@ -680,6 +725,19 @@ const I18N = {
             warn: '⚠️ AI is powerful but may make mistakes. Please verify and issue commands carefully.',
             hintTitle: 'Chalkboard Interactive',
             hintBody: 'Pick a chalk and start writing. Use the eraser to clear the board. Share your drawings with AI.',
+            kicker: 'Interactive Chalkboard',
+        },
+        browser: {
+            installChromium: 'Install Chromium',
+            addedToTask: 'Added to task',
+            installSopMissing: 'Browser unavailable: install SOP not found',
+            runningInstallSop: 'Running Playwright Chromium install SOP...',
+            unavailablePrefix: 'Browser unavailable: ',
+            runtimeReady: 'Browser runtime ready: {browserExecutable}',
+            runtimeNotDetected: 'Browser runtime not detected. Search paths: {searchPaths}',
+        },
+        models: {
+            noResult: 'No matching models found',
         },
         ui: {
             opened: ' (Opened)',
@@ -774,6 +832,11 @@ const I18N = {
             authOAuth: 'OAuth 2.0 Client Credentials',
             apiKey: 'API Key',
             apiKeyPlaceholder: 'Bearer Token / API Key',
+            tokenUrl: 'Token URL',
+            clientId: 'Client ID',
+            clientSecret: 'Client Secret',
+            scope: 'Scope',
+            audience: 'Audience / Resource',
             modelName: 'Model Name',
             modelNamePlaceholder: 'e.g., gemma4:e2b-it-qat',
             visionModel: 'Vision Model',
@@ -882,11 +945,32 @@ const I18N = {
             copy: 'Copy Diagnostic Summary',
             copied: 'Diagnostic summary copied',
             app: 'Application',
+            version: 'Version',
+            pid: 'PID',
+            node: 'Node',
+            platform: 'Platform',
+            executable: 'Executable',
             runtime: 'Runtime',
             ports: 'Ports',
+            httpPort: 'HTTP 3210',
+            remotePort: 'Remote TCP 19168',
             browser: 'Browser Use',
             llm: 'AI Engine',
             data: 'Data State',
+            provider: 'Provider',
+            baseUrl: 'Base URL',
+            model: 'Model',
+            available: 'Available',
+            modelReady: 'Model Ready',
+            error: 'Error',
+            playwrightModule: 'Playwright module',
+            chromiumRuntime: 'Chromium runtime',
+            searchPaths: 'Search paths',
+            installSop: 'Install SOP',
+            appData: 'AppData',
+            tasks: 'Tasks',
+            sops: 'SOPs',
+            skills: 'Skills',
             debugLog: 'Debug log tail',
             ready: 'Ready',
             missing: 'Missing',
@@ -901,6 +985,8 @@ const I18N = {
             collapse: 'Collapse ▼',
             execute: 'Run',
             delete: 'Delete',
+            addedToTask: 'Added to task',
+            installChromium: 'Install Chromium',
         },
         task: {
             general: 'General',
@@ -1338,13 +1424,13 @@ function createBrowserInstallButton() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'browser-btn primary';
-    button.textContent = browserInstallQueued ? 'Added to task' : 'Install Chromium';
+    button.textContent = browserInstallQueued ? t('browser.addedToTask') : t('browser.installChromium');
     button.disabled = browserInstallQueued;
     button.addEventListener('click', async () => {
         if (browserInstallQueued) return;
         browserInstallQueued = true;
         button.disabled = true;
-        button.textContent = 'Added to task';
+        button.textContent = t('browser.addedToTask');
         try {
             let sop = getSopById('install_playwright_chromium');
             if (!sop) {
@@ -1353,15 +1439,15 @@ function createBrowserInstallButton() {
             }
             if (!sop) {
                 browserInstallQueued = false;
-                setBrowserStatus('Browser unavailable: install SOP not found');
+                setBrowserStatus(`${t('browser.unavailablePrefix')}${t('browser.installSopMissing')}`);
                 return;
             }
-            setBrowserStatus('Running Playwright Chromium install SOP...');
+            setBrowserStatus(t('browser.runningInstallSop'));
             await addAndExecuteSop(sop);
         } catch (error) {
             browserInstallQueued = false;
             button.disabled = false;
-            button.textContent = 'Install Chromium';
+            button.textContent = t('browser.installChromium');
             throw error;
         }
     });
@@ -1371,10 +1457,10 @@ function createBrowserInstallButton() {
 function setBrowserUnavailableStatus(errorMessage = '') {
     const message = String(errorMessage || '').trim();
     if (message.includes('install_playwright_chromium')) {
-        setBrowserStatus(`Browser unavailable: ${message}`, createBrowserInstallButton());
+        setBrowserStatus(`${t('browser.unavailablePrefix')}${message}`, createBrowserInstallButton());
         return;
     }
-    setBrowserStatus(`Browser unavailable: ${message || 'unknown error'}`);
+    setBrowserStatus(`${t('browser.unavailablePrefix')}${message || 'unknown error'}`);
 }
 
 function syncBrowserTabAvailability(isReady) {
@@ -1398,13 +1484,9 @@ async function refreshBrowserRuntimeAvailability() {
             syncBrowserTabAvailability(!!data.browserAvailable);
             if (data.browserAvailable) {
                 browserInstallQueued = false;
-                addUILog(currentLocale === 'en-US'
-                    ? `🌐 Browser runtime ready: ${data.browserExecutable || 'detected'}`
-                    : `🌐 Browser runtime 已就緒：${data.browserExecutable || '已偵測到'}`, 'success');
+                addUILog(t('browser.runtimeReady', { browserExecutable: data.browserExecutable || (currentLocale === 'en-US' ? 'detected' : '已偵測到') }), 'success');
             } else if (data.browserSearchPaths?.length) {
-                addUILog(currentLocale === 'en-US'
-                    ? `🌐 Browser runtime not detected. Search paths: ${data.browserSearchPaths.join('; ')}`
-                    : `🌐 尚未偵測到 Browser runtime。搜尋路徑：${data.browserSearchPaths.join('; ')}`, 'warn');
+                addUILog(t('browser.runtimeNotDetected', { searchPaths: data.browserSearchPaths.join('; ') }), 'warn');
             }
         }
     } catch (e) {
@@ -5419,7 +5501,7 @@ async function toggleModelMenu() {
         if (filtered.length === 0) {
             const noRes = document.createElement('div');
             noRes.style.cssText = 'padding:12px; font-size:11px; color:var(--text-muted); text-align:center;';
-            noRes.textContent = '找不到相符的模型';
+            noRes.textContent = t('models.noResult');
             listContainer.appendChild(noRes);
             return;
         }
@@ -5856,7 +5938,7 @@ function updateLocaleUI() {
     const sidebarTabSkills = document.querySelector('.sidebar-tab[data-sidebar-tab="skills"] span');
     if (sidebarTabRecommend) sidebarTabRecommend.textContent = t('tabs.recommend');
     if (sidebarTabSops) sidebarTabSops.textContent = t('tabs.sops');
-    if (sidebarTabSkills) sidebarTabSkills.textContent = '🧩 Skills';
+    if (sidebarTabSkills) sidebarTabSkills.textContent = t('tabs.skills');
     const tabHardware = document.querySelector('#tab-hardware .tab-title');
     const tabBrowser = document.querySelector('#tab-browser .tab-title');
     const tabTodo = document.querySelector('#tab-todolist .tab-title');
@@ -5888,7 +5970,7 @@ function updateLocaleUI() {
     const chalkKicker = document.getElementById('chalk-kicker');
     const chalkTitle = document.getElementById('chalk-title');
     const chalkDesc = document.getElementById('chalk-desc');
-    if (chalkKicker) chalkKicker.textContent = 'Interactive Chalkboard';
+    if (chalkKicker) chalkKicker.textContent = t('chalkboardWelcome.kicker');
     if (chalkTitle) chalkTitle.textContent = t('chalkboardWelcome.hintTitle');
     if (chalkDesc) chalkDesc.textContent = t('chalkboardWelcome.hintBody');
 
@@ -5897,7 +5979,7 @@ function updateLocaleUI() {
     if (todoEmptyTitle) todoEmptyTitle.textContent = t('todo.emptyTitle');
     if (todoEmptyHint) todoEmptyHint.textContent = t('todo.emptyHint');
 
-    if (tabBrowser) tabBrowser.textContent = 'Browser';
+    if (tabBrowser) tabBrowser.textContent = t('tabs.browser');
     if (tabTodo) tabTodo.textContent = t('tabs.todolist');
     const logTab = document.querySelector('[data-bottom-tab="logs"]');
     const expsTab = document.querySelector('[data-bottom-tab="exps"]');
@@ -5993,11 +6075,11 @@ function updateLocaleUI() {
             if (txt === '連線網址 (Base URL)' || txt === 'Base URL') l.firstChild.textContent = t('settings.baseUrl');
             if (txt === '認證方式' || txt === 'Authentication') l.firstChild.textContent = t('settings.authType');
             if (txt === 'API Key') l.firstChild.textContent = t('settings.apiKey');
-            if (txt === 'Token URL') l.firstChild.textContent = 'Token URL';
-            if (txt === 'Client ID') l.firstChild.textContent = 'Client ID';
-            if (txt === 'Client Secret') l.firstChild.textContent = 'Client Secret';
-            if (txt === 'Scope') l.firstChild.textContent = 'Scope';
-            if (txt === 'Audience / Resource (選填)' || txt === 'Audience / Resource (Optional)') l.firstChild.textContent = 'Audience / Resource' + (currentLocale === 'zh-TW' ? ' (選填)' : ' (Optional)');
+            if (txt === 'Token URL') l.firstChild.textContent = t('settings.tokenUrl');
+            if (txt === 'Client ID') l.firstChild.textContent = t('settings.clientId');
+            if (txt === 'Client Secret') l.firstChild.textContent = t('settings.clientSecret');
+            if (txt === 'Scope') l.firstChild.textContent = t('settings.scope');
+            if (txt === 'Audience / Resource (選填)' || txt === 'Audience / Resource (Optional)') l.firstChild.textContent = t('settings.audience') + (currentLocale === 'zh-TW' ? ' (選填)' : ' (Optional)');
             if (txt === 'Vision 多模態模型' || txt === 'Vision Model') l.firstChild.textContent = t('settings.visionModel');
         });
     }
@@ -7150,14 +7232,14 @@ function renderDiagnosticRows(rows = []) {
 function buildDiagnosticsSummary(data = {}) {
     return [
         `Visual Agent ${data.app?.version || 'dev'} (${data.generatedAt || ''})`,
-        `PID: ${data.app?.pid || ''}`,
-        `Node: ${data.app?.node || ''}`,
-        `HTTP 3210: ${data.ports?.http?.owner || 'not listening'}`,
-        `Remote 19168: ${data.ports?.remote?.owner || 'not listening'}`,
-        `LLM: ${data.llm?.provider || ''} / ${data.llm?.modelName || data.llm?.model || ''} / available=${Boolean(data.llm?.available)} / modelReady=${Boolean(data.llm?.modelReady)}`,
-        `Browser: module=${Boolean(data.browser?.playwrightModuleAvailable)} / runtime=${Boolean(data.browser?.browserAvailable)} / exe=${data.browser?.browserExecutable || ''}`,
-        `AppData: ${data.paths?.appData || ''}`,
-        `Counts: tasks=${data.data?.taskCount ?? ''}, sops=${data.data?.sopCount ?? ''}, skills=${data.data?.skillCount ?? ''}`,
+        `${t('diagnostics.pid')}: ${data.app?.pid || ''}`,
+        `${t('diagnostics.node')}: ${data.app?.node || ''}`,
+        `${t('diagnostics.httpPort')}: ${data.ports?.http?.owner || (currentLocale === 'en-US' ? 'not listening' : '未監聽')}`,
+        `${t('diagnostics.remotePort')}: ${data.ports?.remote?.owner || (currentLocale === 'en-US' ? 'not listening' : '未監聽')}`,
+        `${t('diagnostics.llm')}: ${data.llm?.provider || ''} / ${data.llm?.modelName || data.llm?.model || ''} / ${t('diagnostics.available')}=${Boolean(data.llm?.available)} / ${t('diagnostics.modelReady')}=${Boolean(data.llm?.modelReady)}`,
+        `${t('diagnostics.browser')}: ${t('diagnostics.playwrightModule')}=${Boolean(data.browser?.playwrightModuleAvailable)} / ${t('diagnostics.chromiumRuntime')}=${Boolean(data.browser?.browserAvailable)} / ${t('diagnostics.executable')}=${data.browser?.browserExecutable || ''}`,
+        `${t('diagnostics.appData')}: ${data.paths?.appData || ''}`,
+        `${t('diagnostics.tasks')}: ${data.data?.taskCount ?? ''}, ${t('diagnostics.sops')}: ${data.data?.sopCount ?? ''}, ${t('diagnostics.skills')}: ${data.data?.skillCount ?? ''}`,
     ].join('\n');
 }
 
@@ -7196,49 +7278,49 @@ async function openDiagnosticsModal() {
             <div class="diagnostics-section">
                 <h4>${escapeHtml(t('diagnostics.app'))}</h4>
                 ${renderDiagnosticRows([
-                    ['Version', data.app?.version || 'dev', 'ok'],
-                    ['PID', data.app?.pid || '', 'ok'],
-                    ['Node', data.app?.node || '', 'ok'],
-                    ['Platform', data.app?.platform || '', 'ok'],
-                    ['Executable', data.app?.executable || '', 'ok'],
+                    [t('diagnostics.version'), data.app?.version || 'dev', 'ok'],
+                    [t('diagnostics.pid'), data.app?.pid || '', 'ok'],
+                    [t('diagnostics.node'), data.app?.node || '', 'ok'],
+                    [t('diagnostics.platform'), data.app?.platform || '', 'ok'],
+                    [t('diagnostics.executable'), data.app?.executable || '', 'ok'],
                 ])}
             </div>
             <div class="diagnostics-section">
                 <h4>${escapeHtml(t('diagnostics.ports'))}</h4>
                 ${renderDiagnosticRows([
-                    ['HTTP 3210', data.ports?.http?.owner || 'not listening', portOk ? 'ok' : 'warn'],
-                    ['Remote TCP 19168', data.ports?.remote?.owner || 'not listening', portOk ? 'ok' : 'warn'],
+                    [t('diagnostics.httpPort'), data.ports?.http?.owner || (currentLocale === 'en-US' ? 'not listening' : '未監聽'), portOk ? 'ok' : 'warn'],
+                    [t('diagnostics.remotePort'), data.ports?.remote?.owner || (currentLocale === 'en-US' ? 'not listening' : '未監聽'), portOk ? 'ok' : 'warn'],
                 ])}
             </div>
             <div class="diagnostics-section">
                 <h4>${escapeHtml(t('diagnostics.llm'))}</h4>
                 ${renderDiagnosticRows([
-                    ['Provider', data.llm?.provider || '', 'ok'],
-                    ['Base URL', data.llm?.baseUrl || '', 'ok'],
-                    ['Model', data.llm?.modelName || data.llm?.model || '', llmOk ? 'ok' : 'warn'],
-                    ['Available', Boolean(data.llm?.available), llmOk ? 'ok' : 'warn'],
-                    ['Model Ready', Boolean(data.llm?.modelReady), llmOk ? 'ok' : 'warn'],
-                    ['Error', data.llm?.error || '', data.llm?.error ? 'warn' : 'ok'],
+                    [t('diagnostics.provider'), data.llm?.provider || '', 'ok'],
+                    [t('diagnostics.baseUrl'), data.llm?.baseUrl || '', 'ok'],
+                    [t('diagnostics.model'), data.llm?.modelName || data.llm?.model || '', llmOk ? 'ok' : 'warn'],
+                    [t('diagnostics.available'), Boolean(data.llm?.available), llmOk ? 'ok' : 'warn'],
+                    [t('diagnostics.modelReady'), Boolean(data.llm?.modelReady), llmOk ? 'ok' : 'warn'],
+                    [t('diagnostics.error'), data.llm?.error || '', data.llm?.error ? 'warn' : 'ok'],
                 ])}
             </div>
             <div class="diagnostics-section">
                 <h4>${escapeHtml(t('diagnostics.browser'))}</h4>
                 ${renderDiagnosticRows([
-                    ['Playwright module', Boolean(data.browser?.playwrightModuleAvailable), data.browser?.playwrightModuleAvailable ? 'ok' : 'warn'],
-                    ['Chromium runtime', Boolean(data.browser?.browserAvailable), browserOk ? 'ok' : 'warn'],
-                    ['Executable', data.browser?.browserExecutable || '', browserOk ? 'ok' : 'warn'],
-                    ['Search paths', data.browser?.searchPaths || [], 'ok'],
-                    ['Install SOP', data.browser?.installSopId || '', 'ok'],
+                    [t('diagnostics.playwrightModule'), Boolean(data.browser?.playwrightModuleAvailable), data.browser?.playwrightModuleAvailable ? 'ok' : 'warn'],
+                    [t('diagnostics.chromiumRuntime'), Boolean(data.browser?.browserAvailable), browserOk ? 'ok' : 'warn'],
+                    [t('diagnostics.executable'), data.browser?.browserExecutable || '', browserOk ? 'ok' : 'warn'],
+                    [t('diagnostics.searchPaths'), data.browser?.searchPaths || [], 'ok'],
+                    [t('diagnostics.installSop'), data.browser?.installSopId || '', 'ok'],
                 ])}
             </div>
             <div class="diagnostics-section">
                 <h4>${escapeHtml(t('diagnostics.data'))}</h4>
                 ${renderDiagnosticRows([
-                    ['AppData', data.paths?.appData || '', 'ok'],
-                    ['Tasks', `${data.data?.taskCount || 0} (${data.data?.pendingTaskCount || 0} pending, ${data.data?.runningTaskCount || 0} running)`, 'ok'],
-                    ['SOPs', data.data?.sopCount || 0, 'ok'],
-                    ['Skills', data.data?.skillCount || 0, 'ok'],
-                    ['Debug log', data.paths?.debugLog || '', 'ok'],
+                    [t('diagnostics.appData'), data.paths?.appData || '', 'ok'],
+                    [t('diagnostics.tasks'), `${data.data?.taskCount || 0} (${data.data?.pendingTaskCount || 0} pending, ${data.data?.runningTaskCount || 0} running)`, 'ok'],
+                    [t('diagnostics.sops'), data.data?.sopCount || 0, 'ok'],
+                    [t('diagnostics.skills'), data.data?.skillCount || 0, 'ok'],
+                    [t('diagnostics.debugLog'), data.paths?.debugLog || '', 'ok'],
                 ])}
             </div>
             <div class="diagnostics-section">
@@ -7256,7 +7338,7 @@ function expandLog() {
     if (isLogCollapsed) {
         isLogCollapsed = false;
         logPanel.classList.remove('collapsed');
-        if (btnToggleLog) btnToggleLog.textContent = '收起 ▼';
+        if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
     }
 }
 
@@ -8056,10 +8138,15 @@ function toggleViewMenu(e) {
     const menu = document.createElement('div');
     menu.className = 'view-dropdown menu-dropdown';
 
+    const browserMenuLabel = browserRuntimeReady
+        ? t('tabs.browser')
+        : browserInstallQueued
+            ? `${t('tabs.browser')}（${currentLocale === 'en-US' ? 'Added to task' : '已加入任務'}）`
+            : `${t('tabs.browser')}（${currentLocale === 'en-US' ? 'install required' : '需安裝'}）`;
     const items = [
         { id: 'chalkboard', label: t('tabs.chalkboard'), icon: '🎨' },
         { id: 'hardware', label: t('tabs.hardware'), icon: '🌡️' },
-        { id: 'browser', label: browserRuntimeReady ? 'Browser' : (browserInstallQueued ? 'Browser (Added to task)' : 'Browser (install required)'), icon: '🌐' },
+        { id: 'browser', label: browserMenuLabel, icon: '🌐' },
         { id: 'todolist', label: t('tabs.todolist'), icon: '📋' }
     ];
 

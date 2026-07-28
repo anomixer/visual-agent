@@ -1,4 +1,4 @@
-# Visual Agent — 實作需求規格書 (2026.07.22 Updated)
+﻿# Visual Agent — 實作需求規格書 (2026.07.22 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -59,7 +59,7 @@
 | **風險預警提示** | ✅ | 歡迎畫面加入安全風險提示，提醒查證指令 |
 | **EXE 一鍵打包** | ✅ | `.bat` 腳本全自動下載 Node/Rust/TauriCLI 依賴，將 Node Server 封裝成 Tauri Sidecar |
 | **Exp經驗庫** | ✅ | 自動累積任務經驗，支援搜尋、SOP 篩選、Hover 展開、匯出 Markdown，卡片按時間倒序 |
-| **Chalkboard 黑板** | ✅ | 互動式黑板畫布，支援粉筆、板擦、圖形、圖片、文字框、PNG 匯出、多模態 AI 理解 |
+| **Chalkboard** | ✅ | 互動式 Chalkboard 畫布，支援粉筆、板擦、圖形、圖片、文字框、PNG 匯出、多模態 AI 理解 |
 | **雙向 SOP** | ✅ | 安裝類 SOP 支援 install/uninstall 雙向動作，UI 自動切換 |
 | **多來源軟體推薦** | ✅ | 支援 winget、Microsoft Store、GitHub Releases 三大來源，AI 可自動產生 SOP |
 
@@ -299,7 +299,7 @@ $true
 - **經驗庫時間格式國際化**：經驗庫卡片中的時間戳現在會根據 `currentLocale` 自動切換為 `en-US` 或 `zh-TW` 格式。
 - **經驗庫空狀態文案國際化**：「找不到符合條件的經驗」與「尚未累積安裝經驗」改為根據 locale 翻譯。
 
-### 黑板工具 i18n
+### Chalkboard 工具 i18n
 - **工具按鈕翻譯**：粉筆顏色（白、紅、黃、綠、藍）、筆刷大小（細、中、粗）、形狀工具（選取、直線、矩形、圓形、文字）、編輯操作（複製、剪下、貼上、清空、Undo）、上傳圖片、存成圖片
 - **文字工具 Modal 翻譯**：標題、所有標籤、佔位符、幫助文本、按鈕
 - **文字工具選項翻譯**：字型風格（粉筆手寫、板書感、清晰無襯線、經典襯線、等寬打字）、對齊方式（靠左、置中、靠右）
@@ -325,7 +325,7 @@ $true
 ### 頂部菜單進化
 - **File Menu 實作**：在標題列 `檔案` 展開支援 absolute 排版的下拉選單，包含 `匯入任務清單`、`匯出任務清單`、`Refresh畫面`、`Exit`，完整取代舊有的散落按鈕。
 
-## 6.13 2026.03.29 Chalkboard Resize 黑板縮放修補
+## 6.13 2026.03.29 Chalkboard Resize Chalkboard 縮放修補
 
 - **Resize 觸發時機**：sidebar、chat 與 log panel 三個 resizer 的 setSize callback，確認目前在 chalkboard 分頁時呼叫 `resizeChalkboardCanvas()`，確保畫布大小與視窗同步。
 - **pendingTextRect 座標修正**：`resizeChalkboardCanvas()` 在改變新畫布寬高前儲存 `cssWidth / cssHeight`，於 resize 後重新計算縮放比例，更新 `pendingTextRect` 的 `left / top / width / height`，以呼叫 `syncPendingTextBox()`。確保縮放視窗時，尚未確定的文字框與 8 個控制點會跟隨著 canvas 縮放，不會跑位。
@@ -354,7 +354,7 @@ $true
 ### 8.2 nvidia-smi 亂碼訊息
 - 錯誤訊息改為以錯誤碼摘要（如 `ENOENT`），不直接吐出本地碼頁原文，避免中文亂碼污染 log。
 
-### 8.3 黑板 8 點框與落稿座標
+### 8.3 Chalkboard 8 點框與落稿座標
 - `getChalkPoint()` 將座標正規化後 clamp 到 0~1，修正邊界滑動造成的座標漂移。
 - `drawPlacedText()` 改為以 8 點框尺寸直接落稿，不再額外擴張到 base size，確保「游標位置 / 8 點框 / 最終落稿」一致。
 
@@ -456,7 +456,7 @@ $true
 ### 9.3 Chalkboard 協作同步
 - 遠端會話新增 `chalkboard_state` 訊息，用於傳送目前 Chalkboard 快照。
 - 任一方使用者或 AI 改寫 Chalkboard 後，另一方必須能看到同步結果。
-- 同步需採 idle debounce：黑板有繪製、拖曳、文字框、圖片放置等互動時暫停傳送與套用，互動停止約 1 秒後才同步最新畫面。
+- 同步需採 idle debounce：Chalkboard有繪製、拖曳、文字框、圖片放置等互動時暫停傳送與套用，互動停止約 1 秒後才同步最新畫面。
 - 遠端連線建立後，中間區域應自動切到 Chalkboard tab。
 
 ### 9.4 遠端 AI 思考狀態
@@ -643,7 +643,7 @@ $true
 
 ### 17.1 雙語動態切換機制 (Bilingual UI Toggling)
 - **零重載翻譯**：介面支援 `zh-TW` 與 `en-US` 雙語動態切換。
-- **UI 元素涵蓋範圍**：工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、黑板工具、經驗知識庫、以及系統對話視窗，皆需根據 `currentLocale` 即時更新。
+- **UI 元素涵蓋範圍**：工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、Chalkboard 工具、經驗知識庫、以及系統對話視窗，皆需根據 `currentLocale` 即時更新。
 - **對話分頁動態過濾**：
   - 本機與遠端聊天分頁名稱在切換語系時需動態翻譯（例如：「本機對話 1」 ↔ 「Local Chat 1」）。
   - 對話分頁的過濾與翻譯必須使用非 ASCII 安全的正則表達式 `/^(?:本機對話|Local Chat)(?:\s+\d+)?$/i`，嚴禁使用 `\b`（單字邊界符）以防止在中文等非 ASCII 字元上發生比對失效。
@@ -675,9 +675,9 @@ $true
 
 ---
 
-## 18. 2026.06.12 搜尋品質、影片年份權重排序與本地黑板版面優化
+## 18. 2026.06.12 搜尋品質、影片年份權重排序與本地 Chalkboard 版面優化
 
-### 18.1 本地黑板版面優化 (Local Chalkboard Layout Fix)
+### 18.1 本地 Chalkboard 版面優化 (Local Chalkboard Layout Fix)
 - **滿版呈現**：當不在遠端連線模式（`inRemoteSession` 為 false）時，本地聊天產生的 Chalkboard Draft（例如查詢摘要、比較、天氣新聞等）必須預設以滿版（`position: 'full'`）呈現，避免被非必要地限制在左半邊。
 
 ### 18.2 DuckDuckGo 重定向跳轉修正與 Lite 引擎遷移 (DDG Redirect Fix & Lite Migration)
@@ -806,9 +806,9 @@ $true
 ### 24.3 Chalkboard 頁面與摘要
 - Chalkboard 必須支援多頁：新增頁、前後切換、頁碼指示與每頁獨立 Undo / Redo history。
 - 垃圾桶必須永久刪除目前頁，並切換至相鄰頁；不得刪除其他頁。最後一頁刪除後保留新的空白第 1 頁。
-- AI 黑板僅可呈現新的可執行結論：最多 4 條、每條最多 64 字、去除重複與 Markdown/數字前綴。
-- Canvas renderer 不得自行為 AI 黑板條目加上數字編號；完整說明保留在聊天面板。
-- 新聞或即時資訊摘要例外可使用 6 行：最多 5 個短標題與 1 行趨勢總結；不得把第一則新聞內文當成黑板摘要。
+- AI Chalkboard僅可呈現新的可執行結論：最多 4 條、每條最多 64 字、去除重複與 Markdown/數字前綴。
+- Canvas renderer 不得自行為 AI Chalkboard條目加上數字編號；完整說明保留在聊天面板。
+- 新聞或即時資訊摘要例外可使用 6 行：最多 5 個短標題與 1 行趨勢總結；不得把第一則新聞內文當成Chalkboard摘要。
 - 遊戲發售/Steam 表格必須抽取日期、遊戲名稱與類型，顯示前 5 列與總筆數摘要。
 - 若 API 回傳 `chalkboardDraft`，前端必須優先使用該結構化資料；入口頁與前端主程式不得被瀏覽器快取。
 
@@ -832,7 +832,7 @@ $true
 - 優先使用使用者設定的 Vision Model；未設定且目前模型不支援視覺時，應自動從可用模型選擇可辨識視覺的模型。
 - Provider 或模型拒絕圖片時，系統必須以文字清楚告知「圖片辨識失敗」，並提示設定 Vision Model 或補充關鍵文字後再提供文字協助。
 - 文字模型若靜默接受請求卻忽略圖片，系統必須攔截該路徑，明確回覆「圖片已收到，但模型不支援辨識」；不得讓模型誤稱未收到附件。
-- 附圖開關啟用後，已啟用的黑板必須匯出目前可見畫布，不得因 `hasUserContent` 與 Undo／頁面還原狀態不同而漏送。
+- 附圖開關啟用後，已啟用的Chalkboard必須匯出目前可見畫布，不得因 `hasUserContent` 與 Undo／頁面還原狀態不同而漏送。
 - Vision Model 偵測必須支援 `qwen2.5vl:7b` 等無連字號的 Qwen VL 命名，並同步套用於設定 UI 與實際送圖路徑。
 
 ## 26. 2026.07.16 Agent Loop 與說明選單規格
@@ -863,5 +863,8 @@ $true
 - 當回覆為本月新作、新遊戲推薦、上市清單時，auto draft 必須解析遊戲條目，不得只取前 1–2 句 intro。
 - 支援格式至少包含：`7/2《遊戲名》（平台）` 換行簡介、以及 `《遊戲名》：一句話`。
 - list/news layout 允許最多 8 條、每條最多 96 字；可含 1 行趨勢總結。
-- 黑板標題優先使用「本月新作速覽」類短標題，完整長文仍保留在聊天面板。
+- Chalkboard標題優先使用「本月新作速覽」類短標題，完整長文仍保留在聊天面板。
 - list/news 渲染應使用較密字級；若條目超出目前頁可用高度，必須自動建立下一頁續寫，不得靜默裁切。
+
+
+

@@ -1,4 +1,4 @@
-# Visual Agent 開發日誌
+﻿# Visual Agent 開發日誌
 
 > 可視化、可塗鴉、可協作的 AI 管家
 > by [anomixer](https://github.com/anomixer)
@@ -18,7 +18,7 @@
 - 擴充 Vision Model 自動辨識：支援 Qwen VL、Gemma 3、GPT-4o/4.1、Gemini、Claude 3/4 等常見命名。
 - 視覺模型或 Provider 不支援圖片時，回覆會清楚提示使用者設定 Vision Model 或補上文字，不再假裝辨識成功。
 - 修正文字模型靜默忽略圖片的情況：只要目前模型不支援視覺且找不到可切換模型，後端會直接確認「圖片已收到、模型不支援辨識」，不再回覆「沒有收到圖片」。
-- 只要黑板已啟用，附圖開關會匯出目前可見畫布；Undo、頁面還原後不再因 `hasUserContent` 狀態誤判而漏附。
+- 只要Chalkboard已啟用，附圖開關會匯出目前可見畫布；Undo、頁面還原後不再因 `hasUserContent` 狀態誤判而漏附。
 - 修正 `qwen2.5vl:7b` 類無連字號名稱被誤判為非 Vision Model 的 regex；前後端模型清單與後端送圖判斷同步支援。
 
 ### 驗收
@@ -26,7 +26,7 @@
 
 ---
 
-## 📌 2026.07.16 — Agent Loop 可讀答案、說明選單、interim plan 收斂與黑板新作清單
+## 📌 2026.07.16 — Agent Loop 可讀答案、說明選單、interim plan 收斂與Chalkboard新作清單
 
 ### 版本同步
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.7.16`。
@@ -51,7 +51,7 @@
 - ADD_TASK / EXECUTE_TASK / INSTALL_SOP / CREATE_*_SOP 等執行後寫入 actionSummaries，避免空白回覆。
 
 ### Chalkboard 本月新作 / 遊戲清單
-- 自動黑板不再把長篇新作回覆裁成 4×64 字的「半截第一款」。
+- 自動Chalkboard不再把長篇新作回覆裁成 4×64 字的「半截第一款」。
 - 新增 `buildGameDiscoveryListDraft`：辨識 `7/2《遊戲名》`、`《遊戲名》：簡介` 等條目，最多 7 款 + 趨勢總結。
 - `list` / `news` layout 上限改為 **8 條、96 字**；`/api/chalkboard/draft` 同步放寬。
 - 每款優先寫「標題 + 一句短評」，標題列改為「本月新作速覽」。
@@ -64,7 +64,7 @@
 
 ### 驗收
 - `node --check src\server.js`、`node --check src\llm.js`、`node --check public\app.js` 通過。
-- 黑板遊戲條目標題 pattern 單元檢查：7 款範例可完整辨識。
+- Chalkboard遊戲條目標題 pattern 單元檢查：7 款範例可完整辨識。
 
 ---
 
@@ -79,13 +79,13 @@
 
 ### Chalkboard 行為
 - Chalkboard 支援多頁；工具列可新增頁、前後切換，並顯示目前頁碼。
-- 垃圾桶改為永久刪除「目前黑板頁」；刪除後自動切到相鄰頁，其他頁保留。最後一頁會重設為空白頁。
+- 垃圾桶改為永久刪除「目前 Chalkboard 頁」；刪除後自動切到相鄰頁，其他頁保留。最後一頁會重設為空白頁。
 - 每頁各自保留 Undo / Redo history，避免跨頁還原或誤刪。
 - AI 摘要收斂為最多 4 條、64 字內且去重；畫布不再自動加上 `1.`、`2.` 編號。
-- Prompt 明定黑板只寫新的可執行結論，禁止重述聊天、前後言與編號。
+- Prompt 明定Chalkboard只寫新的可執行結論，禁止重述聊天、前後言與編號。
 - 新聞/即時資訊摘要可使用 5 個短標題加 1 行趨勢總結；前端會優先解析 Markdown 標題與「一句話總結」，不再截取第一段原文。
 - Steam/PC 新作 Markdown table 會解析為「日期｜遊戲名稱｜類型」的前 5 款，加上總筆數摘要，不再只取前兩列。
-- `/api/chat` 若已回傳 `chalkboardDraft`，前端必須優先直接渲染；`index.html`/`app.js` 禁止快取，確保黑板修正不會被舊 JS 覆蓋。
+- `/api/chat` 若已回傳 `chalkboardDraft`，前端必須優先直接渲染；`index.html`/`app.js` 禁止快取，確保Chalkboard修正不會被舊 JS 覆蓋。
 
 ### 一般對話延遲
 - `/api/chat` 僅在安裝、移除、執行任務等系統請求才更新所有 SOP runtime state；一般對話改用既有快取/預設狀態。
@@ -254,19 +254,19 @@ Turn Lifecycle:
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.06.17`。
 
 ### Chalkboard 表格渲染修正
-- AI 將 Markdown table 寫入 Chalkboard 時，不再直接把 `| 欄位 |` 與 `|---|` 畫到黑板上。
+- AI 將 Markdown table 寫入 Chalkboard 時，不再直接把 `| 欄位 |` 與 `|---|` 畫到Chalkboard上。
 - 前端新增 Chalkboard 專用純文字正規化：偵測 Markdown table header / separator / row，並轉為 `欄位: 值 / 欄位: 值` 的短句格式。
 - `##CHALKBOARD##` block、auto draft 與實際 canvas render 前都會套用同一層正規化，避免遠端同步或後端 draft normalization 後又把表格骨架帶回畫布。
 
 ---
 
-## 📌 2026.06.12 — 搜尋品質、影片年份權重排序與本地黑板版面優化
+## 📌 2026.06.12 — 搜尋品質、影片年份權重排序與本地 Chalkboard 版面優化
 
 ### 版本同步
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.06.12`。
 
-### 本地黑板版面優化 (Local Chalkboard Layout Fix)
-- **滿版呈現**：修復了本地聊天時，Chalkboard 摘要或 draft 預設只使用左半邊（`position: 'left'`）的 Bug。現在當非處於遠端協作模式時，本地聊天產生的黑板會自動以滿版（`position: 'full'`）呈現，充分利用螢幕寬度。
+### 本地 Chalkboard 版面優化 (Local Chalkboard Layout Fix)
+- **滿版呈現**：修復了本地聊天時，Chalkboard 摘要或 draft 預設只使用左半邊（`position: 'left'`）的 Bug。現在當非處於遠端協作模式時，本地聊天產生的Chalkboard會自動以滿版（`position: 'full'`）呈現，充分利用螢幕寬度。
 
 ### DuckDuckGo 跳轉連結與 Lite 引擎遷移 (DDG Redirect & Lite Migration)
 - **跳轉連結解析**：修正了原本以 `//duckduckgo.com` 開頭的協議相對跳轉連結無法被正確正常化為 `https:`，導致 parameter 解碼出錯並重新導向中間頁的問題。
@@ -358,7 +358,7 @@ Turn Lifecycle:
 - Browser Use 仍會盡量使用文字/連結 fallback 回答，避免只停在錯誤訊息。
 
 ### Chalkboard 與回覆收斂
-- 前端新增自動 Chalkboard draft：計畫、比較、查詢摘要、天氣/物價/新聞或偏長回答，即使模型沒有輸出 `##CHALKBOARD##`，也會自動寫入簡短黑板摘要。
+- 前端新增自動 Chalkboard draft：計畫、比較、查詢摘要、天氣/物價/新聞或偏長回答，即使模型沒有輸出 `##CHALKBOARD##`，也會自動寫入簡短Chalkboard摘要。
 - Browser Use / Computer Use / current-info fallback 完成後會自動進入 Observe-after-Act，不再只說「資料取得後回報」就停住。
 - LLM 產生的 suggestion buttons 全面停用，避免問天氣卻顯示安裝 Chrome 等文不對題按鈕。
 
@@ -397,7 +397,7 @@ Turn Lifecycle:
 - 這可避免 A 問「硬碟剩多少」時誤查到 B 電腦。
 
 ### Chalkboard 同步與歷史
-- 遠端連線成功後，若本機黑板已經有內容，會主動推送目前畫面給對方。
+- 遠端連線成功後，若本機Chalkboard已經有內容，會主動推送目前畫面給對方。
 - 接收遠端 Chalkboard 同步時保留 redo stack，避免 undo 後同步導致 redo 失效。
 
 ---
@@ -513,7 +513,7 @@ Turn Lifecycle:
 
 ### Chalkboard 雙向同步
 - 遠端連線啟用時，Chalkboard 會以 `chalkboard_state` 事件同步雙方畫面。
-- 本機使用者、遠端使用者或 AI 寫入 Chalkboard 後，對方都能看到最新黑板。
+- 本機使用者、遠端使用者或 AI 寫入 Chalkboard 後，對方都能看到最新Chalkboard。
 - 同步改為 idle 約 1 秒後送出；若任一方正在畫、拖圖、放文字或操作文字框，會暫停傳送與套用遠端畫面，避免互相覆蓋。
 
 ### 遠端 AI 思考狀態
@@ -563,7 +563,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ---
 
-## 📌 2026.04.10 — 回覆穩定性、黑板控制碼與版本同步
+## 📌 2026.04.10 — 回覆穩定性、Chalkboard控制碼與版本同步
 
 ### 版本
 - `package.json` / `package-lock.json` 版本同步更新為 `2026.04.10`。
@@ -576,8 +576,8 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 - 遊戲影片結果改為先正規化 YouTube watch URL，再做可播放檢查，減少失效影片。
 
 ### Chalkboard 控制
-- 黑板渲染改為只處理 `##CHALKBOARD## ... ##ENDCHALKBOARD##` 區塊，避免一般回覆句句落板。
-- 黑板提示改為 popup hint；3 秒自動消失或滑鼠點擊即關閉。
+- Chalkboard渲染改為只處理 `##CHALKBOARD## ... ##ENDCHALKBOARD##` 區塊，避免一般回覆句句落板。
+- Chalkboard提示改為 popup hint；3 秒自動消失或滑鼠點擊即關閉。
 
 ### 無 NVIDIA 機器降噪
 - `temperature-monitor` 在 `ENOENT`（無 `nvidia-smi`）時不再重複刷 log。
@@ -600,7 +600,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ---
 
-## 📌 2026.04.01 - Tauri EXE 硬體探測與黑板座標修復
+## 📌 2026.04.01 - Tauri EXE 硬體探測與Chalkboard座標修復
 
 ### 硬體探測穩健化 (GPU / HDD)
 - `hardware-info.js` 改為使用 `powershell.exe -EncodedCommand` + `execFile`，降低 Tauri EXE 封裝環境下的引號與碼頁干擾。
@@ -610,19 +610,19 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 ### nvidia-smi 錯誤訊息去亂碼
 - 將錯誤輸出簡化為穩定錯誤碼格式（如 `ENOENT`），不再直接輸出本地碼頁訊息，避免 `程式不存在，已略過` 這類亂碼污染日誌。
 
-### 黑板座標與落稿一致性
+### Chalkboard座標與落稿一致性
 - `getChalkPoint()` 新增座標 clamp（0~1），避免游標移動到畫布邊界外時造成定位偏差。
 - `drawPlacedText()` 改為完全以 8 點框尺寸落稿，不再強制使用 `baseWidth/baseHeight` 擴張，修正「8 點框位置與最終文字落稿不一致」問題。
 
 ### UI 編碼細節
 - 修復硬體面板溫度顯示字元，`°C` 改為 `°C`。
 
-### 本機聊天與黑板體驗補強
+### 本機聊天與Chalkboard體驗補強
 - 右側聊天上方改為「本機多對話 tab + 遠端 tab」；本機對話新增後可在 tab 直接 `x` 關閉（保留至少一個）。
 - `新增對話` 按鈕移到輸入工具列，位置在「清除對話」左側，降低建立新會話的操作成本。
 - Chalkboard 在 resize 後，除了縮放快照，也會同步重算 `selectionRect/pendingTextRect/drag points`，並重建 pending 文字 preview，降低字體糊化與偏移復發。
 
-### 黑板 8 點框拖曳精準化（補丁）
+### Chalkboard 8 點框拖曳精準化（補丁）
 - 修正 8 點框 resize 時「框體與游標左右偏移」問題，改為以即時游標位置作為邊界計算，不再使用舊版 `dx` 累加造成漂移。
 - 修正畫布 resize 當下若仍在拖曳文字框，會同步縮放 `textManipulation.originPoint / originRect / anchor`，避免拖曳中途視窗改變導致框與游標脫鉤。
 - 修正文字框縮放時字級不變問題：pending 文字預覽改為依框內可用區域動態計算 `fontSize / lineHeight`，落稿視覺與框體一致。
@@ -650,7 +650,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 - 仍保留環境檢查與分流：若無可用試算表工具，優先回到「安裝 Office SOP 或 Google Sheets」。
 
 ### Chalkboard API 直寫
-- 新增 `/api/chalkboard/draft`，AI 回覆可帶 `chalkboardDraft`，前端會自動把摘要渲染到黑板（標題 + 重點條列）。
+- 新增 `/api/chalkboard/draft`，AI 回覆可帶 `chalkboardDraft`，前端會自動把摘要渲染到Chalkboard（標題 + 重點條列）。
 - AI 下筆前會先清板、清除 pending/selection，再以粉筆字逐行重畫；包行後改用實際行數累進 Y 座標，避免重疊。
 
 ### 外宇宙（Computer）沙箱化補強
@@ -690,7 +690,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ---
 
-## 📌 2026.03.29 - Chalkboard Resize 黑板縮放與定位修補
+## 📌 2026.03.29 - Chalkboard Resize Chalkboard 縮放與定位修補
 ### 🐛 Bug 修復：還原未定案文字框與 8 控制點位置偏移
 **修復 (`public/app.js`)**
 - 三個 resizer (sidebar、chat、logPanel) 的 setSize callback 加入：`if (activeTab === 'chalkboard') resizeChalkboardCanvas()`。
@@ -783,8 +783,8 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 - 提權 PowerShell 在 UAC 同意後，改用較低干擾的 minimized 視窗執行。
 - 深色模式下的下拉選單與 `全部 SOP` 篩選器，補上明確的深底淺字樣式，避免選單文字難以辨識。
 
-### 黑板工具完整國際化
-- 為所有黑板工具按鈕添加 i18n 支援：粉筆顏色、筆刷大小、形狀工具、編輯操作
+### Chalkboard 工具完整國際化
+- 為所有 Chalkboard 工具按鈕添加 i18n 支援：粉筆顏色、筆刷大小、形狀工具、編輯操作
 - 文字工具 modal 完整翻譯：標題、標籤、佔位符、幫助文本、按鈕
 - 文字工具選項翻譯：字型、字型風格（粉筆手寫、板書感等）、對齊方式（靠左、置中、靠右）
 - 上傳圖片、存成圖片按鈕翻譯
@@ -802,20 +802,20 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ---
 
-## 📌 2026.03.26 — 國際化、黑板優化與 AI 語系感知
+## 📌 2026.03.26 — 國際化、Chalkboard優化與 AI 語系感知
 
 ### 🌍 全方位國際化 (Internationalization / I18N)
-- **UI 全面中英切換**：新增 `I18N` 資源表，涵蓋 AI 對話區、AI 引擎設定 Modal、狀態列與黑板提示詞。
+- **UI 全面中英切換**：新增 `I18N` 資源表，涵蓋 AI 對話區、AI 引擎設定 Modal、狀態列與Chalkboard提示詞。
 - **設定視窗 (Settings Modal) 深度翻譯**：包括所有 Provider 說明、認證方式選項、以及 Vision 模型佔位符，確保英文模式下無殘留中文。
-- **黑板粉筆互動字體**：黑板啟動時的歡迎詞與互動提示字，現在會根據介面語系自動切換（Welcome to Visual Agent / 互動提示）。
+- **Chalkboard粉筆互動字體**：Chalkboard啟動時的歡迎詞與互動提示字，現在會根據介面語系自動切換（Welcome to Visual Agent / 互動提示）。
 
 ### 🧠 LLM 語系意識 (Locale-Aware AI)
 - **雙語 System Prompt**：後端 `llm.js` 內建中英雙語系統提示詞。
 - **語系同步發送**：前端 `/api/chat` 會主動傳遞 `locale` 給後端，確保 AI 在英文模式下會以英文思考、回覆並提供 Suggestion。
 - **動態 Prompt 注入**：系統提示詞會根據語系精確規範 AI 的回應風格與語言一致性。
 
-### 🎨 黑板與 UI 視覺優化
-- **工具托盤分隔線 (Dividers)**：黑板下方工具列加入垂直分隔線，將「顏色/粗細」、「圖形工具」、「編輯操作」進行分組，提升視覺層次。
+### 🎨 Chalkboard與 UI 視覺優化
+- **工具托盤分隔線 (Dividers)**：Chalkboard下方工具列加入垂直分隔線，將「顏色/粗細」、「圖形工具」、「編輯操作」進行分組，提升視覺層次。
 - **對話區與設定視窗微調**：修飾了英文模式下的標籤溢出與寬度適應問題，確保 UI 佈局在不同語系下皆呈現 premium 感。
 
 ### 🚀 多來源軟體推薦與動態 SOP 生成
@@ -827,28 +827,28 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ## 📌 2026.03.25 - Chalkboard 與文字工具、知識庫視覺進化、視窗持久化與硬體感知強固
 
-### 黑板畫布
+### Chalkboard 畫布
 - 中央 `Chalkboard` 改為真正可畫的 canvas，不再只是靜態歡迎區塊。
-- 黑板改用深綠色材質風格，底部加入粉筆托盤、板擦、粗細切換、Undo、清空、上傳圖片與存成圖片。
-- 支援白、紅、黃、綠、藍粉筆與局部板擦，提示字與歡迎字皆直接畫在黑板上，可被板擦擦除。
-- 初始進入黑板時先顯示粉筆風格歡迎詞，首次互動後再切換為操作提示。
-- 歡迎畫面階段會先禁用整排工具列，第一次點黑板進入可畫模式後才解鎖。
+- Chalkboard改用深綠色材質風格，底部加入粉筆托盤、板擦、粗細切換、Undo、清空、上傳圖片與存成圖片。
+- 支援白、紅、黃、綠、藍粉筆與局部板擦，提示字與歡迎字皆直接畫在Chalkboard上，可被板擦擦除。
+- 初始進入Chalkboard時先顯示粉筆風格歡迎詞，首次互動後再切換為操作提示。
+- 歡迎畫面階段會先禁用整排工具列，第一次點Chalkboard進入可畫模式後才解鎖。
 
 ### 圖形與圖片
 - 加入直線、矩形、圓形工具，支援預覽後落筆。
-- 圖片上傳後可在黑板上拖曳指定放置範圍與大小，再落到畫布上。
-- 黑板內容可直接匯出為 PNG。
-- 新增選取、複製、剪下、貼上與 clipboard 支援，可把選取區作為圖片重新貼回黑板。
+- 圖片上傳後可在Chalkboard上拖曳指定放置範圍與大小，再落到畫布上。
+- Chalkboard 內容可直接匯出為 PNG。
+- 新增選取、複製、剪下、貼上與 clipboard 支援，可把選取區作為圖片重新貼回Chalkboard。
 
 ### 文字工具
 - `T` 工具改為先開文字設定視窗，再建立文字框。
 - 文字設定視窗支援輸入內容、選字型、選字型風格、調字級、文字顏色、對齊、粗體與斜體。
 - 真正字型目前支援 `標楷體`、`微軟正黑體`、`黑體`、`細明體`、`Arial`、`Times New Roman`、`Courier New`。
-- 建立後可在黑板上先放置文字框，再拖曳框本體移動、拖 8 個控制點縮放，點框外定稿。
+- 建立後可在Chalkboard上先放置文字框，再拖曳框本體移動、拖 8 個控制點縮放，點框外定稿。
 
 ### AI 多模態理解
-- 右側聊天列新增 `Chalkboard` 附圖按鈕，可切換是否把黑板內容一併送給 AI。
-- 後端支援把黑板快照作為多模態輸入送給 vision 模型，並在主模型不支援看圖時自動 fallback 到可用的 vision 模型。
+- 右側聊天列新增 `Chalkboard` 附圖按鈕，可切換是否把 Chalkboard 內容一併送給 AI。
+- 後端支援把Chalkboard快照作為多模態輸入送給 vision 模型，並在主模型不支援看圖時自動 fallback 到可用的 vision 模型。
 - AI Provider 設定視窗新增 `Vision 多模態模型` 欄位，可由使用者明確指定圖片理解模型。
 - 當本輪有附圖時，會忽略先前附圖回合的歷史描述，避免第二張圖被上一張圖的內容污染。
 
@@ -871,7 +871,7 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 ### 封裝環境的指令與體驗修正 (Tauri EXE)
 - **硬體偵測的引號跳脫**：修正 `hardware-info.js` 中傳遞給 PowerShell 執行指令時的雙引號干擾問題（改以單引號封裝 `DriveType=3`），解決打包後因指令解析錯誤導致磁碟與 GPU 狀態監控全盤失效的問題。
-- **原生匯出圖片 API**：為了解決 Tauri EXE 容器內無法透過 `data:image` 超連結觸發原生瀏覽器下載的問題，於後端新增 `/api/chalkboard/export-file` 端點。此端點利用 PowerShell 的 `SaveFileDialog` 呼叫原生 Windows「另存新檔」視窗，確保黑板截圖能穩定儲存為 PNG。
+- **原生匯出圖片 API**：為了解決 Tauri EXE 容器內無法透過 `data:image` 超連結觸發原生瀏覽器下載的問題，於後端新增 `/api/chalkboard/export-file` 端點。此端點利用 PowerShell 的 `SaveFileDialog` 呼叫原生 Windows「另存新檔」視窗，確保Chalkboard截圖能穩定儲存為 PNG。
 
 ---
 
@@ -1182,3 +1182,6 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 - 🇯🇵 `install-language-ja.md` — 安裝日文語系
 
 ---
+
+
+
