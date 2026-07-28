@@ -119,6 +119,22 @@ http://localhost:3210
 
 ---
 
+## Interface guide
+
+After the first launch, start here:
+
+- Use the bottom-right corner to switch languages.
+- Use the top-right area to set the AI provider and model.
+- Once that is done, you can chat with the AI in the panel on the right.
+- The center Chalkboard lets you sketch and attach photos for AI recognition.
+- If you need Browser research, go to `View -> Browser -> Install`.
+- If you need to install or maintain a PC, check the recommendation list and SOP list on the left. Click `+` to add a task, or `Play` to execute it directly.
+- If you want to connect with a friend, click Remote AI in the top-right corner, then enter the other side’s IP address.
+- After connecting, you can tag your own AI or the remote AI and ask it to help or reply.
+- There are many more interesting features, so feel free to explore.
+
+---
+
 ## Public Preview checklist
 
 Before public release, at least confirm:
