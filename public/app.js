@@ -363,7 +363,7 @@ const I18N = {
             waitingHint: '等待遠端連線。Port: 19168',
             acceptedHint: '您已接受對話。請開始聊天或支援',
             requestTitle: '遠端連線請求',
-            requestSummary: '有另一台 Visual Agent Beta 想要與您通訊',
+            requestSummary: '有另一台 Visual Agent 想要與您通訊',
             accept: '允許',
             reject: '拒絕',
             requestAccepted: '您已接受對話。請開始聊天或支援',
@@ -610,7 +610,7 @@ const I18N = {
             failed: '失敗',
         },
         sopUi: {
-            rec_install_ollama: { title: '安裝 Ollama 本地 AI 引擎', description: '下載並安裝 Ollama，讓 Visual Agent Beta 具備本地語意理解能力', category: 'AI 引擎' },
+            rec_install_ollama: { title: '安裝 Ollama 本地 AI 引擎', description: '下載並安裝 Ollama，讓 Visual Agent 具備本地語意理解能力', category: 'AI 引擎' },
             rec_pull_llm_model: { title: '下載語言模型 (Gemma 4 E2B QAT)', description: '下載 Gemma 4 E2B QAT 語言模型，約 1.1GB，完成後即可開始本地對話', category: 'AI 引擎' },
             rec_driver_check: { title: '檢查並安裝驅動程式', description: '掃描硬體裝置並確認驅動程式是否為最新版本', category: '系統優化' },
             rec_remove_copilot: { title: '移除 Windows Copilot', description: '停用並移除 Windows 內建的 Copilot 功能', category: '系統清理' },
@@ -724,7 +724,7 @@ const I18N = {
             waitingHint: 'Waiting for remote connection. Port: 19168',
             acceptedHint: 'You accepted the conversation. Start chatting or supporting now.',
             requestTitle: 'Remote Connection Request',
-            requestSummary: 'Another Visual Agent Beta wants to talk to you',
+            requestSummary: 'Another Visual Agent wants to talk to you',
             accept: 'Allow',
             reject: 'Reject',
             requestAccepted: 'You accepted the conversation. Start chatting or supporting now.',
@@ -982,7 +982,7 @@ const I18N = {
             failed: 'Failed',
         },
         sopUi: {
-            rec_install_ollama: { title: 'Install Ollama Local AI Engine', description: 'Install Ollama to give Visual Agent Beta local language understanding.', category: 'AI Engine' },
+            rec_install_ollama: { title: 'Install Ollama Local AI Engine', description: 'Install Ollama to give Visual Agent local language understanding.', category: 'AI Engine' },
             rec_pull_llm_model: { title: 'Download Language Model (Gemma 4 E2B QAT)', description: 'Download the Gemma 4 E2B QAT model, about 1.1 GB, for local chat.', category: 'AI Engine' },
             rec_driver_check: { title: 'Scan and Install Drivers', description: 'Check hardware devices and update missing or outdated drivers.', category: 'System Optimization' },
             rec_remove_copilot: { title: 'Remove Windows Copilot', description: 'Disable and remove the built-in Windows Copilot feature.', category: 'System Cleanup' },
@@ -4812,7 +4812,7 @@ async function init() {
 async function loadAppMeta() {
     const data = await api('/api/meta');
     if (data.success && statusVersion) {
-        statusVersion.textContent = `Visual Agent Beta v${data.version || 'dev'}`;
+        statusVersion.textContent = `Visual Agent v${data.version || 'dev'}`;
     }
     syncBrowserTabAvailability(!!data.browserAvailable);
 }
@@ -6184,7 +6184,7 @@ function updateLocaleUI() {
     if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
     if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
     // Title and menu i18n
-    document.title = currentLocale === 'en-US' ? 'Visual Agent Beta - System Butler' : 'Visual Agent Beta - 系統管家';
+    document.title = currentLocale === 'en-US' ? 'Visual Agent - System Butler' : 'Visual Agent - 系統管家';
     const _appTitle = document.getElementById('appTitle');
     if (_appTitle) _appTitle.textContent = document.title;
     const _menuHelp = document.getElementById('menuHelp');
@@ -7149,7 +7149,7 @@ function renderDiagnosticRows(rows = []) {
 
 function buildDiagnosticsSummary(data = {}) {
     return [
-        `Visual Agent Beta ${data.app?.version || 'dev'} (${data.generatedAt || ''})`,
+        `Visual Agent ${data.app?.version || 'dev'} (${data.generatedAt || ''})`,
         `PID: ${data.app?.pid || ''}`,
         `Node: ${data.app?.node || ''}`,
         `HTTP 3210: ${data.ports?.http?.owner || 'not listening'}`,

@@ -1,7 +1,7 @@
 {
   "name": "visual-agent",
-  "version": "2026.7.22",
-  "description": "Visual Agent Beta — 可視化、可塗鴉、可協作的本地 AI PC Agent",
+  "version": "2026.7.28",
+  "description": "Visual Agent — 可視化、可塗鴉、可協作的本地 AI PC Agent",
   "main": "src/server.js",
   "bin": "src/server.js",
   "scripts": {

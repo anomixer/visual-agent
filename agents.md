@@ -8,8 +8,8 @@
 ## 📌 2026.07.22 — Chalkboard 視覺辨識修正
 
 ### 版本同步
-- `package.json` / `package-lock.json` 更新為 `2026.7.22`。
-- `public/index.html` 前端資源 cache-bust 更新為 `2026.7.22-chalk-vision`。
+- `package.json` / `package-lock.json` 更新為 `2026.7.28`。
+- `public/index.html` 前端資源 cache-bust 更新為 `2026.7.28-chalk-vision`。
 
 ### Chalkboard 圖片附件
 - 附件由整張 JPEG 改為 **內容裁切後的 PNG**；保留細小粉筆筆觸與手寫文字，避免 JPEG 壓縮失真。

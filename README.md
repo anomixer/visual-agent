@@ -1,7 +1,7 @@
 # Visual Agent Beta
 
 > [!NOTE]
-> **本程式目前建議視為 public beta 版本**。它已能完成主要本地 Agent 工作流，但仍可能因模型、Browser runtime、Windows 權限或網路狀態而失敗。執行系統變更前請先確認任務內容。
+> **本程式目前建議視為 public preview 候選版本**。它已能完成主要本地 Agent 工作流，但仍可能因模型、Browser runtime、Windows 權限或網路狀態而失敗。執行系統變更前請先確認任務內容。
 
 > 可視化、可塗鴉、可協作的 AI 管家
 > by [anomixer](https://github.com/anomixer)
@@ -69,6 +69,15 @@
 
 ## 快速開始
 
+如果你只想快速體驗，優先走 Releases 下載安裝版：
+
+1. 到 GitHub Releases 下載最新的 Windows `setup.exe`。
+2. 直接執行安裝檔完成 setup。
+3. 雙擊 `Visual Agent` 執行檔即可。
+4. 首次啟動會自動完成環境檢查與初始化。
+
+如果你要從原始碼跑：
+
 ### 1. 複製專案
 
 ```bash
@@ -108,7 +117,7 @@ http://localhost:3210
 
 ---
 
-## Public Beta 檢查清單
+## Public Preview 檢查清單
 
 公開前至少確認：
 
@@ -171,7 +180,7 @@ npm start
 
 ## 打包為 EXE
 
-開發者可直接執行：
+開發者可直接執行 [build.bat](./build.bat)：
 
 ```cmd
 build.bat
@@ -409,15 +418,31 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 
 ---
 
-## 開發說明
+## Contribute
 
-- 開發日誌請見 `agents.md`。
-- 產品規格請見 `spec.md`。
-- 目前套件版本：`2026.7.22`。
+歡迎大家一起 contribute 想法、修正與新功能提案。
+
+這個專案本來就偏實驗性，很多設計都是在做新的協作方式與互動模式，例如：
+
+- 雙人協作 / Double Agent Mode
+- Chalkboard 黑板協作
+- SOP / Skills 的自動化流程
+- 即時查詢、Agent Loop、Browser Use
+- 各種你覺得更順手、更好玩的 UI / workflow
+
+如果你有更好的做法，歡迎直接開 issue、提 PR，或先丟想法討論。我們很歡迎把這個專案一起往更有趣、更實用的方向推進。
 
 ---
 
-## 2026.7.22 修正重點
+## 開發說明
+
+- 開發日誌請見 [agents.md](./agents.md)。
+- 產品規格請見 [spec.md](./spec.md)。
+- 目前套件版本：`2026.7.28`。
+
+---
+
+## 2026.7.28 修正重點
 
 - Chalkboard 圖片附件改為內容裁切後的 PNG，保留手寫與細粉筆筆觸；最長邊限制 1600px。
 - 視覺模型會被明確要求檢視圖中文字、圖表、箭頭與置入圖片；看不清時不得臆測。
