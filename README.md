@@ -1,5 +1,7 @@
 ﻿# Visual Agent Beta
 
+> 當前版本：**2026.8.7** · 官方網站：https://anomixer.github.io/visual-agent/
+
 > [!NOTE]
 > **本程式目前建議視為 public preview 候選版本**。它已能完成主要本地 Agent 工作流，但仍可能因模型、Browser runtime、Windows 權限或網路狀態而失敗。執行系統變更前請先確認任務內容。
 
@@ -417,4 +419,4 @@ Chalkboard 附件會以裁切後 PNG 傳送；目前文字模型不支援辨識�
 
 - 開發日誌請見 [agents.md](./agents.md)。
 - 產品規格請見 [spec.md](./spec.md)。
-- 目前套件版本：`2026.7.28`。
+- 目前套件版本：`2026.8.7`。

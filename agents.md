@@ -5,6 +5,31 @@
 
 ---
 
+## 📌 2026.08.07 — 品牌識別重設 (VA icon + 墨綠官網)
+
+### 版本同步
+- `package.json` / `package-lock.json` 更新為 `2026.8.7`。
+- 狀態列版本由 runtime 自 `package.json` 取得,無須手動改 HTML。
+
+### 品牌 Icon 重設為 VA
+- 全新識別:墨綠黑板 + 粉筆手寫 `VA` + 右下粉筆 + 左下板擦,無眼睛。
+- `src-tauri/icons/` 全尺寸重產(32x32 / 128x128 / 128x128@2x / icon.ico / icon.icns / icon.png 512),Tauri 桌面 app 圖示統一換新。
+- `public/index.html` 啟動 splash 的 🤖 換成 VA inline SVG。
+- `public/app.js` Skills 列表「Visual Agent」群組標頭 🤖 換成同款 VA inline SVG。
+- 功能型 UI 符號(🎨 塗鴉、🌡 溫度、🌐 遠端、📋 清單等)維持不動,僅替換品牌露出處。
+
+### 官方網站 (GitHub Pages)
+- 新增 `docs/` 多頁官網,風格參考 OpenClaw 官網(深黑 + 墨綠 emerald 主色)+ mamecloudrom 分頁結構。
+- 四頁:首頁 / 功能 / 下載 / 文件,含中英文雙語切換(localStorage 記憶)。
+- 首頁產品一瞥區接入中(`hero-zh.png`)/英(`hero-en.png`)首圖。
+- `docs/favicon.svg` 使用最終 A1 識別。
+- 新增 `docs/LICENSE`(Apache-2.0),根目錄同步放置 `LICENSE`,`package.json` license 欄由 ISC 改為 Apache-2.0。
+
+### 驗收
+- `node --check src\server.js`、`node --check src\llm.js`、`node --check public\app.js` 通過。
+
+---
+
 ## 📌 2026.07.28 — Chalkboard 視覺辨識修正
 
 ### 版本同步

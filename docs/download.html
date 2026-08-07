@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>下載 — Visual Agent</title>
+  <meta name="description" content="下載 Visual Agent:Windows 安裝版、從原始碼執行,以及環境需求。">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+  <nav class="site-nav">
+    <div class="nav-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark"><img src="favicon.svg" alt="Visual Agent"></span>
+        <span class="brand-name">Visual Agent</span>
+      </a>
+      <button class="nav-toggle" data-target=".nav-links">☰</button>
+      <ul class="nav-links">
+        <li><a href="index.html" data-zh="首頁" data-en="Home">首頁</a></li>
+        <li><a href="features.html" data-zh="功能" data-en="Features">功能</a></li>
+        <li><a href="download.html" class="active" data-zh="下載" data-en="Download">下載</a></li>
+        <li><a href="docs.html" data-zh="文件" data-en="Docs">文件</a></li>
+        <li><a href="https://github.com/anomixer/visual-agent" target="_blank" rel="noopener">GitHub</a></li>
+        <li><button id="lang-toggle" class="nav-lang" type="button">EN</button></li>
+        <li><a class="nav-cta" href="download.html" data-zh="立即安裝" data-en="Get started">立即安裝</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <span class="eyebrow" data-zh="下載" data-en="DOWNLOAD">下載</span>
+      <h1 data-zh="選一種方式,<span class=&quot;accent&quot;>把它裝起來</span>"
+          data-en="Pick a way and <span class=&quot;accent&quot;>get it installed</span>">選一種方式,<span class="accent">把它裝起來</span></h1>
+      <p class="lead" data-zh="Windows 10 / 11 使用者建議走 Releases 安裝版,最省事;開發者可直接從原始碼跑。"
+         data-en="Windows 10 / 11 users: the Releases installer is the smoothest path. Developers can run from source.">Windows 10 / 11 使用者建議走 Releases 安裝版,最省事;開發者可直接從原始碼跑。</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/anomixer/visual-agent/releases" target="_blank" rel="noopener" data-zh="⬇ 前往 Releases" data-en="⬇ Go to Releases">⬇ 前往 Releases</a>
+        <a class="btn btn-ghost" href="docs.html" data-zh="閱讀文件" data-en="Read the docs">閱讀文件</a>
+      </div>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow" data-zh="方式一" data-en="METHOD 1">方式一</span>
+        <h2 data-zh="Windows 安裝版(推薦)" data-en="Windows installer (recommended)">Windows 安裝版(推薦)</h2>
+        <p data-zh="適合只想快速體驗的你。" data-en="For anyone who just wants to try it fast.">適合只想快速體驗的你。</p>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div><h4 data-zh="下載 setup.exe" data-en="Download setup.exe">下載 setup.exe</h4><p data-zh="到 GitHub Releases 下載最新的 Windows setup.exe。" data-en="Grab the latest Windows setup.exe from GitHub Releases.">到 GitHub Releases 下載最新的 Windows setup.exe。</p></div></div>
+        <div class="step"><div class="num">2</div><div><h4 data-zh="執行安裝檔" data-en="Run the installer">執行安裝檔</h4><p data-zh="直接執行安裝檔完成 setup(會觸發 UAC 提權)。" data-en="Run it to finish setup (triggers a UAC prompt).">直接執行安裝檔完成 setup(會觸發 UAC 提權)。</p></div></div>
+        <div class="step"><div class="num">3</div><div><h4 data-zh="雙擊啟動" data-en="Double-click to launch">雙擊啟動</h4><p data-zh="雙擊 Visual Agent 執行檔即可。" data-en="Double-click the Visual Agent executable.">雙擊 Visual Agent 執行檔即可。</p></div></div>
+        <div class="step"><div class="num">4</div><div><h4 data-zh="自動初始化" data-en="Auto-initialize">自動初始化</h4><p data-zh="首次啟動會自動完成環境檢查與初始化。" data-en="First launch auto-runs environment checks and initialization.">首次啟動會自動完成環境檢查與初始化。</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow" data-zh="方式二" data-en="METHOD 2">方式二</span>
+        <h2 data-zh="從原始碼執行" data-en="Run from source">從原始碼執行</h2>
+      </div>
+      <div class="terminal" style="max-width:780px;margin:0 auto;">
+        <div class="terminal-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title" data-zh="Windows PowerShell" data-en="Windows PowerShell">Windows PowerShell</span></div>
+        <div class="terminal-body" id="dl-src" data-clip="git clone https://github.com/anomixer/visual-agent.git&#10;cd visual-agent&#10;npm install&#10;npm start">
+          <span class="comment" data-zh="# 1. 複製專案" data-en="# 1. Clone the repo"># 1. 複製專案</span><br>
+          <span class="prompt">$</span> <span class="cmd">git clone https://github.com/anomixer/visual-agent.git</span><br>
+          <span class="prompt">$</span> <span class="cmd">cd visual-agent</span><br>
+          <span class="comment" data-zh="# 2. 安裝相依套件" data-en="# 2. Install dependencies"># 2. 安裝相依套件</span><br>
+          <span class="prompt">$</span> <span class="cmd">npm install</span><br>
+          <span class="comment" data-zh="# 若 PowerShell 擋下 script execution:" data-en="# If PowerShell blocks script execution:"># 若 PowerShell 擋下 script execution:</span><br>
+          <span class="prompt">$</span> <span class="cmd">powershell -ExecutionPolicy Bypass -Command "npm install"</span><br>
+          <span class="comment" data-zh="# 3. 啟動開發伺服器" data-en="# 3. Start the dev server"># 3. 啟動開發伺服器</span><br>
+          <span class="prompt">$</span> <span class="cmd">npm start</span><br>
+          <span class="comment" data-zh="# 4. 開啟 http://localhost:3210" data-en="# 4. Open http://localhost:3210"># 4. 開啟 http://localhost:3210</span>
+          <button class="copy-btn" data-copy="dl-src" data-zh="複製" data-en="Copy">複製</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow" data-zh="環境需求" data-en="REQUIREMENTS">環境需求</span>
+        <h2 data-zh="開始前請確認" data-en="Before you start">開始前請確認</h2>
+      </div>
+      <div class="pills">
+        <span class="pill"><b data-zh="OS" data-en="OS">OS</b> <span data-zh="Windows 10 / 11" data-en="Windows 10 / 11">Windows 10 / 11</span></span>
+        <span class="pill"><b data-zh="Node.js" data-en="Node.js">Node.js</b> <span data-zh="18 以上" data-en="18+">18 以上</span></span>
+        <span class="pill"><b data-zh="Ollama" data-en="Ollama">Ollama</b> <span data-zh="選用(本地 LLM 對話)" data-en="optional (local LLM chat)">選用(本地 LLM 對話)</span></span>
+        <span class="pill"><b data-zh="權限" data-en="Privileges">權限</b> <span data-zh="部分 SOP 需管理員權限(UAC)" data-en="some SOPs need admin (UAC)">部分 SOP 需管理員權限(UAC)</span></span>
+      </div>
+      <p style="text-align:center;color:var(--text-faint);margin-top:20px;font-size:.92rem;" data-zh="若只使用推薦清單與待辦管理,不一定需要先安裝 Ollama。"
+         data-en="If you only use the recommend list and to-do manager, Ollama is optional.">若只使用推薦清單與待辦管理,不一定需要先安裝 Ollama。</p>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div>
+          <div class="footer-brand"><span class="brand-mark"><img src="favicon.svg" alt="Visual Agent"></span><span class="brand-name">Visual Agent</span></div>
+          <p style="color:var(--text-faint);max-width:34ch;font-size:.92rem;" data-zh="可視化、可塗鴉、可協作的本地 AI PC Agent。"
+             data-en="A visual, drawable, collaborative local AI PC Agent.">可視化、可塗鴉、可協作的本地 AI PC Agent。</p>
+        </div>
+        <div class="footer-cols">
+          <div class="footer-col">
+            <h5 data-zh="產品" data-en="Product">產品</h5>
+            <a href="features.html" data-zh="功能" data-en="Features">功能</a>
+            <a href="download.html" data-zh="下載" data-en="Download">下載</a>
+            <a href="docs.html" data-zh="文件" data-en="Docs">文件</a>
+          </div>
+          <div class="footer-col">
+            <h5 data-zh="社群" data-en="Community">社群</h5>
+            <a href="https://github.com/anomixer/visual-agent" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/anomixer/visual-agent/releases" target="_blank" rel="noopener" data-zh="Releases" data-en="Releases">Releases</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 Visual Agent · by anomixer</span>
+        <span data-zh="依 <a href=&quot;LICENSE&quot; style=&quot;color:var(--accent)&quot;>Apache-2.0 License</a> 發布" data-en="Distributed under <a href=&quot;LICENSE&quot; style=&quot;color:var(--accent)&quot;>Apache-2.0 License</a>">Distributed under ISC License</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

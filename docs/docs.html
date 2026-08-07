@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-zh="文件 — Visual Agent" data-en="Docs — Visual Agent">文件 — Visual Agent</title>
+  <meta name="description" data-zh="Visual Agent 快速上手:介面說明、AI Provider 設定、Ollama 本地模型、Browser Runtime。" data-en="Visual Agent quick start: UI tour, AI Provider setup, local Ollama models, Browser Runtime.">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+  <nav class="site-nav">
+    <div class="nav-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark"><img src="favicon.svg" alt="Visual Agent"></span>
+        <span class="brand-name">Visual Agent</span>
+      </a>
+      <button class="nav-toggle" data-target=".nav-links">☰</button>
+      <ul class="nav-links">
+        <li><a href="index.html" data-zh="首頁" data-en="Home">首頁</a></li>
+        <li><a href="features.html" data-zh="功能" data-en="Features">功能</a></li>
+        <li><a href="download.html" data-zh="下載" data-en="Download">下載</a></li>
+        <li><a href="docs.html" class="active" data-zh="文件" data-en="Docs">文件</a></li>
+        <li><a href="https://github.com/anomixer/visual-agent" target="_blank" rel="noopener">GitHub</a></li>
+        <li><button id="lang-toggle" class="nav-lang" type="button">EN</button></li>
+        <li><a class="nav-cta" href="download.html" data-zh="立即安裝" data-en="Get started">立即安裝</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <span class="eyebrow" data-zh="文件" data-en="Docs">文件</span>
+      <h1 data-zh="第一次進入,<span class='accent'>先看這幾個地方</span>" data-en="First time here? <span class='accent'>Start with these</span>">第一次進入,<span class="accent">先看這幾個地方</span></h1>
+      <p class="lead" data-zh="幾分鐘就能跑起來。設定好 Provider,就能在右側對話區直接下指令。" data-en="Up and running in minutes. Once the Provider is set, just type commands in the right-hand chat.">幾分鐘就能跑起來。設定好 Provider,就能在右側對話區直接下指令。</p>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow" data-zh="介面導覽" data-en="UI Tour">介面導覽</span>
+        <h2 data-zh="五個你會常用的地方" data-en="Five places you'll use often">五個你會常用的地方</h2>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div><h4 data-zh="右下角 · 語言切換" data-en="Bottom-right · Language">右下角 · 語言切換</h4><p data-zh="介面支援中英切換。" data-en="The UI supports Chinese / English switching.">介面支援中英切換。</p></div></div>
+        <div class="step"><div class="num">2</div><div><h4 data-zh="右上角 · AI 供應商與模型" data-en="Top-right · AI Provider & Model">右上角 · AI 供應商與模型</h4><p data-zh="設定 Provider、Base URL、API Key / OAuth 2.0 與模型名稱。" data-en="Set Provider, Base URL, API Key / OAuth 2.0, and the model name.">設定 Provider、Base URL、API Key / OAuth 2.0 與模型名稱。</p></div></div>
+        <div class="step"><div class="num">3</div><div><h4 data-zh="中央 · Chalkboard" data-en="Center · Chalkboard">中央 · Chalkboard</h4><p data-zh="塗鴉、貼照片,讓 AI 辨識內容;遠端連線時可即時共享快照。" data-en="Doodle, paste photos so the AI can read them; share snapshots live when remotely connected.">塗鴉、貼照片,讓 AI 辨識內容;遠端連線時可即時共享快照。</p></div></div>
+        <div class="step"><div class="num">4</div><div><h4 data-zh="左側 · 推薦清單 / SOP 清單" data-en="Left · Recommendations / SOP list">左側 · 推薦清單 / SOP 清單</h4><p data-zh="按 <code>+</code> 加入任務清單,按 <code>Play</code> 可直接執行。" data-en="Press <code>+</code> to add to tasks, <code>Play</code> to run directly.">按 <code>+</code> 加入任務清單,按 <code>Play</code> 可直接執行。</p></div></div>
+        <div class="step"><div class="num">5</div><div><h4 data-zh="右上角 · 遠端 AI" data-en="Top-right · Remote AI">右上角 · 遠端 AI</h4><p data-zh="輸入對方 IP 即可雙機連線,tag 自己或對方的 AI 請它幫忙。" data-en="Enter the peer IP to connect two machines; tag your or their AI for help.">輸入對方 IP 即可雙機連線,tag 自己或對方的 AI 請它幫忙。</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow" data-zh="AI 對話與 Provider" data-en="AI Chat & Provider">AI 對話與 Provider</span>
+        <h2 data-zh="接上你喜歡的模型" data-en="Connect your favorite model">接上你喜歡的模型</h2>
+      </div>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="ico">🦙</div>
+          <h3 data-zh="本機 Ollama" data-en="Local Ollama">本機 Ollama</h3>
+          <p data-zh="系統會自動偵測 Ollama;若缺少可透過內建 SOP 安裝,並下載預設模型 <code>gemma4:e2b-it-qat</code>。UI 顯示「AI 就緒」即可對話。" data-en="The system auto-detects Ollama; if missing, install via the built-in SOP and pull the default model <code>gemma4:e2b-it-qat</code>. Chat once the UI shows “AI ready”.">系統會自動偵測 Ollama;若缺少可透過內建 SOP 安裝,並下載預設模型 <code>gemma4:e2b-it-qat</code>。UI 顯示「AI 就緒」即可對話。</p>
+        </div>
+        <div class="card">
+          <div class="ico">☁️</div>
+          <h3 data-zh="其他 Provider" data-en="Other Providers">其他 Provider</h3>
+          <p data-zh="OpenAI、Groq、DeepSeek、Mistral、Together AI、Gemini 走 OpenAI-compatible 流程;Anthropic Claude 用原生 <code>/v1/messages</code>;Custom 支援 API Key 與 OAuth 2.0。" data-en="OpenAI, Groq, DeepSeek, Mistral, Together AI, Gemini use the OpenAI-compatible flow; Anthropic Claude uses native <code>/v1/messages</code>; Custom supports API Key and OAuth 2.0.">OpenAI、Groq、DeepSeek、Mistral、Together AI、Gemini 走 OpenAI-compatible 流程;Anthropic Claude 用原生 <code>/v1/messages</code>;Custom 支援 API Key 與 OAuth 2.0。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow" data-zh="Browser Runtime" data-en="Browser Runtime">Browser Runtime</span>
+        <h2 data-zh="需要聯網查詢時" data-en="When you need web search">需要聯網查詢時</h2>
+      </div>
+      <div class="terminal" style="max-width:780px;margin:0 auto;">
+        <div class="terminal-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title" data-zh="Browser 補裝" data-en="Browser install">Browser 補裝</span></div>
+        <div class="terminal-body" id="doc-br" data-clip="檢視 -> Browser -> 安裝&#10;# 若首次啟動顯示 Browser 不可用:&#10;install-playwright-chromium SOP">
+          <span class="comment" data-zh="# 1. 首次需要時,點選 檢視 → Browser → 安裝" data-en="# 1. On first need, click View → Browser → Install"># 1. 首次需要時,點選 檢視 → Browser → 安裝</span><br>
+          <span class="prompt">$</span> <span class="cmd">install-playwright-chromium</span><br>
+          <span class="comment" data-zh="# 這樣可避免把 Chromium 綁進 MSI/EXE,安裝包維持較小" data-en="# This avoids bundling Chromium into the MSI/EXE, keeping the installer small"># 這樣可避免把 Chromium 綁進 MSI/EXE,安裝包維持較小</span>
+          <button class="copy-btn" data-copy="doc-br" data-zh="複製" data-en="Copy">複製</button>
+        </div>
+      </div>
+      <p style="text-align:center;color:var(--text-faint);margin-top:20px;font-size:.92rem;">
+        <span data-zh="更多細節請見 " data-en="More details in the ">更多細節請見 </span><a href="README.md" target="_blank" rel="noopener" style="color:var(--accent)">README</a><span data-zh="。" data-en=".">.</span>
+      </p>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div>
+          <div class="footer-brand"><span class="brand-mark"><img src="favicon.svg" alt="Visual Agent"></span><span class="brand-name">Visual Agent</span></div>
+          <p style="color:var(--text-faint);max-width:34ch;font-size:.92rem;" data-zh="可視化、可塗鴉、可協作的本地 AI PC Agent。" data-en="A local AI PC agent that sees, draws, and acts.">可視化、可塗鴉、可協作的本地 AI PC Agent。</p>
+        </div>
+        <div class="footer-cols">
+          <div class="footer-col">
+            <h5 data-zh="產品" data-en="Product">產品</h5>
+            <a href="features.html" data-zh="功能" data-en="Features">功能</a>
+            <a href="download.html" data-zh="下載" data-en="Download">下載</a>
+            <a href="docs.html" data-zh="文件" data-en="Docs">文件</a>
+          </div>
+          <div class="footer-col">
+            <h5 data-zh="社群" data-en="Community">社群</h5>
+            <a href="https://github.com/anomixer/visual-agent" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/anomixer/visual-agent/releases" target="_blank" rel="noopener">Releases</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 Visual Agent · by anomixer</span>
+        <span>Distributed under <a href="LICENSE" style="color:var(--accent)">Apache-2.0 License</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

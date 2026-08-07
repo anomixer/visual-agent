@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>功能 — Visual Agent</title>
+  <meta name="description" content="Visual Agent 的功能總覽:Chalkboard、Double Agent、硬體監控、SOP 自動化、Consent-before-action、經驗庫。">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+  <nav class="site-nav">
+    <div class="nav-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark"><img src="favicon.svg" alt="Visual Agent"></span>
+        <span class="brand-name">Visual Agent</span>
+      </a>
+      <button class="nav-toggle" data-target=".nav-links">☰</button>
+      <ul class="nav-links">
+        <li><a href="index.html" data-zh="首頁" data-en="Home">首頁</a></li>
+        <li><a href="features.html" class="active" data-zh="功能" data-en="Features">功能</a></li>
+        <li><a href="download.html" data-zh="下載" data-en="Download">下載</a></li>
+        <li><a href="docs.html" data-zh="文件" data-en="Docs">文件</a></li>
+        <li><a href="https://github.com/anomixer/visual-agent" target="_blank" rel="noopener">GitHub</a></li>
+        <li><button id="lang-toggle" class="nav-lang" type="button">EN</button></li>
+        <li><a class="nav-cta" href="download.html" data-zh="立即安裝" data-en="Get started">立即安裝</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <span class="eyebrow" data-zh="功能一覽" data-en="FEATURES">功能一覽</span>
+      <h1 data-zh="為你的電腦,造一個<span class=&quot;accent&quot;>會進化</span>的管家"
+          data-en="Build a butler that <span class=&quot;accent&quot;>evolves</span> with your PC">為你的電腦,造一個<span class="accent">會進化</span>的管家</h1>
+      <p class="lead" data-zh="從對話、塗鴉到系統自動化,Visual Agent 把 AI 能力收進一個純圖形介面的控制中心。"
+         data-en="From chatting and doodling to full system automation, Visual Agent packs AI into one pure-GUI control center.">從對話、塗鴉到系統自動化,Visual Agent 把 AI 能力收進一個純圖形介面的控制中心。</p>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="container">
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="ico">🎨</div>
+          <h3 data-zh="互動式 Chalkboard 共享" data-en="Interactive Chalkboard">互動式 Chalkboard 共享</h3>
+          <p data-zh="中央 Chalkboard 支援粉筆塗寫、局部板擦、圖形、圖片放置、文字框與 PNG 匯出。遠端連線時可即時共享快照,隨手標記讓 AI 看懂。"
+             data-en="The central Chalkboard supports chalk drawing, partial erasing, shapes, image drop, text boxes and PNG export. Share snapshots live while remote-connected.">中央 Chalkboard 支援粉筆塗寫、局部板擦、圖形、圖片放置、文字框與 PNG 匯出。遠端連線時可即時共享快照,隨手標記讓 AI 看懂。</p>
+        </div>
+        <div class="card">
+          <div class="ico">🌐</div>
+          <h3 data-zh="Double Agent 模式" data-en="Double Agent mode">Double Agent 模式</h3>
+          <p data-zh="支援兩台實體電腦透過專用協議連線,本地 AI 先答、遠端 AI 隨後補充,也能請朋友和 AI 一起幫你修電腦。"
+             data-en="Two physical PCs connect over a dedicated protocol — local AI answers first, remote AI follows up. Invite a friend and their AI to help fix your machine.">支援兩台實體電腦透過專用協議連線,本地 AI 先答、遠端 AI 隨後補充,也能請朋友和 AI 一起幫你修電腦。</p>
+        </div>
+        <div class="card">
+          <div class="ico">📊</div>
+          <h3 data-zh="圓圈式硬體環形監控" data-en="Circular hardware monitor">圓圈式硬體環形監控</h3>
+          <p data-zh="即時探測 CPU、GPU、RAM、Disk,並能透過專屬插件精準監控 NVIDIA 顯示卡的溫度、VRAM 與即時負載。"
+             data-en="Live CPU, GPU, RAM and Disk gauges, with a dedicated plugin for precise NVIDIA temperature, VRAM and load.">即時探測 CPU、GPU、RAM、Disk,並能透過專屬插件精準監控 NVIDIA 顯示卡的溫度、VRAM 與即時負載。</p>
+        </div>
+        <div class="card">
+          <div class="ico">🔍</div>
+          <h3 data-zh="Browser Use 聯網即時查詢" data-en="Browser Use live lookup">Browser Use 聯網即時查詢</h3>
+          <p data-zh="當本地知識不足時,AI 自動呼叫 Browser Use 搜尋、抽取來源頁面文字並整理答案,支援天氣、新聞與最新股價。"
+             data-en="When local knowledge falls short, the AI calls Browser Use to search, extract source text and summarize — weather, news, live stock prices.">當本地知識不足時,AI 自動呼叫 Browser Use 搜尋、抽取來源頁面文字並整理答案,支援天氣、新聞與最新股價。</p>
+        </div>
+        <div class="card">
+          <div class="ico">⚡</div>
+          <h3 data-zh="雙向自動化軟體管理" data-en="Two-way software automation">雙向自動化軟體管理</h3>
+          <p data-zh="整合 winget、Microsoft Store、GitHub Releases,為 Chrome、Steam、Office 等常用工具打造防錯的「安裝與移除」雙向 SOP 執行鏈。"
+             data-en="Integrates winget, Microsoft Store and GitHub Releases into foolproof two-way SOP chains to install or remove Chrome, Steam, Office and more.">整合 winget、Microsoft Store、GitHub Releases,為 Chrome、Steam、Office 等常用工具打造防錯的「安裝與移除」雙向 SOP 執行鏈。</p>
+        </div>
+        <div class="card">
+          <div class="ico">🛡️</div>
+          <h3 data-zh="Consent-before-action 安全防護" data-en="Consent-before-action safety">Consent-before-action 安全防護</h3>
+          <p data-zh="AI 執行任何系統變更前,先將其加入待辦任務清單,等待你手動點擊確認後才執行,防止無人值守的自動修改與潛在風險。"
+             data-en="Before any system change, the AI queues it in your to-do list and waits for your manual confirmation — preventing unattended edits and potential risks.">AI 執行任何系統變更前,先將其加入待辦任務清單,等待你手動點擊確認後才執行,防止無人值守的自動修改與潛在風險。</p>
+        </div>
+        <div class="card">
+          <div class="ico">🧠</div>
+          <h3 data-zh="經驗學習與自我進化" data-en="Learning & self-evolution">經驗學習與自我進化</h3>
+          <p data-zh="每次任務執行的成敗皆會沉澱至本地經驗庫(Exp),AI 自動讀取並進行敏感資訊遮罩,下次類似任務主動避坑。"
+             data-en="Every task outcome sinks into a local experience vault (Exp); the AI auto-reads it and masks sensitive info to dodge pitfalls next time.">每次任務執行的成敗皆會沉澱至本地經驗庫(Exp),AI 自動讀取並進行敏感資訊遮罩,下次類似任務主動避坑。</p>
+        </div>
+        <div class="card">
+          <div class="ico">⚗️</div>
+          <h3 data-zh="19 個 Hermes Agent 領域知識庫" data-en="19 Hermes Agent knowledge bases">19 個 Hermes Agent 領域知識庫</h3>
+          <p data-zh="融合 NousResearch 專業級 Hermes Agent 的 19 大領域 Skills,涵蓋 Data Science、DevOps、Red Teaming 等,對話時動態注入,回答更專業。"
+             data-en="Blends 19 domain Skills from NousResearch's Hermes Agent — Data Science, DevOps, Red Teaming and more — injected live into conversations for sharper answers.">融合 NousResearch 專業級 Hermes Agent 的 19 大領域 Skills,涵蓋 Data Science、DevOps、Red Teaming 等,對話時動態注入,回答更專業。</p>
+        </div>
+        <div class="card">
+          <div class="ico">📦</div>
+          <h3 data-zh="Tauri 打包 / 插件系統" data-en="Tauri build / plugins">Tauri 打包 / 插件系統</h3>
+          <p data-zh="可打包成獨立 Windows EXE,Node 後端以 sidecar 隨附;並能用 .js 擴充系統監控能力,彈性極高。"
+             data-en="Ships as a standalone Windows EXE with the Node backend bundled as a sidecar; extend system monitoring with .js plugins.">可打包成獨立 Windows EXE,Node 後端以 sidecar 隨附;並能用 .js 擴充系統監控能力,彈性極高。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow" data-zh="支援的 AI Provider" data-en="SUPPORTED AI PROVIDERS">支援的 AI Provider</span>
+        <h2 data-zh="本地或雲端,隨你選" data-en="Local or cloud, your call">本地或雲端,隨你選</h2>
+      </div>
+      <div class="pills">
+        <span class="pill"><b data-zh="Ollama" data-en="Ollama">Ollama</b> <span data-zh="本地模型" data-en="local models">本地模型</span></span>
+        <span class="pill"><span data-zh="OpenAI-compatible API" data-en="OpenAI-compatible API">OpenAI-compatible API</span></span>
+        <span class="pill">OpenAI / Groq / DeepSeek</span>
+        <span class="pill">Mistral / Together AI</span>
+        <span class="pill">Gemini</span>
+        <span class="pill">Anthropic Claude</span>
+        <span class="pill"><span data-zh="Custom (API Key / OAuth 2.0)" data-en="Custom (API Key / OAuth 2.0)">Custom (API Key / OAuth 2.0)</span></span>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div>
+          <div class="footer-brand"><span class="brand-mark"><img src="favicon.svg" alt="Visual Agent"></span><span class="brand-name">Visual Agent</span></div>
+          <p style="color:var(--text-faint);max-width:34ch;font-size:.92rem;" data-zh="可視化、可塗鴉、可協作的本地 AI PC Agent。"
+             data-en="A visual, drawable, collaborative local AI PC Agent.">可視化、可塗鴉、可協作的本地 AI PC Agent。</p>
+        </div>
+        <div class="footer-cols">
+          <div class="footer-col">
+            <h5 data-zh="產品" data-en="Product">產品</h5>
+            <a href="features.html" data-zh="功能" data-en="Features">功能</a>
+            <a href="download.html" data-zh="下載" data-en="Download">下載</a>
+            <a href="docs.html" data-zh="文件" data-en="Docs">文件</a>
+          </div>
+          <div class="footer-col">
+            <h5 data-zh="社群" data-en="Community">社群</h5>
+            <a href="https://github.com/anomixer/visual-agent" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/anomixer/visual-agent/releases" target="_blank" rel="noopener" data-zh="Releases" data-en="Releases">Releases</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 Visual Agent · by anomixer</span>
+        <span data-zh="依 <a href=&quot;LICENSE&quot; style=&quot;color:var(--accent)&quot;>Apache-2.0 License</a> 發布" data-en="Distributed under <a href=&quot;LICENSE&quot; style=&quot;color:var(--accent)&quot;>Apache-2.0 License</a>">Distributed under ISC License</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/main.js"></script>
+</body>
+</html>

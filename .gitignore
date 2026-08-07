@@ -43,3 +43,14 @@ tasks.json
 *.diff
 *patch.js
 *backup*
+
+# Raw screenshots dropped at repo root (copies live under docs/assets/)
+screenshot-*.png
+screenshot-*.jpg
+
+# Icon generation script (icons already produced under src-tauri/icons/)
+src-tauri/icons/gen_icons_node.js
+
+# Auto-generated wiki / local data — never commit
+wiki/
+data/

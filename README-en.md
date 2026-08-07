@@ -1,5 +1,7 @@
 ﻿# Visual Agent Beta
 
+> Current version: **2026.8.7** · Website: https://anomixer.github.io/visual-agent/
+
 > [!NOTE]
 > **This program is currently recommended as a public preview release candidate.** It already handles the main local Agent workflow, but it can still fail because of the model, Browser runtime, Windows permissions, or network state. Please confirm the task details before making system changes.
 

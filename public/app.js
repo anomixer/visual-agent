@@ -5855,7 +5855,7 @@ function renderSkillList() {
     if (visualAgentSkills.length) {
         const visualAgentHeader = document.createElement('div');
         visualAgentHeader.className = 'skill-source-header';
-        visualAgentHeader.innerHTML = `<span class="skill-source-icon">🤖</span><span>Visual Agent</span><span class="skill-source-count">${visualAgentSkills.length}</span>`;
+        visualAgentHeader.innerHTML = `<span class="skill-source-icon"><svg viewBox="0 0 64 64" width="20" height="20" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="56" height="56" rx="14" fill="#34d399"/><rect x="11" y="13" width="42" height="38" rx="5" fill="#0a0f0d"/><g fill="none" stroke="#eafff5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 24 L24 41 L29 24"/><path d="M35 41 L40 24 L45 41"/><path d="M37.5 33 L42.5 33"/></g></svg></span><span>Visual Agent</span><span class="skill-source-count">${visualAgentSkills.length}</span>`;
         skillListContainer.appendChild(visualAgentHeader);
 
         const visualAgentGroups = {};
@@ -6520,9 +6520,9 @@ async function sendChat() {
         });
     } else {
         appendChatBubble('user', chalkboardAttachment
-            ? `${msg}\n\n[已附上 Chalkboard 圖片供 AI 參考]`
+            ? `${msg}\n\n${currentLocale === 'en-US' ? '[Chalkboard image attached for AI reference]' : '[已附上 Chalkboard 圖片供 AI 參考]'}`
             : (isChalkboardAttachmentEnabled
-                ? `${msg}\n\n[Chalkboard 附件失敗：目前畫布沒有可傳送的內容]`
+                ? `${msg}\n\n${currentLocale === 'en-US' ? '[Chalkboard attachment failed: no sendable content on the current canvas]' : '[Chalkboard 附件失敗：目前畫布沒有可傳送的內容]'}`
                 : msg));
     }
     const currentMode = activeChatMode;
