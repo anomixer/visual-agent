@@ -29,7 +29,7 @@ function syntaxCheck() {
         path.join(ROOT, 'public', 'app.js'),
         ...collectJs(path.join(ROOT, 'plugins')),
     ];
-    console.log(`\n[1/2] 語法檢查 (${files.length} 個 JS 檔)`);
+    console.log(`\n[1/3] 語法檢查 (${files.length} 個 JS 檔)`);
     let failed = 0;
     for (const file of files) {
         const rel = path.relative(ROOT, file);
@@ -46,7 +46,7 @@ function syntaxCheck() {
 
 function smoke() {
     return new Promise((resolve, reject) => {
-        console.log('\n[2/2] 冒煙測試（起 server → 打 /api/meta，並健康快照 /api/diagnostics）');
+        console.log('\n[3/3] 冒煙測試（起 server → 打 /api/meta，並健康快照 /api/diagnostics）');
         const child = spawn(NODE, [path.join(ROOT, 'src', 'server.js')], { cwd: ROOT });
         let out = '';
         let done = false;
@@ -98,8 +98,24 @@ function smoke() {
     });
 }
 
+function unitTests() {
+    const files = [path.join(ROOT, 'test', 'pure.test.js')];
+    console.log(`\n[1.5/3] 單元測試`);
+    for (const file of files) {
+        if (!fs.existsSync(file)) { console.warn(`  ⚠ 找不到 ${path.relative(ROOT, file)}`); continue; }
+        const r = spawnSync(NODE, [file], { cwd: ROOT, encoding: 'utf8' });
+        process.stdout.write(r.stdout || '');
+        if (r.status !== 0) {
+            console.error(`  ✗ ${path.relative(ROOT, file)}\n${r.stderr || ''}`);
+            process.exit(1);
+        }
+        console.log(`  ✓ ${path.relative(ROOT, file)}`);
+    }
+}
+
 (async () => {
     syntaxCheck();
+    unitTests();
     await smoke();
     console.log('\n✅ 全部通過');
     process.exit(0);
