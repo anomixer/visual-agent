@@ -1,0 +1,97 @@
+#!/usr/bin/env node
+/**
+ * 最小 CI 守門：
+ *   1) 語法門 — node --check 掃全部自研 JS（src / public / plugins）。
+ *   2) 冒煙  — 起 server，打 /api/meta、/api/diagnostics，確認 success:true，再收掉。
+ * 不依賴 Ollama / 網路 / 顯示卡，可在乾淨 runner 跑。
+ * 用法：node scripts/check.js   （或 npm test）
+ */
+const { spawnSync, spawn } = require('node:child_process');
+const path = require('node:path');
+const fs = require('node:fs');
+
+const ROOT = path.join(__dirname, '..');
+const NODE = process.execPath;
+
+function collectJs(dir, out = []) {
+    if (!fs.existsSync(dir)) return out;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) collectJs(full, out);
+        else if (entry.name.endsWith('.js') && !/\.min\.js$/.test(entry.name)) out.push(full);
+    }
+    return out;
+}
+
+function syntaxCheck() {
+    const files = [
+        ...collectJs(path.join(ROOT, 'src')),
+        path.join(ROOT, 'public', 'app.js'),
+        ...collectJs(path.join(ROOT, 'plugins')),
+    ];
+    console.log(`\n[1/2] 語法檢查 (${files.length} 個 JS 檔)`);
+    let failed = 0;
+    for (const file of files) {
+        const rel = path.relative(ROOT, file);
+        const r = spawnSync(NODE, ['--check', file], { encoding: 'utf8' });
+        if (r.status !== 0) {
+            failed++;
+            console.error(`  ✗ ${rel}\n${r.stderr || r.stdout}`);
+        } else {
+            console.log(`  ✓ ${rel}`);
+        }
+    }
+    if (failed) { console.error(`\n語法檢查失敗：${failed} 個檔`); process.exit(1); }
+}
+
+function smoke() {
+    return new Promise((resolve, reject) => {
+        console.log('\n[2/2] 冒煙測試（起 server → 打 /api/meta、/api/diagnostics）');
+        const child = spawn(NODE, [path.join(ROOT, 'src', 'server.js')], { cwd: ROOT });
+        let out = '';
+        let done = false;
+        const timer = setTimeout(() => finish(false, 'server 未在 20s 內就緒'), 20000);
+
+        const finish = (ok, reason) => {
+            if (done) return; done = true;
+            clearTimeout(timer);
+            child.kill('SIGTERM');
+            console.log(ok ? `  ✓ ${reason}` : `  ✗ ${reason}\n${out}`);
+            ok ? resolve() : reject(new Error(reason));
+        };
+
+        child.stdout.on('data', d => out += d);
+        child.stderr.on('data', d => out += d);
+        child.on('exit', code => finish(code === 0 ? false : false, `server 提前結束 (code ${code})`));
+
+        const base = 'http://127.0.0.1:3210';
+        const hit = async (p) => {
+            const res = await fetch(base + p, { signal: AbortSignal.timeout(3000) });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok || body.success !== true) throw new Error(`${p} -> HTTP ${res.status} ${JSON.stringify(body).slice(0, 200)}`);
+            return body;
+        };
+
+        const waitReady = async (tries = 40) => {
+            for (let i = 0; i < tries; i++) {
+                try { await fetch(base + '/api/meta', { signal: AbortSignal.timeout(1000) }); return true; }
+                catch { await new Promise(r => setTimeout(r, 500)); }
+            }
+            return false;
+        };
+
+        (async () => {
+            if (!(await waitReady())) return finish(false, 'server 未就緒');
+            await hit('/api/meta');
+            await hit('/api/diagnostics');
+            finish(true, '/api/meta 與 /api/diagnostics 皆 success:true');
+        })().catch(e => finish(false, e.message));
+    });
+}
+
+(async () => {
+    syntaxCheck();
+    await smoke();
+    console.log('\n✅ 全部通過');
+    process.exit(0);
+})().catch(err => { console.error('\n❌ CI 失敗：' + err.message); process.exit(1); });

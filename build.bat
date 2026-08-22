@@ -40,6 +40,16 @@ if errorlevel 1 (
         echo  [ERROR] Download failed. Check your internet connection.
         pause & exit /b 1
     )
+    rem 完整性校驗：比對官方 SHA256（nodejs.org SHASUMS256.txt），防 MITM / 被污染的二進位
+    set "NODE_MSI_SHA256=93d1d30341d7d38b7a8f3ab0fa3be1f9e6436b90338b2bd8b8af4e80d00bd036"
+    for /f "tokens=1" %%H in ('certutil -hashfile "%TEMP%\node-installer.msi" SHA256 2^>nul ^| findstr /i "^[0-9a-f]"') do set "ACTUAL_SHA256=%%H"
+    echo  [INFO] SHA256 check: %ACTUAL_SHA256%
+    echo         Expected:     %NODE_MSI_SHA256%
+    if /i not "%ACTUAL_SHA256%"=="%NODE_MSI_SHA256%" (
+        echo  [ERROR] SHA256 mismatch — refusing to install unverified Node.js binary.
+        del "%TEMP%\node-installer.msi" >nul 2>&1
+        pause & exit /b 1
+    )
     echo  [INFO] Installing Node.js - silent...
     msiexec /i "%TEMP%\node-installer.msi" /quiet /norestart ADDLOCAL=ALL
     del "%TEMP%\node-installer.msi" >nul 2>&1
@@ -166,9 +176,19 @@ echo  [5/7] Checking Rust...
 where rustc >nul 2>&1
 if errorlevel 1 (
     echo  [INFO] Rust not found. Downloading rustup...
-    curl -fsSL "https://win.rustup.rs/x86_64" -o "%TEMP%\rustup-init.exe"
+    curl -fsSL "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe" -o "%TEMP%\rustup-init.exe"
     if errorlevel 1 (
         echo  [ERROR] Failed to download rustup. Check internet connection.
+        pause & exit /b 1
+    )
+    rem 完整性校驗：比對 SHA256（static.rust-lang.org 固定版），防 MITM / 被污染的二進位
+    set "RUSTUP_SHA256=86478e53f769379d7f0ebfa7c9aa97cb76ca92233f79aa2cc0dbee2efaac73c7"
+    for /f "tokens=1" %%H in ('certutil -hashfile "%TEMP%\rustup-init.exe" SHA256 2^>nul ^| findstr /i "^[0-9a-f]"') do set "ACTUAL_SHA256=%%H"
+    echo  [INFO] SHA256 check: %ACTUAL_SHA256%
+    echo         Expected:     %RUSTUP_SHA256%
+    if /i not "%ACTUAL_SHA256%"=="%RUSTUP_SHA256%" (
+        echo  [ERROR] SHA256 mismatch — refusing to install unverified rustup binary.
+        del "%TEMP%\rustup-init.exe" >nul 2>&1
         pause & exit /b 1
     )
     echo  [INFO] Installing Rust stable - this takes 3-5 minutes...

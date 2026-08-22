@@ -1286,6 +1286,15 @@ async function api(endpoint, options = {}) {
 }
 
 let _markedInited = false;
+// XSS 防護：AI / 遠端 peer 回傳的內容經 marked 解析後可能含 <img onerror>、<svg onload>
+// 等可執行標記（遠端協作時對方 AI 可送任意內容）。DOMPurify 在 renderMarkdown 這個共同
+// 出口統一淨化，保留 GFM 表格、連結、程式碼等結構，移除 event handler 與 script。
+function sanitizeMarkdownHtml(html) {
+    if (typeof DOMPurify === 'undefined') return html; // 極端缺件時不阻斷渲染
+    // 用 DOMPurify 預設 profile：保留 GFM 表格/連結/程式碼結構，剝除 event handler、
+    // javascript: 等危險 URI 與 script。不客製 ALLOWED_URI_REGEXP（預設已比之更嚴）。
+    return DOMPurify.sanitize(html);
+}
 function renderMarkdown(text = '') {
     if (typeof marked !== 'undefined') {
         if (!_markedInited) {
@@ -1293,7 +1302,7 @@ function renderMarkdown(text = '') {
             _markedInited = true;
         }
         try {
-            return marked.parse(String(text || ''));
+            return sanitizeMarkdownHtml(marked.parse(String(text || '')));
         } catch (e) {
             console.warn('[Markdown] parse error:', e.message);
         }

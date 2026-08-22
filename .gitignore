@@ -54,3 +54,5 @@ src-tauri/icons/gen_icons_node.js
 # Auto-generated wiki / local data — never commit
 wiki/
 data/
+# Added by code-review-graph
+.code-review-graph/

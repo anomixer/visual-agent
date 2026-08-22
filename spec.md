@@ -2,6 +2,10 @@
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
+> **讀法**：§1–§4 是**現行架構契約**（UI、核心模組、API、腳本格式）。
+> §6 起是按日期累積的**歷史規格 / changelog**，記錄各版本要求與修正；其中少數已被後續版本取代（如 §8.8 能力門檻、§15.2.1 interim plan，已於文中標註「已移除 / 現行行為」）。
+> **現行行為以程式碼為準**；若本檔與 `src/` 不一致，以程式碼為準並回修本檔。
+
 ---
 
 ## 1. 專案願景
@@ -76,6 +80,11 @@
 | `rec_office` | 安裝 LibreOffice 辦公套件 | ✅ |
 | `rec_steam` | 安裝 Steam 遊戲平台 | ✅ |
 | `rec_driver_check` | 檢查與下載 Windows Update 與驅動 | ✅ |
+| `install-winhance` | 安裝 WinHance 優化工具 | ✅ |
+| `backup-user-files` | 備份使用者檔案 | ✅ |
+| `restore-user-files` | 還原使用者檔案 | ✅ |
+
+> **註**：上表 ID 沿用早期命名（`rec_`/`sys_` 前綴）。現行正式清單以 `sops/<slug>/SOP.md` 的 16 個目錄為準（`install-ollama`、`pull-llm-model`、`install-chrome`、`remove-copilot`、`backup-system`、`install-language-{en-us,zh-tw,zh-cn,ja}`、`install-office`、`install-steam`、`check-drivers`、`install-winhance`、`install-playwright-chromium`、`backup-user-files`、`restore-user-files`）。
 
 ### 2.4 技術架構
 
@@ -103,6 +112,16 @@ browser ──── public/index.html
 ```
 - **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\visual-agent\plugins\` 目慶，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
 
+### 2.5 安全邊界（invariants）
+
+> 本 app 能執行 SOP / PowerShell、持有 API Key，故以下為不可退讓的安全底線（2026.08.23 建立）：
+
+- **HTTP API 僅綁本機**：`src/server.js` 以 `app.listen(PORT, '127.0.0.1')` 啟動，供本機前端與 Tauri dev 使用。嚴禁綁 `0.0.0.0`——那會讓區域網路內任何主機遠端觸發 SOP/PowerShell 執行與讀取 API Key（RCE 級）。遠端雙機協作走獨立 raw TCP（`remote-agent.js`，19168），不受此綁定影響。
+- **AI / 遠端內容必須淨化**：本地與遠端 AI 回傳內容經 `marked` 解析後，必須在 `renderMarkdown()` 出口經 `DOMPurify` 淨化再入 DOM，剝除 event handler、`javascript:` 等危險 URI 與 script。嚴禁把未淨化的 `marked.parse` 輸出直接 `innerHTML`。
+- **外部下載須校驗**：`build.bat` 下載的每個可執行二進位（Node MSI、rustup-init.exe）安裝前必須比對 SHA256，不符即拒裝。
+- **SOP 執行**：SOP 指令以寫檔 `-File` 執行（非 `-Command` 字串拼接）；`consent-before-action` 由 UI 保證。
+- **API Key**：供設定視窗回填與儲存，故 `GET /api/llm/config` 回傳完整值；其區域網路暴露面由「僅綁本機」消滅，不靠 mask 回傳（mask 會導致設定視窗覆寫真 key）。
+
 ---
 
 ## 3. API 端點
@@ -112,14 +131,14 @@ browser ──── public/index.html
 | GET | `/api/todo` | 取得工作清單 |
 | POST | `/api/todo` | 新增任務 |
 | DELETE | `/api/todo/:id` | 刪除任務 |
-| POST | `/api/execute/:id` | 執行任務 |
+| POST | `/api/execute/:taskId` | 執行任務 |
 | GET | `/api/recommend` | 取得推薦清單（含 sopId）|
 | GET | `/api/llm/status` | Ollama 狀態 + 模型就緒狀態 |
 | GET | `/api/llm/config` | 取得 LLM Provider 設定 |
 | POST | `/api/llm/config` | 更新 LLM Provider 設定 |
 | POST | `/api/chat` | AI 對話（LLM 優先）|
 | GET | `/api/logs` | 全域執行日誌 |
-| POST | `/api/import` | 匯入任務清單 |
+| POST | `/api/todo/import` | 匯入任務清單 |
 
 ---
 
@@ -397,9 +416,10 @@ $true
   - API：`POST /api/agent/computer-use`
   - 模式：`open_file`、`open_url`、`install_sop`
   - 用途：本機 App 操作、檔案開啟、SOP 任務調度。
-- **能力門檻**：
-  - API：`GET /api/agent/capability`
-  - 條件：`vision capable` + `top-tier model` 才可啟用 Browser/Computer Use。
+- **能力回報（不強制門檻）**：
+  - API：`GET /api/agent/capability` 回報 `hasVision` / `isTopTier` / `canUseAdvancedAgent`。
+  - 現行行為（2026.04.10 起）：`browser-use` / `computer-use` **不依模型能力強制阻擋**，任何模型皆可呼叫；`computer-use` 預設 `vmSafeByDefault`（VM 優先）。
+  - 若日後要恢復門檻：在 `runBrowserUseOperation` / `runComputerUseOperation` 開頭檢查 `canUseAdvancedAgent` 並回 `501`。
 
 ### 8.9 財報 xlsx 自動寫入能力
 - 寫入引擎採多策略 fallback：
@@ -576,9 +596,10 @@ $true
 - `/api/chat` 每輪必須注入 runtime date context，包含今天、明天與時區。
 - AI 回答今天、明天、昨天、最新、天氣、新聞、物價等相對時間問題時，必須使用 runtime date context，不得自行猜測舊日期。
 
-### 15.2.1 Interim Plan
-- 對攻略、搜尋、比較、規劃、安裝、設定、除錯、機票/物價/新聞/天氣等可能耗時的請求，前端必須先顯示簡短 interim plan，再等待 `/api/chat` 或工具流程完成。
-- Interim plan 只是 UI 進度提示，不得寫入 local chat history，也不得取代正式 AI 回答。
+### 15.2.1 Interim Plan（已移除）
+- 2026.07.16 起**移除**送出查詢後先插入「我先給你一個處理計畫…」的固定計畫泡泡，避免查詢前冗長廢話。
+- 長任務進度改由 thinking bubble + `GET /api/agent-status/:runId`（planning/searching/extracting/summarizing/done）顯示。
+- Interim plan 若恢復，仍須：只作 UI 進度提示，不寫入 local chat history，不取代正式 AI 回答。
 
 ### 15.3 即時資訊與 Browser Use fallback
 - 天氣、物價、新聞、匯率、股價與最新資訊若模型未輸出 Browser Use action，後端必須自動補 current-info search。

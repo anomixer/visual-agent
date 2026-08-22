@@ -6180,11 +6180,15 @@ async function startVisualAgentServer() {
         remoteAgentStarted = true;
     }
 
-    const httpServer = app.listen(PORT, async () => {
+    // 綁定 127.0.0.1：本 app 的 HTTP API 提供 SOP 執行、設定（含 API Key）等敏感端點，
+    // 僅供本機前端（http://localhost:3210）與 Tauri dev 使用。綁 0.0.0.0 會讓區域網路
+    // 內任何主機可遠端觸發 SOP/PowerShell 執行與讀取 API Key（RCE 級風險）。
+    // 遠端雙機協作走獨立的 raw TCP（remote-agent.js），不受此綁定影響。
+    const httpServer = app.listen(PORT, '127.0.0.1', async () => {
     const startMsg = `Visual Agent started! (PID: ${process.pid}, Path: ${process.execPath})`;
     console.log(`\n  🖥️  ${startMsg}`);
     fileLog(startMsg);
-    console.log(`  📍 http://localhost:${PORT}`);
+    console.log(`  📍 http://127.0.0.1:${PORT} (localhost-only)`);
     console.log(`  🌐 Remote Agent TCP: 0.0.0.0:${DEFAULT_REMOTE_PORT}`);
     console.log(`  📂 SOPs    Directory: ${SOPS_DIR}`);
     console.log(`  🛠️ Skills  Directory: ${SKILLS_DIR}`);

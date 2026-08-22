@@ -5,6 +5,33 @@
 
 ---
 
+## 📌 2026.08.23 — 安全加固、測試基建與 spec/README 對齊
+
+### 安全加固（本次重點）
+- **HTTP API 綁 127.0.0.1**：`app.listen(PORT, '127.0.0.1')`。原綁 0.0.0.0 使區域網路內任何主機可遠端觸發 SOP/PowerShell 執行、讀取 API Key（RCE 級風險）。現僅供本機前端（`http://localhost:3210`）與 Tauri dev 使用；遠端雙機協作走獨立 raw TCP（`remote-agent.js`），不受影響。`netstat` 實測 3210 綁 127.0.0.1。
+- **前端 XSS 防護**：引入本地 vendored **DOMPurify v3.2.6**（`public/dompurify.min.js`，Tauri 離線可用），在 `renderMarkdown()` 共同出口淨化 AI 與遠端 peer 回傳內容——剝除 event handler、`javascript:` 等危險 URI 與 script，保留 GFM 表格/連結/程式碼。三個訊息渲染呼叫點一次覆蓋。
+- **build.bat 下載校驗**：Node MSI 與 rustup-init.exe 下載後比對官方/實測 SHA256（`certutil -hashfile`），不符即拒裝，防 MITM / 被污染二進位。rustup 改用 `static.rust-lang.org` 固定 URL 以配合校驗。
+- **測試基建**：新增 `scripts/check.js`（語法門掃全部自研 JS + 起 server 冒煙打 `/api/meta`、`/api/diagnostics`）+ `npm test` + GitHub Actions（`.github/workflows/ci.yml`）。此前專案零測試零 CI。
+
+### spec / README 對齊
+- spec §8.8 能力門檻改為「回報不強制」，對齊 04.10 移除 top-tier 門檻的現行行為（避免誤擋 `gemma4:e2b-it-qat` 本地模型）。
+- spec §15.2.1 標註 interim plan 已於 07.16 移除。
+- spec §3 API 路徑、§2.3 SOP 清單對回實際端點與 16 支 SOP（補 `install-winhance`、`backup-user-files`、`restore-user-files`）。
+- spec 頂部加「§1–§4 現行契約 / §6 起歷史 changelog、以程式碼為準」讀法。
+- README 內建 SOP 表補 `backup-user-files`、`restore-user-files`；常見問題補 API 本地綁定與內容淨化說明。
+
+### 未改動（刻意，附理由）
+- **API Key 不 mask 回傳**：`GET /api/llm/config` 供設定視窗回填、再儲存；mask 會使按「儲存」時把真 key 覆寫成遮罩值。區域網路讀 key 的暴露面已由「綁 127.0.0.1」消滅。
+- **CORS 維持 `*`**：綁 localhost 後不再是漏洞（同源本機）；若日後加 token 鑑權再收白名單。
+- **PowerShell 注入面**：SOP 本就以 `-File`（寫檔執行）非 `-Command` 拼字串；外部觸發路徑已由綁 localhost 斷絕，殘留執行僅能由本機 UI 觸發（consent 由 UI 保證）。
+
+### 驗收
+- `npm test` 全綠（11 檔語法 + 冒煙 `/api/meta`、`/api/diagnostics` 皆 `success:true`）。
+- `node --check` `src/server.js`、`public/app.js`、`public/dompurify.min.js` 通過。
+- 非回環位址連 3210 連不上（確認已鎖本機）。
+
+---
+
 ## 📌 2026.08.07 — 品牌識別重設 (VA icon + 墨綠官網)
 
 ### 版本同步
@@ -1210,3 +1237,42 @@ ame、description、	ags 擴充 token matching 精確度；保留扁平格式 fa
 
 
 
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes_tool` or `query_graph_tool` instead of Grep
+- **Understanding impact**: `get_impact_radius_tool` instead of manually tracing imports
+- **Code review**: `detect_changes_tool` + `get_review_context_tool` instead of reading entire files
+- **Finding relationships**: `query_graph_tool` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview_tool` + `list_communities_tool`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+| ------ | ---------- |
+| `detect_changes_tool` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context_tool` | Need source snippets for review — token-efficient |
+| `get_impact_radius_tool` | Understanding blast radius of a change |
+| `get_affected_flows_tool` | Finding which execution paths are impacted |
+| `query_graph_tool` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes_tool` | Finding functions/classes by name or keyword |
+| `get_architecture_overview_tool` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes_tool` for code review.
+3. Use `get_affected_flows_tool` to understand impact.
+4. Use `query_graph_tool` pattern="tests_for" to check coverage.

@@ -191,6 +191,8 @@ src-tauri\target\release\bundle\nsis\
 | `install-chrome` | 靜默安裝最新版 Google Chrome | 是 |
 | `remove-copilot` | 停用並移除 Windows Copilot | 是 |
 | `backup-system` | 建立 Windows 系統還原點 | 是 |
+| `backup-user-files` | 備份使用者檔案 | 是 |
+| `restore-user-files` | 還原使用者檔案 | 是 |
 | `install-office` | 透過 Winget 安裝 LibreOffice | 是 |
 | `install-steam` | 靜默安裝 Steam | 是 |
 | `install-winhance` | 安裝 WinHance Windows optimization utility | 是 |
@@ -396,6 +398,15 @@ Chalkboard 附件會以裁切後 PNG 傳送；目前文字模型不支援辨識�
 
 **Q: 要怎麼回報問題？**
 點標題列「說明 → 診斷資訊」，複製診斷摘要，連同操作步驟與 debug log 末段一起附上。
+
+**Q: 本 app 的 API 能被同一網路的其他裝置存取嗎？**
+不能。本地 HTTP API 只綁定 `127.0.0.1`，僅供本機前端與 Tauri 使用；遠端雙機協作走的是獨立的點對點 TCP 協定（需雙方同意連線），不經由這個 API。
+
+**Q: AI（含遠端 AI）回傳的內容會不會執行網頁指令？**
+不會。所有 AI / 遠端 peer 回傳內容在顯示前都會經 `DOMPurify` 淨化，剝除 event handler 與危險 URI，僅保留文字、表格、連結與程式碼。
+
+**Q: 開發時怎麼跑測試？**
+`npm test`——語法檢查（全部自研 JS）+ 起 server 冒煙（打 `/api/meta`、`/api/diagnostics`）。不依賴 Ollama / 網路 / 顯示卡。
 
 ---
 
