@@ -1,6 +1,6 @@
 name: CI
 
-# 最小守門：語法門 + 起 server 冒煙。不依賴 Ollama / 網路 / 顯示卡。
+# 最小守門：語法門 + 單元測試 + 起 server 冒煙。不依賴 Ollama / 網路 / 顯示卡。
 on:
   push:
     branches: [main]
