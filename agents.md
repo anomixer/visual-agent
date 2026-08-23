@@ -30,6 +30,18 @@
 - `node --check` `src/server.js`、`public/app.js`、`public/dompurify.min.js` 通過。
 - 非回環位址連 3210 連不上（確認已鎖本機）。
 
+### 架構重構（後續，同分支 feat-multiuser）
+> 原則：逐塊搬、每塊搬完 `npm test` 綠才 commit；只拆**純函式 / 可獨立測試**的塊，行為不變；不碰 `/api/chat` 的執行主迴圈（需 LLM+browser 才觸發，行為測試網建好前不動）。
+- **Step 1 — `src/pure.js`**：自 `server.js` 抽出 19 個純函式（tokenize、redact、winget 解析、意圖偵測、財報數字、經驗 markdown…）。`server.js` 6248→5959 行，呼叫點零改動（require + destructure 接回）。
+- **Step 2a — `src/agent/actions.js`**：`/api/chat` 的 ACTION/SUGGEST 標籤解析抽出為 `extractActionsFromReply()`（含 `normalizeActionString`），可獨立測試。
+- **Step 2b — `src/agent/prompts.js`**：winget / Microsoft Store / GitHub Releases 三段推薦 prompt 注解組裝抽出為 `buildRecommendationPromptNotes()`。抽出過程曾引入 `map` 回調 `(element, index)` 參數順序回歸（id 變 undefined），被新增測試抓出並修正——測試安全網生效。
+- **測試網**：`test/pure.test.js`（39）+ `test/agent.test.js`（13）+ `test/prompts.test.js`（14）= **66 斷言**；`scripts/check.js` 單元段改為掃 `test/*.test.js`。
+- **現狀**：`server.js` 6248→約 5940 行；`/api/chat` 的「解析 + 推薦組裝」已獨立可測。剩執行主迴圈（ADD_TASK/EXECUTE_TASK/INSTALL_SOP/browser-use/computer-use + 財報/遊戲 workflow + agent loop）待補行為測試後再拆。
+
+### 驗收（含重構）
+- `npm test`：語法 12 檔 + 單元 66 斷言（pure/agent/prompts）+ 冒煙，全綠。
+- `main` 保持與上游同步（`d640656`）；以上全部落在 `feat-multiuser`。
+
 ---
 
 ## 📌 2026.08.07 — 品牌識別重設 (VA icon + 墨綠官網)
