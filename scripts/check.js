@@ -99,10 +99,12 @@ function smoke() {
 }
 
 function unitTests() {
-    const files = [path.join(ROOT, 'test', 'pure.test.js')];
-    console.log(`\n[1.5/3] 單元測試`);
+    const testDir = path.join(ROOT, 'test');
+    const files = fs.existsSync(testDir)
+        ? fs.readdirSync(testDir).filter((f) => f.endsWith('.test.js')).map((f) => path.join(testDir, f)).sort()
+        : [];
+    console.log(`\n[2/3] 單元測試 (${files.length} 支)`);
     for (const file of files) {
-        if (!fs.existsSync(file)) { console.warn(`  ⚠ 找不到 ${path.relative(ROOT, file)}`); continue; }
         const r = spawnSync(NODE, [file], { cwd: ROOT, encoding: 'utf8' });
         process.stdout.write(r.stdout || '');
         if (r.status !== 0) {

@@ -44,6 +44,8 @@ const {
     extractWingetSearchQuery, parseWingetSearchOutput, slugifyWingetPackage,
     escapeRegExp, formatUsdBillions, buildNvidiaSnapshotLines,
 } = require('./pure');
+// ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
+const { normalizeActionString, extractActionsFromReply } = require('./agent/actions');
 const app = express();
 const PORT = 3210;
 const APP_VERSION = pkg.version || 'dev';
@@ -1297,20 +1299,6 @@ function buildPeerAiContinuationText(session = null, aiText = '', locale = 'zh-T
     return locale === 'en-US'
         ? `Teammate handoff from ${localName}: ${aiText}\n\nPlease continue the collaboration now. If the Chalkboard already has a board/grid/coordinates, do not redraw or redefine it. Preserve the existing shared definition, use clear:false, and only update your move/status or a coordinated supplement.`
         : `${localName} 給 ${peerName} 的協作交接：${aiText}\n\n請你現在接續協作。若 Chalkboard 已有棋盤、格線、座標或共同定義，不要重畫或改定義；請沿用既有定義，使用 clear:false，只更新你的下一步、棋步或協調補充。`;
-}
-
-function normalizeActionString(action = '') {
-    const raw = String(action || '').trim();
-    if (!raw) return '';
-    const commandMatch = raw.match(/^([A-Za-z_]+)([\s(][\s\S]*)?$/);
-    const commandPart = commandMatch ? commandMatch[1] : raw;
-    const restPart = commandMatch ? (commandMatch[2] || '') : '';
-    const command = commandPart
-        .replace(/[^a-z0-9_]/gi, '')
-        .replace(/([a-z])([A-Z])/g, '$1_$2')
-        .toUpperCase();
-    const rest = restPart.trim().replace(/^\((.*)\)$/s, '$1');
-    return [command, rest].filter(Boolean).join(' ');
 }
 
 function parseStructuredSuggestions(reply = '', locale = 'zh-TW', fallbackSuggestions = []) {
@@ -4364,24 +4352,9 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
             // 3. 解析與安全過濾
-            const actionRegex = /\[(?:ACTION\s*[:=]\s*|Action\s*=\s*)(.*?)\]/gi;
-            const actions = [];
-            let match;
-            while ((match = actionRegex.exec(llmReply)) !== null) {
-                actions.push(normalizeActionString(match[1]));
-            }
-            const bareActionRegex = /(?:^|\n)\s*Action\s*=\s*([A-Za-z_]+[^\r\n]*)/gi;
-            while ((match = bareActionRegex.exec(llmReply)) !== null) {
-                actions.push(normalizeActionString(match[1]));
-            }
-
-
+            const { actions, proseForConsent, hasSuggestions } = extractActionsFromReply(llmReply);
             // ── 執行安全攔截 ──
             // 只看「一般文字」是否在徵詢同意；ACTION 的 query="...?" 不應觸發攔截
-            const proseForConsent = String(llmReply || '')
-                .replace(/\[(?:ACTION\s*[:=]\s*|Action\s*=\s*).*?\]/gi, ' ')
-                .replace(/\[SUGGEST:.*?\]/gi, ' ');
-            const hasSuggestions = actions.length > 0 && llmReply.includes('[SUGGEST:');
             const isQuestioning = /是否要|確認點選|要不要執行|您是否同意|要我幫|shall I|would you like|do you want/i.test(proseForConsent);
             let executeTaskId = null;
             let hasActionTaken = false;
