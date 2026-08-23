@@ -17,7 +17,7 @@ Network: Required (internet connection needed to download language packs)
 ## Check
 Commands (PowerShell):
 ```powershell
-$target = 'zh-TW'
+$target = 'zh-Hant-TW'
 $userTags = @(Get-WinUserLanguageList -ErrorAction SilentlyContinue | ForEach-Object { $_.LanguageTag })
 $userTags -contains $target
 ```
@@ -28,7 +28,7 @@ Expected Result: Return True when the language is already enabled in the current
 Commands (PowerShell):
 ```powershell
 $ErrorActionPreference = 'Stop'
-$target = 'zh-TW'
+$target = 'zh-Hant-TW'
 
 function Install-AipcLanguagePack {
     param([string]$LanguageTag)
@@ -95,7 +95,7 @@ UI Message: "Requesting the Traditional Chinese language pack from Microsoft. Th
 ## Verify
 Commands (PowerShell):
 ```powershell
-$target = 'zh-TW'
+$target = 'zh-Hant-TW'
 $tags = @()
 if (Get-Command Get-InstalledLanguage -ErrorAction SilentlyContinue) {
     $tags += @(Get-InstalledLanguage -ErrorAction SilentlyContinue | ForEach-Object {
@@ -118,11 +118,11 @@ if ((@($tags | Where-Object { $_ } | Select-Object -Unique) -contains $target) -
 Commands (PowerShell):
 ```powershell
 $ErrorActionPreference = 'Stop'
-$target = 'zh-TW'
+$target = 'zh-Hant-TW'
 $installLanguageMap = @{
     '0409' = 'en-US'
-    '0404' = 'zh-TW'
-    '0804' = 'zh-CN'
+    '0404' = 'zh-Hant-TW'
+    '0804' = 'zh-Hans-CN'
     '0411' = 'ja-JP'
 }
 $installCode = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\Language' -ErrorAction Stop).InstallLanguage
