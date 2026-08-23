@@ -909,6 +909,53 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
     // 移除硬編碼的 options 與 tokens 限制，尊重模型自訂設定與完整輸出能力
     body.temperature = 0.7;
 
+    // 串流（僅 Ollama）：呼叫端傳 onDelta 時，逐 token 回傳，讓前端即時渲染。
+    // 不傳 onDelta 時走下方非串流路徑——其餘 7 個呼叫點（agent loop、摘要等）不受影響。
+    if (typeof options.onDelta === 'function' && meta.type === 'ollama') {
+        const streamBody = { ...body, stream: true };
+        let streamRes;
+        try {
+            streamRes = await fetch(chatUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(streamBody),
+                signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
+            });
+        } catch (fetchErr) {
+            if (fetchErr.name === 'TimeoutError' || fetchErr.message.includes('timeout')) {
+                throw new Error(`AI engine timed out (waited ${Math.round(CHAT_TIMEOUT_MS / 60000)} minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
+            }
+            throw fetchErr;
+        }
+        if (!streamRes.ok) {
+            const errText = await streamRes.text();
+            if (streamRes.status === 401) {
+                throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
+            }
+            throw new Error(`API error (${streamRes.status}): ${errText.substring(0, 200)}`);
+        }
+        const reader = streamRes.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buf = '';
+        let acc = '';
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            let idx;
+            while ((idx = buf.indexOf('\n')) !== -1) {
+                const line = buf.slice(0, idx).trim();
+                buf = buf.slice(idx + 1);
+                if (!line) continue;
+                let obj;
+                try { obj = JSON.parse(line); } catch { continue; }
+                const tok = obj?.message?.content;
+                if (tok) { acc += tok; options.onDelta(tok); }
+            }
+        }
+        return String(acc || '').trim();
+    }
+
     let res;
     try {
         res = await fetch(chatUrl, {
