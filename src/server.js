@@ -46,6 +46,8 @@ const {
 } = require('./pure');
 // ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
 const { normalizeActionString, extractActionsFromReply } = require('./agent/actions');
+// 軟體推薦 prompt 註解（自 /api/chat handler 抽出，見 src/agent/prompts.js）。
+const { buildRecommendationPromptNotes } = require('./agent/prompts');
 const app = express();
 const PORT = 3210;
 const APP_VERSION = pkg.version || 'dev';
@@ -4255,15 +4257,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 `;
             // 2. 呼叫 LLM (附帶歷史紀錄)
-            const wingetPromptNote = wingetRecommendation?.packages?.length
-                ? `\n\n[[winget 商店候選軟體]]\n使用者此刻在詢問軟體推薦，而且目前 SOP 未必有直接對應項目。若你要推薦軟體，請優先參考下列 winget 結果來列出「軟體名稱」。若使用者要求產生對應 SOP，請輸出 [ACTION:CREATE_WINGET_SOP package_id="..." package_name="..."]。\nQuery: ${wingetRecommendation.query}\n${wingetRecommendation.packages.map((pkg, index) => `${index + 1}. ${pkg.name} | id=${pkg.id} | version=${pkg.version || 'unknown'}`).join('\n')}`
-                : '';
-            const microsoftStorePromptNote = microsoftStoreRecommendation?.packages?.length
-                ? `\n\n[[Microsoft Store 候選軟體]]\n使用者偏向 Microsoft Store / UWP / 商店版軟體。若你要推薦軟體，請優先參考下列 msstore 結果；若使用者要求建立 SOP，請輸出 [ACTION:CREATE_MSSTORE_SOP package_id="..." package_name="..."]。\nQuery: ${microsoftStoreRecommendation.query}\n${microsoftStoreRecommendation.packages.map((pkg, index) => `${index + 1}. ${pkg.name} | id=${pkg.id} | version=${pkg.version || 'unknown'}`).join('\n')}`
-                : '';
-            const githubPromptNote = githubRecommendation?.packages?.length
-                ? `\n\n[[GitHub Releases 候選軟體]]\n使用者在找 GitHub 上有 Windows release 的開源 App。若你要推薦軟體，請優先參考下列候選；若使用者要求建立 SOP，請輸出 [ACTION:CREATE_GITHUB_RELEASE_SOP repo_full_name="..." asset_name="..." download_url="..."]。\nQuery: ${githubRecommendation.query}\n${githubRecommendation.packages.map((pkg, index) => `${index + 1}. ${pkg.name} | repo=${pkg.fullName} | tag=${pkg.tagName || 'latest'} | asset=${pkg.assetName}`).join('\n')}`
-                : '';
+            const { wingetPromptNote, microsoftStorePromptNote, githubPromptNote } = buildRecommendationPromptNotes({
+                wingetRecommendation,
+                microsoftStoreRecommendation,
+                githubRecommendation,
+            });
             let llmReply;
             const remoteState = remoteAgent.getState();
             const activeRemoteSession = remoteState.sessions.find((item) => item.status === 'active');
