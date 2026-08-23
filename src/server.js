@@ -1475,6 +1475,23 @@ function pruneAgentRunStatuses() {
     }
 }
 
+// 串流生成中：把「已生成的部分文本」存入该 run 的 status，供前端即時預覽。
+// 不覆蓋 phase/label/detail（那些由 setAgentRunStatus 管理），只更新 partial。
+function setAgentRunPartial(runId = '', text = '') {
+    const id = normalizeAgentRunId(runId);
+    if (!id) return;
+    const existing = agentRunStatuses.get(id) || {
+        success: true,
+        runId: id,
+        phase: 'generating',
+        label: 'Generating',
+        detail: '',
+    };
+    existing.partial = String(text || '');
+    existing.updatedAt = new Date().toISOString();
+    agentRunStatuses.set(id, existing);
+}
+
 function buildModelCapabilityProfile() {
     const model = llm.getCurrentModel();
     const provider = llm.getCurrentProvider();
@@ -4309,6 +4326,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             }
 
 
+            // 串流累積緩衝（onDelta 逐步追加，寫入 agentRunStatus.partial）。
+            let _streamBuf = '';
             try {
                 const composedMessage = message + "\n\n" + contextNote + wingetPromptNote + microsoftStorePromptNote + githubPromptNote + "\n\n[[Experience Log]]\n" + (experienceContext || '(No experience entries yet)');
                 let modelSource = {
@@ -4329,10 +4348,21 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         ? `The Chalkboard image was received, but the current model (${effectiveModel || 'unknown'}) cannot read images. Set a Vision Model in Settings (for example a Qwen VL, Llama Vision, Gemma 3, GPT-4o, Gemini, or Claude vision model), then send the message again.`
                         : `已收到 Chalkboard 圖片，但目前模型（${effectiveModel || '未知模型'}）不支援圖片辨識。請在「設定 → Vision 多模態模型」選擇或填入可看圖模型（例如 Qwen VL、Llama Vision、Gemma 3、GPT-4o、Gemini 或 Claude 視覺模型），再重新送出。`;
                 } else {
+                    // 串流生成：onDelta 逐 token 回傳，即時寫入 agentRunStatus.partial，
+                    // 讓前端在等待時就能看到 AI 正在生成（而非乾等「思考中」）。
+                    // 不傳 onDelta 時走非串流路徑，其餘呼叫點不受影響。
                     llmReply = await llm.chatWithLLM(
                         composedMessage,
                         requestHistory,
-                        chatOptions,
+                        {
+                            ...chatOptions,
+                            onDelta: (token) => {
+                                if (agentRunId) {
+                                    _streamBuf = (_streamBuf || '') + token;
+                                    setAgentRunPartial(agentRunId, _streamBuf);
+                                }
+                            },
+                        },
                         locale
                     );
                 }

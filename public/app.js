@@ -6900,19 +6900,44 @@ function updateThinkingStatus(id, status = {}) {
     if (!target) return;
     const label = status.label || (currentLocale === 'en-US' ? 'Thinking' : '思考中');
     const detail = status.detail ? ` · ${status.detail}` : '';
-    target.textContent = `${label}${detail}`;
+    // 串流生成中：把已生成的部分文本（status.partial）即時顯示為預覽，
+    // 讓等待時能看到 AI 正在逐字輸出，而不是只有「思考中」。
+    const partial = (status.partial || '').trim();
+    if (partial) {
+        target.textContent = `${label}${detail}`;
+        let preview = el.querySelector('.thinking-partial');
+        if (!preview) {
+            preview = document.createElement('div');
+            preview.className = 'thinking-partial';
+            preview.style.marginTop = '6px';
+            preview.style.whiteSpace = 'pre-wrap';
+            preview.style.opacity = '0.75';
+            target.parentElement.appendChild(preview);
+        }
+        preview.textContent = partial;
+    } else {
+        target.textContent = `${label}${detail}`;
+        el.querySelector('.thinking-partial')?.remove();
+    }
 }
 
 function startAgentStatusPolling(runId, thinkId, container = chatMessages) {
     let stopped = false;
     let lastPhase = '';
+    let lastPartial = '';
     const poll = async () => {
         if (stopped || !document.getElementById(thinkId)) return;
         try {
             const status = await api(`/api/agent-status/${encodeURIComponent(runId)}`);
             if (stopped) return;
-            if (status.phase && (status.phase !== lastPhase || status.detail)) {
-                lastPhase = status.phase;
+            const partial = status.partial || '';
+            const changed =
+                (status.phase && status.phase !== lastPhase) ||
+                status.detail ||
+                partial !== lastPartial;
+            if (changed) {
+                lastPhase = status.phase || lastPhase;
+                lastPartial = partial;
                 updateThinkingStatus(thinkId, status);
                 if (isContainerPinnedToBottom(container)) {
                     container.scrollTop = container.scrollHeight;
