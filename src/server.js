@@ -5145,20 +5145,50 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
     let reply = '';
+    let aiWarning = '';
     if (taskAdded) {
-        reply = `Added '${taskAdded.title}' to the list. Execute now? 😊`;
-        suggestions = ['Execute', 'Not now'];
+        reply = locale === 'en-US'
+            ? `Added '${taskAdded.title}' to the list. Execute now? 😊`
+            : `已將「${taskAdded.title}」加入清單。要執行嗎？😊`;
+        suggestions = locale === 'en-US' ? ['Execute', 'Not now'] : ['執行', '先不用'];
     } else if (executeTaskId) {
-        reply = `Sure, starting now! 🚀`;
+        reply = locale === 'en-US' ? 'Sure, starting now! 🚀' : '好的，開始執行！🚀';
     } else {
-        const errorHint = llmErrorForFallback ? ` (AI engine error: ${llmErrorForFallback})` : ' (AI 引擎未就緒，目前為關鍵字模式)';
-        reply = `Received: '${message}'${errorHint}`;
+        // AI 引擎不可用、落到關鍵字模式：明確告知 + 給可執行的下一步，而不是籠統英文句。
+        const raw = String(llmErrorForFallback || '').toLowerCase();
+        let hint;
+        if (/fetch failed|econnrefused|econnreset|etimedout|network|connect|11434|127\.0\.0\.1|localhost/.test(raw)) {
+            hint = locale === 'en-US'
+                ? 'The AI engine (Ollama) seems to be down or unreachable. Start Ollama (or check the Provider Base URL), then retry.'
+                : 'AI 引擎（Ollama）似乎未啟動或連不到。請啟動 Ollama（或檢查設定裡的 Provider Base URL）後再試。';
+        } else if (/401|403|unauthorized|authentication|api key|api key|bearer|invalid key/.test(raw)) {
+            hint = locale === 'en-US'
+                ? 'Authentication failed. Check the API Key in Settings.'
+                : '驗證失敗。請在設定中檢查 API Key。';
+        } else if (/404|not found|model/.test(raw)) {
+            hint = locale === 'en-US'
+                ? 'The model may be missing or misnamed. Pull the default model, or check the model name in Settings.'
+                : '模型可能未下載或名稱有誤。請下載預設模型，或到設定中檢查模型名稱。';
+        } else if (llmErrorForFallback) {
+            hint = locale === 'en-US'
+                ? `AI engine error: ${llmErrorForFallback}`
+                : `AI 引擎錯誤：${llmErrorForFallback}`;
+        } else {
+            hint = locale === 'en-US'
+                ? 'The AI engine is not ready yet. Running in keyword mode — results may be limited.'
+                : 'AI 引擎尚未就緒，目前為關鍵字模式，結果可能有限。';
+        }
+        aiWarning = hint;
+        reply = locale === 'en-US'
+            ? `I received “${message}”, but I couldn't use the AI engine for this, so I'm falling back to keyword mode.`
+            : `我收到「${message}」，但這次無法使用 AI 引擎，因此改用關鍵字模式。`;
     }
 
 
     return res.json({
         success: true,
         reply,
+        aiWarning,
         suggestions,
         task: !!taskAdded,
         executeTaskId,

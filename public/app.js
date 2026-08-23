@@ -6670,6 +6670,13 @@ async function sendChat() {
                 }
                 const chalkControl = extractChalkboardControlFromReply(data.reply || '');
                 appendChatBubble('ai', chalkControl.displayText || data.reply, data.suggestions);
+                // AI 引擎未就緒（落到關鍵字模式）時，明確顯示原因與下一步，而不是靜默降級。
+                if (data.aiWarning) {
+                    appendChatBubble('system', `⚠️ ${data.aiWarning}`, [], {
+                        container: chatMessages,
+                        forceSystem: true,
+                    });
+                }
                 const autoDraft = data.chalkboardDraft || chalkControl.draft || buildAutoChalkboardDraft(msg, chalkControl.displayText || data.reply || '');
                 if (autoDraft) {
                     applyAgentChalkboardDraft(autoDraft, { actorScope: 'local' });
@@ -6688,7 +6695,9 @@ async function sendChat() {
             }
         } else {
             setThinkingIdForMode(currentMode, '');
-            appendChatBubble(currentMode === 'remote' ? 'system' : 'ai', currentLocale === 'en-US' ? 'Sorry, something went wrong. Please try again.' : '抱歉，出現了一點問題，請再試一次。', [], {
+            // 顯示後端回傳的真實原因（data.error），而不是籠統的「出錯了」。
+            const detail = data.error ? (currentLocale === 'en-US' ? ` — ${data.error}` : ` — ${data.error}`) : '';
+            appendChatBubble('system', (currentLocale === 'en-US' ? 'Sorry, that request failed.' : '抱歉，這筆請求失敗了。') + detail, [], {
                 container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
                 forceSystem: currentMode === 'remote',
             });
