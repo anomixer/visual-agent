@@ -5,6 +5,30 @@
 
 ---
 
+## 📌 2026.10.29 — 第十六階段：硬體監控不再重複探測
+
+> 接續同日第十五階段；量測發現每次硬體探測會跑 6 支子程序、耗時 11.4 秒。版本維持 `2026.8.7`。
+
+### 量測結果（本機 i9-14900 + RTX 4000 Ada）
+- `getSystemHealth()` 單次 11,386 ms、6 支子程序：`nvidia-smi` → 基準 PowerShell → `Get-Counter` 各跑兩次。
+- 原因一：AppData 與程式根目錄各有一份同名外掛，`scanDirs` 兩份都執行，等於每個外掛跑兩次。
+- 原因二：`hardware-info.js` 依檔名排在 `temperature-monitor.js` 之前，執行時 `health.gpu.load` 還是初始值，因此即使 `nvidia-smi` 稍後就會提供負載，仍先跑 `Get-Counter`（本機約 3.4 秒）。nvidia-smi 最後覆寫數值，所以這段對顯示結果沒有貢獻。
+
+### 修正
+- `src/system.js` 新增 `PLUGIN_ORDER`（`temperature-monitor.js` → `hardware-info.js`）與 `sortPluginFiles()`：已知外掛先跑，其餘維持字母序。意圖是把「取得 GPU 負載」的外掛排在 fallback 之前。
+- `getSystemHealth()` 以檔名去重：AppData 版本執行過就跳過同名的內建副本，符合原本註解「AppData 使用者自訂優先」的順序；未在 AppData 提供的外掛仍照常從根目錄載入。
+- `plugins/hardware-info.js` 的 `Get-Counter` fallback 增加條件：`health.gpu.details?.vendor` 已存在就不執行。沒有 NVIDIA 的機器（temperature-monitor 不會寫 details）行為不變，仍會用 `Get-Counter` 取得 GPU 負載。
+- 輸出欄位與數值來源不變：NVIDIA 機器最終仍以 `nvidia-smi` 的 name / load / temp 為準；WMI 基準探測仍負責 CPU 負載、磁碟健康、磁碟容量與 GPU 名稱備援。
+
+### 測試與驗收
+- 新增 `test/system-plugins.test.js`（5 項）：只驗證 `sortPluginFiles()` 的優先順序、未知檔案字母序、空清單與不修改傳入陣列；不執行任何外掛或 PowerShell。
+- `npm test`：23 個 JS 語法、28 支測試檔與 server smoke 全綠。
+- 以隔離設定檔 `%TEMP%\va-ui-verify9` 量測：修正前 11,386 ms / 6 支子程序，修正後 2,138–2,236 ms / 2 支子程序（`nvidia-smi` + 基準 PowerShell）；`/api/system/health` 連續三次回應 2,180–2,222 ms。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify10`）：開啟硬體分頁後 CPU 型號 / 負載、GPU 名稱 / 負載 / 溫度、RAM 已用與總量、`S.M.A.R.T` 磁碟名稱與 C: 可用空間、上次更新時間皆與修正前一致；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第十五階段：遠端工作階段控制列重繪守衛
 
 > 接續同日第十四階段；遠端控制列每 2 秒無條件重建下拉選單與 session chip。版本維持 `2026.8.7`。

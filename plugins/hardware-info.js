@@ -131,8 +131,8 @@ module.exports = async function(health) {
         }
     }
 
-    // GPU load fallback: only attempt this when temperature-monitor did not provide a value.
-    if (health.gpu.load === 0 || health.gpu.load === undefined) {
+    // GPU load fallback: skip when an earlier plugin (nvidia-smi) already supplied load.
+    if (!health.gpu.details?.vendor && (health.gpu.load === 0 || health.gpu.load === undefined)) {
         await new Promise((resolve) => {
             runPowerShell(psGpuLoad, 5000).then(({ error, stdout }) => {
                 if (!error && stdout) {

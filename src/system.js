@@ -2,6 +2,18 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// 需要的插件先跑：temperature-monitor 以 nvidia-smi 取得 GPU 負載後，
+// hardware-info 就不必再花數秒跑 Get-Counter fallback。
+const PLUGIN_ORDER = ['temperature-monitor.js', 'hardware-info.js'];
+
+function sortPluginFiles(files = []) {
+    const rank = (name) => {
+        const index = PLUGIN_ORDER.indexOf(name);
+        return index === -1 ? PLUGIN_ORDER.length : index;
+    };
+    return files.slice().sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
 /**
  * 系統監控核心 (插件化架構)
  * 負責掃描 plugins/ 目錄下的 .js 檔案並執行它們
@@ -26,14 +38,17 @@ async function getSystemHealth() {
     const rootPluginsDir = path.join(__dirname, '../plugins');
 
     const scanDirs = [userPluginsDir, rootPluginsDir];
+    const executedPlugins = new Set();
 
     for (const dir of scanDirs) {
         if (fs.existsSync(dir)) {
-            const files = fs.readdirSync(dir)
-                .filter(f => f.endsWith('.js'))
-                .sort();
+            const files = sortPluginFiles(fs.readdirSync(dir)
+                .filter(f => f.endsWith('.js')));
 
             for (const file of files) {
+                // 使用者自訂版本已執行過就跳過同名的內建副本，避免重複探測。
+                if (executedPlugins.has(file)) continue;
+                executedPlugins.add(file);
                 try {
                     const pluginPath = path.resolve(dir, file);
                     // 清除緩存以便開發時即時生效
@@ -54,4 +69,4 @@ async function getSystemHealth() {
     return health;
 }
 
-module.exports = { getSystemHealth };
+module.exports = { getSystemHealth, sortPluginFiles };
