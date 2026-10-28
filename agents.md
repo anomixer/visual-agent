@@ -5,6 +5,36 @@
 
 ---
 
+## 📌 2026.10.28 — 第二階段：Consent 執行鏈與本機多對話正確性
+
+> 延續同日第一階段稽核，針對 consent、Agent Loop 與本機多對話補行為測試並修正可重現缺陷。版本維持 `2026.8.7`；不重寫框架、不改使用者設定。
+
+### Consent 執行鏈
+- **批准後只執行原 ACTION**：舊版把批准字串當成 LLM 回覆再解析，`ADD_TASK sop_id=install_chrome` 這類無引號動作會被解析成空清單，使用者按了確認卻什麼都沒發生。現在批准請求直接以 `[approvedActionString]` 進入執行動作清單，並不再呼叫 LLM 重寫動作。
+- **批准請求不採用戶端訊息**：帶 `approvedActionId` 時，後端忽略 request body 的 `message` 與 Chalkboard 附件，只使用 store 內保存的 ACTION；也因此在有批准時不需要（也不接受）前端另送文字。
+- **每輪都攔截系統變更動作**：先前只有首輪 ACTION 會進入 consent，Agent Loop 後續輪次的 `BROWSER_USE navigate`、`ADD_TASK` 會直接執行。現在迴圈內每個通過預算的動作都先檢查 `isSystemChangingAction()`，需確認者一律轉為 `pendingActions` 並停止該輪。
+- **精確命令比對**：所有 dispatcher 由 `actionStr.startsWith('X')` 改為 `command === 'X'`，`BROWSER_USE_EXTRA`、`ADD_TASK_EXTRA` 這類前綴偽裝不再能落入真實分支。
+- **參數解析單一出口**：`parseActionArg` / `parseBrowserUseMode` 自 `server.js` 移到 `src/agent/actions.js`，consent 分類與執行器共用同一語意；支援 `key = "value"`、單引號與無引號，避免「確認時判為唯讀、執行時卻導覽」的分歧。
+- **提案時綁定 SOP 操作**：approval 現在保存提案當下的 `sopAction`（install / uninstall），`pendingActions.description` 直接顯示完整 ACTION 與操作，例如 `ADD_TASK sop_id="chrome" [install]`。即使確認前 runtime 快取翻轉，執行仍沿用已顯示、已批准的操作。
+- **執行中任務保護**：`REMOVE_TASK` 對 running task 直接拒絕並說明；有任何 running task 時 `CLEAR_ALL` 拒絕整次清空。兩者都維持 `task:false`，不宣稱已變更清單。另一任務執行中時，仍可移除 pending / success / failed 任務。
+
+### 本機多對話與確認按鈕
+- **回覆歸屬發起分頁**：聊天請求進行中切換 local chat tab，晚到的回覆、錯誤訊息、`aiWarning` 與中止訊息都寫回發起 session；目前分頁的 DOM 與訊息不被污染。重繪時只渲染當前 session。
+- **確認按鈕可重建**：`pendingActions` 存在訊息的 `messages[]` 中並同步 localStorage；切換分頁再切回、或整段重繪後，按鈕仍會出現且帶原狀態（已確認 / 失敗 / 過期）。
+- **busy 狀態涵蓋確認流程**：確認按鈕與一般送出共用 local pending 鎖。請求未 settle 前重複點擊、平行點擊、重繪後的新按鈕都不會再送第二次；Stop 只 abort，鎖保留到 `finally` 才釋放。
+- **Stop 與任務啟動的競態**：確認 API 成功後會 `loadTodo()` 再視 `executeTaskId` 決定是否執行。若使用者在 refresh 期間按 Stop，現在會檢查 abort 訊號並改為顯示「已在執行前停止；任務仍保留在工作清單」，不再於回應返回後啟動任務。一般聊天路徑的 `executeTask` 也加上同一檢查。
+- **失敗與過期狀態**：approval 失效、請求失敗或中止時，按鈕標為失敗並停用，訊息提示先檢查工作清單再重新提出；過期按鈕在初次渲染與重繪後都停用，且不發出請求。
+
+### 測試與驗收
+- 新增 `test/helpers/chat-harness.js`：以 allowlist 載入真實 `server.js` / routes / consent / parser，搭配 in-memory fs、fake process / OS、scripted LLM、browser spy 與固定時鐘；不讀寫使用者 APPDATA、不連外、不執行 SOP 或子程序。
+- 新增 `test/chat-consent.test.js`（27 項，走真實 HTTP 與 `/api/meta` token）：token / Host / Origin、pending-only、單次與跨 session、到期邊界、可竄改 message、Loop consent、唯讀 Browser Use、running 任務保護、前綴偽裝、install/uninstall 綁定與 Browser Use 參數語法。
+- 新增 `test/chat-ui-consent.test.js`（9 項）：直接擷取 `public/app.js` 真實函式並以最小 DOM 執行，涵蓋跨分頁歸屬、按鈕重建、確認 payload、全域 busy、Stop 與 refresh 競態。
+- `npm test`（隔離的暫存 APPDATA / LOCALAPPDATA）：20 個 JS 語法、16 支測試檔與 server smoke 全綠。
+- 瀏覽器實測（同隔離 harness、in-memory 任務）：確認按鈕顯示 `[install]`、按鈕跨分頁保留、重複點擊只送一次、晚到回覆只寫原分頁、過期按鈕停用；最後驗證確認後於 todo refresh 期間按 Stop，`/execute` 請求為 0、任務維持 pending、busy 已釋放、console 無 error / warn。
+- **尚未完成**：Agent Loop 預算仍只涵蓋迴圈本體，首輪 ACTION 執行與自動即時資訊抽取未計入同一 8 turns / 12 tools / 180 秒上限；早於本次修改的財報、關鍵字與 Browser 安裝 fallback 尚未逐一納入 consent 回歸。UAC、雙機 Chalkboard、Vision 與乾淨 Windows EXE 仍須實機驗收。
+
+---
+
 ## 📌 2026.10.28 — 全面稽核第一階段：安全契約、執行正確性與發佈設定
 
 > 本輪依 `agents.md` / `README*.md` / `spec.md` 逐項對照程式，修正「文件宣稱已完成、實作仍缺失」的項目。版本維持 `2026.8.7`；本輪不全面重寫，也不更換框架。

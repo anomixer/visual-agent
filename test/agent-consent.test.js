@@ -10,6 +10,11 @@ assert.equal(isSystemChangingAction('CLEAR_ALL'), true);
 assert.equal(isSystemChangingAction('CREATE_WINGET_SOP package_id="x"'), true);
 assert.equal(isSystemChangingAction('OPEN_FILE file_path="x"'), true);
 assert.equal(isSystemChangingAction('BROWSER_USE mode="search"'), false);
+assert.equal(isSystemChangingAction('BROWSER_USE mode = "navigate"'), true);
+assert.equal(isSystemChangingAction("BROWSER_USE mode='navigate'"), true);
+assert.equal(isSystemChangingAction("BROWSER_USE action = ' OPEN '"), true);
+assert.equal(isSystemChangingAction('BROWSER_USE mode=navigate'), true);
+assert.equal(isSystemChangingAction('BROWSER_USE action="extract_text"'), false);
 passed++;
 
 const store = new AgentConsentStore({ ttlMs: 1000 });
@@ -17,6 +22,7 @@ const pending = store.create('INSTALL_SOP sop_id="chrome"', { sessionId: 'chat-1
 assert.ok(pending.id.length >= 32);
 assert.equal(pending.action, 'install_sop');
 assert.equal(pending.sopId, 'chrome');
+assert.equal(pending.description, 'INSTALL_SOP sop_id="chrome"');
 assert.equal(store.consume('missing', 'chat-1'), null);
 passed++;
 

@@ -2259,7 +2259,9 @@ function renderRemoteMessages() {
 }
 
 function addLocalSessionMessage(role, text, suggestions = [], options = {}) {
-    const session = getActiveLocalChatSession();
+    const session = options.localChatSessionId
+        ? localChatSessions.find((item) => item.id === options.localChatSessionId)
+        : getActiveLocalChatSession();
     if (!session) return;
     if (role === 'user' && (!session.messages.length || /^(?:本機對話|Local Chat)(?:\s+\d+)?$/i.test((session.title || '').trim()))) {
         session.title = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 18) || session.title;
@@ -2269,6 +2271,7 @@ function addLocalSessionMessage(role, text, suggestions = [], options = {}) {
         role,
         text,
         suggestions: Array.isArray(suggestions) ? suggestions : [],
+        pendingActions: Array.isArray(options.pendingActions) ? options.pendingActions : [],
         senderLabel: options.senderLabel || '',
         forceSystem: !!options.forceSystem,
         imageDataUrl: normalizeImageDataUrl(options.imageDataUrl),
@@ -2293,6 +2296,8 @@ function renderLocalChatMessages() {
             senderLabel: message.senderLabel || '',
             forceSystem: !!message.forceSystem,
             imageDataUrl: message.imageDataUrl || '',
+            pendingActions: message.pendingActions || [],
+            localChatSessionId: session.id,
             fromRender: true,
         });
     });
@@ -6620,7 +6625,6 @@ async function sendChat() {
     if (isModePending(activeChatMode)) {
         const controller = getActiveAbortController(activeChatMode);
         controller?.abort();
-        setActiveAbortController(null, activeChatMode);
         updateSendButtonState();
         return;
     }
@@ -6787,12 +6791,15 @@ async function sendChat() {
                     touchLocalChatSession(currentLocalSession.id);
                 }
                 const chalkControl = extractChalkboardControlFromReply(data.reply || '');
-                appendChatBubble('ai', chalkControl.displayText || data.reply, data.suggestions);
-                appendAgentActionConsent(data.pendingActions);
+                appendChatBubble('ai', chalkControl.displayText || data.reply, data.suggestions, {
+                    localChatSessionId: currentLocalSession?.id,
+                    pendingActions: data.pendingActions,
+                });
                 // AI 引擎未就緒（落到關鍵字模式）時，明確顯示原因與下一步，而不是靜默降級。
                 if (data.aiWarning) {
                     appendChatBubble('system', `⚠️ ${data.aiWarning}`, [], {
                         container: chatMessages,
+                        localChatSessionId: currentLocalSession?.id,
                         forceSystem: true,
                     });
                 }
@@ -6808,7 +6815,7 @@ async function sendChat() {
                     openTab('todolist');
                     if (todoList.length > 0) expandLog();
                 }
-                if (data.executeTaskId && !data.executeTaskId.includes('CLEAR') && !data.executeTaskId.includes('DELETE')) {
+                if (!requestAbortController.signal.aborted && data.executeTaskId && !data.executeTaskId.includes('CLEAR') && !data.executeTaskId.includes('DELETE')) {
                     executeTask(data.executeTaskId);
                 }
             }
@@ -6818,6 +6825,7 @@ async function sendChat() {
             const detail = data.error ? (currentLocale === 'en-US' ? ` — ${data.error}` : ` — ${data.error}`) : '';
             appendChatBubble('system', (currentLocale === 'en-US' ? 'Sorry, that request failed.' : '抱歉，這筆請求失敗了。') + detail, [], {
                 container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
+                localChatSessionId: currentLocalSession?.id,
                 forceSystem: currentMode === 'remote',
             });
         }
@@ -6828,12 +6836,14 @@ async function sendChat() {
         if (err.name === 'AbortError') {
             appendChatBubble(currentMode === 'remote' ? 'system' : 'ai', currentLocale === 'en-US' ? 'Cancelled by user' : '使用者中斷', [], {
                 container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
+                localChatSessionId: currentLocalSession?.id,
                 forceSystem: currentMode === 'remote',
             });
         } else {
             console.error('[Chat] Error:', err);
             appendChatBubble(currentMode === 'remote' ? 'system' : 'ai', currentMode === 'remote' ? t('remote.connectFailed', { error: err.message }) : t('chat.connectionError'), [], {
                 container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
+                localChatSessionId: currentLocalSession?.id,
                 forceSystem: currentMode === 'remote',
             });
         }
@@ -6849,47 +6859,75 @@ async function sendChat() {
     }
 }
 
-function appendAgentActionConsent(pendingActions = [], container = chatMessages) {
+function appendAgentActionConsent(pendingActions = [], container = chatMessages, sessionId = selectedLocalChatSessionId) {
     if (!Array.isArray(pendingActions) || !container) return;
     pendingActions.forEach((pending) => {
         if (!pending?.id) return;
-        const detail = pending.sopId || pending.taskId || pending.mode || pending.action || 'unknown';
+        const detail = pending.description || `${pending.action || 'action'}: ${pending.sopId || pending.taskId || pending.mode || 'unknown'}`;
+        const expired = Date.parse(pending.expiresAt) <= Date.now();
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'btn-suggest';
-        button.textContent = currentLocale === 'en-US'
-            ? `Confirm ${pending.action || 'action'}: ${detail}`
-            : `確認執行 ${pending.action || '動作'}：${detail}`;
+        button.textContent = pending.status === 'confirmed'
+            ? (currentLocale === 'en-US' ? 'Confirmed' : '已確認')
+            : pending.status === 'failed'
+                ? (currentLocale === 'en-US' ? 'Confirmation failed — request the action again' : '確認未完成，請重新提出動作')
+                : expired
+                    ? (currentLocale === 'en-US' ? 'Confirmation expired — request the action again' : '確認已過期，請重新提出動作')
+                    : (currentLocale === 'en-US' ? `Confirm ${detail}` : `確認執行 ${detail}`);
+        button.title = detail;
+        button.disabled = Boolean(pending.status) || expired;
         button.addEventListener('click', async () => {
+            if (pending.status || isModePending('local')) return;
+            const session = localChatSessions.find((item) => item.id === sessionId);
+            if (!session) return;
             button.disabled = true;
-            const session = getActiveLocalChatSession();
-            const data = await api('/api/chat', {
-                method: 'POST',
-                body: {
-                    message: `Confirm ${pending.action || 'action'}: ${detail}`,
-                    approvedActionId: pending.id,
-                    localChatSessionId: session?.id || '',
-                    history: session?.history || [],
-                    locale: currentLocale,
-                },
-            });
-            if (!data.success) {
-                button.disabled = false;
-                appendChatBubble('system', data.error || 'Action confirmation failed', [], { container, forceSystem: true });
-                return;
-            }
-            button.textContent = currentLocale === 'en-US' ? 'Confirmed' : '已確認';
-            if (session && Array.isArray(data.history)) {
-                session.history = data.history;
+            const controller = new AbortController();
+            setActiveAbortController(controller, 'local');
+            updateSendButtonState();
+            try {
+                const data = await api('/api/chat', {
+                    method: 'POST',
+                    body: {
+                        approvedActionId: pending.id,
+                        localChatSessionId: session.id,
+                        history: session.history,
+                        locale: currentLocale,
+                    },
+                    signal: controller.signal,
+                });
+                pending.status = data.success ? 'confirmed' : 'failed';
+                if (data.success && Array.isArray(data.history)) session.history = data.history;
+                appendChatBubble('system', data.success ? (data.reply || detail) : (data.error || 'Action confirmation failed'), [], {
+                    localChatSessionId: session.id,
+                    forceSystem: true,
+                    pendingActions: data.pendingActions,
+                });
+                if (data.task) {
+                    await loadTodo();
+                    openTab('todolist');
+                }
+                if (data.sopChanged) refreshSidebarDataSoon();
+                if (data.executeTaskId) {
+                    if (controller.signal.aborted) {
+                        appendChatBubble('system', currentLocale === 'en-US'
+                            ? 'Stopped before execution; the task remains queued.'
+                            : '已在執行前停止；任務仍保留在工作清單。', [], { localChatSessionId: session.id, forceSystem: true });
+                    } else {
+                        executeTask(data.executeTaskId);
+                    }
+                }
+            } catch (error) {
+                pending.status = 'failed';
+                appendChatBubble('system', error.name === 'AbortError'
+                    ? (currentLocale === 'en-US' ? 'Confirmation interrupted. Check the task list before requesting it again.' : '確認流程已中斷；再次提出動作前，請先檢查工作清單。')
+                    : error.message, [], { localChatSessionId: session.id, forceSystem: true });
+            } finally {
                 touchLocalChatSession(session.id);
+                if (getActiveAbortController('local') === controller) setActiveAbortController(null, 'local');
+                if (selectedLocalChatSessionId === session.id) renderLocalChatMessages();
+                updateSendButtonState();
             }
-            appendChatBubble('system', data.reply || detail, [], { container, forceSystem: true });
-            if (data.task) {
-                await loadTodo();
-                openTab('todolist');
-            }
-            if (data.sopChanged) refreshSidebarDataSoon();
-            if (data.executeTaskId) executeTask(data.executeTaskId);
         });
         container.appendChild(button);
     });
@@ -6905,6 +6943,7 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
     if (!options.fromRender && !options.skipHistory && container === chatMessages) {
         addLocalSessionMessage(role, text, suggestions, options);
     }
+    if (container === chatMessages && options.localChatSessionId && options.localChatSessionId !== selectedLocalChatSessionId) return;
     const div = document.createElement('div');
     const actorScope = options.actorScope || (container === remoteChatMessages || options.isRemote ? 'remote' : 'local');
     const chatScopeClass = actorScope === 'remote' ? 'remote-chat-bubble' : 'local-chat-bubble';
@@ -7004,6 +7043,9 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
         avatarEl.innerHTML = isAI ? '&#129302;' : '&#128100;';
     }
     div.querySelector('.btn-inline-save')?.addEventListener('click', () => saveSharedImage(imageDataUrl));
+    if (container === chatMessages) {
+        appendAgentActionConsent(options.pendingActions, div.querySelector('.msg-bubble-wrapper'), options.localChatSessionId || selectedLocalChatSessionId);
+    }
 
     container.appendChild(div);
     if (shouldStick) {

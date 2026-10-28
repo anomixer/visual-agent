@@ -46,4 +46,20 @@ function extractActionsFromReply(reply = '') {
     return { actions, proseForConsent, hasSuggestions };
 }
 
-module.exports = { normalizeActionString, extractActionsFromReply };
+function parseActionArg(actionStr = '', key = '') {
+    const src = String(actionStr || '');
+    const keyEsc = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!keyEsc) return '';
+    const quoted = src.match(new RegExp(`${keyEsc}\\s*=\\s*"([^"]*)"`, 'i'))
+        || src.match(new RegExp(`${keyEsc}\\s*=\\s*'([^']*)'`, 'i'));
+    if (quoted) return quoted[1];
+    const bare = src.match(new RegExp(`${keyEsc}\\s*=\\s*([^\\s\\]]+)`, 'i'));
+    return bare ? bare[1] : '';
+}
+
+function parseBrowserUseMode(actionStr = '') {
+    const mode = parseActionArg(actionStr, 'mode') || parseActionArg(actionStr, 'action') || 'search';
+    return String(mode || 'search').trim().toLowerCase() || 'search';
+}
+
+module.exports = { normalizeActionString, extractActionsFromReply, parseActionArg, parseBrowserUseMode };

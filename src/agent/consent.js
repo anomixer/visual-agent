@@ -1,22 +1,16 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { parseActionArg, parseBrowserUseMode } = require('./actions');
 
 const SYSTEM_CHANGING_ACTION = /^(?:ADD_TASK|REMOVE_TASK|EXECUTE_TASK|INSTALL_SOP|CLEAR_ALL|SWITCH_MODEL|OPEN_FILE|OPEN_URL|COMPUTER_USE|CREATE_WINGET_SOP|CREATE_MSSTORE_SOP|CREATE_GITHUB_RELEASE_SOP)(?:\s|$)/;
 
 function isSystemChangingAction(actionString = '') {
     const action = String(actionString || '').trim();
     if (/^BROWSER_USE(?:\s|$)/.test(action)) {
-        const mode = parseActionArg(action, 'mode') || parseActionArg(action, 'action');
-        return ['open', 'navigate'].includes(mode.toLowerCase());
+        return ['open', 'navigate'].includes(parseBrowserUseMode(action));
     }
     return SYSTEM_CHANGING_ACTION.test(action);
-}
-
-function parseActionArg(actionString, key) {
-    const match = String(actionString || '').match(new RegExp(`${key}="(.*?)"`, 'i'))
-        || String(actionString || '').match(new RegExp(`${key}=([^\\s\\]]+)`, 'i'));
-    return match ? match[1] : '';
 }
 
 class AgentConsentStore {
@@ -37,6 +31,7 @@ class AgentConsentStore {
             expiresAt: Date.now() + this.ttlMs,
             action: command,
             sopId: parseActionArg(actionString, 'sop_id'),
+            sopAction: context.sopAction || '',
             taskId: parseActionArg(actionString, 'task_id'),
             mode: parseActionArg(actionString, 'mode'),
         };
@@ -69,6 +64,7 @@ class AgentConsentStore {
             sopId: entry.sopId,
             taskId: entry.taskId,
             mode: entry.mode,
+            description: entry.sopAction ? `${entry.actionString} [${entry.sopAction}]` : entry.actionString,
             expiresAt: new Date(entry.expiresAt).toISOString(),
         };
     }

@@ -125,7 +125,7 @@ browser ──── public/index.html
 > 本 app 能執行 SOP / PowerShell、持有 API Key，故以下為不可退讓的現行底線（2026.08.23 建立，2026.10.28 補強）：
 
 - **HTTP API 僅綁本機且需鑑權**：`src/server.js` 以 `app.listen(PORT, '127.0.0.1')` 啟動，嚴禁改綁 `0.0.0.0`。每個 process 產生隨機 local API token；`/api/meta` 供前端取得 token，其餘 `/api/*` 必須帶 `X-Visual-Agent-Token`。Host、Origin、`Sec-Fetch-Site` 與 CORS 均採白名單，不得退回 `Access-Control-Allow-Origin: *`。遠端雙機協作走獨立 raw TCP（`remote-agent.js`，19168）。
-- **Consent 由後端強制**：系統變更類 ACTION 必須先從執行佇列移除並存入 `AgentConsentStore`，前端只能取得不含完整指令的 `pendingActions` 摘要。確認時以 `approvedActionId` consume；approval 綁完整 ACTION 與 local chat session、5 分鐘過期且只能使用一次。無效、跨 session、過期或重放必須回 403。
+- **Consent 由後端強制**：系統變更類 ACTION 必須先從執行佇列移除並存入 `AgentConsentStore`，前端只能取得不含完整指令的 `pendingActions` 摘要；`description` 必須顯示完整 ACTION 與提案當下解析出的 SOP 操作（install / uninstall）。確認時只送 `approvedActionId`、session 與 history，後端必須忽略可竄改的 `message`；approval 綁完整 ACTION、SOP 操作與 local chat session、5 分鐘過期且只能使用一次。無效、跨 session、過期或重放必須回 403。批准後直接執行 store 內保存的 ACTION，不得再當成 LLM 回覆解析。Agent Loop 的每一輪都必須套用同一 consent 攔截。
 - **AI / 遠端 / Exp 內容必須淨化**：Markdown 與動態 HTML 必須經共同安全出口；DOMPurify 缺件或失敗時必須 fail-closed 為 escaped text，不得直接 `innerHTML` 未淨化內容。危險 URI、script 與 event handler 必須移除。
 - **圖片 data URL 不可只信 MIME**：只接受 PNG / JPEG base64，檢查 magic bytes 並限制 16 MiB；SVG、偽裝內容與一般外部 URL 不得作為受信任的本機圖片附件。
 - **Server-side fetch 防 SSRF**：外部文字抓取須使用 `safe-fetch.js`，只允許公開 HTTP(S) 位址，拒絕 URL credentials 與 private / loopback / link-local / non-routable IP；DNS 結果須固定到實際連線，redirect 逐次重驗，並限制時間、次數與回應大小。
@@ -133,7 +133,7 @@ browser ──── public/index.html
 - **SOP 執行**：一般與 elevated PowerShell runner 均以 UTF-8 BOM 暫存 `.ps1` 搭配 `-File` 執行，保留中文、例外與 native exit code。一般路徑 timeout 必須終止 process tree；elevated process-tree 行為仍需獨立實機驗收。
 - **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
 - **任務與聊天資料不可靜默遺失**：`tasks.json` 必須 temp-write + rename；task ID 使用 UUID；running task 不可刪除或整批 import 覆寫。同 session 並行聊天完成時須附加到最新歷史，不得用舊快照覆寫。
-- **Agent Loop 必須有總上限**：每輪最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；LLM socket/read timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader。
+- **Agent Loop 必須有總上限**：迴圈本體每輪最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；LLM socket/read timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader。**已知缺口**：此預算自首輪 ACTION 執行後才建立，首輪工具與自動即時資訊抽取尚未計入同一上限，故不得宣稱整體 chat 請求已完全有界。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
 - **OAuth cache 不得混用憑證**：token cache key 必須包含 token URL、client ID、client secret、scope、audience。
 - **桌面發佈設定不得漂移**：Tauri bundle version 必須等於 `package.json.version`；CSP 不得為 `null`。現階段因既有 inline script/style 保留 `unsafe-inline`，但 script 僅限 self，並禁止 object / frame / 外部表單送出。`pkg.assets` 必須包含 `sops/**/*`、`skills/**/*`、`plugins/**/*`、`public/**/*`。
@@ -144,7 +144,7 @@ browser ──── public/index.html
 ## 3. API 端點
 
 - 除 `GET /api/meta` 外，下表及其他 `/api/*` 端點均須帶 `X-Visual-Agent-Token`；token 由 `/api/meta.localApiToken` 提供。
-- `POST /api/chat` 可接收 `localChatSessionId`、`agentRunId`、`approvedActionId` 與 `chalkboard`。AI 提出的系統變更動作以 `pendingActions` 回傳；使用者確認後重新送 `/api/chat`，攜帶同一 session 與一次性 `approvedActionId`，不得由前端改送另一段 ACTION 取代原批准內容。
+- `POST /api/chat` 可接收 `localChatSessionId`、`agentRunId`、`approvedActionId` 與 `chalkboard`。AI 提出的系統變更動作以 `pendingActions` 回傳；使用者確認後重新送 `/api/chat`，只帶同一 session、history 與一次性 `approvedActionId`。帶 `approvedActionId` 時後端必須忽略 request 的 `message` 與 Chalkboard，直接執行 store 內的原始 ACTION；前端不得改送另一段 ACTION 取代原批准內容。
 
 | Method | Path | 功能 |
 |--------|------|------|
@@ -251,7 +251,9 @@ $true
 ### 下一階段必要驗收（2026.10.28 尚未完成）
 - [ ] UAC elevated runner 的 timeout 與整棵 process-tree 終止實測。
 - [ ] 兩台實機的 Chalkboard revision / session 隔離、遠端停止與重連測試。
-- [ ] Vision Model、Agent Loop web research 與真正 consent button 的端對端測試。
+- [ ] Vision Model 與 Agent Loop web research（真實 Provider / 網路）的端對端測試。
+- [x] consent button 的端對端行為測試（2026.10.28 第二階段：隔離 harness + 真實 HTTP / 瀏覽器，涵蓋跨分頁、重複點擊、Stop 競態）。
+- [ ] Agent Loop 預算涵蓋首輪 ACTION 與自動即時資訊抽取（8 turns / 12 tools / 180 秒不得只約束迴圈本體）。
 - [ ] 以最新 `pkg.assets` 重建 sidecar / Tauri EXE，於乾淨 Windows 驗證 Skills、Plugins、CLI、Chromium 安裝與 CSP。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
@@ -916,6 +918,32 @@ $true
 - 文字模型若靜默接受請求卻忽略圖片，系統必須攔截該路徑，明確回覆「圖片已收到，但模型不支援辨識」；不得讓模型誤稱未收到附件。
 - 附圖開關啟用後，已啟用的 Chalkboard 必須匯出目前可見畫布，不得因 `hasUserContent` 與 Undo／頁面還原狀態不同而漏送。
 - Vision Model 偵測必須支援 `qwen2.5vl:7b` 等無連字號的 Qwen VL 命名，並同步套用於設定 UI 與實際送圖路徑。
+
+## 27. 2026.10.28 Consent 確認鏈與本機多對話規格
+
+### 27.1 動作提案與確認
+- 提案、確認與執行必須使用同一套 `parseActionArg` / `parseBrowserUseMode`（`src/agent/actions.js`），支援 `key="value"`、`key = 'value'`、`key=value` 與 Browser Use 的 `mode` / `action` 別名。
+- `pendingActions[].description` 必須包含完整 ACTION 字串；若提案對應 SOP 安裝或移除，必須附上解析後的操作，例如 `INSTALL_SOP sop_id="chrome" [uninstall]`。
+- Approval 必須在建立時固定 SOP 操作。確認後即使 SOP runtime 快取已翻轉，任務與執行仍使用畫面顯示、使用者批准的操作。
+- 確認請求 body 只允許 `approvedActionId`、`localChatSessionId`、`history`、`locale`；後端不得以 request 的 `message` 取代已批准 ACTION。
+- 所有 ACTION dispatcher 必須以完整第一個 token 精確比對命令，不得使用前綴 `startsWith`；未知命令（如 `BROWSER_USE_EXTRA`）不得落入真實分支。
+
+### 27.2 任務刪除
+- `REMOVE_TASK` 對 `running` 任務必須拒絕並回報原因，不得從清單移除。
+- 清單中存在任何 `running` 任務時，`CLEAR_ALL` 必須拒絕整次清空，保留全部任務。
+- 拒絕操作時回應的 `task` 必須為 `false`，不得宣稱已變更。
+- 其他任務執行中時，允許移除 `pending` / `success` / `failed` 任務。
+
+### 27.3 本機多對話
+- 聊天回覆、錯誤、`aiWarning`、中止訊息與確認結果都必須寫回發起請求的 local chat session；完成時不得改動目前選取分頁的訊息或 DOM。
+- `pendingActions` 必須保存在訊息的 `messages[]` 並隨 session 持久化；切換分頁、重繪後仍須還原按鈕與狀態（已確認 / 失敗 / 過期）。
+- 確認流程與一般送出共用 local pending 鎖；請求 settle 前重複或平行確認不得產生第二次請求。
+- Stop 只 abort 現有請求，pending 鎖保留至請求 settle；確認 API 成功後若在 `loadTodo()` 期間被 abort，不得呼叫 `executeTask`，並須明確告知任務仍保留在工作清單。
+
+### 27.4 驗收方式
+- 後端 consent 行為以真實 Express app + 真實 HTTP（loopback ephemeral port、`/api/meta` token）驗證；SOP、LLM、Browser、檔案系統與時間必須隔離。
+- UI 行為以 `public/app.js` 的真實 top-level 函式搭配最小 DOM 驗證，不得複製貼上另一份實作。
+- 完整 suite 必須在暫存 APPDATA / LOCALAPPDATA 下執行，避免污染使用者設定。
 
 
 

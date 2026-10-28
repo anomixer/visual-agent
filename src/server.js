@@ -47,7 +47,7 @@ const {
     escapeRegExp, formatUsdBillions, buildNvidiaSnapshotLines,
 } = require('./pure');
 // ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
-const { normalizeActionString, extractActionsFromReply } = require('./agent/actions');
+const { extractActionsFromReply, parseActionArg, parseBrowserUseMode } = require('./agent/actions');
 const { AgentConsentStore, isSystemChangingAction } = require('./agent/consent');
 const { AgentLoopBudget } = require('./agent/loop-budget');
 // 軟體推薦 prompt 註解（自 /api/chat handler 抽出，見 src/agent/prompts.js）。
@@ -1156,22 +1156,6 @@ function updateWorkbookWithNvidiaSnapshot(filePath = '', snapshot = {}, env = {}
         data: { success: false, message: resultBag.map((item) => item?.data?.message || item?.error).filter(Boolean).join(' | ') || 'Workbook update failed' },
         error: 'Workbook update failed',
     };
-}
-
-function parseActionArg(actionStr = '', key = '') {
-    const src = String(actionStr || '');
-    const keyEsc = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (!keyEsc) return '';
-    const quoted = src.match(new RegExp(`${keyEsc}\\s*=\\s*"([^"]*)"`, 'i'))
-        || src.match(new RegExp(`${keyEsc}\\s*=\\s*'([^']*)'`, 'i'));
-    if (quoted) return quoted[1];
-    const bare = src.match(new RegExp(`${keyEsc}\\s*=\\s*([^\\s\\]]+)`, 'i'));
-    return bare ? bare[1] : '';
-}
-
-function parseBrowserUseMode(actionStr = '') {
-    const mode = parseActionArg(actionStr, 'mode') || parseActionArg(actionStr, 'action') || 'search';
-    return String(mode || 'search').trim().toLowerCase() || 'search';
 }
 
 function stripControlTagsFromReply(text = '') {
@@ -3978,19 +3962,21 @@ app.post('/api/chat', async (req, res) => {
     res.once('close', () => {
         if (!res.writableEnded) chatAbortController.abort();
     });
-    const { message, locale } = req.body;
+    const { locale } = req.body || {};
     const agentRunId = normalizeAgentRunId(req.body?.agentRunId || '');
     setAgentRunStatus(agentRunId, 'planning', locale || 'zh-TW');
     const localChatSessionId = String(req.body?.localChatSessionId || '').trim();
     const approvedActionId = String(req.body?.approvedActionId || '').trim();
+    const requestedMessage = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    if (!approvedActionId && !requestedMessage) return res.status(400).json({ success: false, error: 'Please enter a message' });
     const approvedAction = approvedActionId ? agentConsentStore.consume(approvedActionId, localChatSessionId) : null;
     if (approvedActionId && !approvedAction) {
         return res.status(403).json({ success: false, error: 'Action approval is invalid, expired, or already used.' });
     }
     const approvedActionString = approvedAction?.actionString || '';
+    const message = approvedActionString ? `Confirm ${approvedActionString}` : requestedMessage;
     const requestedHistory = Array.isArray(req.body?.history) ? req.body.history : null;
-    const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
-    if (!message) return res.json({ success: false, error: 'Please enter a message' });
+    const chalkboardAttachment = approvedActionString ? null : normalizeChalkboardAttachment(req.body?.chalkboard);
     const historyForIntent = requestedHistory
         || (localChatSessionId ? (localChatHistoryBySession.get(localChatSessionId) || []) : chatHistory);
     const followUpResearchQuery = inferFollowUpResearchQuery(message, historyForIntent);
@@ -3998,10 +3984,24 @@ app.post('/api/chat', async (req, res) => {
     const sops = loadAllSOPs(SOPS_DIR);
     // 一般聊天不應先對每一個 SOP 啟動 PowerShell 偵測；這會讓第一句話卡住十多秒。
     // 僅在確實涉及系統任務時更新即時安裝狀態，其他情況沿用快取或預設值。
-    const needsSopRuntimeState = requiresSopRuntimeState(message);
+    const needsSopRuntimeState = !approvedActionString && requiresSopRuntimeState(message);
     const sopsWithState = needsSopRuntimeState
         ? await annotateSOPRuntimeState(sops)
         : sops.map((sop) => ({ ...sop, ...getCachedOrDefaultSopState(sop) }));
+    if (approvedAction?.sopAction) {
+        const approvedSop = sopsWithState.find((sop) => sop.id === approvedAction.sopId);
+        if (approvedSop) approvedSop.recommendedAction = approvedAction.sopAction;
+    }
+    const createPendingAgentAction = (actionString) => {
+        const command = actionString.split(/\s+/, 1)[0];
+        const queuesSop = ['ADD_TASK', 'INSTALL_SOP'].includes(command)
+            || (command === 'COMPUTER_USE' && parseActionArg(actionString, 'mode').toLowerCase() === 'install_sop');
+        const sop = queuesSop ? sopsWithState.find((item) => item.id === parseActionArg(actionString, 'sop_id')) : null;
+        return agentConsentStore.create(actionString, {
+            sessionId: localChatSessionId,
+            sopAction: sop?.recommendedAction || '',
+        });
+    };
     if (!approvedActionString && /(執行|開始|安裝|run|start|execute|install)/i.test(message)) {
         const pendingBrowserInstall = [...todoList].reverse().find((task) =>
             String(task.skillId || '') === 'install_playwright_chromium'
@@ -4078,7 +4078,7 @@ app.post('/api/chat', async (req, res) => {
         : '(not requested for this conversation)';
     const taskContext = todoList.map(t => `- ID: ${t.id}, Title: ${t.title}, Status: ${t.status}`).join('\n');
     const experienceContext = loadExperienceContext(message, 3);
-    const wingetRecommendation = shouldSearchWingetForRecommendations(message)
+    const wingetRecommendation = !approvedActionString && shouldSearchWingetForRecommendations(message)
         ? (() => {
             const query = extractWingetSearchQuery(message);
             return {
@@ -4087,7 +4087,7 @@ app.post('/api/chat', async (req, res) => {
             };
         })()
         : null;
-    const microsoftStoreRecommendation = shouldSearchMicrosoftStore(message)
+    const microsoftStoreRecommendation = !approvedActionString && shouldSearchMicrosoftStore(message)
         ? (() => {
             const query = extractWingetSearchQuery(message);
             return {
@@ -4096,7 +4096,7 @@ app.post('/api/chat', async (req, res) => {
             };
         })()
         : null;
-    const githubRecommendation = shouldSearchGitHubReleases(message)
+    const githubRecommendation = !approvedActionString && shouldSearchGitHubReleases(message)
         ? await (async () => {
             const query = extractWingetSearchQuery(message);
             return {
@@ -4106,7 +4106,7 @@ app.post('/api/chat', async (req, res) => {
         })()
         : null;
     const wingetSopRequestMatch = String(message || '').match(/(?:幫我做|幫我產生|產生|建立|新增)\s+(.+?)\s*(?:的)?\s*sop/i);
-    if (wingetSopRequestMatch) {
+    if (!approvedActionString && wingetSopRequestMatch) {
         const packageQuery = wingetSopRequestMatch[1].trim();
         const isGitHubRequest = shouldSearchGitHubReleases(message);
         const isMicrosoftStoreRequest = shouldSearchMicrosoftStore(message);
@@ -4288,7 +4288,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 microsoftStoreRecommendation,
                 githubRecommendation,
             });
-            let llmReply = approvedActionString;
+            let llmReply = '';
             const remoteState = remoteAgent.getState();
             const activeRemoteSession = remoteState.sessions.find((item) => item.status === 'active');
             const chatOptions = {
@@ -4390,7 +4390,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
             // 3. 解析與安全過濾
-            const { actions } = extractActionsFromReply(llmReply);
+            const actions = approvedActionString ? [approvedActionString] : extractActionsFromReply(llmReply).actions;
             const pendingAgentActions = [];
             let executeTaskId = null;
             let hasActionTaken = false;
@@ -4400,17 +4400,19 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             if (!approvedActionString) {
                 for (let i = actions.length - 1; i >= 0; i--) {
                     if (!isSystemChangingAction(actions[i])) continue;
-                    pendingAgentActions.unshift(agentConsentStore.create(actions[i], { sessionId: localChatSessionId }));
+                    pendingAgentActions.unshift(createPendingAgentAction(actions[i]));
                     actions.splice(i, 1);
                 }
             }
 
 
             for (const actionStr of actions) {
-                if (actionStr.startsWith('ADD_TASK')) {
-                    const idMatch = actionStr.match(/sop_id="(.*?)"/) || actionStr.match(/sop_id=([^\s\]]+)/i);
-                    if (idMatch) {
-                        const mSop = sopsWithState.find(s => s.id === idMatch[1]);
+                const command = actionStr.split(/\s+/, 1)[0];
+                if (chatAbortController.signal.aborted) return;
+                if (command === 'ADD_TASK') {
+                    const sopId = parseActionArg(actionStr, 'sop_id');
+                    if (sopId) {
+                        const mSop = sopsWithState.find(s => s.id === sopId);
                         if (mSop) {
                             const task = {
                                 id: `task_${crypto.randomUUID()}`,
@@ -4439,10 +4441,16 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
 
 
-                if (actionStr.startsWith('REMOVE_TASK')) {
+                if (command === 'REMOVE_TASK') {
                     const idMatch = actionStr.match(/task_id="(.*?)"/) || actionStr.match(/task_id=([^\s\]]+)/i);
                     if (idMatch) {
                         const removed = todoList.find((t) => t.id === idMatch[1]);
+                        if (!removed || removed.status === 'running') {
+                            actionSummaries.push(locale === 'en-US'
+                                ? (!removed ? 'Task not found; nothing was removed.' : 'Cannot remove a running task.')
+                                : (!removed ? '找不到任務；未移除任何項目。' : '無法移除執行中的任務。'));
+                            continue;
+                        }
                         todoList = todoList.filter(t => t.id !== idMatch[1]);
                         hasActionTaken = true;
                         taskListChanged = true;
@@ -4457,7 +4465,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
 
 
-                if (actionStr.startsWith('EXECUTE_TASK')) {
+                if (command === 'EXECUTE_TASK') {
                     const idMatch = actionStr.match(/task_id="(.*?)"/) || actionStr.match(/task_id=([^\s\]]+)/i);
                     if (idMatch) {
                         executeTaskId = idMatch[1];
@@ -4471,10 +4479,10 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     }
                 }
 
-                if (actionStr.startsWith('INSTALL_SOP')) {
-                    const idMatch = actionStr.match(/sop_id="(.*?)"/) || actionStr.match(/sop_id=([^\s\]]+)/i);
-                    if (idMatch) {
-                        const mSop = sopsWithState.find((s) => s.id === idMatch[1]);
+                if (command === 'INSTALL_SOP') {
+                    const sopId = parseActionArg(actionStr, 'sop_id');
+                    if (sopId) {
+                        const mSop = sopsWithState.find((s) => s.id === sopId);
                         if (mSop) {
                             const task = {
                                 id: `task_${crypto.randomUUID()}`,
@@ -4501,6 +4509,12 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
 
                 if (actionStr === 'CLEAR_ALL') {
+                    if (todoList.some((task) => task.status === 'running')) {
+                        actionSummaries.push(locale === 'en-US'
+                            ? 'Cannot clear tasks while a task is running.'
+                            : '有任務正在執行，無法清空工作清單。');
+                        continue;
+                    }
                     todoList = [];
                     hasActionTaken = true;
                     taskListChanged = true;
@@ -4510,7 +4524,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
 
 
-                if (actionStr.startsWith('SWITCH_MODEL')) {
+                if (command === 'SWITCH_MODEL') {
                     const nameMatch = actionStr.match(/name="(.*?)"/) || actionStr.match(/name=([^\s\]]+)/i);
                     if (nameMatch) {
                         llm.setCurrentModel(nameMatch[1]);
@@ -4523,7 +4537,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     }
                 }
 
-                if (actionStr.startsWith('OPEN_FILE')) {
+                if (command === 'OPEN_FILE') {
                     const fileMatch = actionStr.match(/file_path="(.*?)"/);
                     if (fileMatch) {
                         openFileWithDefaultApp(fileMatch[1]);
@@ -4536,7 +4550,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     }
                 }
 
-                if (actionStr.startsWith('OPEN_URL')) {
+                if (command === 'OPEN_URL') {
                     const urlMatch = actionStr.match(/url="(.*?)"/);
                     if (urlMatch) {
                         openUrlInDefaultBrowser(urlMatch[1]);
@@ -4549,7 +4563,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     }
                 }
 
-                if (actionStr.startsWith('BROWSER_USE')) {
+                if (command === 'BROWSER_USE') {
                     const mode = parseBrowserUseMode(actionStr);
                     const query = parseActionArg(actionStr, 'query') || String(researchIntentMessage || '').trim();
                     const url = parseActionArg(actionStr, 'url');
@@ -4642,7 +4656,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     }
                 }
 
-                if (actionStr.startsWith('COMPUTER_USE')) {
+                if (command === 'COMPUTER_USE') {
                     const mode = parseActionArg(actionStr, 'mode');
                     const filePath = parseActionArg(actionStr, 'file_path') || parseActionArg(actionStr, 'path');
                     const args = parseActionArg(actionStr, 'arguments') || parseActionArg(actionStr, 'args');
@@ -4674,7 +4688,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
 
 
-                if (actionStr.startsWith('CREATE_WINGET_SOP')) {
+                if (command === 'CREATE_WINGET_SOP') {
                     const idMatch = actionStr.match(/package_id="(.*?)"/);
                     const nameMatch = actionStr.match(/package_name="(.*?)"/);
                     if (idMatch) {
@@ -4695,7 +4709,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
 
 
-                if (actionStr.startsWith('CREATE_MSSTORE_SOP')) {
+                if (command === 'CREATE_MSSTORE_SOP') {
                     const idMatch = actionStr.match(/package_id="(.*?)"/);
                     const nameMatch = actionStr.match(/package_name="(.*?)"/);
                     if (idMatch) {
@@ -4717,7 +4731,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 }
 
 
-                if (actionStr.startsWith('CREATE_GITHUB_RELEASE_SOP')) {
+                if (command === 'CREATE_GITHUB_RELEASE_SOP') {
                     const repoMatch = actionStr.match(/repo_full_name="(.*?)"/);
                     const assetMatch = actionStr.match(/asset_name="(.*?)"/);
                     const urlMatch = actionStr.match(/download_url="(.*?)"/);
@@ -4747,7 +4761,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             // ═══════════════════════════════════════════════════════════════
             // 強制 Web Research Fallback：如果 LLM 沒輸出 ACTION 但這是網路查詢
             // ═══════════════════════════════════════════════════════════════
-            if (!actionSummaries.length && isWebResearchIntent(researchIntentMessage)) {
+            if (!approvedActionString && !pendingAgentActions.length && !actionSummaries.length && isWebResearchIntent(researchIntentMessage)) {
                 console.log('[Agent Loop] Web research request detected but LLM did not output ACTION. Forcing fallback search...');
                 const query = buildWebResearchSearchQuery(researchIntentMessage, locale || 'zh-TW');
                 try {
@@ -4820,7 +4834,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             const MAX_AGENT_TURNS = 8;
             const agentLoopBudget = new AgentLoopBudget({
                 maxTurns: MAX_AGENT_TURNS,
-                initialActions: actions.filter((action) => action.startsWith('BROWSER_USE')),
+                initialActions: actions.filter((action) => /^BROWSER_USE(?:\s|$)/.test(action)),
             });
             let agentTurnCount = 0;
             let conversationHistory = []; // Start fresh conversation for this request
@@ -4829,8 +4843,10 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 /(搜尋結果|search results|來源內容|Extracted|即時資訊|Current-info|Browser Use|extract|URL:|https?:\/\/)/i.test(String(item || ''))
             );
             // 只有 web 工具結果才進 Agent Loop；ADD_TASK 等本機動作不必再叫 LLM 重講一次
-            const shouldRunAgentLoop = looksLikeWebObservation(lastToolBundle)
-                || (isWebResearchIntent(researchIntentMessage) && lastToolBundle.length > 0 && !isUsableAgentFinalReply(llmReply));
+            const shouldRunAgentLoop = !approvedActionString && !pendingAgentActions.length && (
+                looksLikeWebObservation(lastToolBundle)
+                || (isWebResearchIntent(researchIntentMessage) && lastToolBundle.length > 0 && !isUsableAgentFinalReply(llmReply))
+            );
 
             // Add user message
             conversationHistory.push({
@@ -4879,17 +4895,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         locale
                     );
 
-                    // Parse actions from loop reply
-                    const loopActionRegex = /\[(?:ACTION\s*[:=]\s*|Action\s*=\s*)(.*?)\]/gi;
-                    const loopActions = [];
-                    let loopMatch;
-                    while ((loopMatch = loopActionRegex.exec(loopReply)) !== null) {
-                        loopActions.push(normalizeActionString(loopMatch[1]));
-                    }
-                    const bareLoopActionRegex = /(?:^|\n)\s*Action\s*=\s*([A-Za-z_]+[^\r\n]*)/gi;
-                    while ((loopMatch = bareLoopActionRegex.exec(loopReply)) !== null) {
-                        loopActions.push(normalizeActionString(loopMatch[1]));
-                    }
+                    const { actions: loopActions } = extractActionsFromReply(loopReply);
                     const loopActionBudget = agentLoopBudget.takeActions(loopActions);
                     if (loopActionBudget.duplicates > 0 || loopActionBudget.overflow > 0) {
                         console.log(`[Agent Loop] Skipped ${loopActionBudget.duplicates} duplicate and ${loopActionBudget.overflow} over-budget actions`);
@@ -4904,11 +4910,17 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     // Execute actions and collect results
                     const newActionSummaries = [];
                     for (const actionStr of loopActionBudget.accepted) {
+                        const command = actionStr.split(/\s+/, 1)[0];
+                        if (chatAbortController.signal.aborted) return;
+                        if (isSystemChangingAction(actionStr)) {
+                            pendingAgentActions.push(createPendingAgentAction(actionStr));
+                            continue;
+                        }
                         if (agentLoopBudget.remainingMs() <= 0) {
                             console.warn('[Agent Loop] Deadline reached before executing the next action');
                             break;
                         }
-                        if (actionStr.startsWith('BROWSER_USE')) {
+                        if (command === 'BROWSER_USE') {
                             const mode = parseBrowserUseMode(actionStr);
                             const query = parseActionArg(actionStr, 'query') || String(researchIntentMessage || '').trim();
                             const url = parseActionArg(actionStr, 'url');
@@ -4968,6 +4980,15 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         }
                     }
 
+                    if (pendingAgentActions.length > 0) {
+                        currentLlmReply = loopReply;
+                        if (newActionSummaries.length > 0) {
+                            lastToolBundle = newActionSummaries;
+                            actionSummaries = newActionSummaries;
+                        }
+                        break;
+                    }
+
                     // If no new actions, check whether reply is usable
                     if (newActionSummaries.length === 0) {
                         currentLlmReply = loopReply;
@@ -5003,10 +5024,10 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             console.log(`[Agent Loop] Exit: agentTurnCount = ${agentTurnCount}, final currentLlmReply length = ${currentLlmReply.length}`);
 
             // Clean final reply (remove ACTION / control tags)
-            let cleanReply = stripControlTagsFromReply(currentLlmReply);
+            let cleanReply = approvedActionString ? actionSummaries.join('\n') : stripControlTagsFromReply(currentLlmReply);
 
             // If still unusable but we have web tool data, one last forced summarize, then local fallback
-            if (!isUsableAgentFinalReply(cleanReply) && shouldRunAgentLoop && looksLikeWebObservation(lastToolBundle) && agentLoopBudget.remainingMs() > 0) {
+            if (!pendingAgentActions.length && !isUsableAgentFinalReply(cleanReply) && shouldRunAgentLoop && looksLikeWebObservation(lastToolBundle) && agentLoopBudget.remainingMs() > 0) {
                 try {
                     setAgentRunStatus(agentRunId, 'summarizing', locale || 'zh-TW', 'force-final');
                     const forceReply = await llm.chatWithLLM(
@@ -5043,7 +5064,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 cleanReply = actionSummaries.join('\n');
             }
 
-            let finalReply = cleanReply || (
+            let finalReply = cleanReply || (pendingAgentActions.length ? '' : (
                 looksLikeWebObservation(lastToolBundle)
                     ? buildFallbackAnswerFromToolSummaries(lastToolBundle, message, locale || 'zh-TW')
                     : (actionSummaries.length > 0
@@ -5051,11 +5072,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         : (locale === 'en-US'
                             ? 'I could not complete this request with a usable answer. Please try again.'
                             : '這次沒有產生可用答案，請再試一次。'))
-            );
+            ));
             if (pendingAgentActions.length > 0) {
                 finalReply += `${finalReply ? '\n\n' : ''}${locale === 'en-US'
-                    ? `${pendingAgentActions.length} proposed action${pendingAgentActions.length > 1 ? 's require' : ' requires'} your confirmation. Nothing system-changing has been executed yet.`
-                    : `有 ${pendingAgentActions.length} 個建議動作需要你的確認；目前尚未執行任何系統變更。`}`;
+                    ? `${pendingAgentActions.length} proposed action${pendingAgentActions.length > 1 ? 's require' : ' requires'} your confirmation. These actions have not been executed.`
+                    : `有 ${pendingAgentActions.length} 個建議動作需要你的確認；這些動作尚未執行。`}`;
             }
 
             if (chatAbortController.signal.aborted) return;
@@ -5101,6 +5122,9 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             console.error('[LLM] AI Agent processing failed:', llmErr);
             setAgentRunStatus(agentRunId, 'error', locale || 'zh-TW', llmErr.message || String(llmErr));
             if (chatAbortController.signal.aborted) return;
+            if (approvedActionString) {
+                return res.status(500).json({ success: false, error: llmErr.message || 'Approved action failed.' });
+            }
             llmErrorForFallback = llmErr.message;
             // 發生錯誤不中斷，讓它往下走到關鍵字比對模式
         }
