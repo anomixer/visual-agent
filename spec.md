@@ -277,6 +277,7 @@ $true
 - [x] 推薦清單資料未變時不重建側邊欄（2026.10.29 第十八階段：`lastRecommendSignature` / `lastSopSignature` / `lastSkillSignature`，清單或安裝狀態改變仍立即重繪）。
 - [x] AI 狀態列未變時不重寫 DOM（2026.10.29 第十九階段：`lastLLMStatusSignature`，輪詢失敗會清空簽章以重新套用）。
 - [x] 任務清單回應省略 `logs`，詳情與匯出保留（2026.10.29 第二十階段：`publicTodoList()`、`GET /api/task/:taskId/status`、`showTaskModal()` 開啟時補抓）。
+- [x] 遠端狀態輪詢在版本號未變時只回版本號（2026.10.29 第二十一階段：`remoteStateTick` 改為遞增版本、`GET /api/remote/state?since=`、前端 `lastRemoteStateTick`；任何 `touchRemoteState()` 變更仍回完整內容）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

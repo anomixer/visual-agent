@@ -49,6 +49,7 @@ let activeChatMode = 'local';
 let remoteProfile = null;
 let remoteProfileDirty = false;
 let remoteState = { sessions: [], pendingApprovals: [], localIps: [], port: 19168 };
+let lastRemoteStateTick = 0;
 let selectedRemoteSessionId = localStorage.getItem('selected_remote_session_id') || '';
 
 let remoteStateInterval = null;
@@ -2437,8 +2438,12 @@ function renderRemoteSessionControls() {
 
 async function loadRemoteProfileAndState() {
     const previousSessions = new Map((remoteState.sessions || []).map((session) => [session.id, session]));
-    const data = await api('/api/remote/state');
+    const since = lastRemoteStateTick ? `?since=${lastRemoteStateTick}` : '';
+    const data = await api(`/api/remote/state${since}`);
     if (!data.success) return;
+    lastRemoteStateTick = data.tick;
+    // 版本號未變時後端只回版本號；整份 session 與訊息（含截圖）都不必重新套用。
+    if (data.unchanged) return;
     remoteState = data;
     remoteProfile = data.profile;
     (remoteState.sessions || []).forEach((session) => {

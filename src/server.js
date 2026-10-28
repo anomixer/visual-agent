@@ -133,7 +133,7 @@ const SOPS_DIR = path.join(visualAgentDir, 'sops');
 const SKILLS_DIR = path.join(visualAgentDir, 'skills');
 const PLUGINS_DIR = path.join(visualAgentDir, 'plugins');
 const EXPS_DIR = path.join(visualAgentDir, 'exps');
-let remoteStateTick = Date.now();
+let remoteStateTick = 1;
 const remoteAiReplyQueues = new Map();
 if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
 if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
@@ -215,7 +215,7 @@ function getRemoteProfile() {
 }
 
 function touchRemoteState() {
-    remoteStateTick = Date.now();
+    remoteStateTick += 1;
 }
 /**
  * 同步內建的腳本與技能至 AppData
@@ -3086,6 +3086,11 @@ app.post('/api/remote/profile', (req, res) => {
 });
 
 app.get('/api/remote/state', (req, res) => {
+    // 前端每 2 秒輪詢；版本號沒變就不重送 session 與訊息（含截圖 base64）。
+    const since = Number(req.query.since);
+    if (Number.isInteger(since) && since === remoteStateTick) {
+        return res.json({ success: true, tick: remoteStateTick, unchanged: true });
+    }
     res.json({
         success: true,
         tick: remoteStateTick,

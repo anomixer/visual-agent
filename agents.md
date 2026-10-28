@@ -5,6 +5,29 @@
 
 ---
 
+## 📌 2026.10.29 — 第二十一階段：遠端狀態輪詢沒變更時只回版本號
+
+> 接續同日第二十階段；前端每 2 秒打 `/api/remote/state`，回應包含所有 session 與最多 120 則訊息。版本維持 `2026.8.7`。
+
+### 輪詢負擔
+- 每次回應都重新序列化 `profile`、`getLocalIPv4List()` 與每個 session 的訊息；`screen_share` 與 `chalkboard_state` 訊息帶完整 `imageDataUrl`，長連線下每次輪詢可能是數 MB 的 base64，即使內容完全沒變。
+- 伺服器端早已有 `remoteStateTick`，但只是 `Date.now()`，前端也從未使用；狀態沒變時仍整份重送、整份套用。
+
+### 版本號短路
+- `remoteStateTick` 改為遞增版本（初始 1，`touchRemoteState()` 時 +1），避免同毫秒內兩次變更被視為相同版本。
+- `GET /api/remote/state` 接受 `?since=`；與目前版本相同時只回 `{ success, tick, unchanged: true }`，不再序列化 session 與訊息。未帶 `since` 或非整數時照舊回完整內容。
+- 所有變更路徑都會 `touchRemoteState()`：route 端的 connect / respond / message / share-screen / chalkboard-sync / disconnect / 刪除 session / profile 儲存，以及 `RemoteAgentService` 內部 `onStateChanged`（對方訊息、AI 狀態、斷線、邀請逾時等）。
+- 前端新增 `lastRemoteStateTick`，只在有值時帶 `since`；收到 `unchanged` 就更新版本並跳過 `remoteState` 套用與後續 profile / session / popup 重繪。
+
+### 測試與驗收
+- 新增 `test/remote-state-tick.test.js`（4 項，真實 HTTP + 隔離 harness）：首次請求無 `since` 時回完整內容、相同版本只回 `unchanged`、儲存 profile 後版本 +1 且舊 `since` 取得完整內容、非數字 `since` 退回完整內容。
+- `npm test`：23 個 JS 語法、32 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify15`）：穩態 5 秒內 2 次輪詢皆為 `unchanged:true`、`lastRemoteStateTick` 維持 1、`renderRemoteSessionControls` 額外呼叫 0 次；以 API 儲存 profile 後版本 1 → 2，下一次輪詢取得完整內容並重繪控制列 1 次、名稱輸入框顯示新值；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成**：雙機實測（真實 peer 訊息、Chalkboard 同步、斷線重連）仍須實機驗收；本輪只驗證 HTTP 契約與本機瀏覽器輪詢行為。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第二十階段：任務清單不再夾帶執行記錄
 
 > 接續同日第十九階段；`/api/todo` 每 2 秒回傳所有任務的完整 `logs`，但前端只在任務詳情視窗使用。版本維持 `2026.8.7`。
