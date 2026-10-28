@@ -267,6 +267,7 @@ $true
 - [x] 補齊介面缺漏的翻譯鍵並新增字典掃描測試（2026.10.29 第九階段：經驗庫 4 鍵、`tabs.emptyMessage` 共用、`test/i18n-keys.test.js`）。
 - [x] 收斂動作分支重複建立的 SOP 任務物件與模型清單快取條件（2026.10.29 第十階段：`buildSopTask()`、`shouldUpdateModelCache()`）。
 - [x] 經驗庫輪詢不再無條件重繪，並修正英文介面日期格式（2026.10.29 第十一階段：`buildExpsRenderSignature()`、`switchBottomTab` / `updateLocaleUI` 觸發重繪）。
+- [x] 工作清單輪詢比對簽章後才重繪（2026.10.29 第十二階段：`buildTodoRenderSignature()`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

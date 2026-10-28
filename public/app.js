@@ -41,6 +41,7 @@ let activeBottomTab = 'logs';
 let isChalkboardAttachmentEnabled = localStorage.getItem('chat_attach_chalkboard') === 'true';
 let expsEntries = [];
 let lastExpsRenderSignature = '';
+let lastTodoRenderSignature = '';
 let expSearchQuery = '';
 let expSopFilter = '';
 let currentLocale = localStorage.getItem('ui_locale') || 'zh-TW';
@@ -6362,12 +6363,21 @@ function updateLLMStatusText(status = {}) {
 // ════════════════════════════════════════════════════════
 //  RENDER 📋 TODO LIST (center top)
 // ════════════════════════════════════════════════════════
+function buildTodoRenderSignature() {
+    return `${currentLocale}\n${JSON.stringify(Array.isArray(todoList) ? todoList : [])}`;
+}
+
 function renderTodoList() {
     const pending = todoList.filter(t => t.status !== 'success' && t.status !== 'failed' && t.status !== 'skipped');
     const done = todoList.filter(t => t.status === 'success' || t.status === 'failed' || t.status === 'skipped');
 
     todoCount.textContent = todoList.length;
     if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
+
+    // 每 2 秒輪詢都會呼叫；內容未變就跳過，避免重繪清掉 hover / 選取並打斷點擊。
+    const signature = buildTodoRenderSignature();
+    if (signature === lastTodoRenderSignature) return;
+    lastTodoRenderSignature = signature;
 
     if (!todoList.length) {
         todoContainer.innerHTML = '';
