@@ -55,7 +55,7 @@
 | **AI Provider 設定** | ✅ | 支援 20+ 種雲端與地端 Provider，自動帶入 Base URL，儲存於 AppData |
 | **互動安全機制** | ✅ | 系統變更 ACTION 由後端保管並回傳一次性 approval，綁完整動作與 session；支援對話中斷 |
 | **本地 API 防護** | ✅ | Loopback 綁定、Host / Origin / Fetch-Site 檢查、per-process token 與 CORS 白名單 |
-| **Agent Loop 預算** | ✅ | 最多 8 turns、12 次工具呼叫、180 秒總 deadline，重複 ACTION suppression |
+| **Agent Loop 預算** | ✅ | 每個 chat 請求共用 8 turns、12 次工具、180 秒 deadline；涵蓋首輪 ACTION 與自動抽取，重複 ACTION suppression |
 | **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載地端模型（gemma4:e2b-it-qat） |
 | **啟動啟始畫面** | ✅ | 首次執行顯示「環境設定中」，再次執行顯示「伺服器啟動中」，自動淡出 |
 | **UTF-8 編碼** | ✅ | PowerShell 輸出正確顯示中文，使用 `chcp 65001` 和 UTF-8 編碼 |
@@ -133,7 +133,7 @@ browser ──── public/index.html
 - **SOP 執行**：一般與 elevated PowerShell runner 均以 UTF-8 BOM 暫存 `.ps1` 搭配 `-File` 執行，保留中文、例外與 native exit code。一般路徑 timeout 必須終止 process tree；elevated process-tree 行為仍需獨立實機驗收。
 - **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
 - **任務與聊天資料不可靜默遺失**：`tasks.json` 必須 temp-write + rename；task ID 使用 UUID；running task 不可刪除或整批 import 覆寫。同 session 並行聊天完成時須附加到最新歷史，不得用舊快照覆寫。
-- **Agent Loop 必須有總上限**：迴圈本體每輪最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；LLM socket/read timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader。**已知缺口**：此預算自首輪 ACTION 執行後才建立，首輪工具與自動即時資訊抽取尚未計入同一上限，故不得宣稱整體 chat 請求已完全有界。
+- **Agent Loop 必須有總上限**：每個 `/api/chat` 請求在入口建立單一 `AgentLoopBudget`，首輪 ACTION、自動即時資訊搜尋 / 抽取、迴圈工具與每輪 LLM 呼叫共用最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；待確認的系統變更動作不得佔用工具額度。LLM 與頁面抓取 timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader、搜尋、抽取、`fetch_title` 與瀏覽器 fallback。提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）必須接收 abort，但仍使用各自 timeout，不得宣稱這些分支與一般 chat 共用同一預算；Playwright 已發出的導覽仍可能等到自身 timeout。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
 - **OAuth cache 不得混用憑證**：token cache key 必須包含 token URL、client ID、client secret、scope、audience。
 - **桌面發佈設定不得漂移**：Tauri bundle version 必須等於 `package.json.version`；CSP 不得為 `null`。現階段因既有 inline script/style 保留 `unsafe-inline`，但 script 僅限 self，並禁止 object / frame / 外部表單送出。`pkg.assets` 必須包含 `sops/**/*`、`skills/**/*`、`plugins/**/*`、`public/**/*`。
@@ -253,7 +253,7 @@ $true
 - [ ] 兩台實機的 Chalkboard revision / session 隔離、遠端停止與重連測試。
 - [ ] Vision Model 與 Agent Loop web research（真實 Provider / 網路）的端對端測試。
 - [x] consent button 的端對端行為測試（2026.10.28 第二階段：隔離 harness + 真實 HTTP / 瀏覽器，涵蓋跨分頁、重複點擊、Stop 競態）。
-- [ ] Agent Loop 預算涵蓋首輪 ACTION 與自動即時資訊抽取（8 turns / 12 tools / 180 秒不得只約束迴圈本體）。
+- [x] Agent Loop 預算涵蓋首輪 ACTION 與自動即時資訊抽取（2026.10.28 第二階段：請求級 `AgentLoopBudget`，scripted HTTP 測試驗證 13 個首輪動作只執行 12 次、抽取與搜尋共用額度、deadline 到期後首輪工具為 0）。提前 return 的專用工作流與 in-flight HTTP 中止仍待補。
 - [ ] 以最新 `pkg.assets` 重建 sidecar / Tauri EXE，於乾淨 Windows 驗證 Skills、Plugins、CLI、Chromium 安裝與 CSP。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
@@ -940,9 +940,17 @@ $true
 - 確認流程與一般送出共用 local pending 鎖；請求 settle 前重複或平行確認不得產生第二次請求。
 - Stop 只 abort 現有請求，pending 鎖保留至請求 settle；確認 API 成功後若在 `loadTodo()` 期間被 abort，不得呼叫 `executeTask`，並須明確告知任務仍保留在工作清單。
 
-### 27.4 驗收方式
+### 27.4 Agent Loop 請求級預算
+- `/api/chat` 必須在處理 request 的入口建立唯一 `AgentLoopBudget`；首輪 ACTION、自動即時資訊搜尋 / 抽取、Agent Loop 工具與每輪 LLM 呼叫都共用同一 8 turns / 12 tools / 180 秒上限。
+- 首輪 ACTION 進入執行前必須經 `takeActions()`（完整字串去重、工具數與 deadline 檢查）；自動抽取每次抓頁前必須取得工具額度，搜尋前必須確認仍有預算。
+- Agent Loop 必須先分流待確認的系統變更動作，再以其餘動作計入工具上限；待確認動作不得佔用實際工具額度。
+- 工具與 LLM 呼叫前必須檢查 abort；頁面抓取、Browser Use 搜尋 / 抽取 / `fetch_title`、`searchWebLinks` 與瀏覽器搜尋 fallback 必須接收 `signal` 與剩餘 timeout。
+- 提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）不在同一預算內，文件不得宣稱其已受此上限約束；這些流程必須接收並檢查 abort，且仍使用各自 timeout。Playwright 已發出的導覽不支援中途取消。
+
+### 27.5 驗收方式
 - 後端 consent 行為以真實 Express app + 真實 HTTP（loopback ephemeral port、`/api/meta` token）驗證；SOP、LLM、Browser、檔案系統與時間必須隔離。
 - UI 行為以 `public/app.js` 的真實 top-level 函式搭配最小 DOM 驗證，不得複製貼上另一份實作。
+- 預算行為以 scripted chat hook 驗證：13 個相異首輪動作只產生 12 次工具呼叫、搜尋與自動抽取共用額度、deadline 到期後首輪工具為 0，以及 Loop 待確認動作不佔工具額度。
 - 完整 suite 必須在暫存 APPDATA / LOCALAPPDATA 下執行，避免污染使用者設定。
 
 

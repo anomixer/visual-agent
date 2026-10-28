@@ -25,13 +25,20 @@
 - **Stop 與任務啟動的競態**：確認 API 成功後會 `loadTodo()` 再視 `executeTaskId` 決定是否執行。若使用者在 refresh 期間按 Stop，現在會檢查 abort 訊號並改為顯示「已在執行前停止；任務仍保留在工作清單」，不再於回應返回後啟動任務。一般聊天路徑的 `executeTask` 也加上同一檢查。
 - **失敗與過期狀態**：approval 失效、請求失敗或中止時，按鈕標為失敗並停用，訊息提示先檢查工作清單再重新提出；過期按鈕在初次渲染與重繪後都停用，且不發出請求。
 
+### Agent Loop 請求級預算
+- **預算改為整個請求共用**：`AgentLoopBudget` 現在於 `/api/chat` 入口建立，首輪 ACTION、自動即時資訊搜尋 / 抽取、Agent Loop 工具與每一輪 LLM 請求共用同一組 8 turns / 12 tools / 180 秒上限；LLM 與頁面抓取都使用剩餘 deadline。
+- **首輪動作也受去重與上限約束**：首輪 ACTION 先經 `takeActions()`，重複字串、超出工具數或 deadline 已到都不執行；自動抽取在每次抓頁前先 `spendToolCall()`，搜尋前也檢查 `canRunTool()`。
+- **待確認動作不佔工具額度**：Agent Loop 先將 `isSystemChangingAction()` 的動作轉為 `pendingActions`，只對真正可執行的動作計入 12 次工具上限；避免一輪大量提案把後續唯讀工具擠掉。
+- **中止貫穿工具鏈**：每輪工具、搜尋、抽取與 force-final 前都檢查 abort；`fetchReadablePageText`、Browser Use 搜尋 / 抽取 / `fetch_title`、`searchWebLinks` 與瀏覽器搜尋 fallback 都接受 `signal` 與剩餘 timeout。Playwright 已發出的頁面導覽本身不支援中途取消，仍可能等到自身 timeout 才返回。
+- **提前 return 工作流也接 abort**：手動 Browser Use 搜尋、財報活頁簿與遊戲攻略流程會把 `signal` 傳到搜尋、驗證、LLM 與 SEC 抓取，並在寫檔或開檔前檢查；這些流程仍使用各自 timeout，不宣稱已共用 8 turns / 12 tools / 180 秒預算。
+
 ### 測試與驗收
 - 新增 `test/helpers/chat-harness.js`：以 allowlist 載入真實 `server.js` / routes / consent / parser，搭配 in-memory fs、fake process / OS、scripted LLM、browser spy 與固定時鐘；不讀寫使用者 APPDATA、不連外、不執行 SOP 或子程序。
-- 新增 `test/chat-consent.test.js`（27 項，走真實 HTTP 與 `/api/meta` token）：token / Host / Origin、pending-only、單次與跨 session、到期邊界、可竄改 message、Loop consent、唯讀 Browser Use、running 任務保護、前綴偽裝、install/uninstall 綁定與 Browser Use 參數語法。
+- 新增 `test/chat-consent.test.js`（31 項，走真實 HTTP 與 `/api/meta` token）：token / Host / Origin、pending-only、單次與跨 session、到期邊界、可竄改 message、Loop consent、唯讀 Browser Use、running 任務保護、前綴偽裝、install/uninstall 綁定與 Browser Use 參數語法；另以 scripted chat hook 驗證首輪 13 個動作只執行 12 次工具、自動抽取與搜尋共用工具額度、deadline 到期後首輪工具為 0 次，以及 Loop 待確認動作不佔工具額度。
 - 新增 `test/chat-ui-consent.test.js`（9 項）：直接擷取 `public/app.js` 真實函式並以最小 DOM 執行，涵蓋跨分頁歸屬、按鈕重建、確認 payload、全域 busy、Stop 與 refresh 競態。
 - `npm test`（隔離的暫存 APPDATA / LOCALAPPDATA）：20 個 JS 語法、16 支測試檔與 server smoke 全綠。
 - 瀏覽器實測（同隔離 harness、in-memory 任務）：確認按鈕顯示 `[install]`、按鈕跨分頁保留、重複點擊只送一次、晚到回覆只寫原分頁、過期按鈕停用；最後驗證確認後於 todo refresh 期間按 Stop，`/execute` 請求為 0、任務維持 pending、busy 已釋放、console 無 error / warn。
-- **尚未完成**：Agent Loop 預算仍只涵蓋迴圈本體，首輪 ACTION 執行與自動即時資訊抽取未計入同一 8 turns / 12 tools / 180 秒上限；早於本次修改的財報、關鍵字與 Browser 安裝 fallback 尚未逐一納入 consent 回歸。UAC、雙機 Chalkboard、Vision 與乾淨 Windows EXE 仍須實機驗收。
+- **尚未完成**：財報、遊戲攻略、手動 Browser 與 Browser 安裝 fallback 等提前 return 的工作流已接 abort，但仍使用各自 timeout，尚未納入同一 8 turns / 12 tools / 180 秒預算與 consent 回歸；Playwright 已發出的導覽仍可能等到自身 timeout。UAC、雙機 Chalkboard、Vision 與乾淨 Windows EXE 仍須實機驗收。
 
 ---
 

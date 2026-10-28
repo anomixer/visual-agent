@@ -88,6 +88,7 @@ function createChatHarness() {
     const executorCalls = [];
     const timers = new Set();
     let replies = [];
+    let onChat = null;
     let now = Date.parse('2026-10-28T12:00:00Z');
     const deny = (operation) => {
         violations.push(operation);
@@ -156,6 +157,7 @@ function createChatHarness() {
         checkOllamaStatus: async () => ({ available: true, modelReady: true, modelName: 'consent-fixture-text' }),
         async chatWithLLM(message, history, options, locale) {
             llmCalls.push({ message, history: clone(history), locale, aborted: !!options?.signal?.aborted });
+            if (onChat) onChat({ message, locale });
             if (!replies.length) return deny('unscripted llm.chatWithLLM');
             const reply = replies.shift();
             options?.onDelta?.(reply);
@@ -284,6 +286,10 @@ module.exports = {
         setReplies(next) {
             assert.ok(Array.isArray(next) && next.every((reply) => typeof reply === 'string'));
             replies = next.slice();
+        },
+        setChatHook(hook) {
+            assert.ok(hook === null || typeof hook === 'function');
+            onChat = hook;
         },
         setTasks(tasks, runningId = tasks.find((task) => task.status === 'running')?.id || null) {
             captured.setTasks(tasks, runningId);

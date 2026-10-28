@@ -952,16 +952,18 @@ function openUrlInDefaultBrowser(url = '') {
     return runPowerShellCapture(`Start-Process -FilePath '${escaped}'`, 8000);
 }
 
-async function fetchNvidiaLatestFinancialSnapshot() {
+async function fetchNvidiaLatestFinancialSnapshot(options = {}) {
     const cik = '0001045810';
     const headers = {
         'User-Agent': 'visual-agent/2026.04.01 (local desktop agent)',
         'Accept': 'application/json',
     };
+    if (options.signal?.aborted) throw new Error('Request aborted');
+    const timeoutSignal = AbortSignal.timeout(20000);
     const response = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
         method: 'GET',
         headers,
-        signal: AbortSignal.timeout(20000),
+        signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
     });
     if (!response.ok) {
         throw new Error(`SEC API failed (${response.status})`);
@@ -1577,8 +1579,10 @@ async function runBrowserUseOperation(params = {}) {
                 external: true,
             };
         }
+        if (params.signal?.aborted) throw new Error('Request aborted');
         const page = await ensureBrowserSession();
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(60000, Number(params.timeoutMs) || 30000) });
+        if (params.signal?.aborted) throw new Error('Request aborted');
         const snap = await captureBrowserSnapshot(page);
         return {
             success: true,
@@ -1591,17 +1595,21 @@ async function runBrowserUseOperation(params = {}) {
     if (mode === 'search') {
         const query = String(params.query || '').trim();
         const limit = Math.min(10, Number(params.limit) || 5);
+        const toolOptions = { signal: params.signal, timeoutMs: params.timeoutMs };
+        if (params.signal?.aborted) throw new Error('Request aborted');
         let results = [];
         let source = 'fetch';
         let fetchError = '';
         try {
-            results = await searchWebLinks(query, limit);
+            results = await searchWebLinks(query, limit, toolOptions);
         } catch (error) {
+            if (params.signal?.aborted) throw error;
             fetchError = error.message || String(error);
         }
         if (!results.length && isPlaywrightAvailable() && hasPlaywrightBrowserBinary()) {
+            if (params.signal?.aborted) throw new Error('Request aborted');
             source = 'browser';
-            results = await searchWebLinksWithBrowser(query, limit);
+            results = await searchWebLinksWithBrowser(query, limit, toolOptions);
         }
         if (!results.length && (!isPlaywrightAvailable() || !hasPlaywrightBrowserBinary())) {
             return {
@@ -1627,9 +1635,11 @@ async function runBrowserUseOperation(params = {}) {
     }
     if (mode === 'fetch_title') {
         const url = String(params.url || '').trim();
+        if (params.signal?.aborted) throw new Error('Request aborted');
         const response = await safeFetchText(url, {
             headers: { 'User-Agent': 'visual-agent/2026.04.01' },
-            timeoutMs: 20000,
+            timeoutMs: Math.min(20000, Math.max(1, Number(params.timeoutMs) || 20000)),
+            signal: params.signal,
             maxBytes: 1024 * 1024,
         });
         if (!response.ok) throw new Error(`fetch failed (${response.status})`);
@@ -1644,12 +1654,15 @@ async function runBrowserUseOperation(params = {}) {
     if (mode === 'navigate') {
         const url = normalizeNavigateUrl(params.url || '');
         if (!url) return { success: false, mode, error: 'Missing URL' };
+        if (params.signal?.aborted) throw new Error('Request aborted');
         const page = await ensureBrowserSession();
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: Math.min(60000, Number(params.timeoutMs) || 30000) });
+        if (params.signal?.aborted) throw new Error('Request aborted');
         const snap = await captureBrowserSnapshot(page);
         return { success: true, mode, ...snap };
     }
     if (mode === 'snapshot') {
+        if (params.signal?.aborted) throw new Error('Request aborted');
         const page = await ensureBrowserSession();
         const snap = await captureBrowserSnapshot(page);
         return { success: true, mode, ...snap };
@@ -1657,7 +1670,10 @@ async function runBrowserUseOperation(params = {}) {
     if (mode === 'extract_text') {
         const targetUrl = normalizeNavigateUrl(params.url || '');
         if (targetUrl) {
-            const fetched = await fetchReadablePageText(targetUrl);
+            const fetched = await fetchReadablePageText(targetUrl, {
+                signal: params.signal,
+                timeoutMs: params.timeoutMs,
+            });
             return {
                 success: true,
                 mode,
@@ -1667,6 +1683,7 @@ async function runBrowserUseOperation(params = {}) {
                 source: 'fetch',
             };
         }
+        if (params.signal?.aborted) throw new Error('Request aborted');
         const page = await ensureBrowserSession();
         const text = await page.evaluate(() => (document.body?.innerText || '').slice(0, 12000));
         return {
@@ -1819,15 +1836,17 @@ function htmlToReadableText(html = '') {
         .trim());
 }
 
-async function fetchReadablePageText(url = '') {
+async function fetchReadablePageText(url = '', options = {}) {
     const targetUrl = normalizeNavigateUrl(url);
     if (!targetUrl) throw new Error('Missing URL');
+    if (options.signal?.aborted) throw new Error('Request aborted');
     const response = await safeFetchText(targetUrl, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
         },
-        timeoutMs: 25000,
+        timeoutMs: Math.min(25000, Math.max(1, Number(options.timeoutMs) || 25000)),
+        signal: options.signal,
         maxBytes: 2 * 1024 * 1024,
     });
     if (!response.ok) {
@@ -1847,14 +1866,21 @@ async function fetchReadablePageText(url = '') {
     };
 }
 
-async function extractTextFromSearchResults(results = [], limit = 2) {
+async function extractTextFromSearchResults(results = [], limit = 2, options = {}) {
     const items = Array.isArray(results) ? results : [];
     const extracted = [];
     for (const item of items.slice(0, Math.max(1, limit))) {
+        if (options.signal?.aborted) break;
+        if (typeof options.beforeExtract === 'function' && !options.beforeExtract()) break;
         const url = String(item?.url || '').trim();
         if (!url) continue;
         try {
-            const page = await runBrowserUseOperation({ mode: 'extract_text', url });
+            const page = await runBrowserUseOperation({
+                mode: 'extract_text',
+                url,
+                signal: options.signal,
+                timeoutMs: typeof options.remainingMs === 'function' ? options.remainingMs() : undefined,
+            });
             if (page?.success && page.text) {
                 extracted.push({
                     title: page.title || item.title || '',
@@ -1903,9 +1929,14 @@ function normalizeDuckDuckGoUrl(url = '') {
     return '';
 }
 
-async function searchWebLinks(query = '', limit = 5) {
+async function searchWebLinks(query = '', limit = 5, options = {}) {
     const q = String(query || '').trim();
     if (!q) return [];
+    if (options.signal?.aborted) throw new Error('Request aborted');
+    const timeoutSignal = AbortSignal.timeout(
+        Math.min(20000, Math.max(1, Number(options.timeoutMs) || 20000))
+    );
+    const signal = options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal;
     const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}`;
     const response = await fetch(url, {
         method: 'GET',
@@ -1913,7 +1944,7 @@ async function searchWebLinks(query = '', limit = 5) {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html',
         },
-        signal: AbortSignal.timeout(20000),
+        signal,
     });
     if (!response.ok) {
         throw new Error(`Web search failed (${response.status})`);
@@ -1947,20 +1978,24 @@ async function searchWebLinks(query = '', limit = 5) {
     return results;
 }
 
-async function searchWebLinksWithBrowser(query = '', limit = 5) {
+async function searchWebLinksWithBrowser(query = '', limit = 5, options = {}) {
     const q = String(query || '').trim();
     if (!q) return [];
+    if (options.signal?.aborted) throw new Error('Request aborted');
     const maxItems = Math.min(10, Number(limit) || 5);
+    const navTimeoutMs = Math.min(25000, Math.max(1, Number(options.timeoutMs) || 25000));
     const page = await ensureBrowserSession();
 
     // 1. 優先嘗試 Yahoo 搜尋，因為 Yahoo 防爬蟲檢測極低，且不易觸發驗證
     try {
+        if (options.signal?.aborted) throw new Error('Request aborted');
         fileLog(`[BrowserSearch] Attempting Yahoo search for: "${q}"`);
         await page.goto(`https://search.yahoo.com/search?p=${encodeURIComponent(q)}`, {
             waitUntil: 'domcontentloaded',
-            timeout: 25000,
+            timeout: navTimeoutMs,
         });
         await page.waitForTimeout(800).catch(() => null);
+        if (options.signal?.aborted) throw new Error('Request aborted');
         const yahooResults = await page.evaluate((maxIt) => {
             const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
             const seen = new Set();
@@ -1983,23 +2018,27 @@ async function searchWebLinksWithBrowser(query = '', limit = 5) {
             return items;
         }, maxItems);
 
+        if (options.signal?.aborted) throw new Error('Request aborted');
         if (yahooResults && yahooResults.length > 0) {
             fileLog(`[BrowserSearch] Yahoo search succeeded with ${yahooResults.length} results`);
             return yahooResults;
         }
         fileLog(`[BrowserSearch] Yahoo search returned 0 results, trying Bing...`);
     } catch (err) {
+        if (options.signal?.aborted) throw err;
         fileLog(`[BrowserSearch] Yahoo search failed: ${err.message}, trying Bing...`);
     }
 
     // 2. Fallback 到原先的 Bing 搜尋
     try {
+        if (options.signal?.aborted) throw new Error('Request aborted');
         fileLog(`[BrowserSearch] Attempting Bing search for: "${q}"`);
         await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(q)}`, {
             waitUntil: 'domcontentloaded',
-            timeout: 25000,
+            timeout: navTimeoutMs,
         });
         await page.waitForTimeout(800).catch(() => null);
+        if (options.signal?.aborted) throw new Error('Request aborted');
         const bingResults = await page.evaluate((maxIt) => {
             const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
             const seen = new Set();
@@ -2038,9 +2077,11 @@ async function searchWebLinksWithBrowser(query = '', limit = 5) {
             return items;
         }, maxItems);
 
+        if (options.signal?.aborted) throw new Error('Request aborted');
         fileLog(`[BrowserSearch] Bing search returned ${bingResults ? bingResults.length : 0} results`);
         return Array.isArray(bingResults) ? bingResults : [];
     } catch (err) {
+        if (options.signal?.aborted) throw err;
         fileLog(`[BrowserSearch] Bing search failed: ${err.message}`);
         return [];
     }
@@ -2052,15 +2093,17 @@ function looksLikeUnavailableHtml(text = '') {
     return /(404 not found|page not found|content not available|this page isn't available|video unavailable|removed by uploader|private video|已移除|無法使用|找不到頁面)/i.test(t);
 }
 
-async function validatePlayableArticleUrl(inputUrl = '') {
+async function validatePlayableArticleUrl(inputUrl = '', options = {}) {
     const url = String(inputUrl || '').trim();
     if (!/^https?:\/\//i.test(url)) return null;
+    if (options.signal?.aborted) throw new Error('Request aborted');
     try {
+        const timeoutSignal = AbortSignal.timeout(12000);
         const response = await fetch(url, {
             method: 'GET',
             headers: { 'User-Agent': 'visual-agent/2026.04.02', 'Accept': 'text/html,*/*' },
             redirect: 'follow',
-            signal: AbortSignal.timeout(12000),
+            signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
         });
         if (!response.ok) return null;
         const finalUrl = response.url || url;
@@ -2072,7 +2115,8 @@ async function validatePlayableArticleUrl(inputUrl = '') {
         const snippet = body.slice(0, 3000);
         if (looksLikeUnavailableHtml(snippet)) return null;
         return finalUrl;
-    } catch {
+    } catch (error) {
+        if (options.signal?.aborted) throw error;
         return null;
     }
 }
@@ -2270,9 +2314,10 @@ function fallbackRankGuideResults(results = [], topic = '', limit = 5) {
         .map(({ title, url }) => ({ title, url }));
 }
 
-async function searchGameGuideArticles(topic = '', limit = 5) {
+async function searchGameGuideArticles(topic = '', limit = 5, options = {}) {
     const q = String(topic || '').trim();
     if (!q) return [];
+    if (options.signal?.aborted) throw new Error('Request aborted');
     const queries = [
         `${q} 攻略 walkthrough guide tips`,
     ];
@@ -2281,16 +2326,19 @@ async function searchGameGuideArticles(topic = '', limit = 5) {
     for (const query of queries) {
             let results = [];
             try {
-                results = await searchWebLinks(query, 10);
+                results = await searchWebLinks(query, 10, options);
             } catch (err) {
+                if (options.signal?.aborted) throw err;
                 fileLog(`[GuideSearch] DDG search failed: ${err.message}`);
             }
             if (!results || !results.length) {
                 try {
+                    if (options.signal?.aborted) throw new Error('Request aborted');
                     fileLog(`[GuideSearch] Attempting browser fallback search for query: "${query}"`);
-                    results = await searchWebLinksWithBrowser(query, 10);
+                    results = await searchWebLinksWithBrowser(query, 10, options);
                     fileLog(`[GuideSearch] Browser fallback returned ${results.length} results`);
                 } catch (err) {
+                    if (options.signal?.aborted) throw err;
                     fileLog(`[GuideSearch] Browser fallback search failed: ${err.message}`);
                 }
             }
@@ -2302,8 +2350,9 @@ async function searchGameGuideArticles(topic = '', limit = 5) {
     const usable = [];
     const fallback = [];
     for (const item of ranked) {
+        if (options.signal?.aborted) throw new Error('Request aborted');
         if (fallback.length < limit) fallback.push({ title: item.title, url: item.url });
-        const finalUrl = await validatePlayableArticleUrl(item.url);
+        const finalUrl = await validatePlayableArticleUrl(item.url, options);
         if (!finalUrl) continue;
         usable.push({ title: item.title, url: finalUrl });
         if (usable.length >= limit) break;
@@ -2349,15 +2398,17 @@ function normalizeYouTubeWatchUrl(inputUrl = '') {
     return `https://www.youtube.com/watch?v=${videoId}`;
 }
 
-async function isYouTubeVideoPlayable(watchUrl = '') {
+async function isYouTubeVideoPlayable(watchUrl = '', options = {}) {
     const normalized = normalizeYouTubeWatchUrl(watchUrl);
     if (!normalized) return null;
+    if (options.signal?.aborted) throw new Error('Request aborted');
     try {
+        const timeoutSignal = AbortSignal.timeout(10000);
         const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`;
         const response = await fetch(endpoint, {
             method: 'GET',
             headers: { 'User-Agent': 'visual-agent/2026.04.02' },
-            signal: AbortSignal.timeout(10000),
+            signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
         });
         if (!response.ok) return null;
         const data = await response.json().catch(() => ({}));
@@ -2367,20 +2418,23 @@ async function isYouTubeVideoPlayable(watchUrl = '') {
             title: String(data?.title || '').trim(),
             authorName: String(data?.author_name || '').trim(),
         };
-    } catch {
+    } catch (error) {
+        if (options.signal?.aborted) throw error;
         return null;
     }
 }
 
-async function isYouTubeWatchPagePlayable(watchUrl = '') {
+async function isYouTubeWatchPagePlayable(watchUrl = '', options = {}) {
     const normalized = normalizeYouTubeWatchUrl(watchUrl);
     if (!normalized) return { playable: false };
+    if (options.signal?.aborted) throw new Error('Request aborted');
     try {
+        const timeoutSignal = AbortSignal.timeout(12000);
         const response = await fetch(normalized, {
             method: 'GET',
             headers: { 'User-Agent': 'visual-agent/2026.04.02', 'Accept': 'text/html,*/*' },
             redirect: 'follow',
-            signal: AbortSignal.timeout(12000),
+            signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
         });
         if (!response.ok) return { playable: false };
         const html = await response.text();
@@ -2396,7 +2450,8 @@ async function isYouTubeWatchPagePlayable(watchUrl = '') {
         }
         
         return { playable: true, publishYear };
-    } catch {
+    } catch (error) {
+        if (options.signal?.aborted) throw error;
         return { playable: false };
     }
 }
@@ -2443,23 +2498,27 @@ function containsTopicToken(title = '', topic = '') {
     return tokens.some((token) => t.includes(token));
 }
 
-async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
+async function searchPlayableYouTubeVideos(topic = '', limit = 5, options = {}) {
     const query = String(topic || '').trim();
     if (!query) return [];
+    if (options.signal?.aborted) throw new Error('Request aborted');
     fileLog(`[VideoSearch] Start searching for topic: "${query}"`);
     let candidates = [];
     try {
-        candidates = await searchWebLinks(`${query} 攻略 site:youtube.com`, 24);
+        candidates = await searchWebLinks(`${query} 攻略 site:youtube.com`, 24, options);
         fileLog(`[VideoSearch] DDG search returned ${candidates.length} candidates`);
     } catch (err) {
+        if (options.signal?.aborted) throw err;
         fileLog(`[VideoSearch] DDG search failed for videos: ${err.message}`);
     }
     if (!candidates || !candidates.length) {
         try {
+            if (options.signal?.aborted) throw new Error('Request aborted');
             fileLog(`[VideoSearch] Attempting browser fallback search...`);
-            candidates = await searchWebLinksWithBrowser(`${query} 攻略 walkthrough site:youtube.com`, 24);
+            candidates = await searchWebLinksWithBrowser(`${query} 攻略 walkthrough site:youtube.com`, 24, options);
             fileLog(`[VideoSearch] Browser fallback returned ${candidates.length} candidates`);
         } catch (err) {
+            if (options.signal?.aborted) throw err;
             fileLog(`[VideoSearch] Browser fallback search failed for videos: ${err.message}`);
         }
     }
@@ -2480,6 +2539,7 @@ async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
     const playable = [];
     const fallback = [];
     for (const entry of unique.values()) {
+        if (options.signal?.aborted) throw new Error('Request aborted');
         const isLowValue = isLikelyLowValueVideoTitle(entry.title);
         const hasTopic = containsTopicToken(entry.title, query);
         fileLog(`[VideoSearch] Candidate: "${entry.title}" -> isLowValue=${isLowValue}, hasTopic=${hasTopic}`);
@@ -2487,7 +2547,7 @@ async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
         if (!hasTopic) continue;
         if (fallback.length < limit) fallback.push({ title: entry.title, url: entry.url });
         
-        const playableMeta = await isYouTubeVideoPlayable(entry.url);
+        const playableMeta = await isYouTubeVideoPlayable(entry.url, options);
         fileLog(`[VideoSearch]   oembed check: ${playableMeta?.ok ? 'OK' : 'failed'}`);
         if (!playableMeta?.ok) continue;
         
@@ -2497,7 +2557,7 @@ async function searchPlayableYouTubeVideos(topic = '', limit = 5) {
         if (finalIsLowValue) continue;
         if (!finalHasTopic) continue;
         
-        const pagePlayable = await isYouTubeWatchPagePlayable(entry.url);
+        const pagePlayable = await isYouTubeWatchPagePlayable(entry.url, options);
         fileLog(`[VideoSearch]   watch page playability: ${pagePlayable.playable ? 'playable' : 'unplayable'} (year: ${pagePlayable.publishYear})`);
         if (!pagePlayable.playable) continue;
         
@@ -2561,8 +2621,11 @@ function selectGameGuideFallbackLines(extractedGuides = [], limit = 5) {
     return useful;
 }
 
-async function buildGameGuideTakeaways(topic = '', guideResults = [], locale = 'zh-TW') {
-    const extractedGuides = await extractTextFromSearchResults(guideResults, 2);
+async function buildGameGuideTakeaways(topic = '', guideResults = [], locale = 'zh-TW', options = {}) {
+    if (options.signal?.aborted) throw new Error('Request aborted');
+    const extractedGuides = await extractTextFromSearchResults(guideResults, 2, {
+        signal: options.signal,
+    });
     const usableGuides = extractedGuides.filter((item) =>
         item?.text && !/^EXTRACT_FAILED:/i.test(String(item.text || ''))
     );
@@ -2590,6 +2653,7 @@ async function buildGameGuideTakeaways(topic = '', guideResults = [], locale = '
                 prompt,
                 [],
                 {
+                    signal: options.signal,
                     systemContext: locale === 'en-US'
                         ? 'You summarize game guide sources into practical steps. Keep it concise and cite source titles when useful.'
                         : '你負責把遊戲攻略來源整理成實用步驟。回答要精簡，必要時提到來源標題。',
@@ -2629,7 +2693,8 @@ function findOfficeInstallSop(sops = []) {
     return sops.find((item) => /office|libreoffice/i.test(`${item.id} ${item.name}`)) || null;
 }
 
-async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW', sops = []) {
+async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW', sops = [], options = {}) {
+    if (options.signal?.aborted) throw new Error('Request aborted');
     const workbookTarget = extractWorkbookTarget(message);
     const workbookPath = resolveWorkbookPath(workbookTarget);
     const env = detectSpreadsheetEnvironment();
@@ -2665,10 +2730,12 @@ async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW'
         };
     }
 
-    const snapshot = await fetchNvidiaLatestFinancialSnapshot();
+    const snapshot = await fetchNvidiaLatestFinancialSnapshot(options);
+    if (options.signal?.aborted) throw new Error('Request aborted');
     const summary = buildNvidiaSnapshotLines(snapshot);
     const writeResult = updateWorkbookWithNvidiaSnapshot(workbookPath, snapshot, env);
     if (writeResult.success && writeResult.data?.success) {
+        if (options.signal?.aborted) throw new Error('Request aborted');
         openFileWithDefaultApp(workbookPath);
         return {
             success: true,
@@ -2832,13 +2899,17 @@ async function handleAgentGameResearchWorkflowV2(message = '', locale = 'zh-TW')
 }
 
 
-async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW') {
+async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW', options = {}) {
+    if (options.signal?.aborted) throw new Error('Request aborted');
     const topic = extractGameTopicV3(message);
-    const guideResults = await searchGameGuideArticles(topic, 5);
-    const videoResults = await searchPlayableYouTubeVideos(topic, 5);
+    const guideResults = await searchGameGuideArticles(topic, 5, options);
+    if (options.signal?.aborted) throw new Error('Request aborted');
+    const videoResults = await searchPlayableYouTubeVideos(topic, 5, options);
+    if (options.signal?.aborted) throw new Error('Request aborted');
     const guideTakeaways = guideResults.length
-        ? await buildGameGuideTakeaways(topic, guideResults, locale)
+        ? await buildGameGuideTakeaways(topic, guideResults, locale, options)
         : { text: '', bullets: [], extractedGuides: [], llmUsed: false };
+    if (options.signal?.aborted) throw new Error('Request aborted');
 
     if (!guideResults.length && !videoResults.length) {
         return {
@@ -3962,6 +4033,10 @@ app.post('/api/chat', async (req, res) => {
     res.once('close', () => {
         if (!res.writableEnded) chatAbortController.abort();
     });
+    // 同一請求的所有工具與 LLM 呼叫共用一個上限；首輪 ACTION 與自動抽取也算在內。
+    const MAX_AGENT_TURNS = 8;
+    const agentLoopBudget = new AgentLoopBudget({ maxTurns: MAX_AGENT_TURNS });
+    const canRunTool = () => !chatAbortController.signal.aborted && agentLoopBudget.canRunTool();
     const { locale } = req.body || {};
     const agentRunId = normalizeAgentRunId(req.body?.agentRunId || '');
     setAgentRunStatus(agentRunId, 'planning', locale || 'zh-TW');
@@ -4024,16 +4099,22 @@ app.post('/api/chat', async (req, res) => {
         if (!approvedActionString && isManualBrowserSearchIntent(message)) {
             const query = inferBrowserSearchQuery(message, requestedHistory) || 'GTA V 攻略';
             const targetUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+            const manualTimeout = () => Math.max(1, Math.min(45000, agentLoopBudget.remainingMs()));
             const browserResult = await runBrowserUseOperation({
                 mode: 'navigate',
                 url: targetUrl,
-                timeoutMs: 45000,
+                signal: chatAbortController.signal,
+                timeoutMs: manualTimeout(),
             });
+            if (chatAbortController.signal.aborted) return;
             const linkPreview = await runBrowserUseOperation({
                 mode: 'search',
                 query,
                 limit: 5,
+                signal: chatAbortController.signal,
+                timeoutMs: manualTimeout(),
             }).catch(() => ({ success: false, results: [] }));
+            if (chatAbortController.signal.aborted) return;
             const linkLines = (linkPreview?.results || [])
                 .slice(0, 3)
                 .map((item) => `- [${item.title}](${item.url})`);
@@ -4060,14 +4141,21 @@ app.post('/api/chat', async (req, res) => {
             });
         }
         if (!approvedActionString && detectAgentFinanceIntent(message)) {
-            const agentResponse = await handleAgentFinanceWorkbookWorkflow(message, locale || 'zh-TW', sopsWithState);
+            const agentResponse = await handleAgentFinanceWorkbookWorkflow(
+                message, locale || 'zh-TW', sopsWithState, { signal: chatAbortController.signal }
+            );
+            if (chatAbortController.signal.aborted) return;
             if (agentResponse) return res.json(agentResponse);
         }
         if (!approvedActionString && detectGameResearchIntentV3(message)) {
-            const gameResponse = await handleAgentGameResearchWorkflowV3(message, locale || 'zh-TW');
+            const gameResponse = await handleAgentGameResearchWorkflowV3(
+                message, locale || 'zh-TW', { signal: chatAbortController.signal }
+            );
+            if (chatAbortController.signal.aborted) return;
             if (gameResponse) return res.json(gameResponse);
         }
     } catch (agentErr) {
+        if (chatAbortController.signal.aborted) return;
         fileLog(`Agent workflow failed: ${agentErr.message}`);
     }
     let suggestions = []; // Suggestion buttons disabled; use plain text and task list actions instead.
@@ -4293,6 +4381,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             const activeRemoteSession = remoteState.sessions.find((item) => item.status === 'active');
             const chatOptions = {
                 signal: chatAbortController.signal,
+                timeoutMs: Math.max(1, agentLoopBudget.remainingMs()),
                 systemContext: [
                     buildLocalAgentContext(activeRemoteSession || null),
                     runtimeDateContext,
@@ -4383,7 +4472,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 llmReply = await llm.chatWithLLM(
                     `${message}\n\n${contextNote}${wingetPromptNote}${microsoftStorePromptNote}${githubPromptNote}\n\n[[Experience Log]]\n${experienceContext || '(No experience entries yet)'}\n\n[System] The attached Chalkboard image could not be processed by the configured vision model/provider. Start by explicitly telling the user that visual recognition failed and ask them to select a Vision Model in Settings or provide the key text, then assist with the text request.`,
                     requestHistory,
-                    { systemContext: chatOptions.systemContext, signal: chatAbortController.signal },
+                    { systemContext: chatOptions.systemContext, signal: chatAbortController.signal, timeoutMs: Math.max(1, agentLoopBudget.remainingMs()) },
                     locale
                 );
             }
@@ -4409,6 +4498,14 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             for (const actionStr of actions) {
                 const command = actionStr.split(/\s+/, 1)[0];
                 if (chatAbortController.signal.aborted) return;
+                // 首輪工具與 Loop 共用 12 次工具、180 秒上限；重複動作也不再執行。
+                if (!approvedActionString) {
+                    const firstTurnAllowance = agentLoopBudget.takeActions([actionStr]);
+                    if (firstTurnAllowance.accepted.length === 0) {
+                        console.log(`[Agent Loop] First-turn action skipped (duplicate/over-budget/expired): ${actionStr}`);
+                        continue;
+                    }
+                }
                 if (command === 'ADD_TASK') {
                     const sopId = parseActionArg(actionStr, 'sop_id');
                     if (sopId) {
@@ -4570,7 +4667,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     let browserResult;
                     try {
                         setAgentRunStatus(agentRunId, mode === 'extract_text' ? 'extracting' : 'searching', locale || 'zh-TW', query || url || mode);
-                        browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
+                        browserResult = await runBrowserUseOperation({
+                            mode, query, url, limit: 5,
+                            signal: chatAbortController.signal,
+                            timeoutMs: Math.max(1, agentLoopBudget.remainingMs()),
+                        });
                     } catch (browserError) {
                         browserResult = {
                             success: false,
@@ -4592,7 +4693,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             );
                             if (isWebResearchIntent(researchIntentMessage)) {
                                 setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query || message);
-                                const extracted = await extractTextFromSearchResults(items, 2);
+                                const extracted = await extractTextFromSearchResults(items, 2, {
+                                    signal: chatAbortController.signal,
+                                    beforeExtract: () => canRunTool() && agentLoopBudget.spendToolCall(),
+                                    remainingMs: () => agentLoopBudget.remainingMs(),
+                                });
                                 if (extracted.length > 0) {
                                     actionSummaries.push(
                                         (locale === 'en-US'
@@ -4761,12 +4866,18 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             // ═══════════════════════════════════════════════════════════════
             // 強制 Web Research Fallback：如果 LLM 沒輸出 ACTION 但這是網路查詢
             // ═══════════════════════════════════════════════════════════════
-            if (!approvedActionString && !pendingAgentActions.length && !actionSummaries.length && isWebResearchIntent(researchIntentMessage)) {
+            if (!approvedActionString && !pendingAgentActions.length && !actionSummaries.length
+                && isWebResearchIntent(researchIntentMessage) && canRunTool()) {
+                agentLoopBudget.spendToolCall();
                 console.log('[Agent Loop] Web research request detected but LLM did not output ACTION. Forcing fallback search...');
                 const query = buildWebResearchSearchQuery(researchIntentMessage, locale || 'zh-TW');
                 try {
                     setAgentRunStatus(agentRunId, 'searching', locale || 'zh-TW', query);
-                    const browserResult = await runBrowserUseOperation({ mode: 'search', query, limit: 5 });
+                    const browserResult = await runBrowserUseOperation({
+                        mode: 'search', query, limit: 5,
+                        signal: chatAbortController.signal,
+                        timeoutMs: Math.max(1, agentLoopBudget.remainingMs()),
+                    });
                     const items = Array.isArray(browserResult?.results) ? browserResult.results.slice(0, 5) : [];
                     if (items.length > 0) {
                         actionSummaries.push(
@@ -4783,7 +4894,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             ].filter(Boolean).join('\n')
                         );
                         setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query);
-                        const extracted = await extractTextFromSearchResults(items, 2);
+                        const extracted = await extractTextFromSearchResults(items, 2, {
+                            signal: chatAbortController.signal,
+                            beforeExtract: () => canRunTool() && agentLoopBudget.spendToolCall(),
+                            remainingMs: () => agentLoopBudget.remainingMs(),
+                        });
                         if (extracted.length > 0) {
                             actionSummaries.push(
                                 (locale === 'en-US'
@@ -4831,11 +4946,6 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             // ═══════════════════════════════════════════════════════════════
             // Hermes-style Agent Loop: Loop until LLM stops outputting ACTIONs
             // ═══════════════════════════════════════════════════════════════
-            const MAX_AGENT_TURNS = 8;
-            const agentLoopBudget = new AgentLoopBudget({
-                maxTurns: MAX_AGENT_TURNS,
-                initialActions: actions.filter((action) => /^BROWSER_USE(?:\s|$)/.test(action)),
-            });
             let agentTurnCount = 0;
             let conversationHistory = []; // Start fresh conversation for this request
             let lastToolBundle = actionSummaries.slice();
@@ -4871,7 +4981,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             console.log(`[Agent Loop] Initialization: actionSummaries.length = ${lastToolBundle.length}, llmReply length = ${llmReply.length}, usableFirst=${isUsableAgentFinalReply(llmReply)}, shouldLoop=${shouldRunAgentLoop}`);
 
             // Enter loop when web tool results need to become a real user-facing answer
-            while (shouldRunAgentLoop && lastToolBundle.length > 0 && agentLoopBudget.canStartTurn()) {
+            while (shouldRunAgentLoop && lastToolBundle.length > 0 && !chatAbortController.signal.aborted && agentLoopBudget.canStartTurn()) {
                 agentLoopBudget.startTurn();
                 agentTurnCount = agentLoopBudget.turns;
                 const forceFinal = emptyFinalRetries > 0 || agentTurnCount >= 3;
@@ -4896,9 +5006,16 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     );
 
                     const { actions: loopActions } = extractActionsFromReply(loopReply);
-                    const loopActionBudget = agentLoopBudget.takeActions(loopActions);
-                    if (loopActionBudget.duplicates > 0 || loopActionBudget.overflow > 0) {
-                        console.log(`[Agent Loop] Skipped ${loopActionBudget.duplicates} duplicate and ${loopActionBudget.overflow} over-budget actions`);
+                    // 待確認動作不會執行，不應佔用工具額度；先分流再計預算。
+                    const loopConsentActions = loopActions.filter((action) => isSystemChangingAction(action));
+                    const loopExecutableActions = loopActions.filter((action) => !isSystemChangingAction(action));
+                    for (const actionStr of loopConsentActions) {
+                        pendingAgentActions.push(createPendingAgentAction(actionStr));
+                    }
+                    const loopActionBudget = agentLoopBudget.takeActions(loopExecutableActions);
+                    if (loopActionBudget.duplicates > 0 || loopActionBudget.overflow > 0
+                        || loopActionBudget.expired > 0) {
+                        console.log(`[Agent Loop] Skipped ${loopActionBudget.duplicates} duplicate, ${loopActionBudget.overflow} over-budget and ${loopActionBudget.expired} expired actions`);
                     }
 
                     // Add this assistant reply to conversation
@@ -4912,10 +5029,6 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     for (const actionStr of loopActionBudget.accepted) {
                         const command = actionStr.split(/\s+/, 1)[0];
                         if (chatAbortController.signal.aborted) return;
-                        if (isSystemChangingAction(actionStr)) {
-                            pendingAgentActions.push(createPendingAgentAction(actionStr));
-                            continue;
-                        }
                         if (agentLoopBudget.remainingMs() <= 0) {
                             console.warn('[Agent Loop] Deadline reached before executing the next action');
                             break;
@@ -4926,7 +5039,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             const url = parseActionArg(actionStr, 'url');
                             try {
                                 setAgentRunStatus(agentRunId, mode === 'extract_text' ? 'extracting' : 'searching', locale || 'zh-TW', query || url || mode);
-                                const browserResult = await runBrowserUseOperation({ mode, query, url, limit: 5 });
+                                const browserResult = await runBrowserUseOperation({
+                                    mode, query, url, limit: 5,
+                                    signal: chatAbortController.signal,
+                                    timeoutMs: Math.max(1, agentLoopBudget.remainingMs()),
+                                });
                                 if (browserResult?.success) {
                                     if (mode === 'search' && Array.isArray(browserResult.results)) {
                                         const items = browserResult.results.slice(0, 5);
@@ -4937,7 +5054,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                             );
                                             if (isWebResearchIntent(researchIntentMessage) && agentLoopBudget.remainingMs() > 0) {
                                                 setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query || message);
-                                                const extracted = await extractTextFromSearchResults(items, 2);
+                                                const extracted = await extractTextFromSearchResults(items, 2, {
+                                                    signal: chatAbortController.signal,
+                                                    beforeExtract: () => canRunTool() && agentLoopBudget.spendToolCall(),
+                                                    remainingMs: () => agentLoopBudget.remainingMs(),
+                                                });
                                                 if (extracted.length > 0) {
                                                     newActionSummaries.push(
                                                         (locale === 'en-US' ? 'Extracted source content:\n' : '已自動抓取來源內容：\n') +
@@ -5027,7 +5148,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             let cleanReply = approvedActionString ? actionSummaries.join('\n') : stripControlTagsFromReply(currentLlmReply);
 
             // If still unusable but we have web tool data, one last forced summarize, then local fallback
-            if (!pendingAgentActions.length && !isUsableAgentFinalReply(cleanReply) && shouldRunAgentLoop && looksLikeWebObservation(lastToolBundle) && agentLoopBudget.remainingMs() > 0) {
+            if (!pendingAgentActions.length && !chatAbortController.signal.aborted && !isUsableAgentFinalReply(cleanReply) && shouldRunAgentLoop && looksLikeWebObservation(lastToolBundle) && agentLoopBudget.remainingMs() > 0) {
                 try {
                     setAgentRunStatus(agentRunId, 'summarizing', locale || 'zh-TW', 'force-final');
                     const forceReply = await llm.chatWithLLM(

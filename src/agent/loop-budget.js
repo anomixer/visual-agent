@@ -32,16 +32,31 @@ class AgentLoopBudget {
         return true;
     }
 
+    canRunTool() {
+        return this.toolCalls < this.maxToolCalls && this.remainingMs() > 0;
+    }
+
+    spendToolCall() {
+        if (!this.canRunTool()) return false;
+        this.toolCalls += 1;
+        return true;
+    }
+
     takeActions(actions) {
         const accepted = [];
         let duplicates = 0;
         let overflow = 0;
+        let expired = 0;
 
         for (const rawAction of Array.isArray(actions) ? actions : []) {
             const action = String(rawAction || '').trim();
             if (!action) continue;
             if (this.seenActions.has(action)) {
                 duplicates += 1;
+                continue;
+            }
+            if (this.remainingMs() <= 0) {
+                expired += 1;
                 continue;
             }
             if (this.toolCalls >= this.maxToolCalls) {
@@ -53,7 +68,7 @@ class AgentLoopBudget {
             accepted.push(action);
         }
 
-        return { accepted, duplicates, overflow };
+        return { accepted, duplicates, overflow, expired };
     }
 }
 

@@ -34,4 +34,15 @@ assert.deepEqual(second.accepted, []);
 assert.equal(second.duplicates, 1);
 passed++;
 
+const deadlineBudget = new AgentLoopBudget({ maxToolCalls: 5, deadlineMs: 100, now: () => now });
+assert.equal(deadlineBudget.canRunTool(), true);
+assert.equal(deadlineBudget.spendToolCall(), true);
+now += 101;
+assert.equal(deadlineBudget.canRunTool(), false);
+assert.equal(deadlineBudget.spendToolCall(), false);
+const expired = deadlineBudget.takeActions(['BROWSER_USE mode="search" query="late"']);
+assert.deepEqual(expired.accepted, []);
+assert.equal(expired.expired, 1);
+passed++;
+
 console.log(`\n[agent-loop-budget.test] ${passed} passed`);

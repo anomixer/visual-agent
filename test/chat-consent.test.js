@@ -364,3 +364,53 @@ for (const mode of ['mode = "navigate"', "mode='navigate'", "action = ' OPEN '"]
         assert.equal(client.harness.llmCalls.length, 1);
     });
 }
+
+test('first-turn actions share the 12-tool budget', async (t) => {
+    const client = await setup(t);
+    const actions = Array.from({ length: 13 }, (_, index) =>
+        tag(`BROWSER_USE mode="extract_text" url="https://example.com/consent-fixture/tool-${index}"`));
+    client.harness.setReplies([actions.join('\n'), FINAL]);
+    const body = success(await client.chat());
+    assert.equal(client.harness.browserCalls.length, 12);
+    assert.ok(client.harness.browserCalls.every((call) => call.mode === 'extract_text'));
+    assert.ok(body.reply.length > 0);
+});
+
+test('automatic extraction spends the same tool budget as searches', async (t) => {
+    const client = await setup(t);
+    const searches = Array.from({ length: 7 }, (_, index) =>
+        tag(`BROWSER_USE mode="search" query="synthetic fixture ${index}"`));
+    client.harness.setReplies([searches.join('\n'), FINAL]);
+    const body = success(await client.chat({ message: 'Compare the synthetic fixture sources.' }));
+    const modes = client.harness.browserCalls.map((call) => call.mode);
+    assert.equal(modes.length, 12);
+    assert.equal(modes.filter((mode) => mode === 'search').length, 6);
+    assert.equal(modes.filter((mode) => mode === 'extract_text').length, 6);
+    assert.ok(body.reply.length > 0);
+});
+
+test('an expired request deadline prevents first-turn tools', async (t) => {
+    const client = await setup(t);
+    client.harness.setChatHook(() => client.harness.advanceTime(181000));
+    client.harness.setReplies([tag(`BROWSER_USE mode="extract_text" url="${SOURCE_URL}"`)]);
+    const body = success(await client.chat());
+    assert.deepEqual(client.harness.browserCalls, []);
+    assert.ok(body.reply.length > 0);
+});
+
+test('loop consent actions do not consume the shared tool budget', async (t) => {
+    const client = await setup(t);
+    const opens = Array.from({ length: 3 }, (_, index) =>
+        tag(`OPEN_URL url="https://example.com/consent-fixture/open-${index}"`));
+    const extracts = Array.from({ length: 12 }, (_, index) =>
+        tag(`BROWSER_USE mode="extract_text" url="${SOURCE_URL}?tool=${index}"`));
+    client.harness.setReplies([
+        tag('BROWSER_USE mode="search" query="synthetic fixture"'),
+        [...opens, ...extracts].join('\n'),
+        FINAL,
+    ]);
+    const body = success(await client.chat({ message: 'Compare the synthetic fixture sources.' }));
+    assert.equal(body.pendingActions.length, 3, 'System-changing loop actions stay pending');
+    assert.equal(client.harness.browserCalls.length, 12, 'Pending approvals must not spend tool calls');
+    assert.equal(client.harness.browserCalls.filter((call) => call.mode === 'extract_text').length, 11);
+});
