@@ -320,6 +320,15 @@ function buildNvidiaSnapshotLines(snapshot = {}) {
     ];
 }
 
+function formatExtractedSourcesSummary(extracted = [], locale = 'zh-TW') {
+    return (locale === 'en-US' ? 'Extracted source content:\n' : '已自動抓取來源內容：\n') +
+        extracted.map((item, index) => [
+            `Source ${index + 1}: ${item.title || '(untitled)'}`,
+            `URL: ${item.url}`,
+            item.text,
+        ].filter(Boolean).join('\n')).join('\n\n');
+}
+
 module.exports = {
     tokenizeForMatch,
     scoreByTokenSet,
@@ -330,7 +339,6 @@ module.exports = {
     normalizeChalkboardAttachment,
     getTaskDurationText,
     pickExperienceHighlights,
-    buildExperienceAdvice,
     buildExperienceMarkdown,
     detectAgentFinanceIntent,
     detectGameResearchIntent,
@@ -340,6 +348,7 @@ module.exports = {
     escapeRegExp,
     formatUsdBillions,
     buildNvidiaSnapshotLines,
+    formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted,
     buildTaskExportPayload,
 };

@@ -1018,7 +1018,6 @@ module.exports = {
     modelSupportsVision,
     getVisionCapableModel,
     invalidateCache,
-    ensureOllamaRunning,
     listModels,
     setCurrentModel,
     getCurrentModel: () => currentModel,

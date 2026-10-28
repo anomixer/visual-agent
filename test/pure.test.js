@@ -107,6 +107,16 @@ eq('task export payload', pure.buildTaskExportPayload([{ id: 't1' }], '2026.8.7'
     tasks: [{ id: 't1' }],
 });
 
+// 來源內容摘要（Agent Loop 三處共用）
+const extractedFixture = [
+    { title: 'A', url: 'https://a', text: 'Text A' },
+    { title: '', url: 'https://b', text: '' },
+];
+eq('extracted sources zh-TW', pure.formatExtractedSourcesSummary(extractedFixture, 'zh-TW'),
+    '已自動抓取來源內容：\nSource 1: A\nURL: https://a\nText A\n\nSource 2: (untitled)\nURL: https://b');
+eq('extracted sources en-US', pure.formatExtractedSourcesSummary(extractedFixture.slice(0, 1), 'en-US'),
+    'Extracted source content:\nSource 1: A\nURL: https://a\nText A');
+
 // ---- 結果 ----
 console.log(`\n[pure.test] ${pass} passed, ${fail} failed`);
 if (fail) {

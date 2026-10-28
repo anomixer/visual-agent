@@ -5,6 +5,29 @@
 
 ---
 
+## 📌 2026.10.29 — 第八階段：重複摘要收斂與未使用匯出清理
+
+> 接續同日第七階段；把實際重複的摘要組字與「SOP 加入任務」payload 收斂成單一出口，並清掉只有模組內部使用的匯出。版本維持 `2026.8.7`，行為不變。
+
+### Agent Loop 來源摘要
+- 「已自動抓取來源內容／Extracted source content」在 `/api/chat` 出現三份完全相同的組字（首輪 Browser Use、Loop 工具輪、force-search 分支）。
+- 抽出 `formatExtractedSourcesSummary(extracted, locale)` 至 `src/pure.js`，三處改為同一函式；輸出格式、`(untitled)` fallback 與空欄位過濾維持原樣。
+- `test/pure.test.js` 新增 2 項：zh-TW / en-US 標頭與多來源以空行串接、缺 title/text 的條目只保留有效行。
+
+### 前端 SOP 加入任務
+- `addSopToTodo()` 與 `addAndExecuteSop()` 原本各自複製同一段 `getLocalizedItem` → `POST /api/todo` payload。
+- 抽出 `queueSopTodo(sop)` 回傳 `{ localized, action, data }`，兩個入口共用；成功後的記錄、切頁與執行流程各自保留。
+
+### 未使用匯出
+- 移除只被模組內部使用、無人 import 的匯出項：`chatApiError`（protocol）、`ensureOllamaRunning`（llm）、`buildExperienceAdvice`（pure）、`normalizeIp`（remote-agent）。
+- 函式本體與內部呼叫全部保留；`test/*.test.js` 未引用這些名稱，移除後測試不受影響。
+
+### 測試與驗收
+- `npm test`：23 個 JS 語法、26 支測試檔（`pure.test.js` 44 項）與 server smoke 全綠。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第七階段：任務匯入修復與 Remote 死碼清理
 
 > 接續同日第六階段；修好從未成功的「匯入任務清單」流程，並移除 Remote 已停用功能的無呼叫方法。版本維持 `2026.8.7`。
@@ -16,6 +39,12 @@
 - 修正：前端改呼叫 `/api/todo/import`，接受匯出物件與舊版瀏覽器 fallback 的純陣列兩種格式，僅在回傳為陣列時覆蓋清單，失敗時把伺服器錯誤一起寫進工作日志（不再靜默）。後端成功回應補上最新 `todoList`。
 - 新增 `test/todo-import.test.js`（3 項，真實 HTTP）：成功匯入並取代清單、非陣列 payload 被拒且原清單不變、running task 時拒絕匯入。
 - 新增 `test/task-import-ui.test.js`（3 項）：擷取 `app.js` 真實 `importTasks()`，以 fake `FileReader` / `api` 驗證端點、payload 拆封、成功渲染與失敗提示。
+
+### 瀏覽器驗收（隔離設定檔）
+- 以 `%TEMP%\va-ui-verify` 作為 `APPDATA` / `LOCALAPPDATA` 啟動 `node src/server.js`，全程未觸碰使用者真實設定檔；port 3210 / 19168 由該隔離實例持有。
+- 隱藏的 `#importFileInput` 無法直接作為 `upload_file` 目標，改以 `DataTransfer` 放入匯出格式 JSON 並派發 `change`，走的仍是 `app.js` 真正的 change listener 與 `importTasks()`。
+- 結果：`POST /api/todo/import` 回 200，`todoList` 由 0 變 1、標題與檔案一致，footer 顯示「1 個任務」，工作日志出現「✅ 任務清單已匯入」，console 無 error / warn。
+- 驗收後已停止隔離實例、確認 3210 / 19168 不再監聽，並刪除暫存設定檔與診斷腳本。
 
 ### Remote 死碼
 - 移除 `requestModelShare`、`respondModelShare`、`cancelModelShare`：對應路由自 2026.05.06 起固定回 410，全庫無呼叫點。

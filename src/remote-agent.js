@@ -746,5 +746,4 @@ module.exports = {
     DEFAULT_REMOTE_PORT: DEFAULT_PORT,
     RemoteAgentService,
     getLocalIPv4List,
-    normalizeIp,
 };

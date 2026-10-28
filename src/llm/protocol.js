@@ -108,7 +108,6 @@ module.exports = {
     normalizeMessageContent,
     normalizeHistoryMessages,
     resolveChatUrl,
-    chatApiError,
     assertChatResponseOk,
     extractReplyContent,
     splitThoughtTags,

@@ -44,6 +44,7 @@ const {
     buildExperienceMarkdown, detectAgentFinanceIntent,
     extractWingetSearchQuery, parseWingetSearchOutput, slugifyWingetPackage,
     buildNvidiaSnapshotLines,
+    formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted, buildTaskExportPayload,
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
@@ -4491,16 +4492,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                     remainingMs: () => agentLoopBudget.remainingMs(),
                                 });
                                 if (extracted.length > 0) {
-                                    actionSummaries.push(
-                                        (locale === 'en-US'
-                                            ? 'Extracted source content:\n'
-                                            : '已自動抓取來源內容：\n') +
-                                        extracted.map((item, index) => [
-                                            `Source ${index + 1}: ${item.title || '(untitled)'}`,
-                                            `URL: ${item.url}`,
-                                            item.text,
-                                        ].filter(Boolean).join('\n')).join('\n\n')
-                                    );
+                                    actionSummaries.push(formatExtractedSourcesSummary(extracted, locale));
                                 }
                             }
                         } else {
@@ -4692,16 +4684,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             remainingMs: () => agentLoopBudget.remainingMs(),
                         });
                         if (extracted.length > 0) {
-                            actionSummaries.push(
-                                (locale === 'en-US'
-                                    ? 'Extracted source content:\n'
-                                    : '已自動抓取來源內容：\n') +
-                                extracted.map((item, index) => [
-                                    `Source ${index + 1}: ${item.title || '(untitled)'}`,
-                                    `URL: ${item.url}`,
-                                    item.text,
-                                ].filter(Boolean).join('\n')).join('\n\n')
-                            );
+                            actionSummaries.push(formatExtractedSourcesSummary(extracted, locale));
                         }
                     } else {
                         if (browserResult?.browserUnavailable) {
@@ -4852,14 +4835,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                                     remainingMs: () => agentLoopBudget.remainingMs(),
                                                 });
                                                 if (extracted.length > 0) {
-                                                    newActionSummaries.push(
-                                                        (locale === 'en-US' ? 'Extracted source content:\n' : '已自動抓取來源內容：\n') +
-                                                        extracted.map((item, i) => [
-                                                            `Source ${i + 1}: ${item.title || '(untitled)'}`,
-                                                            `URL: ${item.url}`,
-                                                            item.text,
-                                                        ].filter(Boolean).join('\n')).join('\n\n')
-                                                    );
+                                                    newActionSummaries.push(formatExtractedSourcesSummary(extracted, locale));
                                                 }
                                             }
                                         }

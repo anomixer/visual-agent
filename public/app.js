@@ -7295,7 +7295,7 @@ function addLogEntry(logItem) {
     }
 }
 
-async function addSopToTodo(sop) {
+async function queueSopTodo(sop) {
     const localized = getLocalizedItem(sop);
     const action = localized.recommendedAction || 'install';
     const data = await api('/api/todo', {
@@ -7308,6 +7308,11 @@ async function addSopToTodo(sop) {
             action
         },
     });
+    return { localized, action, data };
+}
+
+async function addSopToTodo(sop) {
+    const { localized, action, data } = await queueSopTodo(sop);
     if (data.success) {
         todoList = data.todoList;
         renderTodoList();
@@ -7317,18 +7322,7 @@ async function addSopToTodo(sop) {
 }
 
 async function addAndExecuteSop(sop) {
-    const localized = getLocalizedItem(sop);
-    const action = localized.recommendedAction || 'install';
-    const data = await api('/api/todo', {
-        method: 'POST',
-        body: {
-            title: localized.name || localized.id,
-            description: localized.id || '',
-            category: localized.category || 'SOP',
-            skillId: localized.id,
-            action
-        },
-    });
+    const { localized, action, data } = await queueSopTodo(sop);
     if (data.success) {
         todoList = data.todoList;
         renderTodoList();

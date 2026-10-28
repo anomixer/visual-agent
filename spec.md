@@ -263,6 +263,7 @@ $true
 - [x] SOP 解析可獨立測試、SOPExecutor 純方法與 Remote socket 註冊去重（2026.10.29 第五階段：`parseSOPContent()`、`attachSocketHandlers()`、`test/sop-parser.test.js`、`test/sop-executor-pure.test.js`）。
 - [x] 修正 CLI 無參數時的 `listSkills` 未定義錯誤，並清除未使用的匯入與變數（2026.10.29 第六階段：`listSOPs()`、`test/cli.test.js`）。
 - [x] 修復任務匯入端點與 payload 落差，並移除 Remote 已停用功能的死碼（2026.10.29 第七階段：`/api/todo/import`、`test/todo-import.test.js`、`test/task-import-ui.test.js`）。
+- [x] 收斂 Agent Loop 三處重複的來源摘要、SOP 加入任務 payload 與四個僅模組內使用的匯出（2026.10.29 第八階段：`formatExtractedSourcesSummary()`、`queueSopTodo()`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
