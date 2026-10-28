@@ -5356,7 +5356,8 @@ function startPolling() {
 
         await loadTodo();
         pollLogs();
-        loadExps();
+        // 經驗庫面板看不到時不必輪詢，切到該分頁或展開面板時會立即抓一次。
+        if (isExpsPanelVisible()) loadExps();
         checkLLMStatus();
     }, 2000);
 }
@@ -7493,7 +7494,12 @@ function expandLog() {
         isLogCollapsed = false;
         logPanel.classList.remove('collapsed');
         if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
+        if (activeBottomTab === 'exps') loadExps();
     }
+}
+
+function isExpsPanelVisible() {
+    return activeBottomTab === 'exps' && !isLogCollapsed;
 }
 
 function switchBottomTab(tabId) {
@@ -7503,7 +7509,10 @@ function switchBottomTab(tabId) {
     });
     logBody?.classList.toggle('active', activeBottomTab === 'logs');
     expsBody?.classList.toggle('active', activeBottomTab === 'exps');
-    if (activeBottomTab === 'exps') renderExps();
+    if (activeBottomTab === 'exps') {
+        renderExps();
+        loadExps();
+    }
 }
 
 function buildExpsRenderSignature() {
@@ -8598,6 +8607,7 @@ function toggleLog() {
     $('#logResizer')?.classList.toggle('hidden', isLogCollapsed);
     updateLayoutButtons();
     if (btnToggleLog) btnToggleLog.textContent = isLogCollapsed ? '展開 ▲' : '收起 ▼';
+    if (!isLogCollapsed && activeBottomTab === 'exps') loadExps();
     addUILog(isLogCollapsed ? '日誌面板已收起' : '日誌面板已展開', 'info');
 }
 
