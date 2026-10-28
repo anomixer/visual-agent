@@ -40,6 +40,7 @@ let activeSidebarTab = 'recommend';
 let activeBottomTab = 'logs';
 let isChalkboardAttachmentEnabled = localStorage.getItem('chat_attach_chalkboard') === 'true';
 let expsEntries = [];
+let lastExpsRenderSignature = '';
 let expSearchQuery = '';
 let expSopFilter = '';
 let currentLocale = localStorage.getItem('ui_locale') || 'zh-TW';
@@ -6305,6 +6306,7 @@ function updateLocaleUI() {
     updateLLMStatusText(window.__lastLLMStatus);
     renderSidebarTab();
     renderTodoList();
+    renderExps();
     updateChatModeBadges();
     updateChatModelBadgeDisplay(window.__lastLLMStatus || null);
     renderLocalSessionControls();
@@ -7486,10 +7488,24 @@ function switchBottomTab(tabId) {
     });
     logBody?.classList.toggle('active', activeBottomTab === 'logs');
     expsBody?.classList.toggle('active', activeBottomTab === 'exps');
+    if (activeBottomTab === 'exps') renderExps();
+}
+
+function buildExpsRenderSignature() {
+    return [
+        currentLocale,
+        expSearchQuery,
+        expSopFilter,
+        JSON.stringify(Array.isArray(expsEntries) ? expsEntries : []),
+    ].join('\n');
 }
 
 function renderExps() {
     if (!expEntries) return;
+    // 每 2 秒輪詢都會呼叫；內容未變就跳過，避免重繪清掉選取範圍與 hover 狀態。
+    const signature = buildExpsRenderSignature();
+    if (signature === lastExpsRenderSignature) return;
+    lastExpsRenderSignature = signature;
     expEntries.innerHTML = '';
 
     const filtered = (Array.isArray(expsEntries) ? expsEntries : []).filter((entry) => {
@@ -7541,7 +7557,7 @@ function renderExps() {
         card.className = 'exp-card';
         const htmlContent = renderMarkdown(entry.content || '');
         const updatedAt = entry.updatedAt
-            ? new Date(entry.updatedAt).toLocaleString(currentLocale === 'en' ? 'en-US' : 'zh-TW', { hour12: false })
+            ? new Date(entry.updatedAt).toLocaleString(currentLocale === 'en-US' ? 'en-US' : 'zh-TW', { hour12: false })
             : '';
 
         card.innerHTML = `

@@ -5,6 +5,27 @@
 
 ---
 
+## 📌 2026.10.29 — 第十一階段：經驗庫重繪守衛與英文日期修正
+
+> 接續同日第十階段；經驗庫面板每 2 秒被輪詢重繪，順帶修掉英文介面仍用 zh-TW 日期格式的問題。版本維持 `2026.8.7`。
+
+### 每 2 秒重繪
+- `startPolling()` 每 2 秒呼叫 `loadExps()`，即使資料沒變也會清空 `#expEntries` 並重建所有卡片，等於每 2 秒重跑每張卡的 `renderMarkdown()` + DOMPurify，並清掉使用者的文字選取與 hover 狀態。
+- 新增 `buildExpsRenderSignature()`（語系、搜尋字串、SOP 篩選、整份 entries）與 `lastExpsRenderSignature`；`renderExps()` 在簽章相同時直接 return，資料或篩選條件變更才會重繪。
+- 切到經驗庫分頁時（`switchBottomTab`）主動呼叫 `renderExps()`；`updateLocaleUI()` 也加入同一呼叫，語系切換後篩選器標籤與空狀態立即更新，不必等下一次輪詢。
+- 篩選到已不存在的 SOP 時，`expSopFilter` 會被重設，簽章隨之改變，最多多一次重繪後即收斂。
+
+### 英文日期格式
+- `renderExps()` 判斷式為 `currentLocale === 'en'`，但 `currentLocale` 只有 `zh-TW` / `en-US` 兩種值，英文介面因此一直套用 zh-TW 日期格式，與詳情視窗（`en-US`）不一致。改為 `'en-US'`。
+
+### 測試與驗收
+- `test/app-i18n.test.js` 的 harness 補上 `renderExps` stub，並把 `exps` 加入 `updateLocaleUI` 應呼叫的清單。
+- `npm test`：23 個 JS 語法、27 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify3`，自建 3 筆 exps）：連續兩個輪詢週期後卡片仍是同一 DOM 節點（修正前會重建）；en-US 卡片日期為 `10/29/2026, 10:35:00`、篩選器為「All SOPs」；搜尋 / 篩選 / 重設分別得到 1 / 1 / 2 張卡；磁碟追加條目後 3 秒內自動出現；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第十階段：動作任務與模型快取條件的單一出口
 
 > 接續同日第九階段；把 Planner / Loop 內完全相同的任務物件與快取判斷收斂成單一函式。版本維持 `2026.8.7`，輸出與行為不變。
