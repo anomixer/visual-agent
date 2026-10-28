@@ -5,6 +5,25 @@
 
 ---
 
+## 📌 2026.10.29 — 第十四階段：工作日誌改為增量輪詢
+
+> 接續同日第十三階段；前端每 2 秒抓的是整份 log，改為只抓新增部分。版本維持 `2026.8.7`，回應格式向後相容。
+
+### 增量輪詢
+- `pollLogs()` 原本每 2 秒 `GET /api/logs` 取回整個記憶體 log 陣列，再從 `currentLogIndex` 之後逐筆 `addLogEntry()`；log 越長，傳輸與 JSON 解析成本越高，且每次都重算 `data.logs.length`。
+- `/api/logs` 新增選用參數 `?since=N`：`N` 為前端已收到的筆數，合法時只回 `logs.slice(N)`；同時固定回傳 `total`（目前總筆數），前端以 `total` 對齊索引。
+- 未帶 `since`、非數字、0 或負數一律回完整清單，既有呼叫端不受影響；`since` 超過總筆數時回空陣列，索引自動收斂到 `total`。
+- 前端 `pollLogs()` 只送 `?since=${currentLogIndex}`，以 `data.total` 更新索引；若伺服器重啟或 log 被截斷使索引超前，下一次回應會把索引拉回實際總數，不會永久卡住。
+- 切片判斷抽為 `selectLogsForClient(allLogs, sinceParam)` 放入 `src/pure.js`，路由只負責呼叫與回傳，方便不啟 server 也能測到各分支。
+
+### 測試與驗收
+- `test/pure.test.js` 新增 6 項：無 `since`、`since=0`、非數字、負數皆回完整清單與 `total`；`since` 在範圍內只回增量；`since` 超出長度回空陣列。
+- `npm test`：23 個 JS 語法、27 支測試檔與 server smoke 全綠。
+- HTTP 驗收（隔離設定檔 `%TEMP%\va-ui-verify7`）：`/api/logs` 在無參數、`since=0`、`since=abc`、`since=-5`、`since=2`、`since=99` 皆回 `{"success":true,"logs":[],"total":0}`；啟動時 log 為空，切片本身由單元測試覆蓋。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第十三階段：經驗庫讀取快取與 Provider 文字跳脫
 
 > 接續同日第十二階段；前端不再每 2 秒重繪後，後端也不必每 2 秒重讀所有經驗檔。版本維持 `2026.8.7`。

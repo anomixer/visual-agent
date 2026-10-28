@@ -45,7 +45,7 @@ const {
     extractWingetSearchQuery, parseWingetSearchOutput, slugifyWingetPackage,
     buildNvidiaSnapshotLines,
     formatExtractedSourcesSummary,
-    escapePowerShellSingleQuoted, buildTaskExportPayload,
+    escapePowerShellSingleQuoted, buildTaskExportPayload, selectLogsForClient,
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
 const { pickSaveFilePath } = require('./native-dialogs');
@@ -5321,9 +5321,10 @@ app.post('/api/chalkboard/draft', (req, res) => {
         },
     });
 });
-// GET /api/logs 取得全域 log
+// GET /api/logs?since=N 取得全域 log（since 為前端已收到的筆數，只回新增部分）
 app.get('/api/logs', (req, res) => {
-    res.json({ success: true, logs });
+    const { logs: payloadLogs, total } = selectLogsForClient(logs, req.query.since);
+    res.json({ success: true, logs: payloadLogs, total });
 });
 /**
  * 寫入 Debug Log 到 APPDATA，修復打包後看不到 Console 的問題

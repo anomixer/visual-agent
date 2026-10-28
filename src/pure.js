@@ -307,6 +307,14 @@ function buildTaskExportPayload(tasks = [], agentVersion = '', exportedAt = new 
     return { exportedAt, agentVersion, tasks };
 }
 
+function selectLogsForClient(allLogs = [], sinceParam = '') {
+    const since = Number.parseInt(String(sinceParam ?? ''), 10);
+    if (!Number.isSafeInteger(since) || since <= 0) {
+        return { logs: allLogs, total: allLogs.length };
+    }
+    return { logs: allLogs.slice(since), total: allLogs.length };
+}
+
 function buildNvidiaSnapshotLines(snapshot = {}) {
     const periodLabel = snapshot.periodEnd || 'N/A';
     const filedLabel = snapshot.filedAt || 'N/A';
@@ -351,4 +359,5 @@ module.exports = {
     formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted,
     buildTaskExportPayload,
+    selectLogsForClient,
 };

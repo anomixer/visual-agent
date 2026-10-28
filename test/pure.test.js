@@ -1,4 +1,4 @@
-// 純函式單元測試 — 覆蓋 src/pure.js（自 server.js 抽出的 19 個純函式）。
+// 純函式單元測試 — 覆蓋 src/pure.js（自 server.js 抽出的純函式）。
 // 不依賴 Ollama / 網路 / 顯示卡，可在乾淨 CI runner 跑。
 // 用法：node test/pure.test.js（或經 scripts/check.js 的測試段呼叫）
 'use strict';
@@ -116,6 +116,15 @@ eq('extracted sources zh-TW', pure.formatExtractedSourcesSummary(extractedFixtur
     '已自動抓取來源內容：\nSource 1: A\nURL: https://a\nText A\n\nSource 2: (untitled)\nURL: https://b');
 eq('extracted sources en-US', pure.formatExtractedSourcesSummary(extractedFixture.slice(0, 1), 'en-US'),
     'Extracted source content:\nSource 1: A\nURL: https://a\nText A');
+
+// /api/logs?since= 增量回傳
+const logFixture = [{ ts: 1 }, { ts: 2 }, { ts: 3 }];
+eq('logs 無 since 回全部', pure.selectLogsForClient(logFixture), { logs: logFixture, total: 3 });
+eq('logs since=0 回全部', pure.selectLogsForClient(logFixture, '0'), { logs: logFixture, total: 3 });
+eq('logs since 非數字回全部', pure.selectLogsForClient(logFixture, 'abc'), { logs: logFixture, total: 3 });
+eq('logs since 負數回全部', pure.selectLogsForClient(logFixture, '-5'), { logs: logFixture, total: 3 });
+eq('logs since=2 回增量', pure.selectLogsForClient(logFixture, '2'), { logs: [{ ts: 3 }], total: 3 });
+eq('logs since 超出長度回空', pure.selectLogsForClient(logFixture, '99'), { logs: [], total: 3 });
 
 // ---- 結果 ----
 console.log(`\n[pure.test] ${pass} passed, ${fail} failed`);

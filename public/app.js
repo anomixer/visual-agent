@@ -5403,14 +5403,11 @@ function announceTaskStatusChanges(previousTasks, nextTasks) {
 }
 
 async function pollLogs() {
-    const data = await api('/api/logs');
-    if (data.success && data.logs?.length) {
-        if (data.logs.length > currentLogIndex) {
-            const newLogs = data.logs.slice(currentLogIndex);
-            newLogs.forEach(addLogEntry);
-            currentLogIndex = data.logs.length;
-        }
-    }
+    // 只取尚未收到的部分；伺服器以 total 回報絕對筆數，重啟或截斷後會自動對齊。
+    const data = await api(`/api/logs?since=${currentLogIndex}`);
+    if (!data.success || !Array.isArray(data.logs)) return;
+    data.logs.forEach(addLogEntry);
+    currentLogIndex = Number.isFinite(data.total) ? data.total : currentLogIndex + data.logs.length;
 }
 
 // ════════════════════════════════════════════════════════

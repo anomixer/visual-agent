@@ -269,6 +269,7 @@ $true
 - [x] 經驗庫輪詢不再無條件重繪，並修正英文介面日期格式（2026.10.29 第十一階段：`buildExpsRenderSignature()`、`switchBottomTab` / `updateLocaleUI` 觸發重繪）。
 - [x] 工作清單輪詢比對簽章後才重繪（2026.10.29 第十二階段：`buildTodoRenderSignature()`）。
 - [x] 經驗庫讀取改以檔案簽章快取，模型清單錯誤文字補跳脫（2026.10.29 第十三階段：`experienceEntriesCache`、`escapeHtml(provider)`）。
+- [x] 工作日誌輪詢改為增量回傳（2026.10.29 第十四階段：`/api/logs?since=`、`selectLogsForClient()`、`pollLogs()`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
