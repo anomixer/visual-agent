@@ -87,6 +87,34 @@ outgoingService.handlePayload(outgoingSocket, {
 assert.equal(outgoingService.getSession('outgoing-session').messages.at(-1).revision, 7);
 passed++;
 
+// 產品已移除 model share，但舊版 peer 仍可能送來這幾種封包；狀態需維持可解讀且不拋錯。
+outgoingService.handlePayload(outgoingSocket, {
+    type: 'model_share_request',
+    createdAt: '2026-10-29T00:00:00.000Z',
+    requestedBy: 'peer-user',
+    proxyToken: 'token-1',
+});
+assert.equal(outgoingService.getSession('outgoing-session').modelShare.status, 'pending');
+assert.equal(outgoingService.getSession('outgoing-session').modelShare.role, 'consumer');
+assert.equal(outgoingService.getSession('outgoing-session').messages.at(-1).type, 'system_message');
+passed++;
+
+outgoingService.handlePayload(outgoingSocket, {
+    type: 'model_share_response',
+    accept: true,
+    proxyToken: 'token-1',
+});
+assert.equal(outgoingService.getSession('outgoing-session').modelShare.status, 'active');
+passed++;
+
+outgoingService.handlePayload(outgoingSocket, {
+    type: 'model_share_cancel',
+    reason: 'stop',
+});
+assert.equal(outgoingService.getSession('outgoing-session').modelShare.status, 'idle');
+assert.equal(outgoingService.getSession('outgoing-session').modelShare.lastStatus, 'active');
+passed++;
+
 const floodService = createService();
 const floodSocket = createSocket();
 floodSocket.setEncoding = () => {};

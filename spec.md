@@ -164,7 +164,7 @@ browser ──── public/index.html
 | POST | `/api/llm/config` | 更新 LLM Provider 設定 |
 | POST | `/api/chat` | AI 對話（LLM 優先）|
 | GET | `/api/logs` | 全域執行日誌 |
-| POST | `/api/todo/import` | 匯入任務清單；有 running task 時拒絕整批取代 |
+| POST | `/api/todo/import` | 匯入任務清單（回傳最新 `todoList`）；有 running task 時拒絕整批取代 |
 
 ---
 
@@ -262,6 +262,7 @@ $true
 - [x] 集中 Windows 另存新檔流程、清除確認無引用的舊版工作流，並修正任務匯出 `agentVersion`（2026.10.28 第四階段：`src/native-dialogs.js`、`buildTaskExportPayload()`）。
 - [x] SOP 解析可獨立測試、SOPExecutor 純方法與 Remote socket 註冊去重（2026.10.29 第五階段：`parseSOPContent()`、`attachSocketHandlers()`、`test/sop-parser.test.js`、`test/sop-executor-pure.test.js`）。
 - [x] 修正 CLI 無參數時的 `listSkills` 未定義錯誤，並清除未使用的匯入與變數（2026.10.29 第六階段：`listSOPs()`、`test/cli.test.js`）。
+- [x] 修復任務匯入端點與 payload 落差，並移除 Remote 已停用功能的死碼（2026.10.29 第七階段：`/api/todo/import`、`test/todo-import.test.js`、`test/task-import-ui.test.js`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

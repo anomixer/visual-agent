@@ -3537,7 +3537,7 @@ app.post('/api/todo/import', (req, res) => {
         if (Array.isArray(tasks)) {
             todoList = tasks;
             saveTasks();
-            res.json({ success: true, count: tasks.length });
+            res.json({ success: true, count: tasks.length, todoList });
         } else {
             res.json({ success: false, error: 'Invalid format: expected { tasks: [...] }' });
         }

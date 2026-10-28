@@ -457,26 +457,6 @@ class RemoteAgentService {
         return message;
     }
 
-    appendLocalChatMessage(sessionId, payload = {}) {
-        const session = this.requireActiveSession(sessionId);
-        const message = {
-            id: createId('msg'),
-            type: 'chat_message',
-            direction: 'local',
-            senderType: payload.senderType || 'user',
-            senderLabel: payload.senderLabel || '',
-            text: payload.text || '',
-            imageDataUrl: '',
-            caption: '',
-            target: payload.target || 'remote-user',
-            createdAt: new Date().toISOString(),
-        };
-        this.appendSessionMessage(session, message);
-        session.lastEventAt = message.createdAt;
-        this.onStateChanged();
-        return message;
-    }
-
     sendScreenShare(sessionId, payload = {}) {
         const session = this.requireActiveSession(sessionId);
         const message = {
@@ -564,87 +544,6 @@ class RemoteAgentService {
             status,
             senderLabel: payload.senderLabel || session.local?.agentName || 'Local AI',
             createdAt,
-        });
-        this.onStateChanged();
-        return this.toClientSession(session);
-    }
-
-    requestModelShare(sessionId, payload = {}) {
-        const session = this.requireActiveSession(sessionId);
-        const proxyToken = crypto.randomBytes(24).toString('hex');
-        const expiresAt = new Date(Date.now() + ((Number(payload.ttlMs) || (15 * 60 * 1000)))).toISOString();
-        session.modelShare = {
-            ...buildIdleModelShare(),
-            ...(session.modelShare || {}),
-            status: 'pending',
-            role: 'provider',
-            requestedAt: new Date().toISOString(),
-            requestedBy: payload.requestedBy || 'Local user',
-            proxyToken,
-            expiresAt,
-            provider: payload.provider || session.local || null,
-            consumer: payload.consumer || session.peer || null,
-            modelInfo: payload.modelInfo || null,
-            note: payload.note || '',
-        };
-        this.sendRaw(session.socket, {
-            type: 'model_share_request',
-            createdAt: session.modelShare.requestedAt,
-            requestedBy: session.modelShare.requestedBy,
-            proxyToken: session.modelShare.proxyToken,
-            expiresAt: session.modelShare.expiresAt,
-            provider: session.modelShare.provider,
-            consumer: session.modelShare.consumer,
-            modelInfo: session.modelShare.modelInfo,
-            note: session.modelShare.note,
-        });
-        this.onStateChanged();
-        return this.toClientSession(session);
-    }
-
-    respondModelShare(sessionId, accept, payload = {}) {
-        const session = this.requireActiveSession(sessionId);
-        session.modelShare = {
-            ...buildIdleModelShare(),
-            ...(session.modelShare || {}),
-            status: accept ? 'active' : 'rejected',
-            role: accept ? 'consumer' : 'none',
-            respondedAt: new Date().toISOString(),
-            respondedBy: payload.respondedBy || 'Local user',
-            proxyToken: accept ? (session.modelShare?.proxyToken || '') : '',
-            expiresAt: accept ? (session.modelShare?.expiresAt || '') : '',
-            consumer: accept ? (session.local || null) : null,
-        };
-        this.sendRaw(session.socket, {
-            type: 'model_share_response',
-            accept: !!accept,
-            createdAt: session.modelShare.respondedAt,
-            respondedBy: session.modelShare.respondedBy,
-            proxyToken: accept ? (session.modelShare.proxyToken || '') : '',
-            expiresAt: accept ? (session.modelShare.expiresAt || '') : '',
-            provider: session.modelShare.provider || session.peer || null,
-            consumer: accept ? (session.local || null) : null,
-            modelInfo: session.modelShare.modelInfo || null,
-        });
-        this.onStateChanged();
-        return this.toClientSession(session);
-    }
-
-    cancelModelShare(sessionId, payload = {}) {
-        const session = this.requireActiveSession(sessionId);
-        const currentStatus = session.modelShare?.status || 'idle';
-        session.modelShare = {
-            ...buildIdleModelShare(),
-            status: 'idle',
-            cancelledAt: new Date().toISOString(),
-            cancelledBy: payload.cancelledBy || 'Local user',
-            lastStatus: currentStatus,
-        };
-        this.sendRaw(session.socket, {
-            type: 'model_share_cancel',
-            createdAt: session.modelShare.cancelledAt,
-            cancelledBy: session.modelShare.cancelledBy,
-            reason: payload.reason || 'Model sharing stopped by local user.',
         });
         this.onStateChanged();
         return this.toClientSession(session);

@@ -5,6 +5,29 @@
 
 ---
 
+## 📌 2026.10.29 — 第七階段：任務匯入修復與 Remote 死碼清理
+
+> 接續同日第六階段；修好從未成功的「匯入任務清單」流程，並移除 Remote 已停用功能的無呼叫方法。版本維持 `2026.8.7`。
+
+### 任務匯入（使用者可見缺陷）
+- 前端 `importTasks()` 呼叫 `/api/import`，但後端只有 `/api/todo/import`；請求會落到 Express 404 HTML，`api()` 的 `res.json()` 解析失敗後被 catch 吞掉，按下匯入完全沒有反應。
+- 匯出檔內容是 `{ exportedAt, agentVersion, tasks }`，前端卻把整個物件當 `tasks` 送出；即使端點正確，後端 `Array.isArray(tasks)` 仍會以 `Invalid format` 拒絕。
+- 後端成功時只回 `{ success, count }`，前端卻把 `data.todoList` 寫回 `todoList`，會把清單變成 `undefined`。
+- 修正：前端改呼叫 `/api/todo/import`，接受匯出物件與舊版瀏覽器 fallback 的純陣列兩種格式，僅在回傳為陣列時覆蓋清單，失敗時把伺服器錯誤一起寫進工作日志（不再靜默）。後端成功回應補上最新 `todoList`。
+- 新增 `test/todo-import.test.js`（3 項，真實 HTTP）：成功匯入並取代清單、非陣列 payload 被拒且原清單不變、running task 時拒絕匯入。
+- 新增 `test/task-import-ui.test.js`（3 項）：擷取 `app.js` 真實 `importTasks()`，以 fake `FileReader` / `api` 驗證端點、payload 拆封、成功渲染與失敗提示。
+
+### Remote 死碼
+- 移除 `requestModelShare`、`respondModelShare`、`cancelModelShare`：對應路由自 2026.05.06 起固定回 410，全庫無呼叫點。
+- 移除 `appendLocalChatMessage`：從未有人呼叫，本機與遠端訊息都走 `sendChatMessage()`。
+- 保留 `handlePayload` 對 `model_share_request` / `model_share_response` / `model_share_cancel` 的處理，避免舊版 peer 送包時狀態無法解讀；`test/remote-agent.test.js` 由 7 項增至 10 項，鎖住這條相容路徑（pending → active → idle 與 system message）。
+
+### 測試與驗收
+- `npm test`：23 個 JS 語法、26 支測試檔與 server smoke 全綠。
+- 未變更 SOP、LLM 設定與版本號；未執行任何安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第六階段：CLI 修正與未使用程式碼清理
 
 > 接續同日第五階段；修正實際會拋錯的 CLI 入口，清掉確認未使用的匯入與變數。版本維持 `2026.8.7`。

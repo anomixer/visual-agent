@@ -7722,9 +7722,17 @@ function importTasks(file) {
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
-            const tasks = JSON.parse(e.target.result);
-            const data = await api('/api/import', { method: 'POST', body: { tasks } });
-            if (data.success) { todoList = data.todoList; renderTodoList(); addUILog('✅ ' + t('tasks.importSuccess'), 'success'); }
+            const parsed = JSON.parse(e.target.result);
+            // 匯出檔是 { exportedAt, agentVersion, tasks }；舊版瀏覽器 fallback 下載則是純陣列。
+            const tasks = Array.isArray(parsed) ? parsed : parsed?.tasks;
+            const data = await api('/api/todo/import', { method: 'POST', body: { tasks } });
+            if (data.success) {
+                todoList = Array.isArray(data.todoList) ? data.todoList : todoList;
+                renderTodoList();
+                addUILog('✅ ' + t('tasks.importSuccess'), 'success');
+                return;
+            }
+            addUILog(`❌ ${t('tasks.importFailed')}${data.error ? `: ${data.error}` : ''}`, 'error');
         } catch { addUILog('❌ ' + t('tasks.importFailed'), 'error'); }
     };
     reader.readAsText(file);
