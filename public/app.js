@@ -8461,7 +8461,7 @@ async function onProviderChange(provider, currentModel = '', currentVisionModel 
                 if (btnRefreshModels) btnRefreshModels.style.display = 'none';
             }
         } catch (e) {
-            settingModelSelect.innerHTML = `<option value="">(無法連線至 ${provider})</option>`;
+            settingModelSelect.innerHTML = `<option value="">(無法連線至 ${escapeHtml(provider)})</option>`;
             settingModelName.style.display = 'block';
             settingModelSelect.style.display = 'none';
             settingModelName.value = currentModel;

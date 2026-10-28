@@ -659,6 +659,8 @@ function loadExperienceContext(queryText = '', limit = 3) {
 }
 
 
+let experienceEntriesCache = { signature: '', entries: [] };
+
 function loadExperienceEntries(limit = 18) {
     if (!fs.existsSync(EXPS_DIR)) return [];
     const files = fs.readdirSync(EXPS_DIR)
@@ -666,9 +668,14 @@ function loadExperienceEntries(limit = 18) {
         .map((fileName) => {
             const fullPath = path.join(EXPS_DIR, fileName);
             const stats = fs.statSync(fullPath);
-            return { fileName, fullPath, updatedAt: stats.mtime.toISOString() };
+            return { fileName, fullPath, size: stats.size, updatedAt: stats.mtime.toISOString() };
         })
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    // 前端每 2 秒輪詢一次；檔案沒變就直接回快取，避免重複讀檔與遮罩處理。
+    const signature = files.map((file) => `${file.fileName}:${file.updatedAt}:${file.size}`).join('|');
+    if (signature === experienceEntriesCache.signature) {
+        return experienceEntriesCache.entries.slice(0, limit);
+    }
     const entries = [];
     files.forEach((file) => {
         const content = fs.readFileSync(file.fullPath, 'utf8');
@@ -696,7 +703,8 @@ function loadExperienceEntries(limit = 18) {
     
     // Sort all entries by their actual timestamps (newest first)
     entries.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    
+
+    experienceEntriesCache = { signature, entries };
     return entries.slice(0, limit);
 }
 
