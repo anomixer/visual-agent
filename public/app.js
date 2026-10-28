@@ -83,6 +83,7 @@ let lastRemoteSessionListSignature = '';
 let lastRecommendSignature = '';
 let lastSopSignature = '';
 let lastSkillSignature = '';
+let lastLLMStatusSignature = '';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -5510,7 +5511,12 @@ async function bootstrapModel() {
 async function checkLLMStatus() {
     try {
         const data = await api('/api/llm/status');
-        updateLLMIndicator(data);
+        // 每 2 秒輪詢；狀態未變就不重寫狀態列、徽章與側邊欄安裝徽章。
+        const signature = JSON.stringify(data);
+        if (signature !== lastLLMStatusSignature) {
+            lastLLMStatusSignature = signature;
+            updateLLMIndicator(data);
+        }
 
         // 如果推薦清單還沒載入，就先不進行自動腳本，避免抓不到 Skill 資訊
         if (!recommendList || recommendList.length === 0) return;
@@ -5553,6 +5559,8 @@ async function checkLLMStatus() {
         }
     } catch (e) {
         console.error('[LLM Check Fail]', e);
+        // 失敗時狀態列已被改成未就緒，清掉簽章讓下一次成功回應重新套用。
+        lastLLMStatusSignature = '';
         updateLLMIndicator({ available: false, modelReady: false });
     }
 }

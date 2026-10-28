@@ -5,6 +5,25 @@
 
 ---
 
+## 📌 2026.10.29 — 第十九階段：AI 狀態列未變時不重寫 DOM
+
+> 接續同日第十八階段；`/api/llm/status` 每 2 秒輪詢，狀態多數時間完全相同。版本維持 `2026.8.7`。
+
+### 狀態列與徽章
+- `checkLLMStatus()` 原本每次回應都呼叫 `updateLLMIndicator()`：重寫狀態燈 `style.cssText`、模型徽章的 style / text / title，並轉呼叫 `updateLLMStatusText()` 再寫標題列與頁尾文字。伺服器端雖有 5 秒快取，回應本身仍穩定不變。
+- 新增模組層變數 `lastLLMStatusSignature`，以 `JSON.stringify(data)` 比對；相同時只跳過 `updateLLMIndicator()` 這段 DOM 寫入，函式其餘流程（推薦清單守門、bootstrap 任務清理等）照舊執行，避免改變既有行為。
+- 狀態一變化（`available` / `modelReady` / `modelName` / provider 版本等）即重寫；`updateLLMIndicator()` 內既有的 `_installedStatus` 比對與 `renderSidebarTab()` 觸發維持不變。
+- 輪詢失敗時（catch 分支）會把 `lastLLMStatusSignature` 清空，狀態燈先改為未就緒；下一次成功回應即使與失敗前完全相同，也會重新套用，不會停在錯誤狀態。
+- 切換語系仍直接呼叫 `updateLLMStatusText(window.__lastLLMStatus)`，標題列與頁尾文字照常翻譯。
+
+### 測試與驗收
+- 新增 `test/app-llm-status-refresh.test.js`（3 項）：擷取真實 `checkLLMStatus()` 與 `lastLLMStatusSignature`，驗證相同 payload 連續三次只套用一次、狀態改變會套用、失敗後回復即使 payload 相同也會重新套用。
+- `npm test`：23 個 JS 語法、30 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify13`）：穩定狀態下 6.5 秒內 `updateLLMIndicator` 額外呼叫 0 次，狀態燈樣式與「AI 就緒」文字保持正確；切換 en-US / zh-TW 時標題列與頁尾分別顯示 `AI Ready` / `AI 就緒`；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第十八階段：側邊欄資料未變時不重建
 
 > 接續同日第十七階段；`loadRecommend` / `loadSops` / `loadSkills` 每次成功都整棵重建側邊欄。版本維持 `2026.8.7`。
