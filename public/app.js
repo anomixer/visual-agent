@@ -79,6 +79,7 @@ const remoteSessionsOpenedOnChalkboard = new Set();
 const notifiedRemoteDisconnectSessionIds = new Set();
 const REMOTE_DIRECTIVE_DEDUP_WINDOW_MS = 8000;
 let lastRemoteRenderSignature = '';
+let lastRemoteSessionListSignature = '';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -2371,42 +2372,49 @@ function renderRemoteSessionControls() {
         selectedRemoteSessionId = sessions.find((item) => item.status === 'active')?.id || sessions[0]?.id || '';
     }
     localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
-    remoteSessionSelect.innerHTML = sessions.length
+    const sessionListMarkup = sessions.length
         ? sessions.map((session) => {
             const peerUser = session.peer?.userName ? ` / ${session.peer.userName}` : '';
             const label = `${session.peer?.machineName || session.host || session.id}${peerUser} · ${getRemoteStatusText(session)}`;
             return `<option value="${escapeHtml(session.id)}" ${session.id === selectedRemoteSessionId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
         }).join('')
         : '<option value="">No session</option>';
-    const quickListEl = ensureRemoteSessionQuickList();
-    if (quickListEl) {
-        quickListEl.innerHTML = sessions.map((session) => {
-            const activeClass = session.id === selectedRemoteSessionId ? 'active' : '';
-            const pendingClass = session.status === 'pending_approval' ? 'pending' : '';
-            const canClose = session.status !== 'active';
-            const label = session.peer?.machineName || session.host || session.id;
-            return `
+    const chipListMarkup = sessions.map((session) => {
+        const activeClass = session.id === selectedRemoteSessionId ? 'active' : '';
+        const pendingClass = session.status === 'pending_approval' ? 'pending' : '';
+        const canClose = session.status !== 'active';
+        const label = session.peer?.machineName || session.host || session.id;
+        return `
                 <button type="button" class="remote-session-chip ${activeClass} ${pendingClass}" data-session-id="${escapeHtml(session.id)}">
                     <span class="remote-session-chip-title">${escapeHtml(label)}</span>
                     ${canClose ? `<span class="remote-session-chip-close" data-remote-close-id="${escapeHtml(session.id)}" title="Close">×</span>` : ''}
                 </button>
             `;
-        }).join('');
-        quickListEl.querySelectorAll('.remote-session-chip').forEach((button) => {
-            button.addEventListener('click', () => {
-                selectedRemoteSessionId = button.dataset.sessionId || '';
-                localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
-                renderRemoteSessionControls();
-                switchChatMode('remote');
+    }).join('');
+    // 每 2 秒輪詢都會呼叫；清單未變就跳過重建，避免關閉使用者正在操作的下拉選單並重綁事件。
+    const listSignature = [currentLocale, selectedRemoteSessionId, sessionListMarkup, chipListMarkup].join('\n');
+    const quickListEl = ensureRemoteSessionQuickList();
+    if (listSignature !== lastRemoteSessionListSignature) {
+        lastRemoteSessionListSignature = listSignature;
+        remoteSessionSelect.innerHTML = sessionListMarkup;
+        if (quickListEl) {
+            quickListEl.innerHTML = chipListMarkup;
+            quickListEl.querySelectorAll('.remote-session-chip').forEach((button) => {
+                button.addEventListener('click', () => {
+                    selectedRemoteSessionId = button.dataset.sessionId || '';
+                    localStorage.setItem('selected_remote_session_id', selectedRemoteSessionId || '');
+                    renderRemoteSessionControls();
+                    switchChatMode('remote');
+                });
             });
-        });
-        quickListEl.querySelectorAll('[data-remote-close-id]').forEach((closeBtn) => {
-            closeBtn.addEventListener('click', async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                await deleteRemoteSessionTab(closeBtn.dataset.remoteCloseId || '');
+            quickListEl.querySelectorAll('[data-remote-close-id]').forEach((closeBtn) => {
+                closeBtn.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    await deleteRemoteSessionTab(closeBtn.dataset.remoteCloseId || '');
+                });
             });
-        });
+        }
     }
     const activeSession = getActiveRemoteSession();
     remoteSessionStatus.textContent = getRemoteStatusText(activeSession);

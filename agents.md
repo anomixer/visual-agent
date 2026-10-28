@@ -5,6 +5,24 @@
 
 ---
 
+## 📌 2026.10.29 — 第十五階段：遠端工作階段控制列重繪守衛
+
+> 接續同日第十四階段；遠端控制列每 2 秒無條件重建下拉選單與 session chip。版本維持 `2026.8.7`。
+
+### 每 2 秒重建
+- `loadRemoteProfileAndState()` 每 2 秒呼叫 `renderRemoteSessionControls()`，即使 session 完全沒變也會重寫 `#remoteSessionSelect` 的 `innerHTML`、重建 `#remoteSessionQuickList` 的 chip，並重新綁定點擊與關閉事件。
+- 影響：使用者展開的下拉選單會在輪詢時被關掉；chip 的 hover / focus 每 2 秒被清掉；事件監聽持續重建。
+- 新增 `lastRemoteSessionListSignature`：先組出下拉選單與 chip 的 HTML，再以「語系 + 選取中的 session + 兩段 HTML」為簽章；簽章相同就跳過指派與重綁，只更新狀態文字、提示與按鈕。
+- 選取變更、session 新增 / 移除、狀態改變、peer 名稱改變、排序改變都會改變 HTML 而觸發重建；`pending_approval` 與停權倒數的狀態文字本來就逐秒變化，仍會照常重建，行為與原本一致。
+- `remoteSessionStatus`、`remoteChatHint`、連線 / 切斷按鈕、model badge 與待確認列仍在每次呼叫時更新，不受簽章影響。
+
+### 測試與驗收
+- `npm test`：23 個 JS 語法、27 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify8`）：無 session 時觀察 `#remoteSessionSelect` 兩個輪詢週期，MutationObserver 計數為 0（修正前每 2 秒重建一次）；注入兩個假 session 後下拉選單顯示 `PC-A / alice · 已連線`、`PC-B · 未連線`，chip 的 active / 關閉圖示正確；4.5 秒內 chip 仍是同一 DOM 節點，點擊 chip 仍會切換選取並更新下拉選單；改寫 peer 名稱後立即重建為 `PC-A2 · 已連線`；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除，也未建立任何真實遠端連線。
+
+---
+
 ## 📌 2026.10.29 — 第十四階段：工作日誌改為增量輪詢
 
 > 接續同日第十三階段；前端每 2 秒抓的是整份 log，改為只抓新增部分。版本維持 `2026.8.7`，回應格式向後相容。
