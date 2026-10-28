@@ -110,7 +110,8 @@ test('zh-TW locale applies every surface through the split helpers', () => {
     assert.equal(view.element('menuExitText').textContent, 'titlebar.exit');
     assert.equal(view.element('importTasksText').textContent, 'footer.importTasks');
     assert.equal(view.element('exportTasksText').textContent, 'footer.exportTasks');
-    assert.equal(view.element('llmLabel').textContent, 'titlebar.llmReady');
+    // llmLabel 由 updateLLMStatusText 依即時狀態寫入，locale 套用不應覆蓋它。
+    assert.equal(view.element('llmLabel').textContent, '');
     assert.equal(view.element('appTitle').textContent, 'Visual Agent - 系統管家');
     assert.equal(view.context.document.title, 'Visual Agent - 系統管家');
 
@@ -121,7 +122,7 @@ test('zh-TW locale applies every surface through the split helpers', () => {
     assert.equal(view.bySelector.get('#tab-todolist .tab-title').textContent, 'tabs.todolist');
     assert.equal(view.bySelector.get('[data-bottom-tab="exps"]').textContent, 'tabs.exps');
 
-    assert.equal(view.element('logEmptyMessage').textContent, 'logs.emptyMessage');
+    assert.equal(view.element('logEmptyMessage').textContent, 'tabs.emptyMessage');
     assert.equal(view.element('expsEmptyMessage').textContent, 'exps.emptyMessage');
     assert.equal(view.bySelector.get('.provider-modal .modal-header h3').textContent, 'settings.title');
     assert.equal(view.element('settingBaseUrl').placeholder, 'settings.baseUrlPlaceholder');

@@ -411,6 +411,10 @@ const I18N = {
             exportButton: '⬇ 匯出',
             exportTooltip: '匯出所有 exps 為 Markdown',
             emptyMessage: '尚未累積安裝經驗...',
+            filter_all_sops: '所有 SOP',
+            no_match: '找不到符合的經驗。',
+            no_data: '尚未累積安裝經驗...',
+            unnamed: '未命名經驗',
             noExpsToExport: '目前沒有可匯出的 exps',
             exportSuccess: 'exps 已匯出：{fileName}',
             exportCancelled: '已取消匯出 exps',
@@ -815,6 +819,10 @@ const I18N = {
             exportButton: '⬇ Export',
             exportTooltip: 'Export all exps as Markdown',
             emptyMessage: 'No installation experience accumulated yet...',
+            filter_all_sops: 'All SOPs',
+            no_match: 'No matching experiences found.',
+            no_data: 'No installation experiences yet...',
+            unnamed: 'Unnamed Experience',
             noExpsToExport: 'No exps available to export',
             exportSuccess: 'exps exported: {fileName}',
             exportCancelled: 'Export exps cancelled',
@@ -6062,7 +6070,6 @@ function applyLocaleToShell() {
         menuExitText: t('titlebar.exit'),
         importTasksText: t('footer.importTasks'),
         exportTasksText: t('footer.exportTasks'),
-        llmLabel: t('titlebar.llmReady'),
     });
     const llmTitle = document.getElementById('llmStatus');
     if (llmTitle) llmTitle.title = t('titlebar.aiSettings');
@@ -6161,7 +6168,7 @@ function applyLocaleToPanels() {
         btnExpsExport.title = t('exps.exportTooltip');
     }
     applyLocaleTexts({
-        logEmptyMessage: t('logs.emptyMessage'),
+        logEmptyMessage: t('tabs.emptyMessage'),
         expsEmptyMessage: t('exps.emptyMessage'),
     });
 }

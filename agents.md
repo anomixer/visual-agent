@@ -5,6 +5,34 @@
 
 ---
 
+## 📌 2026.10.29 — 第九階段：i18n 缺鍵修正與字典回歸測試
+
+> 接續同日第八階段；修掉介面直接顯示 `undefined` 的翻譯缺鍵，並新增掃描 `t()` 呼叫的字典測試。版本維持 `2026.8.7`。
+
+### 缺鍵症狀與修正
+- `t()` 找不到鍵時回傳 `undefined`，呼叫端的 `{ default: '...' }` 參數並未被使用，因此下列位置的畫面文字會變成 `undefined`：
+  - 經驗庫篩選器的「全部 SOP」選項（`exps.filter_all_sops`）。
+  - 經驗庫無資料與無搜尋結果的空狀態（`exps.no_data`、`exps.no_match`）。
+  - 經驗卡沒有標題時的替代名稱（`exps.unnamed`）。
+- 兩份語系字典補上上述 4 個鍵（zh-TW：所有 SOP／找不到符合的經驗。／尚未累積安裝經驗...／未命名經驗）。
+- `logEmptyMessage` 引用了不存在的 `logs.emptyMessage`，locale 套用後日誌空狀態會變 `undefined`；改共用既有的 `tabs.emptyMessage`，不再新增重複字串。
+- `applyLocaleToShell` 以不存在的 `titlebar.llmReady` 寫入 `#llmLabel`，隨即被 `updateLLMStatusText()` 覆蓋；移除這筆多餘寫入，讓狀態文字只由即時 LLM 狀態決定。
+- 遠端連線的三個 `remote.*` 鍵是在 I18N 字面量後以 `Object.assign` 補上，屬正常結構，未變動。
+
+### 回歸測試
+- 新增 `test/i18n-keys.test.js`（2 項）：以 VM 載入真實 I18N（含後續 `Object.assign`），掃描 `app.js` 所有靜態 `t('...')` 呼叫（294 個），斷言 zh-TW / en-US 都能解析為字串；另單獨鎖住經驗庫 4 個鍵。缺鍵時測試會直接列出 `locale:key`。
+- `test/app-i18n.test.js` 同步調整：`llmLabel` 由狀態更新擁有、`logEmptyMessage` 改期待 `tabs.emptyMessage`。
+
+### 瀏覽器驗收（隔離設定檔）
+- 以 `%TEMP%\va-ui-verify2` 啟動隔離實例，實測 zh-TW / en-US 切換：經驗庫選項為「所有 SOP／All SOPs」、空狀態為「尚未累積安裝經驗...／No installation experiences yet...」、`#llmLabel` 維持「AI 就緒／AI Ready」，console 無 error / warn，切換後已還原 zh-TW。
+- 驗收後停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+
+### 測試與驗收
+- `npm test`：23 個 JS 語法、27 支測試檔與 server smoke 全綠。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第八階段：重複摘要收斂與未使用匯出清理
 
 > 接續同日第七階段；把實際重複的摘要組字與「SOP 加入任務」payload 收斂成單一出口，並清掉只有模組內部使用的匯出。版本維持 `2026.8.7`，行為不變。
