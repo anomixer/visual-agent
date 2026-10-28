@@ -278,6 +278,7 @@ $true
 - [x] AI 狀態列未變時不重寫 DOM（2026.10.29 第十九階段：`lastLLMStatusSignature`，輪詢失敗會清空簽章以重新套用）。
 - [x] 任務清單回應省略 `logs`，詳情與匯出保留（2026.10.29 第二十階段：`publicTodoList()`、`GET /api/task/:taskId/status`、`showTaskModal()` 開啟時補抓）。
 - [x] 遠端狀態輪詢在版本號未變時只回版本號（2026.10.29 第二十一階段：`remoteStateTick` 改為遞增版本、`GET /api/remote/state?since=`、前端 `lastRemoteStateTick`；任何 `touchRemoteState()` 變更仍回完整內容）。
+- [x] 硬體探測重疊時共用同一次外掛執行（2026.10.29 第二十二階段：`getSystemHealth()` 進行中共用 promise、實際流程移入 `collectSystemHealth()`、測試以 `options.pluginDirs` 注入假外掛）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

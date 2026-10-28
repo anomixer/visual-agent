@@ -5,6 +5,28 @@
 
 ---
 
+## 📌 2026.10.29 — 第二十二階段：硬體探測重疊時共用同一次執行
+
+> 接續同日第二十一階段；硬體分頁每 5 秒輪詢 `/api/system/health`。版本維持 `2026.8.7`。
+
+### 探測成本
+- `getSystemHealth()` 會依序執行外掛：`temperature-monitor`（`nvidia-smi`，8 秒 timeout）再 `hardware-info`（PowerShell，10 秒 timeout）；探測本身可能比 5 秒輪詢間隔久，前端 `setInterval` 不等前一輪完成，慢機器上會同時堆疊多支 PowerShell / nvidia-smi。
+- 聊天硬體上下文、遠端硬體回覆與診斷快照也各自呼叫 `getSystemHealth()`，與輪詢同時發生時同樣會多跑一份。
+
+### 共用進行中的探測
+- `getSystemHealth()` 改為協調函式：進行中的探測以 plugin 目錄為 key 存放，重疊呼叫共用同一個 promise，結束後（含失敗）清除，下一次呼叫照常重新探測。
+- 實際探測流程原封不動移入 `collectSystemHealth()`；外掛順序、錯誤吞掉與 `health` 欄位皆不變。
+- 新增 `options.pluginDirs` 測試接縫：只有測試會傳入暫存目錄，正式路徑仍掃描 AppData 與內建 `plugins/`。
+
+### 測試與驗收
+- `test/system-plugins.test.js` 由 5 項擴充為 10 項：以暫存目錄放入延遲假外掛，驗證兩個並行呼叫只執行一次外掛、拿到同一份結果、探測結束後再呼叫會重新執行；全程不載入 repo 真實外掛、不執行 PowerShell。
+- `npm test`：23 個 JS 語法、32 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify16`）：硬體分頁正常顯示 CPU / GPU / RAM 與溫度；連續 12 次健康探測間隔穩定 5.0 秒、每次約 2.2 秒，本機未發生重疊（重疊保護以單元測試驗證）；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成**：低階機器上探測超過 5 秒的實機情境未實測；本輪只以單元測試鎖定共用行為。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第二十一階段：遠端狀態輪詢沒變更時只回版本號
 
 > 接續同日第二十階段；前端每 2 秒打 `/api/remote/state`，回應包含所有 session 與最多 120 則訊息。版本維持 `2026.8.7`。

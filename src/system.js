@@ -6,6 +6,8 @@ const os = require('os');
 // hardware-info 就不必再花數秒跑 Get-Counter fallback。
 const PLUGIN_ORDER = ['temperature-monitor.js', 'hardware-info.js'];
 
+const inFlightProbes = new Map();
+
 function sortPluginFiles(files = []) {
     const rank = (name) => {
         const index = PLUGIN_ORDER.indexOf(name);
@@ -18,7 +20,17 @@ function sortPluginFiles(files = []) {
  * 系統監控核心 (插件化架構)
  * 負責掃描 plugins/ 目錄下的 .js 檔案並執行它們
  */
-async function getSystemHealth() {
+function getSystemHealth(options = {}) {
+    // 探測本身可能跑數秒，但前端每 5 秒輪詢；重疊的呼叫共用同一次探測，避免子程序堆疊。
+    const key = Array.isArray(options.pluginDirs) ? options.pluginDirs.join('|') : 'default';
+    if (!inFlightProbes.has(key)) {
+        const probe = collectSystemHealth(options).finally(() => inFlightProbes.delete(key));
+        inFlightProbes.set(key, probe);
+    }
+    return inFlightProbes.get(key);
+}
+
+async function collectSystemHealth(options = {}) {
     const health = {
         cpu: { load: 0, temp: null, cores: os.cpus().length, model: os.cpus()[0].model },
         ram: { total: os.totalmem(), free: os.freemem(), usage: 0 },
@@ -37,7 +49,7 @@ async function getSystemHealth() {
     const userPluginsDir = path.join(appDataDir, 'visual-agent', 'plugins');
     const rootPluginsDir = path.join(__dirname, '../plugins');
 
-    const scanDirs = [userPluginsDir, rootPluginsDir];
+    const scanDirs = Array.isArray(options.pluginDirs) ? options.pluginDirs : [userPluginsDir, rootPluginsDir];
     const executedPlugins = new Set();
 
     for (const dir of scanDirs) {
