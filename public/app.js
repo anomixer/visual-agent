@@ -2743,18 +2743,6 @@ function getNormalizedRect(start, end) {
     };
 }
 
-function getChalkSurfaceInset() {
-    if (!chalkboardSurface) {
-        return { left: 0, top: 0 };
-    }
-
-    const style = window.getComputedStyle(chalkboardSurface);
-    return {
-        left: parseFloat(style.borderLeftWidth || '0') || 0,
-        top: parseFloat(style.borderTopWidth || '0') || 0
-    };
-}
-
 function syncSelectionBox() {
     if (!chalkSelectionBox || !chalkboardState.selectionRect) {
         chalkSelectionBox?.classList.remove('visible');
@@ -3501,7 +3489,7 @@ function buildTextFontFamily(baseFamily, fontStyle) {
     return `${baseFamily}, ${fallback}`;
 }
 
-function undoChalkAction() {
+function resetPendingChalkState() {
     cancelPendingChalkPreview(false);
     hidePlacementGuide();
     hidePendingTextBox();
@@ -3511,6 +3499,10 @@ function undoChalkAction() {
     chalkboardState.pendingTextSnapshot = null;
     chalkboardState.pendingTextPreviewUrl = null;
     chalkboardState.textManipulation = null;
+}
+
+function undoChalkAction() {
+    resetPendingChalkState();
 
     const snapshot = chalkboardState.history.pop();
     if (!snapshot) return;
@@ -3523,15 +3515,7 @@ function undoChalkAction() {
 }
 
 function redoChalkAction() {
-    cancelPendingChalkPreview(false);
-    hidePlacementGuide();
-    hidePendingTextBox();
-    clearSelectionBox();
-    chalkboardState.pendingText = null;
-    chalkboardState.pendingTextRect = null;
-    chalkboardState.pendingTextSnapshot = null;
-    chalkboardState.pendingTextPreviewUrl = null;
-    chalkboardState.textManipulation = null;
+    resetPendingChalkState();
 
     const snapshot = chalkboardState.future.pop();
     if (!snapshot) return;
@@ -4197,15 +4181,7 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             if (normalizedDraft.clear !== false && chalkboardState.hasUserContent) {
                 createChalkboardPage();
             }
-            cancelPendingChalkPreview(false);
-            hidePlacementGuide();
-            hidePendingTextBox();
-            clearSelectionBox();
-            chalkboardState.pendingText = null;
-            chalkboardState.pendingTextRect = null;
-            chalkboardState.pendingTextSnapshot = null;
-            chalkboardState.pendingTextPreviewUrl = null;
-            chalkboardState.textManipulation = null;
+            resetPendingChalkState();
             pushChalkHistory();
             const clear = normalizedDraft.clear !== false;
             if (clear) {
@@ -6529,11 +6505,6 @@ async function deleteTask(taskId) {
 // ════════════════════════════════════════════════════════
 //  CHAT
 // ════════════════════════════════════════════════════════
-// Interim plan bubble disabled: redundant noise. Progress is shown via agent-status on the thinking bubble.
-function shouldShowInterimPlan(_message = '') {
-    return false;
-}
-
 async function sendChat() {
     // 如果目前正在處理中，點擊就是「中斷」
     if (isModePending(activeChatMode)) {

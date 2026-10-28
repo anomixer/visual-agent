@@ -98,6 +98,15 @@ const expMd = pure.buildExperienceMarkdown(
 check('exp 有 Status', expMd.includes('Status: `success`'));
 check('exp 有 SOP', expMd.includes('SOP ID: `install-chrome`'));
 
+// PowerShell 單引號跳脫與任務匯出 payload
+eq('powershell 單引號跳脫', pure.escapePowerShellSingleQuoted("a'b"), "a''b");
+eq('powershell 非字串', pure.escapePowerShellSingleQuoted(42), '42');
+eq('task export payload', pure.buildTaskExportPayload([{ id: 't1' }], '2026.8.7', '2026-10-28T00:00:00.000Z'), {
+    exportedAt: '2026-10-28T00:00:00.000Z',
+    agentVersion: '2026.8.7',
+    tasks: [{ id: 't1' }],
+});
+
 // ---- 結果 ----
 console.log(`\n[pure.test] ${pass} passed, ${fail} failed`);
 if (fail) {

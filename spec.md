@@ -104,6 +104,7 @@ browser ──── public/index.html
              src/agent/consent.js      (一次性精確動作 approval)
              src/agent/loop-budget.js  (turn / tool / deadline 預算)
              src/agent/sop-templates.js (winget / Store / GitHub SOP 模板)
+             src/native-dialogs.js      (Windows 另存新檔對話框)
              src/llm.js         (Ollama / Provider / streaming)
              src/llm/protocol.js (訊息正規化、回應抽取、URL 與錯誤)
              src/sop-parser.js
@@ -258,6 +259,7 @@ $true
 - [x] Agent Loop 預算涵蓋首輪 ACTION 與自動即時資訊抽取（2026.10.28 第二階段：請求級 `AgentLoopBudget`，scripted HTTP 測試驗證 13 個首輪動作只執行 12 次、抽取與搜尋共用額度、deadline 到期後首輪工具為 0）。提前 return 的專用工作流與 in-flight HTTP 中止仍待補。
 - [ ] 以最新 `pkg.assets` 重建 sidecar / Tauri EXE，於乾淨 Windows 驗證 Skills、Plugins、CLI、Chromium 安裝與 CSP。
 - [x] 抽出可獨立測試的 SOP 模板、LLM 協定與前端 i18n 套用層（2026.10.28 第三階段：`src/agent/sop-templates.js`、`src/llm/protocol.js`、`app.js` 的 `applyLocaleTo*`）。
+- [x] 集中 Windows 另存新檔流程、清除確認無引用的舊版工作流，並修正任務匯出 `agentVersion`（2026.10.28 第四階段：`src/native-dialogs.js`、`buildTaskExportPayload()`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

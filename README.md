@@ -322,6 +322,7 @@ visual-agent/
 │   ├── index.js
 │   ├── llm.js
 │   ├── local-api-security.js
+│   ├── native-dialogs.js
 │   ├── oauth-token-cache.js
 │   ├── pure.js
 │   ├── remote-agent.js

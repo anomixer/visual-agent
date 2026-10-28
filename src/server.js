@@ -42,10 +42,13 @@ const {
     tokenizeForMatch, scoreByTokenSet, escapeMarkdown, redactSensitiveText,
     compactMarkdownSnippet, buildChatHistoryForRequest, normalizeChalkboardAttachment,
     getTaskDurationText, pickExperienceHighlights, buildExperienceAdvice,
-    buildExperienceMarkdown, detectAgentFinanceIntent, detectGameResearchIntent,
+    buildExperienceMarkdown, detectAgentFinanceIntent,
     extractWingetSearchQuery, parseWingetSearchOutput, slugifyWingetPackage,
     escapeRegExp, formatUsdBillions, buildNvidiaSnapshotLines,
+    escapePowerShellSingleQuoted, buildTaskExportPayload,
 } = require('./pure');
+// 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
+const { pickSaveFilePath } = require('./native-dialogs');
 // ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
 const { extractActionsFromReply, parseActionArg, parseBrowserUseMode } = require('./agent/actions');
 const { AgentConsentStore, isSystemChangingAction } = require('./agent/consent');
@@ -803,10 +806,6 @@ async function buildLocalHardwareStatusReply(locale = 'zh-TW') {
     ].join('\n');
 }
 
-function getRemoteSessionById(sessionId = '') {
-    return remoteAgent.getSession(sessionId) || null;
-}
-
 function hasLikelySopForMessage(message = '', sops = []) {
     const text = String(message || '').toLowerCase();
     return sops.some((sop) => {
@@ -869,12 +868,6 @@ function runPowerShellJson(command, timeoutMs = 15000) {
         return { success: false, data: null, error: `JSON parse failed: ${err.message}` };
     }
 }
-
-function escapePowerShellSingleQuoted(value = '') {
-    return String(value).replace(/'/g, "''");
-}
-
-
 
 function extractWorkbookTarget(message = '') {
     const text = String(message || '').trim();
@@ -2144,26 +2137,6 @@ function isWhitelistedGuideHost(host = '') {
     return /(ign\.com|rockstargames\.com|gta\.fandom\.com|fandom\.com|powerpyx\.com|gamepressure\.com|eurogamer\.net|polygon\.com|gamesradar\.com|steamcommunity\.com|reddit\.com|game8\.jp|gamersky\.com|gamer\.com\.tw|bahamut\.com\.tw|3dmgame\.com|bilibili\.com)/i.test(h);
 }
 
-function detectGameResearchIntentV2(message = '') {
-    const text = String(message || '');
-    const hasResearchKeyword = /(攻略|教學|打法|配裝|walkthrough|guide|tips|build|youtube|video|影片)/i.test(text);
-    const hasGameKeyword = /(遊戲|game|steam|boss|任務|關卡|gta|elden ring|black myth|wukong|stellar blade|劍星)/i.test(text);
-    return hasResearchKeyword && hasGameKeyword;
-}
-
-function extractGameTopicV2(message = '') {
-    const text = String(message || '').trim();
-    const cleaned = text
-        .replace(/請|幫我|幫忙|找|搜尋|查|一下|想看|推薦/gi, ' ')
-        .replace(/攻略|教學|打法|配裝|walkthrough|guide|tips|build|youtube|video|影片/gi, ' ')
-        .replace(/呢|嗎|吧|呀|啊|喔/gi, ' ')
-        .replace(/遊戲|game/gi, ' ')
-        .replace(/[?？!！,，.。:：;；"'「」『』（）()]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    return cleaned || 'popular game';
-}
-
 function detectGameResearchIntentV3(message = '') {
     const text = String(message || '');
     const hasResearchKeyword = /(攻略|教學|打法|配裝|walkthrough|guide|tips|build|youtube|video|影片)/i.test(text);
@@ -2596,17 +2569,6 @@ async function searchPlayableYouTubeVideos(topic = '', limit = 5, options = {}) 
     return unique.size ? [...unique.values()].slice(0, limit).map((item) => ({ title: item.title, url: item.url })) : [];
 }
 
-function extractGameTopic(message = '') {
-    const text = String(message || '').trim();
-    const cleaned = text
-        .replace(/請|幫我|找|一下|一些|關於|需要|想看|我要|給我|推薦|搜尋|search|find/gi, ' ')
-        .replace(/攻略|教學|影片|youtube|video|guide|walkthrough|build|打法|配裝/gi, ' ')
-        .replace(/遊戲|game/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    return cleaned || 'latest popular games';
-}
-
 function selectGameGuideFallbackLines(extractedGuides = [], limit = 5) {
     const useful = [];
     const keyword = /(攻略|教學|打法|配裝|任務|關卡|boss|build|weapon|armor|mission|quest|unlock|level|upgrade|farm|money|tip|tips|guide|walkthrough|strategy|location|reward|技能|武器|裝備|升級|解鎖|位置|獎勵|賺錢)/i;
@@ -2794,107 +2756,6 @@ async function handleAgentFinanceWorkbookWorkflow(message = '', locale = 'zh-TW'
         llmUsed: false,
     };
 }
-
-async function handleAgentGameResearchWorkflow(message = '', locale = 'zh-TW') {
-    const topic = extractGameTopic(message);
-    const guideResults = await searchWebLinks(`${topic} 攻略`, 5);
-    const videoResults = await searchPlayableYouTubeVideos(topic, 5);
-    if (!guideResults.length && !videoResults.length) {
-        return {
-            success: true,
-            reply: locale === 'en-US'
-                ? `I could not find results for "${topic}" right now.`
-                : `目前找不到「${topic}」的可用攻略或影片結果。`,
-            suggestions: locale === 'en-US'
-                ? ['Try another keyword', 'Search YouTube manually']
-                : ['換關鍵字再試', '改查 YouTube'],
-            task: false,
-            llmUsed: false,
-        };
-    }
-    const chalkboardBullets = guideResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
-    const fallbackBullets = videoResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
-    const reply = [
-        locale === 'en-US' ? `## Game Research: ${topic}` : `## 遊戲資料蒐集：${topic}`,
-        '',
-        locale === 'en-US' ? '### Guides' : '### 攻略',
-        ...(guideResults.length ? guideResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
-        '',
-        locale === 'en-US' ? '### Videos' : '### 影片',
-        ...(videoResults.length ? videoResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
-        '',
-        locale === 'en-US' ? '### Chalkboard Summary Draft' : '### Chalkboard 摘要草稿',
-        ...(chalkboardBullets.length ? chalkboardBullets.map((line) => `- ${line}`) : ['- N/A']),
-    ].join('\n');
-    return {
-        success: true,
-        reply,
-        chalkboardDraft: {
-            title: locale === 'en-US' ? `Game Research: ${topic}` : `遊戲資料蒐集：${topic}`,
-            bullets: chalkboardBullets.length > 0 ? chalkboardBullets : fallbackBullets,
-        },
-        suggestions: locale === 'en-US'
-            ? ['Find more videos', 'Search another game']
-            : ['再找更多影片', '搜尋另一款遊戲'],
-        task: false,
-        llmUsed: false,
-    };
-}
-
-
-async function handleAgentGameResearchWorkflowV2(message = '', locale = 'zh-TW') {
-    const topic = extractGameTopicV2(message);
-    const guideResults = await searchGameGuideArticles(topic, 5);
-    const videoResults = await searchPlayableYouTubeVideos(topic, 5);
-
-    if (!guideResults.length && !videoResults.length) {
-        return {
-            success: true,
-            reply: locale === 'en-US'
-                ? `I could not verify high-quality results for "${topic}" right now, but Browser search has already been used and I can refine the query.`
-                : `目前無法完整驗證「${topic}」的高品質攻略資源，但我已先用 Browser 搜尋過，可再縮小關鍵字。`,
-            suggestions: locale === 'en-US'
-                ? ['Try another keyword', 'Search manually in browser']
-                : ['換關鍵字再試', '改由瀏覽器手動搜尋'],
-            task: false,
-            llmUsed: false,
-        };
-    }
-
-    const chalkboardBullets = guideResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
-    const fallbackBullets = videoResults.slice(0, 3).map((item, idx) => `${idx + 1}. ${item.title}`);
-    const reply = [
-        locale === 'en-US' ? `## Game Research: ${topic}` : `## 遊戲資料蒐集：${topic}`,
-        '',
-        locale === 'en-US'
-            ? '_Filtered: removed trailers/reactions/invalid links; prioritized practical guides._'
-            : '_已過濾：排除預告片、反應片、失效連結；優先實用攻略。_',
-        '',
-        locale === 'en-US' ? '### Guides' : '### 攻略文章',
-        ...(guideResults.length ? guideResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
-        '',
-        locale === 'en-US' ? '### Videos' : '### YouTube 教學影片',
-        ...(videoResults.length ? videoResults.map((item) => `- [${item.title}](${item.url})`) : ['- N/A']),
-        '',
-        locale === 'en-US' ? '### Chalkboard Summary Draft' : '### Chalkboard 摘要草稿',
-        ...(chalkboardBullets.length ? chalkboardBullets.map((line) => `- ${line}`) : ['- N/A']),
-    ].join('\n');
-
-    return {
-        success: true,
-        reply,
-        chalkboardDraft: {
-            title: locale === 'en-US' ? `Game Research: ${topic}` : `遊戲資料蒐集：${topic}`,
-            bullets: chalkboardBullets.length > 0 ? chalkboardBullets : fallbackBullets,
-        },
-        suggestions: locale === 'en-US'
-            ? ['Find more videos', 'Search another game']
-            : ['再找更多影片', '改查其他遊戲'],
-        task: false,
-        llmUsed: false,
-    };
-}
-
 
 async function handleAgentGameResearchWorkflowV3(message = '', locale = 'zh-TW', options = {}) {
     if (options.signal?.aborted) throw new Error('Request aborted');
@@ -3421,23 +3282,12 @@ app.post('/api/remote/save-image-file', (req, res) => {
         }
 
         const defaultName = `remote-share-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-        const psScript = `
-        Add-Type -AssemblyName System.Windows.Forms
-        $dlg = New-Object System.Windows.Forms.SaveFileDialog
-        $dlg.Filter = 'PNG Images (*.png)|*.png|All Files (*.*)|*.*'
-        $dlg.FileName = '${defaultName}'
-        $dlg.Title = 'Save Shared Screen Image'
-        $dlg.InitialDirectory = [Environment]::GetFolderPath('MyPictures')
-        $res = $dlg.ShowDialog()
-        if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
-            Write-Output $dlg.FileName
-        }
-        `;
-        const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -Command "${psScript.replace(/\n/g, ';')}"`, {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-            windowsHide: true,
-        }).trim();
+        const output = pickSaveFilePath({
+            filter: 'PNG Images (*.png)|*.png|All Files (*.*)|*.*',
+            fileName: defaultName,
+            title: 'Save Shared Screen Image',
+            initialDirectory: 'MyPictures',
+        });
         if (!output) {
             return res.json({ success: false, error: 'User cancelled', cancelled: true });
         }
@@ -3707,48 +3557,25 @@ app.post('/api/todo/import', (req, res) => {
 });
 // GET /api/todo/export 匯出任務清單 (Raw JSON)
 app.get('/api/todo/export', (req, res) => {
-    res.json({
-        exportedAt: new Date().toISOString(),
-        agentVersion: '1.0.0',
-        tasks: todoList,
-    });
+    res.json(buildTaskExportPayload(todoList, APP_VERSION));
 });
 // POST /api/todo/export-file 匯出任務清單 (跳出另存新檔對話框)
 app.post('/api/todo/export-file', (req, res) => {
     try {
         const defaultName = `visual-agent-tasks-${new Date().toISOString().slice(0, 10)}.json`;
-        // 透過 PowerShell 呼叫原生的 Windows SaveFileDialog
-        const psScript = `
-        Add-Type -AssemblyName System.Windows.Forms
-        $dlg = New-Object System.Windows.Forms.SaveFileDialog
-        $dlg.Filter = 'JSON Files (*.json)|*.json|All Files (*.*)|*.*'
-        $dlg.FileName = '${defaultName}'
-        $dlg.Title = 'Export Visual Agent Tasks'
-        $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
-        $res = $dlg.ShowDialog()
-        if ($res -eq [System.Windows.Forms.DialogResult]::OK) { 
-            Write-Output $dlg.FileName 
-        }
-
-
-        `;
-        // 為了讓對話框能正確顯示，必須加上 -Sta 參數 (Single-Threaded Apartment)
-        const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -Command "${psScript.replace(/\n/g, ';')}"`, {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-            windowsHide: true,
-        }).trim();
+        const output = pickSaveFilePath({
+            filter: 'JSON Files (*.json)|*.json|All Files (*.*)|*.*',
+            fileName: defaultName,
+            title: 'Export Visual Agent Tasks',
+            initialDirectory: 'MyDocuments',
+        });
         if (!output) {
             return res.json({ success: false, error: 'User cancelled', cancelled: true });
         }
 
 
         const filePath = output;
-        const data = {
-            exportedAt: new Date().toISOString(),
-            agentVersion: '1.0.0',
-            tasks: todoList,
-        };
+        const data = buildTaskExportPayload(todoList, APP_VERSION);
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
         res.json({ success: true, filePath, fileName: path.basename(filePath) });
     } catch (err) {
@@ -3767,25 +3594,12 @@ app.post('/api/chalkboard/export-file', (req, res) => {
 
 
         const defaultName = `chalkboard-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
-        const psScript = `
-        Add-Type -AssemblyName System.Windows.Forms
-        $dlg = New-Object System.Windows.Forms.SaveFileDialog
-        $dlg.Filter = 'PNG Images (*.png)|*.png|All Files (*.*)|*.*'
-        $dlg.FileName = '${defaultName}'
-        $dlg.Title = 'Export Chalkboard Image'
-        $dlg.InitialDirectory = [Environment]::GetFolderPath('MyPictures')
-        $res = $dlg.ShowDialog()
-        if ($res -eq [System.Windows.Forms.DialogResult]::OK) { 
-            Write-Output $dlg.FileName 
-        }
-
-
-        `;
-        const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -Command "${psScript.replace(/\n/g, ';')}"`, {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-            windowsHide: true,
-        }).trim();
+        const output = pickSaveFilePath({
+            filter: 'PNG Images (*.png)|*.png|All Files (*.*)|*.*',
+            fileName: defaultName,
+            title: 'Export Chalkboard Image',
+            initialDirectory: 'MyPictures',
+        });
         if (!output) {
             return res.json({ success: false, error: 'User cancelled', cancelled: true });
         }
@@ -3811,25 +3625,12 @@ app.post('/api/exps/export-file', (req, res) => {
 
 
         const defaultName = `visual-agent-exps-${new Date().toISOString().slice(0, 10)}.md`;
-        const psScript = `
-        Add-Type -AssemblyName System.Windows.Forms
-        $dlg = New-Object System.Windows.Forms.SaveFileDialog
-        $dlg.Filter = 'Markdown Files (*.md)|*.md|All Files (*.*)|*.*'
-        $dlg.FileName = '${defaultName}'
-        $dlg.Title = 'Export Visual Agent Experience Log'
-        $dlg.InitialDirectory = [Environment]::GetFolderPath('MyDocuments')
-        $res = $dlg.ShowDialog()
-        if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
-            Write-Output $dlg.FileName
-        }
-
-
-        `;
-        const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Sta -Command "${psScript.replace(/\n/g, ';')}"`, {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-            windowsHide: true,
-        }).trim();
+        const output = pickSaveFilePath({
+            filter: 'Markdown Files (*.md)|*.md|All Files (*.*)|*.*',
+            fileName: defaultName,
+            title: 'Export Visual Agent Experience Log',
+            initialDirectory: 'MyDocuments',
+        });
         if (!output) {
             return res.json({ success: false, error: 'User cancelled', cancelled: true });
         }

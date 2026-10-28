@@ -5,6 +5,27 @@
 
 ---
 
+## 📌 2026.10.28 — 第四階段：死碼清理、原生存檔對話框收斂與匯出修正
+
+> 接續同日第三階段；以行為不變為前提，清掉確認無人呼叫的死碼、合併四處重複的 Windows 另存新檔流程，並修正匯出中的舊版本號。版本維持 `2026.8.7`。
+
+### 原生存檔對話框
+- 新增 `src/native-dialogs.js`：`buildSaveFileDialogScript()` 產生 WinForms `SaveFileDialog` 腳本，`pickSaveFilePath()` 以可注入 runner 執行，過濾器 / 檔名 / 標題 / 起始目錄皆參數化，單引號統一走 `escapePowerShellSingleQuoted()`。
+- `server.js` 的任務匯出、Chalkboard 匯出、經驗庫匯出、遠端畫面另存四處重複區塊改為呼叫同一支 helper；`-Sta`、`windowsHide`、`-Command` 行為與原本一致。
+- `test/native-dialogs.test.js`（8 項）只驗證腳本內容與 runner 介面，不執行任何 PowerShell。
+
+### 匯出與死碼
+- `GET /api/todo/export` 與 `POST /api/todo/export-file` 的 `agentVersion` 由硬編碼 `1.0.0` 改為 `APP_VERSION`，payload 組裝抽為 `buildTaskExportPayload()` 並以 `test/todo-export.test.js` 走真實 HTTP 驗證。
+- 移除確認無引用的死碼：`getRemoteSessionById`、`detectGameResearchIntentV2`、`extractGameTopicV2`、`extractGameTopic`、`handleAgentGameResearchWorkflow`、`handleAgentGameResearchWorkflowV2`；V3 流程與 `detectGameResearchIntentV3` 不受影響。`server.js` 由 5,875 行降至 5,676 行。
+- `public/app.js` 移除未使用的 `getChalkSurfaceInset` 與永遠回傳 `false` 的 `shouldShowInterimPlan`；Undo / Redo / 自動 Chalkboard 共用的 9 行待定文字狀態重置收斂為 `resetPendingChalkState()`。
+
+### 測試與驗收
+- `npm test`：23 個 JS 語法、21 支測試檔與 server smoke 全綠。
+- 未變更使用者設定、SOP、版本號與任何執行期契約。
+- 尚未處理：`/api/chat` 路由（約 1,380 行）、`sendChat`、`setupEventListeners`、`RemoteAgentService.handlePayload`、`SOPExecutor.execute` 仍是大型單體；UAC、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+
+---
+
 ## 📌 2026.10.28 — 第三階段：巨型檔案拆解與重複邏輯收斂
 
 > 接續同日第二階段，處理維護性熱點；不改行為契約、不改使用者設定。版本維持 `2026.8.7`。

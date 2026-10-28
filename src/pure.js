@@ -299,6 +299,14 @@ function formatUsdBillions(value = 0) {
     return `$${(amount / 1_000_000_000).toFixed(2)}B`;
 }
 
+function escapePowerShellSingleQuoted(value = '') {
+    return String(value).replace(/'/g, "''");
+}
+
+function buildTaskExportPayload(tasks = [], agentVersion = '', exportedAt = new Date().toISOString()) {
+    return { exportedAt, agentVersion, tasks };
+}
+
 function buildNvidiaSnapshotLines(snapshot = {}) {
     const periodLabel = snapshot.periodEnd || 'N/A';
     const filedLabel = snapshot.filedAt || 'N/A';
@@ -332,4 +340,6 @@ module.exports = {
     escapeRegExp,
     formatUsdBillions,
     buildNvidiaSnapshotLines,
+    escapePowerShellSingleQuoted,
+    buildTaskExportPayload,
 };
