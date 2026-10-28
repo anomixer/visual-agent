@@ -154,7 +154,8 @@ browser ──── public/index.html
 | GET | `/api/meta` | 取得版本、runtime 狀態與本機 API token |
 | GET | `/api/diagnostics` | 取得健康快照（需 token，不重新載入或改寫任務） |
 | GET | `/api/agent-status/:runId` | 查詢 Agent Loop 進度 |
-| GET | `/api/todo` | 取得工作清單 |
+| GET | `/api/todo` | 取得工作清單（不含各任務 `logs`） |
+| GET | `/api/task/:taskId/status` | 取得單一任務完整內容（含 `logs`），供詳情視窗與診斷使用 |
 | POST | `/api/todo` | 新增任務 |
 | DELETE | `/api/todo/:id` | 刪除非 running 任務並回傳最新 `todoList`；running 任務拒絕刪除 |
 | POST | `/api/execute/:taskId` | 執行任務 |
@@ -164,7 +165,7 @@ browser ──── public/index.html
 | POST | `/api/llm/config` | 更新 LLM Provider 設定 |
 | POST | `/api/chat` | AI 對話（LLM 優先）|
 | GET | `/api/logs` | 全域執行日誌 |
-| POST | `/api/todo/import` | 匯入任務清單（回傳最新 `todoList`）；有 running task 時拒絕整批取代 |
+| POST | `/api/todo/import` | 匯入任務清單（回傳最新 `todoList`，同樣不含 `logs`）；有 running task 時拒絕整批取代 |
 
 ---
 
