@@ -312,6 +312,10 @@ function selectLogsForClient(allLogs = [], sinceParam = '') {
     if (!Number.isSafeInteger(since) || since <= 0) {
         return { logs: allLogs, total: allLogs.length };
     }
+    // since 超過現有筆數代表伺服器重啟或緩衝被截斷，客戶端游標已失效；回全部並要求前端重置。
+    if (since > allLogs.length) {
+        return { logs: allLogs, total: allLogs.length, reset: true };
+    }
     return { logs: allLogs.slice(since), total: allLogs.length };
 }
 

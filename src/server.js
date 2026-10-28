@@ -5333,8 +5333,10 @@ app.post('/api/chalkboard/draft', (req, res) => {
 });
 // GET /api/logs?since=N 取得全域 log（since 為前端已收到的筆數，只回新增部分）
 app.get('/api/logs', (req, res) => {
-    const { logs: payloadLogs, total } = selectLogsForClient(logs, req.query.since);
-    res.json({ success: true, logs: payloadLogs, total });
+    const { logs: payloadLogs, total, reset } = selectLogsForClient(logs, req.query.since);
+    res.json(reset
+        ? { success: true, logs: payloadLogs, total, reset: true }
+        : { success: true, logs: payloadLogs, total });
 });
 /**
  * 寫入 Debug Log 到 APPDATA，修復打包後看不到 Console 的問題

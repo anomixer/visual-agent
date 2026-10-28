@@ -164,7 +164,7 @@ browser ──── public/index.html
 | GET | `/api/llm/config` | 取得 LLM Provider 設定 |
 | POST | `/api/llm/config` | 更新 LLM Provider 設定 |
 | POST | `/api/chat` | AI 對話（LLM 優先）|
-| GET | `/api/logs` | 全域執行日誌 |
+| GET | `/api/logs` | 全域執行日誌（`?since=` 增量；游標超過現有筆數時回 `reset: true` 與全部日誌） |
 | POST | `/api/todo/import` | 匯入任務清單（回傳最新 `todoList`，同樣不含 `logs`）；有 running task 時拒絕整批取代 |
 
 ---
@@ -279,6 +279,7 @@ $true
 - [x] 任務清單回應省略 `logs`，詳情與匯出保留（2026.10.29 第二十階段：`publicTodoList()`、`GET /api/task/:taskId/status`、`showTaskModal()` 開啟時補抓）。
 - [x] 遠端狀態輪詢在版本號未變時只回版本號（2026.10.29 第二十一階段：`remoteStateTick` 改為遞增版本、`GET /api/remote/state?since=`、前端 `lastRemoteStateTick`；任何 `touchRemoteState()` 變更仍回完整內容）。
 - [x] 硬體探測重疊時共用同一次外掛執行（2026.10.29 第二十二階段：`getSystemHealth()` 進行中共用 promise、實際流程移入 `collectSystemHealth()`、測試以 `options.pluginDirs` 注入假外掛）。
+- [x] 日誌輪詢不重複請求，後端重啟後自動重置游標（2026.10.29 第二十三階段：`logPollInFlight`、`selectLogsForClient()` 的 `since > 筆數` → `reset: true`、`pollLogs()` 清空面板）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

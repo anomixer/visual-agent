@@ -5436,12 +5436,22 @@ function announceTaskStatusChanges(previousTasks, nextTasks) {
     });
 }
 
+let logPollInFlight = false;
 async function pollLogs() {
-    // 只取尚未收到的部分；伺服器以 total 回報絕對筆數，重啟或截斷後會自動對齊。
-    const data = await api(`/api/logs?since=${currentLogIndex}`);
-    if (!data.success || !Array.isArray(data.logs)) return;
-    data.logs.forEach(addLogEntry);
-    currentLogIndex = Number.isFinite(data.total) ? data.total : currentLogIndex + data.logs.length;
+    // 上一輪還沒回來就跳過；兩次相同 since 的回應會把同一段 log 重複貼上。
+    if (logPollInFlight) return;
+    logPollInFlight = true;
+    try {
+        // 只取尚未收到的部分；伺服器以 total 回報絕對筆數，重啟或截斷後會標記 reset。
+        const data = await api(`/api/logs?since=${currentLogIndex}`);
+        if (!data.success || !Array.isArray(data.logs)) return;
+        // 後端重啟後游標可能超過新緩衝的筆數；先清空舊面板再貼上伺服器現有內容。
+        if (data.reset && logEntries && data.logs.length) logEntries.innerHTML = '';
+        data.logs.forEach(addLogEntry);
+        currentLogIndex = Number.isFinite(data.total) ? data.total : currentLogIndex + data.logs.length;
+    } finally {
+        logPollInFlight = false;
+    }
 }
 
 // ════════════════════════════════════════════════════════

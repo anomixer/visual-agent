@@ -124,7 +124,9 @@ eq('logs since=0 回全部', pure.selectLogsForClient(logFixture, '0'), { logs: 
 eq('logs since 非數字回全部', pure.selectLogsForClient(logFixture, 'abc'), { logs: logFixture, total: 3 });
 eq('logs since 負數回全部', pure.selectLogsForClient(logFixture, '-5'), { logs: logFixture, total: 3 });
 eq('logs since=2 回增量', pure.selectLogsForClient(logFixture, '2'), { logs: [{ ts: 3 }], total: 3 });
-eq('logs since 超出長度回空', pure.selectLogsForClient(logFixture, '99'), { logs: [], total: 3 });
+// 游標超過現有筆數代表後端重啟或緩衝截斷，回全部並標記 reset 讓前端重整面板。
+eq('logs since 超出長度要求重置', pure.selectLogsForClient(logFixture, '99'), { logs: logFixture, total: 3, reset: true });
+eq('logs since 等於長度屬正常靜默', pure.selectLogsForClient(logFixture, '3'), { logs: [], total: 3 });
 
 // ---- 結果 ----
 console.log(`\n[pure.test] ${pass} passed, ${fail} failed`);
