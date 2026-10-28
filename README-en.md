@@ -58,6 +58,19 @@ It becomes: create a task -> show a suggested action button -> you confirm -> el
 
 ---
 
+## Security and data-operation behavior
+
+- **The local API is locked to this machine**: the HTTP API binds only to `127.0.0.1` and checks Host, Origin, and a random per-process local API token. A cross-origin web page cannot directly call local SOP / PowerShell APIs.
+- **AI-proposed system changes require exact confirmation**: the backend retains the original ACTION. Approval is bound to that action and chat session, expires after five minutes, and can be consumed only once; safety is not merely a frontend-hidden button.
+- **External content is untrusted by default**: Markdown from the AI, remote peers, and the experience base passes through a shared sanitizer. If sanitization is unavailable or fails, the UI falls back to escaped text. Server-side text fetching also restricts public URLs, revalidates DNS / redirects, and enforces time and size limits.
+- **Chat and Agent Loop execution can be stopped**: stopping chat aborts the actual LLM / streaming request. Each Agent Loop is limited to 8 turns, 12 tool calls, and a 180-second total deadline.
+- **Backup and restore are repeatable**: they use non-destructive copying rather than `/MIR`, so extra destination files are not deleted. Verification checks each relative path and file size. These SOPs do not offer an “uninstall” action that deletes backup or restored data.
+- **Task data has basic safeguards**: task IDs use UUIDs, the list is persisted with a temporary file plus rename, running tasks cannot be deleted, and the list cannot be replaced by a bulk import while work is running.
+
+> This is still a preview: process-tree timeout after UAC elevation, two-PC Chalkboard ordering / reconnection, Vision Models, and the latest build on a clean Windows installation each require separate real-machine validation. Unit tests alone do not prove those scenarios pass.
+
+---
+
 ## Requirements
 
 | Item | Requirement |
@@ -173,6 +186,10 @@ This script installs the required environment and builds the Tauri desktop app. 
 src-tauri\target\release\bundle\nsis\
 ```
 
+- The Tauri bundle version matches `package.json`, with an incremental CSP that remains compatible with the existing inline resources.
+- The Node sidecar's `pkg.assets` includes SOPs, Skills, Plugins, and public files; Chromium is still excluded from the installer.
+- After changing release settings, rebuild and validate on clean Windows. `npm test` alone does not prove that the EXE works.
+
 ### Browser plugin install
 
 - When the “Browser” tab shows “Browser unavailable,” click the button to run the `install-playwright-chromium` single-purpose SOP.
@@ -190,6 +207,8 @@ src-tauri\target\release\bundle\nsis\
 | `install-chrome` | Silently install the latest Google Chrome | Yes |
 | `remove-copilot` | Disable and remove Windows Copilot | Yes |
 | `backup-system` | Create a Windows restore point | Yes |
+| `backup-user-files` | Back up user files with repeatable, non-destructive copying | Yes |
+| `restore-user-files` | Restore user files with per-file verification | Yes |
 | `install-office` | Install LibreOffice through Winget | Yes |
 | `install-steam` | Silently install Steam | Yes |
 | `install-winhance` | Install the WinHance Windows optimization utility | Yes |
@@ -205,7 +224,7 @@ src-tauri\target\release\bundle\nsis\
 
 - `skills/<slug>/SKILL.md`
   The first line must be `---`, followed by `name: <slug>`, and the file should follow the [agentskills.io](https://agentskills.io) format.
-- `sops/*.md`
+- `sops/<slug>/SOP.md`
   The first line must be `# Visual Agent SOP File v1`
 - `exps/exp-yyyymmdd.md`
   The first line must be `# Visual Agent Experience Log - yyyymmdd`
@@ -216,7 +235,7 @@ src-tauri\target\release\bundle\nsis\
 
 ## Custom SOPs
 
-Put `.md` files into the development directory `sops/`, or into the runtime directory `%APPDATA%\visual-agent\sops\`. Example:
+Put `SOP.md` into the development directory `sops/<slug>/`, or into the runtime directory `%APPDATA%\visual-agent\sops\<slug>\`. Example:
 
 ````markdown
 # Visual Agent SOP File v1
@@ -286,10 +305,21 @@ visual-agent/
 ├── public/
 │   ├── index.html
 │   ├── style.css
-│   └── app.js
+│   ├── app.js
+│   └── ui-security.js
 ├── src/
+│   ├── agent/
+│   │   ├── actions.js
+│   │   ├── consent.js
+│   │   ├── loop-budget.js
+│   │   └── prompts.js
 │   ├── index.js
 │   ├── llm.js
+│   ├── local-api-security.js
+│   ├── oauth-token-cache.js
+│   ├── pure.js
+│   ├── remote-agent.js
+│   ├── safe-fetch.js
 │   ├── server.js
 │   ├── sop-executor.js
 │   ├── sop-parser.js
@@ -382,7 +412,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 Because those SOPs require administrator privileges. The install stage now uses a shared elevation flow automatically; if the user cancels UAC, the task fails immediately.
 
 **Q: Why didn’t the new SOP appear after I added it?**
-Make sure the file is placed under `sops/` or `%APPDATA%\visual-agent\sops\`, then refresh the page.
+Make sure the file is placed at `sops/<slug>/SOP.md` or `%APPDATA%\visual-agent\sops\<slug>\SOP.md`, then refresh the page.
 
 **Q: Why is the AI indicator red or yellow?**
 It usually means Ollama is not installed, not started, or the model download has not finished.
@@ -395,6 +425,15 @@ Usually `3210` or `19168` is already occupied by another Visual Agent process. T
 
 **Q: How do I report an issue?**
 Open “Help → Diagnostics” in the title bar, copy the diagnostic summary, and include it together with the steps you took and the tail of the debug log.
+
+**Q: Can another LAN device or a malicious web page call the local API directly?**
+Other LAN devices cannot reach an API bound only to `127.0.0.1`. Local malicious web pages are additionally blocked by Host / Origin checks and the per-process token. Double Agent Mode uses a separate peer-to-peer TCP protocol with connection approval, not this HTTP API.
+
+**Q: Can AI or remote-peer content execute web markup in the UI?**
+Content passes through a shared DOMPurify safety boundary that removes scripts, event handlers, and dangerous URIs. If the sanitizer is missing or fails, the UI renders escaped text instead of inserting the original HTML.
+
+**Q: How do I run tests and dependency audits?**
+Run `npm test` for syntax checks, `test/*.test.js` unit / Windows behavior tests, and the server smoke test (`/api/meta`, `/api/diagnostics`, token enforcement, and cross-origin rejection). Run `npm audit --omit=dev` for production dependencies. These do not replace UAC, two-PC, Vision, or clean-EXE validation.
 
 ---
 
@@ -418,4 +457,4 @@ If you have a better approach, feel free to open an issue, submit a PR, or share
 
 - Development log: [agents.md](./agents.md)
 - Product spec: [spec.md](./spec.md)
-- Current package version: `2026.7.28`
+- Current package version: `2026.8.7`

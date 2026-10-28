@@ -35,6 +35,8 @@ const { SOPExecutor } = require('./sop-executor');
 const llm = require('./llm');
 const { getSystemHealth } = require('./system');
 const { DEFAULT_REMOTE_PORT, RemoteAgentService, getLocalIPv4List } = require('./remote-agent');
+const { createLocalApiSecurity } = require('./local-api-security');
+const { safeFetchText } = require('./safe-fetch');
 // 純函式集（自本檔抽出，見 src/pure.js）— 解構回本地綁定，原有呼叫點不需改動。
 const {
     tokenizeForMatch, scoreByTokenSet, escapeMarkdown, redactSensitiveText,
@@ -46,23 +48,17 @@ const {
 } = require('./pure');
 // ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
 const { normalizeActionString, extractActionsFromReply } = require('./agent/actions');
+const { AgentConsentStore, isSystemChangingAction } = require('./agent/consent');
+const { AgentLoopBudget } = require('./agent/loop-budget');
 // 軟體推薦 prompt 註解（自 /api/chat handler 抽出，見 src/agent/prompts.js）。
 const { buildRecommendationPromptNotes } = require('./agent/prompts');
 const app = express();
 const PORT = 3210;
 const APP_VERSION = pkg.version || 'dev';
 const REMOTE_AI_REPLY_TIMEOUT_MS = 190000;
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
-
-
-    next();
-});
+const localApiSecurity = createLocalApiSecurity();
+const agentConsentStore = new AgentConsentStore();
+app.use(localApiSecurity.middleware);
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, '../public'), {
     setHeaders(res, filePath) {
@@ -183,11 +179,12 @@ function enqueueRemoteAiReply(sessionId, task) {
     const next = previous
         .catch(() => {})
         .then(() => runWithTimeout(task(), REMOTE_AI_REPLY_TIMEOUT_MS, 'Remote AI reply timed out before completion.'));
-    remoteAiReplyQueues.set(sessionId, next.finally(() => {
-        if (remoteAiReplyQueues.get(sessionId) === next) {
+    const queued = next.finally(() => {
+        if (remoteAiReplyQueues.get(sessionId) === queued) {
             remoteAiReplyQueues.delete(sessionId);
         }
-    }));
+    });
+    remoteAiReplyQueues.set(sessionId, queued);
     return next;
 }
 
@@ -725,7 +722,7 @@ function queueSopTaskById(sopsWithState = [], sopId = '', description = 'Schedul
     const sop = sopsWithState.find((item) => String(item.id || '') === targetId);
     if (!sop) return { success: false, error: `SOP not found: ${targetId}` };
     const task = {
-        id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        id: `task_${crypto.randomUUID()}`,
         title: buildTaskTitle(sop, sop.recommendedAction),
         description,
         skillId: sop.id,
@@ -1646,18 +1643,17 @@ async function runBrowserUseOperation(params = {}) {
     }
     if (mode === 'fetch_title') {
         const url = String(params.url || '').trim();
-        const response = await fetch(url, {
-            method: 'GET',
+        const response = await safeFetchText(url, {
             headers: { 'User-Agent': 'visual-agent/2026.04.01' },
-            signal: AbortSignal.timeout(20000),
+            timeoutMs: 20000,
+            maxBytes: 1024 * 1024,
         });
         if (!response.ok) throw new Error(`fetch failed (${response.status})`);
-        const html = await response.text();
-        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const titleMatch = response.text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
         return {
             success: true,
             mode,
-            url,
+            url: response.url || url,
             title: decodeHtmlEntities((titleMatch?.[1] || '').trim()),
         };
     }
@@ -1677,28 +1673,14 @@ async function runBrowserUseOperation(params = {}) {
     if (mode === 'extract_text') {
         const targetUrl = normalizeNavigateUrl(params.url || '');
         if (targetUrl) {
-            if (!isPlaywrightAvailable() || !hasPlaywrightBrowserBinary()) {
-                const fetched = await fetchReadablePageText(targetUrl);
-                return {
-                    success: true,
-                    mode,
-                    url: targetUrl,
-                    title: fetched.title,
-                    text: fetched.text,
-                    source: 'fetch',
-                };
-            }
-            const page = await ensureBrowserSession();
-            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(60000, Number(params.timeoutMs) || 30000) });
-            await page.waitForTimeout(600).catch(() => null);
-            const text = await page.evaluate(() => (document.body?.innerText || '').slice(0, 12000));
+            const fetched = await fetchReadablePageText(targetUrl);
             return {
                 success: true,
                 mode,
-                url: page.url(),
-                title: await page.title().catch(() => ''),
-                text: String(text || '').trim(),
-                source: 'browser',
+                url: fetched.url || targetUrl,
+                title: fetched.title,
+                text: fetched.text,
+                source: 'fetch',
             };
         }
         const page = await ensureBrowserSession();
@@ -1747,7 +1729,7 @@ function runComputerUseOperation(params = {}, sopsWithState = []) {
         const existing = sopsWithState.find((item) => /virtualbox|vm/i.test(`${item.id} ${item.name}`));
         if (existing) {
             const task = {
-                id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                id: `task_${crypto.randomUUID()}`,
                 title: buildTaskTitle(existing, existing.recommendedAction),
                 description: 'Scheduled by Computer Use (VM sandbox prep)',
                 skillId: existing.id,
@@ -1812,7 +1794,7 @@ function runComputerUseOperation(params = {}, sopsWithState = []) {
         const targetSop = sopsWithState.find((item) => item.id === sopId);
         if (!targetSop) return { success: false, mode, error: `SOP not found: ${sopId}` };
         const task = {
-            id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            id: `task_${crypto.randomUUID()}`,
             title: buildTaskTitle(targetSop, targetSop.recommendedAction),
             description: 'Scheduled by Computer Use',
             skillId: targetSop.id,
@@ -1856,20 +1838,19 @@ function htmlToReadableText(html = '') {
 async function fetchReadablePageText(url = '') {
     const targetUrl = normalizeNavigateUrl(url);
     if (!targetUrl) throw new Error('Missing URL');
-    const response = await fetch(targetUrl, {
-        method: 'GET',
+    const response = await safeFetchText(targetUrl, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
         },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(25000),
+        timeoutMs: 25000,
+        maxBytes: 2 * 1024 * 1024,
     });
     if (!response.ok) {
         throw new Error(`fetch failed (${response.status})`);
     }
-    const contentType = response.headers.get('content-type') || '';
-    const raw = await response.text();
+    const contentType = response.headers['content-type'] || '';
+    const raw = response.text;
     const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const title = decodeHtmlEntities((titleMatch?.[1] || '').replace(/\s+/g, ' ').trim());
     const text = contentType.includes('text/plain')
@@ -3017,6 +2998,7 @@ app.get('/api/system/health', async (req, res) => {
 });
 app.get('/api/meta', (req, res) => {
     const browserExecutable = resolvePlaywrightBrowserExecutable();
+    res.setHeader('Cache-Control', 'no-store');
     res.json({
         success: true,
         name: pkg.name || 'visual-agent',
@@ -3025,6 +3007,7 @@ app.get('/api/meta', (req, res) => {
         browserExecutable,
         browserSearchPaths: getPlaywrightBrowserDirCandidates(),
         playwrightModuleAvailable: isPlaywrightAvailable(),
+        localApiToken: localApiSecurity.token,
     });
 });
 
@@ -3061,7 +3044,6 @@ app.get('/api/diagnostics', async (req, res) => {
             modelReady: false,
             error: error.message,
         }));
-        loadTasks();
         const tasks = Array.isArray(todoList) ? todoList : [];
         const sops = loadAllSOPs(SOPS_DIR);
         const skills = loadSkillDocuments();
@@ -3562,7 +3544,9 @@ function loadTasks() {
 
 
 function saveTasks() {
-    fs.writeFileSync(TASKS_FILE, JSON.stringify({ todoList, exportedAt: new Date().toISOString() }, null, 2), 'utf-8');
+    const tempFile = `${TASKS_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify({ todoList, exportedAt: new Date().toISOString() }, null, 2), 'utf-8');
+    fs.renameSync(tempFile, TASKS_FILE);
 }
 
 
@@ -3622,7 +3606,7 @@ app.post('/api/todo', async (req, res) => {
             : matchedSOP.name)
         : (description || '');
     const task = {
-        id: `task_${Date.now()}`,
+        id: `task_${crypto.randomUUID()}`,
         title: resolvedTitle,
         description: resolvedDescription,
         skillId: skillId || null,
@@ -3640,13 +3624,19 @@ app.post('/api/todo', async (req, res) => {
 });
 // DELETE /api/todo/:id 移除任務
 app.delete('/api/todo/:id', (req, res) => {
+    if (runningSOP === req.params.id) {
+        return res.json({ success: false, error: 'Cannot delete a running task', todoList });
+    }
     todoList = todoList.filter((t) => t.id !== req.params.id);
     saveTasks();
-    res.json({ success: true });
+    res.json({ success: true, todoList });
 });
 // POST /api/todo/import 匯入任務清單
 app.post('/api/todo/import', (req, res) => {
     try {
+        if (runningSOP) {
+            return res.json({ success: false, error: 'Cannot import tasks while a task is running' });
+        }
         const { tasks } = req.body;
         if (Array.isArray(tasks)) {
             todoList = tasks;
@@ -3904,6 +3894,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
     task.progress = 10;
     task.logs = [];
     runningSOP = task.id;
+    saveTasks();
     const dryRun = req.body.dryRun ?? false;
     const executor = new SOPExecutor({ dryRun });
     executor.on('log', (event) => {
@@ -3982,10 +3973,21 @@ app.get('/api/agent-status/:runId', (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
+    const chatAbortController = new AbortController();
+    req.once('aborted', () => chatAbortController.abort());
+    res.once('close', () => {
+        if (!res.writableEnded) chatAbortController.abort();
+    });
     const { message, locale } = req.body;
     const agentRunId = normalizeAgentRunId(req.body?.agentRunId || '');
     setAgentRunStatus(agentRunId, 'planning', locale || 'zh-TW');
     const localChatSessionId = String(req.body?.localChatSessionId || '').trim();
+    const approvedActionId = String(req.body?.approvedActionId || '').trim();
+    const approvedAction = approvedActionId ? agentConsentStore.consume(approvedActionId, localChatSessionId) : null;
+    if (approvedActionId && !approvedAction) {
+        return res.status(403).json({ success: false, error: 'Action approval is invalid, expired, or already used.' });
+    }
+    const approvedActionString = approvedAction?.actionString || '';
     const requestedHistory = Array.isArray(req.body?.history) ? req.body.history : null;
     const chalkboardAttachment = normalizeChalkboardAttachment(req.body?.chalkboard);
     if (!message) return res.json({ success: false, error: 'Please enter a message' });
@@ -4000,7 +4002,7 @@ app.post('/api/chat', async (req, res) => {
     const sopsWithState = needsSopRuntimeState
         ? await annotateSOPRuntimeState(sops)
         : sops.map((sop) => ({ ...sop, ...getCachedOrDefaultSopState(sop) }));
-    if (/(執行|開始|安裝|run|start|execute|install)/i.test(message)) {
+    if (!approvedActionString && /(執行|開始|安裝|run|start|execute|install)/i.test(message)) {
         const pendingBrowserInstall = [...todoList].reverse().find((task) =>
             String(task.skillId || '') === 'install_playwright_chromium'
             && String(task.status || '') === 'pending'
@@ -4019,7 +4021,7 @@ app.post('/api/chat', async (req, res) => {
         }
     }
     try {
-        if (isManualBrowserSearchIntent(message)) {
+        if (!approvedActionString && isManualBrowserSearchIntent(message)) {
             const query = inferBrowserSearchQuery(message, requestedHistory) || 'GTA V 攻略';
             const targetUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
             const browserResult = await runBrowserUseOperation({
@@ -4057,11 +4059,11 @@ app.post('/api/chat', async (req, res) => {
                 browser: browserResult || null,
             });
         }
-        if (detectAgentFinanceIntent(message)) {
+        if (!approvedActionString && detectAgentFinanceIntent(message)) {
             const agentResponse = await handleAgentFinanceWorkbookWorkflow(message, locale || 'zh-TW', sopsWithState);
             if (agentResponse) return res.json(agentResponse);
         }
-        if (detectGameResearchIntentV3(message)) {
+        if (!approvedActionString && detectGameResearchIntentV3(message)) {
             const gameResponse = await handleAgentGameResearchWorkflowV3(message, locale || 'zh-TW');
             if (gameResponse) return res.json(gameResponse);
         }
@@ -4244,12 +4246,19 @@ app.post('/api/chat', async (req, res) => {
         return [cpuPart, gpuPart, gpuDetails, ramPart, diskPart].filter(Boolean).join(', ');
     })();
     // 取得快取的狀態 (不強制刷新，約 5ms 以內)
-    const llmStatus = await llm.checkOllamaStatus();
+    const llmStatus = approvedActionString
+        ? { available: true, modelReady: true }
+        : await llm.checkOllamaStatus();
     // ── 情境 1：AI 引擎就緒 (驅動模式) ───────────────────────
     if (llmStatus.available && llmStatus.modelReady) {
         try {
             const baseHistory = requestedHistory
                 || (localChatSessionId ? (localChatHistoryBySession.get(localChatSessionId) || []) : chatHistory);
+            if (localChatSessionId) {
+                localChatHistoryBySession.set(localChatSessionId, baseHistory);
+            } else {
+                chatHistory = baseHistory;
+            }
             const requestHistory = buildChatHistoryForRequest(baseHistory, Boolean(chalkboardAttachment));
             const onDemandGuidance = buildOnDemandSkillAndSopContext(message, sopsWithState, locale || 'zh-TW');
             const runtimeDateContext = getRuntimeDateContext(locale || 'zh-TW');
@@ -4279,10 +4288,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 microsoftStoreRecommendation,
                 githubRecommendation,
             });
-            let llmReply;
+            let llmReply = approvedActionString;
             const remoteState = remoteAgent.getState();
             const activeRemoteSession = remoteState.sessions.find((item) => item.status === 'active');
             const chatOptions = {
+                signal: chatAbortController.signal,
                 systemContext: [
                     buildLocalAgentContext(activeRemoteSession || null),
                     runtimeDateContext,
@@ -4328,7 +4338,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
             // 串流累積緩衝（onDelta 逐步追加，寫入 agentRunStatus.partial）。
             let _streamBuf = '';
-            try {
+            if (!approvedActionString) try {
                 const composedMessage = message + "\n\n" + contextNote + wingetPromptNote + microsoftStorePromptNote + githubPromptNote + "\n\n[[Experience Log]]\n" + (experienceContext || '(No experience entries yet)');
                 let modelSource = {
                     type: 'local',
@@ -4373,28 +4383,25 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 llmReply = await llm.chatWithLLM(
                     `${message}\n\n${contextNote}${wingetPromptNote}${microsoftStorePromptNote}${githubPromptNote}\n\n[[Experience Log]]\n${experienceContext || '(No experience entries yet)'}\n\n[System] The attached Chalkboard image could not be processed by the configured vision model/provider. Start by explicitly telling the user that visual recognition failed and ask them to select a Vision Model in Settings or provide the key text, then assist with the text request.`,
                     requestHistory,
-                    { systemContext: chatOptions.systemContext },
+                    { systemContext: chatOptions.systemContext, signal: chatAbortController.signal },
                     locale
                 );
             }
 
 
             // 3. 解析與安全過濾
-            const { actions, proseForConsent, hasSuggestions } = extractActionsFromReply(llmReply);
-            // ── 執行安全攔截 ──
-            // 只看「一般文字」是否在徵詢同意；ACTION 的 query="...?" 不應觸發攔截
-            const isQuestioning = /是否要|確認點選|要不要執行|您是否同意|要我幫|shall I|would you like|do you want/i.test(proseForConsent);
+            const { actions } = extractActionsFromReply(llmReply);
+            const pendingAgentActions = [];
             let executeTaskId = null;
             let hasActionTaken = false;
             let taskListChanged = false;
             let sopChanged = false;
             let actionSummaries = [];
-            if (hasSuggestions && isQuestioning) {
-                // 只擋「待確認」的系統變更；Browser Use 查詢仍應執行
+            if (!approvedActionString) {
                 for (let i = actions.length - 1; i >= 0; i--) {
-                    if (!String(actions[i] || '').startsWith('BROWSER_USE')) {
-                        actions.splice(i, 1);
-                    }
+                    if (!isSystemChangingAction(actions[i])) continue;
+                    pendingAgentActions.unshift(agentConsentStore.create(actions[i], { sessionId: localChatSessionId }));
+                    actions.splice(i, 1);
                 }
             }
 
@@ -4406,7 +4413,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         const mSop = sopsWithState.find(s => s.id === idMatch[1]);
                         if (mSop) {
                             const task = {
-                                id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                                id: `task_${crypto.randomUUID()}`,
                                 title: buildTaskTitle(mSop, mSop.recommendedAction),
                                 description: `Scheduled by AI Agent`,
                                 skillId: mSop.id,
@@ -4470,7 +4477,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         const mSop = sopsWithState.find((s) => s.id === idMatch[1]);
                         if (mSop) {
                             const task = {
-                                id: `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                                id: `task_${crypto.randomUUID()}`,
                                 title: buildTaskTitle(mSop, mSop.recommendedAction),
                                 description: 'Scheduled by AI Agent',
                                 skillId: mSop.id,
@@ -4811,6 +4818,10 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             // Hermes-style Agent Loop: Loop until LLM stops outputting ACTIONs
             // ═══════════════════════════════════════════════════════════════
             const MAX_AGENT_TURNS = 8;
+            const agentLoopBudget = new AgentLoopBudget({
+                maxTurns: MAX_AGENT_TURNS,
+                initialActions: actions.filter((action) => action.startsWith('BROWSER_USE')),
+            });
             let agentTurnCount = 0;
             let conversationHistory = []; // Start fresh conversation for this request
             let lastToolBundle = actionSummaries.slice();
@@ -4844,8 +4855,9 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             console.log(`[Agent Loop] Initialization: actionSummaries.length = ${lastToolBundle.length}, llmReply length = ${llmReply.length}, usableFirst=${isUsableAgentFinalReply(llmReply)}, shouldLoop=${shouldRunAgentLoop}`);
 
             // Enter loop when web tool results need to become a real user-facing answer
-            while (shouldRunAgentLoop && lastToolBundle.length > 0 && agentTurnCount < MAX_AGENT_TURNS) {
-                agentTurnCount++;
+            while (shouldRunAgentLoop && lastToolBundle.length > 0 && agentLoopBudget.canStartTurn()) {
+                agentLoopBudget.startTurn();
+                agentTurnCount = agentLoopBudget.turns;
                 const forceFinal = emptyFinalRetries > 0 || agentTurnCount >= 3;
                 console.log(`[Agent Loop] Turn ${agentTurnCount}/${MAX_AGENT_TURNS}, tool results: ${lastToolBundle.length} items, forceFinal=${forceFinal}`);
 
@@ -4855,6 +4867,8 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                         buildAgentLoopContinuePrompt(locale || 'zh-TW', agentTurnCount, forceFinal),
                         conversationHistory,
                         {
+                            signal: chatAbortController.signal,
+                            timeoutMs: Math.max(1, agentLoopBudget.remainingMs()),
                             systemContext: [
                                 chatOptions.systemContext || '',
                                 locale === 'en-US'
@@ -4876,6 +4890,10 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     while ((loopMatch = bareLoopActionRegex.exec(loopReply)) !== null) {
                         loopActions.push(normalizeActionString(loopMatch[1]));
                     }
+                    const loopActionBudget = agentLoopBudget.takeActions(loopActions);
+                    if (loopActionBudget.duplicates > 0 || loopActionBudget.overflow > 0) {
+                        console.log(`[Agent Loop] Skipped ${loopActionBudget.duplicates} duplicate and ${loopActionBudget.overflow} over-budget actions`);
+                    }
 
                     // Add this assistant reply to conversation
                     conversationHistory.push({
@@ -4885,7 +4903,11 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
 
                     // Execute actions and collect results
                     const newActionSummaries = [];
-                    for (const actionStr of loopActions) {
+                    for (const actionStr of loopActionBudget.accepted) {
+                        if (agentLoopBudget.remainingMs() <= 0) {
+                            console.warn('[Agent Loop] Deadline reached before executing the next action');
+                            break;
+                        }
                         if (actionStr.startsWith('BROWSER_USE')) {
                             const mode = parseBrowserUseMode(actionStr);
                             const query = parseActionArg(actionStr, 'query') || String(researchIntentMessage || '').trim();
@@ -4901,7 +4923,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                                                 (locale === 'en-US' ? `Search results for "${query}":\n` : `「${query}」搜尋結果：\n`) +
                                                 items.map((item, i) => `${i + 1}. ${item.title} - ${item.url}`).join('\n')
                                             );
-                                            if (isWebResearchIntent(researchIntentMessage)) {
+                                            if (isWebResearchIntent(researchIntentMessage) && agentLoopBudget.remainingMs() > 0) {
                                                 setAgentRunStatus(agentRunId, 'extracting', locale || 'zh-TW', items[0]?.title || query || message);
                                                 const extracted = await extractTextFromSearchResults(items, 2);
                                                 if (extracted.length > 0) {
@@ -4984,13 +5006,15 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
             let cleanReply = stripControlTagsFromReply(currentLlmReply);
 
             // If still unusable but we have web tool data, one last forced summarize, then local fallback
-            if (!isUsableAgentFinalReply(cleanReply) && shouldRunAgentLoop && looksLikeWebObservation(lastToolBundle)) {
+            if (!isUsableAgentFinalReply(cleanReply) && shouldRunAgentLoop && looksLikeWebObservation(lastToolBundle) && agentLoopBudget.remainingMs() > 0) {
                 try {
                     setAgentRunStatus(agentRunId, 'summarizing', locale || 'zh-TW', 'force-final');
                     const forceReply = await llm.chatWithLLM(
                         buildAgentLoopContinuePrompt(locale || 'zh-TW', agentTurnCount + 1, true),
                         conversationHistory,
                         {
+                            signal: chatAbortController.signal,
+                            timeoutMs: Math.max(1, agentLoopBudget.remainingMs()),
                             systemContext: [
                                 chatOptions.systemContext || '',
                                 locale === 'en-US'
@@ -5019,7 +5043,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 cleanReply = actionSummaries.join('\n');
             }
 
-            const finalReply = cleanReply || (
+            let finalReply = cleanReply || (
                 looksLikeWebObservation(lastToolBundle)
                     ? buildFallbackAnswerFromToolSummaries(lastToolBundle, message, locale || 'zh-TW')
                     : (actionSummaries.length > 0
@@ -5028,10 +5052,20 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                             ? 'I could not complete this request with a usable answer. Please try again.'
                             : '這次沒有產生可用答案，請再試一次。'))
             );
+            if (pendingAgentActions.length > 0) {
+                finalReply += `${finalReply ? '\n\n' : ''}${locale === 'en-US'
+                    ? `${pendingAgentActions.length} proposed action${pendingAgentActions.length > 1 ? 's require' : ' requires'} your confirmation. Nothing system-changing has been executed yet.`
+                    : `有 ${pendingAgentActions.length} 個建議動作需要你的確認；目前尚未執行任何系統變更。`}`;
+            }
+
+            if (chatAbortController.signal.aborted) return;
 
             // Update chat history for future conversations
+            const latestHistory = localChatSessionId
+                ? (localChatHistoryBySession.get(localChatSessionId) || baseHistory)
+                : chatHistory;
             const trimmedHistory = [
-                ...baseHistory,
+                ...latestHistory,
                 { role: 'user', content: chalkboardAttachment ? `${message}\n\n[User attached a Chalkboard sketch]` : message },
                 { role: 'assistant', content: chalkboardAttachment ? `${finalReply}\n\n[This reply referenced the Chalkboard sketch]` : finalReply },
             ].slice(-6);
@@ -5046,6 +5080,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 success: true,
                 reply: finalReply,
                 suggestions: finalSuggestions,
+                pendingActions: pendingAgentActions,
                 task: taskListChanged,
                 sopChanged,
                 executeTaskId,
@@ -5065,6 +5100,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
         } catch (llmErr) {
             console.error('[LLM] AI Agent processing failed:', llmErr);
             setAgentRunStatus(agentRunId, 'error', locale || 'zh-TW', llmErr.message || String(llmErr));
+            if (chatAbortController.signal.aborted) return;
             llmErrorForFallback = llmErr.message;
             // 發生錯誤不中斷，讓它往下走到關鍵字比對模式
         }
@@ -5158,7 +5194,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
         if (/還原|restore|回復檔案/i.test(message)) matchedSOP = matchedSOP || sopsWithState.find((s) => s.id === 'sys_restore_user_files');
         if (matchedSOP) {
             taskAdded = {
-                id: `task_${Date.now()}`,
+                id: `task_${crypto.randomUUID()}`,
                 title: buildTaskTitle(matchedSOP, matchedSOP.recommendedAction),
                 skillId: matchedSOP.id,
                 action: matchedSOP.recommendedAction,

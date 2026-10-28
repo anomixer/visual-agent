@@ -2,6 +2,7 @@ const { spawn, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { OAuthTokenCache } = require('./oauth-token-cache');
 const DEFAULT_MODEL = 'gemma4:e2b-it-qat';
 let currentModel = DEFAULT_MODEL;
 
@@ -12,8 +13,7 @@ let currentApiKey = '';
 let currentAuthType = 'none';
 let currentAuthConfig = { type: 'none' };
 let currentVisionModel = '';
-let cachedAccessToken = null;
-let cachedAccessTokenExpiresAt = 0;
+const oauthTokenCache = new OAuthTokenCache();
 
 const CHAT_TIMEOUT_MS = 180000;
 
@@ -558,8 +558,7 @@ function invalidateCache() {
     _lastCheck = 0;
     _cachedModels = null;
     _lastModelsCheck = 0;
-    cachedAccessToken = null;
-    cachedAccessTokenExpiresAt = 0;
+    oauthTokenCache.clear();
 }
 
 let _cachedModels = null;
@@ -576,39 +575,8 @@ async function getAuthorizationHeader(authConfig = null) {
         return {};
     }
 
-    const now = Date.now();
-    if (cachedAccessToken && cachedAccessTokenExpiresAt > now + 10000) {
-        return { 'Authorization': `Bearer ${cachedAccessToken}` };
-    }
-
-    const form = new URLSearchParams();
-    form.set('grant_type', 'client_credentials');
-    form.set('client_id', effectiveAuth.clientId || '');
-    form.set('client_secret', effectiveAuth.clientSecret || '');
-    if (effectiveAuth.scope) form.set('scope', effectiveAuth.scope);
-    if (effectiveAuth.audience) form.set('audience', effectiveAuth.audience);
-
-    const res = await fetch(effectiveAuth.tokenUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: form.toString(),
-        signal: AbortSignal.timeout(10000)
-    });
-
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`OAuth token acquisition failed (${res.status}): ${errText.substring(0, 200)}`);
-    }
-
-    const data = await res.json();
-    if (!data.access_token) {
-        throw new Error('OAuth response missing access_token');
-    }
-
-    const expiresIn = Number(data.expires_in || 3600);
-    cachedAccessToken = data.access_token;
-    cachedAccessTokenExpiresAt = Date.now() + (expiresIn * 1000);
-    return { 'Authorization': `Bearer ${cachedAccessToken}` };
+    const token = await oauthTokenCache.getToken(effectiveAuth);
+    return { 'Authorization': `Bearer ${token}` };
 }
 
 /**
@@ -781,6 +749,34 @@ function ensureOllamaRunning() {
     });
 }
 
+function createRequestAbort(timeoutMs, externalSignal) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const onExternalAbort = () => controller.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) onExternalAbort();
+    else externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
+    const timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+    }, timeoutMs);
+    timer.unref?.();
+    return {
+        signal: controller.signal,
+        didTimeout: () => timedOut,
+        cleanup: () => {
+            clearTimeout(timer);
+            externalSignal?.removeEventListener('abort', onExternalAbort);
+        },
+    };
+}
+
+function chatRequestError(error, requestAbort) {
+    if (requestAbort.didTimeout() || error.name === 'TimeoutError' || error.message.includes('timeout')) {
+        return new Error(`AI engine timed out (waited ${Math.round(CHAT_TIMEOUT_MS / 60000)} minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
+    }
+    return error;
+}
+
 /**
  * 使用 Ollama /api/chat 進行對話（支援角色扮演格式，效果比 generate 更自然）
  * @param {string} userMessage - 使用者輸入
@@ -818,27 +814,34 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
                 }
             ]
         };
-        const res = await fetch(chatUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
-        });
-        if (!res.ok) {
-            const errText = await res.text();
-            if (res.status === 401) {
-                throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
+        const requestAbort = createRequestAbort(options.timeoutMs ?? CHAT_TIMEOUT_MS, options.signal);
+        try {
+            const res = await fetch(chatUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+                signal: requestAbort.signal,
+            });
+            if (!res.ok) {
+                const errText = await res.text();
+                if (res.status === 401) {
+                    throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
+                }
+                throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
             }
-            throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
+            const data = await res.json();
+            const content = Array.isArray(data?.content)
+                ? data.content.filter(item => item?.type === 'text').map(item => item.text).join('\n').trim()
+                : '';
+            if (!content) {
+                throw new Error('AI engine returned empty content. Please verify the Anthropic model name and permissions.');
+            }
+            return content;
+        } catch (error) {
+            throw chatRequestError(error, requestAbort);
+        } finally {
+            requestAbort.cleanup();
         }
-        const data = await res.json();
-        const content = Array.isArray(data?.content)
-            ? data.content.filter(item => item?.type === 'text').map(item => item.text).join('\n').trim()
-            : '';
-        if (!content) {
-            throw new Error('AI engine returned empty content. Please verify the Anthropic model name and permissions.');
-        }
-        return content;
     }
     // 正規化 history：
     // - 多數 OpenAI-compatible / Ollama 不接受無 tool_call_id 的 role:tool
@@ -913,66 +916,77 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
     // 不傳 onDelta 時走下方非串流路徑——其餘 7 個呼叫點（agent loop、摘要等）不受影響。
     if (typeof options.onDelta === 'function' && meta.type === 'ollama') {
         const streamBody = { ...body, stream: true };
-        let streamRes;
+        const requestAbort = createRequestAbort(options.timeoutMs ?? CHAT_TIMEOUT_MS, options.signal);
+        let reader = null;
         try {
-            streamRes = await fetch(chatUrl, {
+            const streamRes = await fetch(chatUrl, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(streamBody),
-                signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
+                signal: requestAbort.signal,
             });
-        } catch (fetchErr) {
-            if (fetchErr.name === 'TimeoutError' || fetchErr.message.includes('timeout')) {
-                throw new Error(`AI engine timed out (waited ${Math.round(CHAT_TIMEOUT_MS / 60000)} minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
+            if (!streamRes.ok) {
+                const errText = await streamRes.text();
+                if (streamRes.status === 401) {
+                    throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
+                }
+                throw new Error(`API error (${streamRes.status}): ${errText.substring(0, 200)}`);
             }
-            throw fetchErr;
-        }
-        if (!streamRes.ok) {
-            const errText = await streamRes.text();
-            if (streamRes.status === 401) {
-                throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
-            }
-            throw new Error(`API error (${streamRes.status}): ${errText.substring(0, 200)}`);
-        }
-        const reader = streamRes.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buf = '';
-        let acc = '';
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buf += decoder.decode(value, { stream: true });
-            let idx;
-            while ((idx = buf.indexOf('\n')) !== -1) {
-                const line = buf.slice(0, idx).trim();
-                buf = buf.slice(idx + 1);
-                if (!line) continue;
+            reader = streamRes.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buf = '';
+            let acc = '';
+            const consumeLine = (rawLine) => {
+                const line = rawLine.trim();
+                if (!line) return;
                 let obj;
-                try { obj = JSON.parse(line); } catch { continue; }
+                try { obj = JSON.parse(line); } catch { return; }
+                if (obj?.error) throw new Error(String(obj.error));
                 const tok = obj?.message?.content;
-                if (tok) { acc += tok; options.onDelta(tok); }
+                if (tok) {
+                    acc += tok;
+                    options.onDelta(tok);
+                }
+            };
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                let idx;
+                while ((idx = buf.indexOf('\n')) !== -1) {
+                    const line = buf.slice(0, idx);
+                    buf = buf.slice(idx + 1);
+                    consumeLine(line);
+                }
             }
+            buf += decoder.decode();
+            if (buf.trim()) consumeLine(buf);
+            return String(acc || '').trim();
+        } catch (error) {
+            throw chatRequestError(error, requestAbort);
+        } finally {
+            if (reader) await reader.cancel().catch(() => {});
+            requestAbort.cleanup();
         }
-        return String(acc || '').trim();
     }
 
+    const requestAbort = createRequestAbort(options.timeoutMs ?? CHAT_TIMEOUT_MS, options.signal);
     let res;
     try {
         res = await fetch(chatUrl, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(CHAT_TIMEOUT_MS), // Keep slow local reasoning bounded so the UI can recover.
+            signal: requestAbort.signal,
         });
     } catch (fetchErr) {
-        if (fetchErr.name === 'TimeoutError' || fetchErr.message.includes('timeout')) {
-            throw new Error(`AI engine timed out (waited ${Math.round(CHAT_TIMEOUT_MS / 60000)} minutes). This may happen when the model is loading or thinking deeply. Check hardware resources or try again later.`);
-        }
-        throw fetchErr;
+        requestAbort.cleanup();
+        throw chatRequestError(fetchErr, requestAbort);
     }
 
     if (!res.ok) {
         const errText = await res.text();
+        requestAbort.cleanup();
         if (res.status === 401) {
             throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
         }
@@ -982,10 +996,18 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
         const html = await res.text();
+        requestAbort.cleanup();
         throw new Error(`API error: Expected JSON but got ${contentType}. Content start: ${html.substring(0, 100)}`);
     }
 
-    const data = await res.json();
+    let data;
+    try {
+        data = await res.json();
+    } catch (error) {
+        throw chatRequestError(error, requestAbort);
+    } finally {
+        requestAbort.cleanup();
+    }
     
     // 兼顧 OpenAI 與 Ollama 的各種欄位格式（含 reasoning / array content）
     const normalizeContent = (value) => {

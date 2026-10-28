@@ -58,6 +58,19 @@ English: [README-en.md](./README-en.md)
 
 ---
 
+## 安全與資料操作行為
+
+- **本機 API 預設鎖本機**：HTTP API 只綁 `127.0.0.1`，並檢查 Host、Origin 與每個程式 process 隨機產生的 local API token；跨來源網頁不能直接呼叫本機 SOP / PowerShell API。
+- **AI 提出的系統變更需要精確確認**：後端會保留原始 ACTION，確認憑證綁定動作與聊天 session，5 分鐘有效且只能使用一次；不是只由前端隱藏按鈕。
+- **外部內容預設視為不可信**：AI、遠端 peer 與經驗庫的 Markdown 都經共同淨化出口；淨化元件失效時會退回純文字。外部文字抓取另有限制公開網址、DNS / redirect 重驗、時間與大小上限。
+- **對話與 Agent Loop 可中止**：停止對話會中止實際 LLM / streaming 請求；每輪 Agent Loop 最多 8 turns、12 次工具呼叫、180 秒總期限，避免重複查詢失控。
+- **備份與還原可重複執行**：使用非破壞性複製，不以 `/MIR` 刪除目的地額外檔案；完成後逐檔檢查相對路徑與大小。這兩支 SOP 不提供「解除安裝」來刪除備份或還原資料。
+- **任務資料有基本保護**：任務 ID 使用 UUID，清單以暫存檔加 rename 寫入；執行中的任務不可刪除，也不可在此時整批匯入覆寫。
+
+> 目前仍屬 preview：UAC 提權後的 process-tree timeout、雙機 Chalkboard 亂序 / 重連、Vision Model，以及最新建置的乾淨 Windows EXE，仍需各自實機驗收，不能只看單元測試就視為全部通過。
+
+---
+
 ## 環境需求
 
 | 項目 | 需求 |
@@ -173,6 +186,10 @@ build.bat
 src-tauri\target\release\bundle\nsis\
 ```
 
+- Tauri bundle 版本與 `package.json` 對齊，並啟用相容現有 inline 資源的漸進式 CSP。
+- Node sidecar 的 `pkg.assets` 包含 SOP、Skills、Plugins 與 public 檔案；Chromium 仍不綁進安裝包。
+- 修改發佈設定後，仍應重新建置並在乾淨 Windows 驗收，不能只以 `npm test` 代表 EXE 已通過。
+
 ### 瀏覽器插件安裝
 
 - 當「瀏覽器」標籤顯示「瀏覽器不可用」時，按一下按鈕即可執行 install-playwright-chromium 單操作程式。
@@ -208,7 +225,7 @@ src-tauri\target\release\bundle\nsis\
 
 - `skills/<slug>/SKILL.md`
   第一行固定為 `---`，然後 `name: <slug>` ，遵循 [agentskills.io](https://agentskills.io) 格式製作
-- `sops/*.md`
+- `sops/<slug>/SOP.md`
   第一行固定為 `# Visual Agent SOP File v1`
 - `exps/exp-yyyymmdd.md`
   第一行固定為 `# Visual Agent Experience Log - yyyymmdd`
@@ -219,7 +236,7 @@ src-tauri\target\release\bundle\nsis\
 
 ## 自訂 SOP
 
-將 `.md` 檔放進開發目錄 `sops/`，或執行時目錄 `%APPDATA%\visual-agent\sops\`。格式範例：
+將 `SOP.md` 放進開發目錄 `sops/<slug>/`，或執行時目錄 `%APPDATA%\visual-agent\sops\<slug>\`。格式範例：
 
 ````markdown
 # Visual Agent SOP File v1
@@ -289,10 +306,21 @@ visual-agent/
 ├── public/
 │   ├── index.html
 │   ├── style.css
-│   └── app.js
+│   ├── app.js
+│   └── ui-security.js
 ├── src/
+│   ├── agent/
+│   │   ├── actions.js
+│   │   ├── consent.js
+│   │   ├── loop-budget.js
+│   │   └── prompts.js
 │   ├── index.js
 │   ├── llm.js
+│   ├── local-api-security.js
+│   ├── oauth-token-cache.js
+│   ├── pure.js
+│   ├── remote-agent.js
+│   ├── safe-fetch.js
 │   ├── server.js
 │   ├── sop-executor.js
 │   ├── sop-parser.js
@@ -385,7 +413,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 因為這些 SOP 需要系統管理員權限。現在 install 階段會自動走共用提權流程，若使用者取消 UAC，任務會直接失敗。
 
 **Q: 新增 SOP 後沒有出現？**
-確認檔案放在 `sops/` 或 `%APPDATA%\visual-agent\sops\`，再重新整理頁面。
+確認檔案放在 `sops/<slug>/SOP.md` 或 `%APPDATA%\visual-agent\sops\<slug>\SOP.md`，再重新整理頁面。
 
 **Q: AI 指示燈是紅色或黃色？**
 通常代表 Ollama 尚未安裝、未啟動，或模型尚未下載完成。
@@ -399,14 +427,14 @@ Chalkboard 附件會以裁切後 PNG 傳送；目前文字模型不支援辨識�
 **Q: 要怎麼回報問題？**
 點標題列「說明 → 診斷資訊」，複製診斷摘要，連同操作步驟與 debug log 末段一起附上。
 
-**Q: 本 app 的 API 能被同一網路的其他裝置存取嗎？**
-不能。本地 HTTP API 只綁定 `127.0.0.1`，僅供本機前端與 Tauri 使用；遠端雙機協作走的是獨立的點對點 TCP 協定（需雙方同意連線），不經由這個 API。
+**Q: 本 app 的 API 能被同一網路或惡意網頁直接存取嗎？**
+同一網路的其他裝置不能連到只綁 `127.0.0.1` 的 HTTP API；本機惡意網頁還會被 Host / Origin 檢查與 per-process token 阻擋。遠端雙機協作走獨立的點對點 TCP 協定（需雙方同意連線），不經由這個 API。
 
 **Q: AI（含遠端 AI）回傳的內容會不會執行網頁指令？**
-不會。所有 AI / 遠端 peer 回傳內容在顯示前都會經 `DOMPurify` 淨化，剝除 event handler 與危險 URI，僅保留文字、表格、連結與程式碼。
+顯示前會經共同 `DOMPurify` 安全出口，剝除 event handler、script 與危險 URI；若淨化元件缺件或失敗，會退回 escaped text，而不是直接插入原始 HTML。
 
-**Q: 開發時怎麼跑測試？**
-`npm test`——語法檢查（全部自研 JS）+ 起 server 冒煙（打 `/api/meta`、`/api/diagnostics`）。不依賴 Ollama / 網路 / 顯示卡。
+**Q: 開發時怎麼跑測試與依賴稽核？**
+`npm test` 會執行全部自研 JS 語法檢查、`test/*.test.js` 單元 / Windows 行為測試，以及 server 冒煙（`/api/meta`、`/api/diagnostics`、token 與跨來源拒絕）。`npm audit --omit=dev` 檢查正式環境依賴。這些測試不取代 UAC、雙機、Vision 或乾淨 EXE 實機驗收。
 
 ---
 

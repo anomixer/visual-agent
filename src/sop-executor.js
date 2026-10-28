@@ -18,14 +18,48 @@ const { spawn } = require('child_process');
 const EventEmitter = require('events');
 
 class SOPExecutor extends EventEmitter {
-    buildWrappedCommand(command) {
+    buildPowerShellRunnerScript(command) {
         return [
             '$utf8NoBom = New-Object System.Text.UTF8Encoding($false)',
             '[Console]::InputEncoding = $utf8NoBom',
             '[Console]::OutputEncoding = $utf8NoBom',
             '$OutputEncoding = $utf8NoBom',
+            "$ErrorActionPreference = 'Continue'",
+            '$global:LASTEXITCODE = 0',
+            'try {',
+            '    & {',
             command,
-        ].join('; ');
+            '    }',
+            '    $exitCode = if ($LASTEXITCODE -is [int]) { $LASTEXITCODE } else { 0 }',
+            '} catch {',
+            '    Write-Error ($_ | Out-String)',
+            '    $exitCode = 1',
+            '}',
+            'exit $exitCode',
+        ].join('\r\n');
+    }
+
+    writePowerShellRunner(tempDir, command) {
+        const runnerPath = path.join(tempDir, 'runner.ps1');
+        fs.writeFileSync(runnerPath, `\uFEFF${this.buildPowerShellRunnerScript(command)}`, 'utf8');
+        return runnerPath;
+    }
+
+    terminateProcessTree(child) {
+        if (process.platform !== 'win32' || !child.pid) {
+            child.kill('SIGTERM');
+            return;
+        }
+
+        const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+            windowsHide: true,
+        });
+        killer.on('error', () => child.kill('SIGTERM'));
+        killer.on('close', (code) => {
+            if (code !== 0 && child.exitCode === null && child.signalCode === null) {
+                child.kill('SIGTERM');
+            }
+        });
     }
 
     escapePowerShellSingleQuoted(value) {
@@ -58,14 +92,19 @@ class SOPExecutor extends EventEmitter {
                 return;
             }
 
-            // 直接在 PowerShell 內設定 UTF-8，避免 chcp > nul 在部分環境觸發 Out-File / device 錯誤
-            const wrappedCommand = this.buildWrappedCommand(command);
+            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'visual-agent-'));
+            const runnerPath = this.writePowerShellRunner(tempDir, command);
+            const cleanup = () => {
+                try {
+                    fs.rmSync(tempDir, { recursive: true, force: true });
+                } catch {}
+            };
 
             const child = spawn('powershell.exe', [
                 '-NoProfile',
                 '-NonInteractive',
                 '-ExecutionPolicy', 'Bypass',
-                '-Command', wrappedCommand,
+                '-File', runnerPath,
             ], {
                 windowsHide: true,
             });
@@ -96,7 +135,7 @@ class SOPExecutor extends EventEmitter {
 
             const timer = setTimeout(() => {
                 timedOut = true;
-                child.kill('SIGTERM');
+                this.terminateProcessTree(child);
             }, this.timeoutMs);
 
             child.stdout.setEncoding('utf8');
@@ -114,6 +153,7 @@ class SOPExecutor extends EventEmitter {
 
             child.on('close', (code) => {
                 clearTimeout(timer);
+                cleanup();
                 if (timedOut) {
                     reject(new Error(`Command timed out after ${this.timeoutMs}ms: ${command}`));
                 } else {
@@ -124,6 +164,7 @@ class SOPExecutor extends EventEmitter {
 
             child.on('error', (err) => {
                 clearTimeout(timer);
+                cleanup();
                 reject(err);
             });
         });
@@ -172,7 +213,7 @@ class SOPExecutor extends EventEmitter {
                 'exit $exitCode',
             ].join('\r\n');
 
-            fs.writeFileSync(runnerPath, runnerScript, 'utf8');
+            fs.writeFileSync(runnerPath, `\uFEFF${runnerScript}`, 'utf8');
 
             const launchCommand = [
                 '$ErrorActionPreference = "Stop"',
@@ -216,7 +257,7 @@ class SOPExecutor extends EventEmitter {
 
             const timer = setTimeout(() => {
                 timedOut = true;
-                child.kill('SIGTERM');
+                this.terminateProcessTree(child);
             }, this.timeoutMs);
 
             child.stderr.setEncoding('utf8');

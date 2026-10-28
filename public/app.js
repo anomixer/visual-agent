@@ -14,6 +14,7 @@
 'use strict';
 
 const API = 'http://localhost:3210';
+const { normalizeImageDataUrl, sanitizeMarkdownHtml: sanitizeHtml } = window.VisualAgentUiSecurity;
 
 // ── State ─────────────────────────────────────────────────────────
 let todoList = [];
@@ -65,9 +66,13 @@ let suppressRemoteChalkboardSync = false;
 let remoteChalkboardSyncTimer = null;
 let remoteChalkboardApplyTimer = null;
 let queuedRemoteChalkboardMessage = null;
+let remoteChalkboardLoadToken = 0;
+const loadingRemoteChalkboardMessageIds = new Set();
 const appliedRemoteChalkboardMessageIds = new Set();
+const appliedRemoteChalkboardRevisions = new Map();
+const remoteChalkboardLoadTokens = new Map();
 const appliedRemoteDraftMessageIds = new Set();
-const handledRemoteAiActionMessageIds = new Set();
+const handledRemoteAiActionMessageIds = new Set(loadHandledRemoteDirectiveIds());
 const recentRemoteDirectiveExecutions = new Map();
 const remoteSessionsOpenedOnChalkboard = new Set();
 const notifiedRemoteDisconnectSessionIds = new Set();
@@ -1270,16 +1275,54 @@ function syncProviderAuthUI(provider) {
 }
 
 // ── API Helpers ────────────────────────────────────────────────────
+let localApiToken = '';
+let localApiTokenRequest = null;
+
+async function ensureLocalApiToken() {
+    if (localApiToken) return localApiToken;
+    if (!localApiTokenRequest) {
+        localApiTokenRequest = fetch(`${API}/api/meta`, {
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+        }).then(async (res) => {
+            const data = await res.json();
+            if (!res.ok || !data.success || !data.localApiToken) {
+                throw new Error(data.error || 'Failed to initialize local API access');
+            }
+            localApiToken = data.localApiToken;
+            return localApiToken;
+        }).finally(() => {
+            localApiTokenRequest = null;
+        });
+    }
+    return localApiTokenRequest;
+}
+
 async function api(endpoint, options = {}) {
     try {
-        const res = await fetch(`${API}${endpoint}`, {
-            headers: { 'Content-Type': 'application/json' },
-            ...options,
-            body: options.body ? JSON.stringify(options.body) : undefined,
-        });
-        return res.json();
+        const sendRequest = async () => {
+            const headers = {
+                'Content-Type': 'application/json',
+                ...(options.headers || {}),
+            };
+            if (endpoint !== '/api/meta') {
+                headers['X-Visual-Agent-Token'] = await ensureLocalApiToken();
+            }
+            return fetch(`${API}${endpoint}`, {
+                ...options,
+                headers,
+                body: options.body ? JSON.stringify(options.body) : undefined,
+            });
+        };
+
+        let res = await sendRequest();
+        if (res.status === 401 && endpoint !== '/api/meta') {
+            localApiToken = '';
+            res = await sendRequest();
+        }
+        return await res.json();
     } catch (err) {
-        if (err.name === 'AbortError') throw err; // 讓呼叫端處理中斷
+        if (err.name === 'AbortError') throw err;
         console.error('[API]', endpoint, err);
         return { success: false, error: err.message };
     }
@@ -1290,10 +1333,8 @@ let _markedInited = false;
 // 等可執行標記（遠端協作時對方 AI 可送任意內容）。DOMPurify 在 renderMarkdown 這個共同
 // 出口統一淨化，保留 GFM 表格、連結、程式碼等結構，移除 event handler 與 script。
 function sanitizeMarkdownHtml(html) {
-    if (typeof DOMPurify === 'undefined') return html; // 極端缺件時不阻斷渲染
-    // 用 DOMPurify 預設 profile：保留 GFM 表格/連結/程式碼結構，剝除 event handler、
-    // javascript: 等危險 URI 與 script。不客製 ALLOWED_URI_REGEXP（預設已比之更嚴）。
-    return DOMPurify.sanitize(html);
+    const purifier = typeof DOMPurify === 'undefined' ? null : DOMPurify;
+    return sanitizeHtml(html, purifier);
 }
 function renderMarkdown(text = '') {
     if (typeof marked !== 'undefined') {
@@ -2155,7 +2196,7 @@ function renderRemoteMessages() {
 
     session.messages.forEach((message) => {
         if (message.type === 'chalkboard_state') {
-            applyRemoteChalkboardState(message);
+            if (message.direction === 'incoming') applyRemoteChalkboardState(message, session.id);
             return;
         }
         if (!shouldRenderRemoteMessage(message)) {
@@ -2171,41 +2212,6 @@ function renderRemoteMessages() {
         const actionDirectives = message.type === 'chat_message'
             ? extractActionDirectivesFromReply(suggestionControl.displayText || chalkControl.displayText || remoteText || '')
             : [];
-        if (message.senderType === 'ai' && actionDirectives.length > 0 && !handledRemoteAiActionMessageIds.has(message.id)) {
-            handledRemoteAiActionMessageIds.add(message.id);
-            addUILog(currentLocale === 'en-US'
-                ? `Remote AI directive received [msg:${message.id || 'unknown'}] (${actionDirectives.map((item) => buildDirectiveDebugLabel(item)).join(', ')})`
-                : `收到遠端 AI 指令 [msg:${message.id || 'unknown'}]（${actionDirectives.map((item) => buildDirectiveDebugLabel(item)).join('、')}）`, 'info');
-            actionDirectives.forEach((directive) => {
-                if (shouldSkipDuplicateRemoteDirective(session.id, directive)) {
-                    const skipMessage = currentLocale === 'en-US'
-                        ? `Skipped duplicate remote directive: ${buildDirectiveDebugLabel(directive)}`
-                        : `已略過重複的遠端指令：${buildDirectiveDebugLabel(directive)}`;
-                    addUILog(skipMessage, 'warn');
-                    appendChatBubble('system', skipMessage, [], {
-                        container: remoteChatMessages,
-                        forceSystem: true,
-                    });
-                    return;
-                }
-                handleDirectiveAction(directive).then((result) => {
-                    if (!result?.summary) return;
-                    addUILog(result.summary, 'success');
-                    appendChatBubble('system', result.summary, [], {
-                        container: remoteChatMessages,
-                        forceSystem: true,
-                    });
-                }).catch((error) => {
-                    addUILog(currentLocale === 'en-US'
-                        ? `❌ Remote AI directive failed: ${error.message || 'unknown error'}`
-                        : `❌ 遠端 AI 指令失敗：${error.message || '未知錯誤'}`, 'error');
-                    appendChatBubble('system', error.message || 'Remote AI action failed', [], {
-                        container: remoteChatMessages,
-                        forceSystem: true,
-                    });
-                });
-            });
-        }
         const remoteAutoDraft = chalkControl.draft || buildAutoChalkboardDraft('', chalkControl.displayText || remoteText || '');
         if (remoteAutoDraft && !appliedRemoteDraftMessageIds.has(message.id)) {
             appliedRemoteDraftMessageIds.add(message.id);
@@ -2227,6 +2233,9 @@ function renderRemoteMessages() {
                 imageDataUrl: message.type === 'screen_share' ? message.imageDataUrl : '',
             }
         );
+        if (message.senderType === 'ai' && actionDirectives.length > 0) {
+            appendRemoteDirectiveConsent(session, message, actionDirectives);
+        }
     });
 
 
@@ -2262,7 +2271,7 @@ function addLocalSessionMessage(role, text, suggestions = [], options = {}) {
         suggestions: Array.isArray(suggestions) ? suggestions : [],
         senderLabel: options.senderLabel || '',
         forceSystem: !!options.forceSystem,
-        imageDataUrl: options.imageDataUrl || '',
+        imageDataUrl: normalizeImageDataUrl(options.imageDataUrl),
         createdAt: new Date().toISOString(),
     });
     session.messages = session.messages.slice(-120);
@@ -2310,9 +2319,9 @@ function renderLocalSessionControls() {
         }
         const title = escapeHtml(displayTitle || t('chat.localSessionDefault'));
         return `
-            <button type="button" class="chat-mode-tab local-chat-tab ${activeClass} ${pendingClass}" data-chat-mode="local" data-local-session-id="${session.id}">
+            <button type="button" class="chat-mode-tab local-chat-tab ${activeClass} ${pendingClass}" data-chat-mode="local" data-local-session-id="${escapeHtml(session.id)}">
                 <span class="local-chat-tab-title">${title}</span>
-                ${canClose ? `<span class="local-chat-tab-close" data-local-close-id="${session.id}" title="Close">×</span>` : ''}
+                ${canClose ? `<span class="local-chat-tab-close" data-local-close-id="${escapeHtml(session.id)}" title="Close">×</span>` : ''}
             </button>
         `;
     }).join('');
@@ -2325,9 +2334,14 @@ function renderLocalSessionControls() {
 }
 
 async function saveSharedImage(imageDataUrl) {
+    const normalizedImage = normalizeImageDataUrl(imageDataUrl);
+    if (!normalizedImage) {
+        addUILog(t('remote.screenFailed', { error: 'Invalid image data' }), 'error');
+        return;
+    }
     const data = await api('/api/remote/save-image-file', {
         method: 'POST',
-        body: { imageDataUrl }
+        body: { imageDataUrl: normalizedImage }
     });
     if (data.success) {
         addUILog(t('remote.imageSaved', { fileName: data.fileName || data.filePath }), 'success');
@@ -2350,7 +2364,7 @@ function renderRemoteSessionControls() {
         ? sessions.map((session) => {
             const peerUser = session.peer?.userName ? ` / ${session.peer.userName}` : '';
             const label = `${session.peer?.machineName || session.host || session.id}${peerUser} · ${getRemoteStatusText(session)}`;
-            return `<option value="${session.id}" ${session.id === selectedRemoteSessionId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+            return `<option value="${escapeHtml(session.id)}" ${session.id === selectedRemoteSessionId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
         }).join('')
         : '<option value="">No session</option>';
     const quickListEl = ensureRemoteSessionQuickList();
@@ -2361,9 +2375,9 @@ function renderRemoteSessionControls() {
             const canClose = session.status !== 'active';
             const label = session.peer?.machineName || session.host || session.id;
             return `
-                <button type="button" class="remote-session-chip ${activeClass} ${pendingClass}" data-session-id="${session.id}">
+                <button type="button" class="remote-session-chip ${activeClass} ${pendingClass}" data-session-id="${escapeHtml(session.id)}">
                     <span class="remote-session-chip-title">${escapeHtml(label)}</span>
-                    ${canClose ? `<span class="remote-session-chip-close" data-remote-close-id="${session.id}" title="Close">×</span>` : ''}
+                    ${canClose ? `<span class="remote-session-chip-close" data-remote-close-id="${escapeHtml(session.id)}" title="Close">×</span>` : ''}
                 </button>
             `;
         }).join('');
@@ -2620,41 +2634,71 @@ async function sendRemoteChalkboardSnapshot(hasContent = true) {
     }
 }
 
-function applyRemoteChalkboardState(message = {}) {
-    if (!message?.id || appliedRemoteChalkboardMessageIds.has(message.id)) return;
-    if (!message.imageDataUrl || !message.imageDataUrl.startsWith('data:image/')) return;
+function applyRemoteChalkboardState(message = {}, sessionId = selectedRemoteSessionId) {
+    const sessionKey = String(sessionId || '');
+    if (!message?.id || !sessionKey || appliedRemoteChalkboardMessageIds.has(message.id) || loadingRemoteChalkboardMessageIds.has(message.id)) return;
+    const revision = Number(message.revision) || 0;
+    if (revision > 0 && revision <= (appliedRemoteChalkboardRevisions.get(sessionKey) || 0)) return;
+    const imageDataUrl = normalizeImageDataUrl(message.imageDataUrl);
+    if (!imageDataUrl) return;
     if (isChalkboardInteractionBusy()) {
-        queuedRemoteChalkboardMessage = message;
+        const queuedRevision = Number(queuedRemoteChalkboardMessage?.message?.revision) || 0;
+        if (queuedRemoteChalkboardMessage?.sessionId === sessionKey && revision > 0 && revision <= queuedRevision) return;
+        queuedRemoteChalkboardMessage = { message, sessionId: sessionKey };
         scheduleQueuedRemoteChalkboardApply();
         return;
     }
-    appliedRemoteChalkboardMessageIds.add(message.id);
 
+    loadingRemoteChalkboardMessageIds.add(message.id);
+    const loadToken = ++remoteChalkboardLoadToken;
+    remoteChalkboardLoadTokens.set(sessionKey, loadToken);
     const img = new Image();
+    img.onerror = () => loadingRemoteChalkboardMessageIds.delete(message.id);
     img.onload = () => {
+        loadingRemoteChalkboardMessageIds.delete(message.id);
+        if (remoteChalkboardLoadTokens.get(sessionKey) !== loadToken || selectedRemoteSessionId !== sessionKey) return;
+        if (isChalkboardInteractionBusy()) {
+            queuedRemoteChalkboardMessage = { message, sessionId: sessionKey };
+            scheduleQueuedRemoteChalkboardApply();
+            return;
+        }
         openTab('chalkboard');
         const applyImage = (attempt = 0) => {
+            if (remoteChalkboardLoadTokens.get(sessionKey) !== loadToken || selectedRemoteSessionId !== sessionKey) return;
+            if (isChalkboardInteractionBusy()) {
+                queuedRemoteChalkboardMessage = { message, sessionId: sessionKey };
+                scheduleQueuedRemoteChalkboardApply();
+                return;
+            }
             if (!chalkboardState.ctx || chalkboardState.cssWidth <= 0 || chalkboardState.cssHeight <= 0) {
                 if (attempt < 8) setTimeout(() => applyImage(attempt + 1), 120);
                 return;
             }
             suppressRemoteChalkboardSync = true;
-            cancelPendingChalkPreview(false);
-            hidePendingTextBox();
-            clearSelectionBox();
-            chalkboardState.hasInteracted = true;
-            chalkboardState.hintDrawn = true;
-            pushChalkHistory(null, { preserveFuture: true });
-            clearChalkboardSurface();
-            chalkboardState.ctx.drawImage(img, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
-            chalkboardState.hasUserContent = message.hasContent !== false;
-            syncChalkboardUI();
-            suppressRemoteChalkboardSync = false;
-            showChalkboardFloatHint(currentLocale === 'en-US' ? 'Remote Chalkboard updated' : '遠端 Chalkboard 已同步');
+            try {
+                cancelPendingChalkPreview(false);
+                hidePendingTextBox();
+                clearSelectionBox();
+                chalkboardState.hasInteracted = true;
+                chalkboardState.hintDrawn = true;
+                pushChalkHistory(null, { preserveFuture: true });
+                clearChalkboardSurface();
+                chalkboardState.ctx.drawImage(img, 0, 0, chalkboardState.cssWidth, chalkboardState.cssHeight);
+                chalkboardState.hasUserContent = message.hasContent !== false;
+                syncChalkboardUI();
+                if (revision > 0) {
+                    appliedRemoteChalkboardRevisions.set(sessionKey, Math.max(revision, appliedRemoteChalkboardRevisions.get(sessionKey) || 0));
+                } else {
+                    appliedRemoteChalkboardMessageIds.add(message.id);
+                }
+                showChalkboardFloatHint(currentLocale === 'en-US' ? 'Remote Chalkboard updated' : '遠端 Chalkboard 已同步');
+            } finally {
+                suppressRemoteChalkboardSync = false;
+            }
         };
         applyImage(0);
     };
-    img.src = message.imageDataUrl;
+    img.src = imageDataUrl;
 }
 
 function isChalkboardInteractionBusy() {
@@ -2675,9 +2719,9 @@ function scheduleQueuedRemoteChalkboardApply() {
             scheduleQueuedRemoteChalkboardApply();
             return;
         }
-        const message = queuedRemoteChalkboardMessage;
+        const pending = queuedRemoteChalkboardMessage;
         queuedRemoteChalkboardMessage = null;
-        if (message) applyRemoteChalkboardState(message);
+        if (pending) applyRemoteChalkboardState(pending.message, pending.sessionId);
     }, 1000);
 }
 
@@ -2851,12 +2895,12 @@ function syncVisionModelInputs(useDropdown, visionModel = '', models = []) {
         settingVisionModelSelect.style.display = 'block';
         const visionModels = models.filter(model => isVisionCapableModelName(model.name));
         const autoSelectText = currentLocale === 'en-US' ? 'Auto-select Vision Model' : '自動挑選 Vision 模型';
-        const options = [`<option value="">${autoSelectText}</option>`]
-            .concat(visionModels.map(model => `<option value="${model.name}" ${model.name === visionModel ? 'selected' : ''}>${model.name}</option>`));
+        const options = [`<option value="">${escapeHtml(autoSelectText)}</option>`]
+            .concat(visionModels.map(model => `<option value="${escapeHtml(model.name)}" ${model.name === visionModel ? 'selected' : ''}>${escapeHtml(model.name)}</option>`));
         settingVisionModelSelect.innerHTML = options.join('');
         if (visionModel && !visionModels.some(model => model.name === visionModel)) {
             const currentText = currentLocale === 'en-US' ? '(current setting)' : '（目前設定）';
-            settingVisionModelSelect.innerHTML += `<option value="${visionModel}" selected>${visionModel}${currentText}</option>`;
+            settingVisionModelSelect.innerHTML += `<option value="${escapeHtml(visionModel)}" selected>${escapeHtml(visionModel)}${escapeHtml(currentText)}</option>`;
         }
         if (visionModelHelpText) {
             visionModelHelpText.textContent = visionModels.length > 0
@@ -5079,6 +5123,72 @@ function buildRemoteDirectiveExecutionKey(sessionId = '', action = {}) {
     ].join('|');
 }
 
+function loadHandledRemoteDirectiveIds() {
+    try {
+        const stored = JSON.parse(localStorage.getItem('handled_remote_directive_ids') || '[]');
+        return Array.isArray(stored) ? stored.filter((id) => typeof id === 'string').slice(-500) : [];
+    } catch {
+        return [];
+    }
+}
+
+function persistHandledRemoteDirectiveIds() {
+    localStorage.setItem('handled_remote_directive_ids', JSON.stringify([...handledRemoteAiActionMessageIds].slice(-500)));
+}
+
+function appendRemoteDirectiveConsent(session, message, directives) {
+    const messageId = String(message.id || '');
+    if (!messageId || !remoteChatMessages) return;
+    const container = document.createElement('div');
+    container.className = 'suggestion-buttons';
+    const details = directives.map((item) => buildDirectiveDebugLabel(item)).join(', ');
+    const status = document.createElement('span');
+    status.className = 'directive-consent-status';
+
+    if (handledRemoteAiActionMessageIds.has(messageId)) {
+        status.textContent = currentLocale === 'en-US'
+            ? `Confirmed remote directive [msg:${messageId}]: ${details}`
+            : `已確認遠端指令 [msg:${messageId}]：${details}`;
+        container.appendChild(status);
+        remoteChatMessages.appendChild(container);
+        return;
+    }
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'suggestion-btn';
+    button.textContent = currentLocale === 'en-US'
+        ? `Confirm remote action${directives.length > 1 ? 's' : ''}: ${details}`
+        : `確認執行遠端動作：${details}`;
+    button.addEventListener('click', async () => {
+        button.disabled = true;
+        handledRemoteAiActionMessageIds.add(messageId);
+        persistHandledRemoteDirectiveIds();
+        status.textContent = currentLocale === 'en-US' ? 'Executing after local confirmation…' : '本機確認後執行中…';
+        try {
+            for (const directive of directives) {
+                if (shouldSkipDuplicateRemoteDirective(session.id, directive)) {
+                    addUILog(currentLocale === 'en-US'
+                        ? `Skipped duplicate remote directive: ${buildDirectiveDebugLabel(directive)}`
+                        : `已略過重複的遠端指令：${buildDirectiveDebugLabel(directive)}`, 'warn');
+                    continue;
+                }
+                const result = await handleDirectiveAction(directive);
+                if (result?.summary) addUILog(result.summary, 'success');
+            }
+            status.textContent = currentLocale === 'en-US' ? 'Remote action confirmed and started.' : '遠端動作已確認並啟動。';
+        } catch (error) {
+            handledRemoteAiActionMessageIds.delete(messageId);
+            persistHandledRemoteDirectiveIds();
+            button.disabled = false;
+            status.textContent = error.message || 'Remote AI action failed';
+            addUILog(status.textContent, 'error');
+        }
+    });
+    container.append(button, status);
+    remoteChatMessages.appendChild(container);
+}
+
 function shouldSkipDuplicateRemoteDirective(sessionId = '', action = {}) {
     const key = buildRemoteDirectiveExecutionKey(sessionId, action);
     const now = Date.now();
@@ -5518,7 +5628,12 @@ async function toggleModelMenu() {
         filtered.forEach(m => {
             const item = document.createElement('div');
             item.className = `model-menu-item ${m.name === data.currentModel ? 'active' : ''}`;
-            item.innerHTML = `<span>${m.name}</span> <span style="font-size:9px;opacity:0.6">${(m.size / 1024 / 1024 / 1024).toFixed(1)}GB</span>`;
+            const name = document.createElement('span');
+            name.textContent = m.name;
+            const size = document.createElement('span');
+            size.style.cssText = 'font-size:9px;opacity:0.6';
+            size.textContent = `${(m.size / 1024 / 1024 / 1024).toFixed(1)}GB`;
+            item.append(name, ' ', size);
             item.onclick = async () => {
                 const res = await api('/api/llm/model', { method: 'POST', body: { modelName: m.name } });
                 if (res.success) {
@@ -5679,22 +5794,22 @@ function createRecommendCard(item) {
     card.innerHTML = `
         <div class="recommend-card-top">
           <div class="recommend-title">
-              ${getActionTitle(localized.title, action)}
+              ${escapeHtml(getActionTitle(localized.title, action))}
               ${isInstalled
-            ? `<span style="font-size:10px; color:${localized.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${localized.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge')}</span>`
+            ? `<span style="font-size:10px; color:${localized.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${escapeHtml(localized.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge'))}</span>`
             : ''}
           </div>
           ${isActionable ? `
               <div class="recommend-btn-group">
-                <button class="btn-add-todo" title="${t('task.addActionTask', { action: actionLabel })}">＋</button>
-                <button class="btn-run-now" title="${t('task.runActionNow', { action: actionLabel })}">▶</button>
+                <button class="btn-add-todo" title="${escapeHtml(t('task.addActionTask', { action: actionLabel }))}">＋</button>
+                <button class="btn-run-now" title="${escapeHtml(t('task.runActionNow', { action: actionLabel }))}">▶</button>
               </div>
           ` : ''}
         </div>
-        <div class="recommend-desc">${localized.description || ''}</div>
+        <div class="recommend-desc">${escapeHtml(localized.description || '')}</div>
         <div class="recommend-meta">
-          <span class="recommend-category">${localized.category}</span>
-          ${isActionable ? `<span class="recommend-skill-badge">${t('sidebar.actionable', { action: actionLabel })}</span>` : ''}
+          <span class="recommend-category">${escapeHtml(localized.category || '')}</span>
+          ${isActionable ? `<span class="recommend-skill-badge">${escapeHtml(t('sidebar.actionable', { action: actionLabel }))}</span>` : ''}
         </div>
     `;
 
@@ -5802,18 +5917,18 @@ function createSopCard(sop) {
 
     card.innerHTML = `
         <div class="recommend-card-top">
-          <div class="recommend-title">${getActionTitle(sop.name || sop.id, action)}${sop.installed ? `<span style="font-size:10px; color:${sop.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${sop.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge')}</span>` : ''}</div>
+          <div class="recommend-title">${escapeHtml(getActionTitle(sop.name || sop.id, action))}${sop.installed ? `<span style="font-size:10px; color:${sop.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${escapeHtml(sop.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge'))}</span>` : ''}</div>
           ${isActionable ? `<div class="recommend-btn-group sop-btn-group">
-            <button class="btn-add-todo" title="${t('task.addActionTask', { action: actionLabel })}">＋</button>
-            <button class="btn-run-now" title="${t('task.runActionNow', { action: actionLabel })}">▶</button>
+            <button class="btn-add-todo" title="${escapeHtml(t('task.addActionTask', { action: actionLabel }))}">＋</button>
+            <button class="btn-run-now" title="${escapeHtml(t('task.runActionNow', { action: actionLabel }))}">▶</button>
           </div>` : ''}
         </div>
-        <div class="recommend-desc sop-id">${sop.id || ''}</div>
+        <div class="recommend-desc sop-id">${escapeHtml(sop.id || '')}</div>
         <div class="recommend-meta">
-          <span class="recommend-category">${sop.category || t('sidebar.otherCategory')}</span>
-          <span class="recommend-skill-badge">${requiresAdmin ? 'UAC / Admin' : t('sidebar.normalPermission')}</span>
-          <span class="recommend-skill-badge">${t('sidebar.risk', { value: riskLabel })}</span>
-          ${isActionable ? `<span class="recommend-skill-badge">${t('sidebar.actionableShort', { action: actionLabel })}</span>` : ''}
+          <span class="recommend-category">${escapeHtml(sop.category || t('sidebar.otherCategory'))}</span>
+          <span class="recommend-skill-badge">${escapeHtml(requiresAdmin ? 'UAC / Admin' : t('sidebar.normalPermission'))}</span>
+          <span class="recommend-skill-badge">${escapeHtml(t('sidebar.risk', { value: riskLabel }))}</span>
+          ${isActionable ? `<span class="recommend-skill-badge">${escapeHtml(t('sidebar.actionableShort', { action: actionLabel }))}</span>` : ''}
         </div>
     `;
 
@@ -6378,23 +6493,26 @@ function renderTaskCard(task) {
     card.dataset.id = task.id;
     card.dataset.status = task.status;
 
-    const progress = task.status === 'success' ? 100 : (task.status === 'failed' ? 100 : (task.progress || 0));
+    const rawProgress = Number(task.progress);
+    const progress = task.status === 'success' || task.status === 'failed'
+        ? 100
+        : Math.min(100, Math.max(0, Number.isFinite(rawProgress) ? rawProgress : 0));
     const progressBarClass = task.status === 'success' ? 'success' : (task.status === 'failed' ? 'failed' : '');
     const spinner = task.status === 'running' ? '<span class="spinner"></span>' : '';
 
     card.innerHTML = `
         <div class="task-card-top">
-          <span class="task-title">${task.title}</span>
+          <span class="task-title">${escapeHtml(task.title || '')}</span>
           <div class="task-actions">
             ${spinner}
-            ${task.skillId && task.status === 'pending' ? `<button class="btn-task run" title="${t('buttons.execute')}" data-id="${task.id}">▶</button>` : ''}
-            ${task.status !== 'running' ? `<button class="btn-task delete" title="${t('buttons.delete')}" data-id="${task.id}">✕</button>` : ''}
+            ${task.skillId && task.status === 'pending' ? `<button class="btn-task run" title="${escapeHtml(t('buttons.execute'))}" data-id="${escapeHtml(task.id)}">▶</button>` : ''}
+            ${task.status !== 'running' ? `<button class="btn-task delete" title="${escapeHtml(t('buttons.delete'))}" data-id="${escapeHtml(task.id)}">✕</button>` : ''}
           </div>
         </div>
         <div class="task-meta">
-          <span class="task-category">${task.category || t('task.general')}</span>
-          <span class="task-category">${getActionLabel(task.action || 'install')}</span>
-          <span class="task-status" data-status="${task.status}">${localizeStatus(task.status)}</span>
+          <span class="task-category">${escapeHtml(task.category || t('task.general'))}</span>
+          <span class="task-category">${escapeHtml(getActionLabel(task.action || 'install'))}</span>
+          <span class="task-status" data-status="${escapeHtml(task.status || '')}">${escapeHtml(localizeStatus(task.status))}</span>
         </div>
         <div class="task-progress">
           <div class="task-progress-bar ${progressBarClass}" style="width:${progress}%"></div>
@@ -6670,6 +6788,7 @@ async function sendChat() {
                 }
                 const chalkControl = extractChalkboardControlFromReply(data.reply || '');
                 appendChatBubble('ai', chalkControl.displayText || data.reply, data.suggestions);
+                appendAgentActionConsent(data.pendingActions);
                 // AI 引擎未就緒（落到關鍵字模式）時，明確顯示原因與下一步，而不是靜默降級。
                 if (data.aiWarning) {
                     appendChatBubble('system', `⚠️ ${data.aiWarning}`, [], {
@@ -6730,10 +6849,57 @@ async function sendChat() {
     }
 }
 
+function appendAgentActionConsent(pendingActions = [], container = chatMessages) {
+    if (!Array.isArray(pendingActions) || !container) return;
+    pendingActions.forEach((pending) => {
+        if (!pending?.id) return;
+        const detail = pending.sopId || pending.taskId || pending.mode || pending.action || 'unknown';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn-suggest';
+        button.textContent = currentLocale === 'en-US'
+            ? `Confirm ${pending.action || 'action'}: ${detail}`
+            : `確認執行 ${pending.action || '動作'}：${detail}`;
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            const session = getActiveLocalChatSession();
+            const data = await api('/api/chat', {
+                method: 'POST',
+                body: {
+                    message: `Confirm ${pending.action || 'action'}: ${detail}`,
+                    approvedActionId: pending.id,
+                    localChatSessionId: session?.id || '',
+                    history: session?.history || [],
+                    locale: currentLocale,
+                },
+            });
+            if (!data.success) {
+                button.disabled = false;
+                appendChatBubble('system', data.error || 'Action confirmation failed', [], { container, forceSystem: true });
+                return;
+            }
+            button.textContent = currentLocale === 'en-US' ? 'Confirmed' : '已確認';
+            if (session && Array.isArray(data.history)) {
+                session.history = data.history;
+                touchLocalChatSession(session.id);
+            }
+            appendChatBubble('system', data.reply || detail, [], { container, forceSystem: true });
+            if (data.task) {
+                await loadTodo();
+                openTab('todolist');
+            }
+            if (data.sopChanged) refreshSidebarDataSoon();
+            if (data.executeTaskId) executeTask(data.executeTaskId);
+        });
+        container.appendChild(button);
+    });
+}
+
 function appendChatBubble(role, text, suggestions = [], options = {}) {
     suggestions = [];
     const isAI = role === 'ai';
     const isSystem = role === 'system' || options.forceSystem;
+    const imageDataUrl = normalizeImageDataUrl(options.imageDataUrl);
     const container = options.container || chatMessages;
     const shouldStick = isContainerPinnedToBottom(container);
     if (!options.fromRender && !options.skipHistory && container === chatMessages) {
@@ -6778,8 +6944,8 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
             <div class="msg-bubble-wrapper">
                 ${options.senderLabel ? `<div class="remote-chat-author">${escapeHtml(options.senderLabel)}</div>` : ''}
                 <div class="msg-bubble markdown-body">${htmlContent}</div>
-                ${options.imageDataUrl ? `<img class="remote-image" src="${options.imageDataUrl}" alt="shared screen">` : ''}
-                ${options.imageDataUrl ? `<div class="image-action-row"><button class="btn-inline-save" type="button">${t('remote.saveImage')}</button></div>` : ''}
+                ${imageDataUrl ? `<img class="remote-image" alt="shared screen">` : ''}
+                ${imageDataUrl ? `<div class="image-action-row"><button class="btn-inline-save" type="button">${t('remote.saveImage')}</button></div>` : ''}
                 ${suggestionsHtml}
             </div>
         `;
@@ -6825,17 +6991,19 @@ function appendChatBubble(role, text, suggestions = [], options = {}) {
             <div class="msg-bubble-wrapper">
                 ${options.senderLabel ? `<div class="remote-chat-author">${escapeHtml(options.senderLabel)}</div>` : ''}
                 <div class="msg-bubble markdown-body">${highlightMentionsInHtml(renderMarkdown(linkifyPlainUrls(text)), options.highlightNames || getMentionHighlightNames())}</div>
-                ${options.imageDataUrl ? `<img class="remote-image" src="${options.imageDataUrl}" alt="shared screen">` : ''}
-                ${options.imageDataUrl ? `<div class="image-action-row"><button class="btn-inline-save" type="button">${t('remote.saveImage')}</button></div>` : ''}
+                ${imageDataUrl ? `<img class="remote-image" alt="shared screen">` : ''}
+                ${imageDataUrl ? `<div class="image-action-row"><button class="btn-inline-save" type="button">${t('remote.saveImage')}</button></div>` : ''}
             </div>
         `;
         bindExternalLinks(div);
     }
+    const sharedImage = div.querySelector('.remote-image');
+    if (sharedImage && imageDataUrl) sharedImage.src = imageDataUrl;
     const avatarEl = div.querySelector('.msg-avatar');
     if (avatarEl && !isSystem) {
         avatarEl.innerHTML = isAI ? '&#129302;' : '&#128100;';
     }
-    div.querySelector('.btn-inline-save')?.addEventListener('click', () => saveSharedImage(options.imageDataUrl));
+    div.querySelector('.btn-inline-save')?.addEventListener('click', () => saveSharedImage(imageDataUrl));
 
     container.appendChild(div);
     if (shouldStick) {
@@ -7100,8 +7268,9 @@ async function shareRemoteScreen() {
         return;
     }
 
+    let stream = null;
     try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         const video = document.createElement('video');
         video.srcObject = stream;
         await video.play();
@@ -7110,7 +7279,6 @@ async function shareRemoteScreen() {
         canvas.height = video.videoHeight || 720;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        stream.getTracks().forEach((track) => track.stop());
         const imageDataUrl = canvas.toDataURL('image/png', 0.92);
         const data = await api(`/api/remote/session/${session.id}/share-screen`, {
             method: 'POST',
@@ -7127,6 +7295,8 @@ async function shareRemoteScreen() {
         }
     } catch (error) {
         appendChatBubble('system', t('remote.screenFailed', { error: error.message }), [], { container: remoteChatMessages, forceSystem: true });
+    } finally {
+        stream?.getTracks().forEach((track) => track.stop());
     }
 }
 
@@ -7445,9 +7615,7 @@ function renderExps() {
     sorted.forEach((entry) => {
         const card = document.createElement('article');
         card.className = 'exp-card';
-        const htmlContent = typeof marked !== 'undefined'
-            ? marked.parse(entry.content || '')
-            : escapeHtml(entry.content || '').replace(/\n/g, '<br>');
+        const htmlContent = renderMarkdown(entry.content || '');
         const updatedAt = entry.updatedAt
             ? new Date(entry.updatedAt).toLocaleString(currentLocale === 'en' ? 'en-US' : 'zh-TW', { hour12: false })
             : '';
@@ -7508,9 +7676,7 @@ function exportExps() {
 
 function showExpDetail(entry) {
     modalTitle.textContent = entry.title || entry.fileName || t('exps.detailsTitle');
-    const htmlContent = typeof marked !== 'undefined'
-        ? marked.parse(entry.content || '')
-        : escapeHtml(entry.content || '').replace(/\n/g, '<br>');
+    const htmlContent = renderMarkdown(entry.content || '');
     const updatedAt = entry.updatedAt
         ? new Date(entry.updatedAt).toLocaleString(currentLocale === 'en-US' ? 'en-US' : 'zh-TW', { hour12: false })
         : '';
@@ -7540,28 +7706,28 @@ function showTaskModal(task) {
     modalBody.innerHTML = `
         <div class="task-detail-row">
           <span class="task-detail-label">狀態</span>
-          <span class="task-detail-value task-status" data-status="${task.status}">${localizeStatus(task.status)}</span>
+          <span class="task-detail-value task-status" data-status="${escapeHtml(task.status || '')}">${escapeHtml(localizeStatus(task.status))}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">分類</span>
-          <span class="task-detail-value">${task.category || '—'}</span>
+          <span class="task-detail-value">${escapeHtml(task.category || '—')}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">動作</span>
-          <span class="task-detail-value">${getActionLabel(task.action || 'install')}</span>
+          <span class="task-detail-value">${escapeHtml(getActionLabel(task.action || 'install'))}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">SOP ID</span>
-          <span class="task-detail-value" style="font-family:var(--font-mono);font-size:11px">${task.skillId || '（無）'}</span>
+          <span class="task-detail-value" style="font-family:var(--font-mono);font-size:11px">${escapeHtml(task.skillId || '（無）')}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">建立時間</span>
-          <span class="task-detail-value">${task.createdAt ? new Date(task.createdAt).toLocaleString('zh-TW') : '—'}</span>
+          <span class="task-detail-value">${escapeHtml(task.createdAt ? new Date(task.createdAt).toLocaleString('zh-TW') : '—')}</span>
         </div>
         ${task.logs?.length ? `
           <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;">執行記錄</div>
           <div class="task-log-list">
-            ${task.logs.map(l => `<div class="task-log-item log-entry ${l.type || 'info'}" style="font-family:var(--font-mono);font-size:10px;padding:2px 6px">${escapeHtml(l.message || l)}</div>`).join('')}
+            ${task.logs.map(l => `<div class="task-log-item log-entry ${escapeHtml(l.type || 'info')}" style="font-family:var(--font-mono);font-size:10px;padding:2px 6px">${escapeHtml(l.message || l)}</div>`).join('')}
           </div>` : ''}
     `;
     modalOverlay.classList.add('visible');
@@ -7620,6 +7786,8 @@ function exportTasks() {
         const json = JSON.stringify(todoList, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
         a.download = `visual-agent-tasks-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
@@ -8322,7 +8490,7 @@ async function onProviderChange(provider, currentModel = '', currentVisionModel 
 
             if (data.success && data.models.length > 0) {
                 settingModelSelect.innerHTML = data.models.map(m =>
-                    `<option value="${m.name}" ${m.name === currentModel ? 'selected' : ''}>${m.name}</option>`
+                    `<option value="${escapeHtml(m.name)}" ${m.name === currentModel ? 'selected' : ''}>${escapeHtml(m.name)}</option>`
                 ).join('');
                 syncVisionModelInputs(true, currentVisionModel, data.models);
             } else {
@@ -8498,8 +8666,7 @@ function stopHardwarePolling() {
  */
 async function updateHardwareStatus() {
     try {
-        const res = await fetch(`${API}/api/system/health`);
-        const data = await res.json();
+        const data = await api('/api/system/health');
         if (data.success) {
             const h = data.health;
             const CIRCUMFERENCE = 251.2;

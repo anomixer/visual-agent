@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Visual Agent",
-  "version": "0.1.0",
+  "version": "2026.8.7",
   "identifier": "com.visual.agent",
   "build": {
     "frontendDist": "../public",
@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' http://localhost:3210 http://127.0.0.1:3210 ipc: http://ipc.localhost; font-src 'self' data:; media-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'"
     }
   },
   "bundle": {

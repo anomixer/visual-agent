@@ -27,6 +27,7 @@ function syntaxCheck() {
     const files = [
         ...collectJs(path.join(ROOT, 'src')),
         path.join(ROOT, 'public', 'app.js'),
+        path.join(ROOT, 'public', 'ui-security.js'),
         ...collectJs(path.join(ROOT, 'plugins')),
     ];
     console.log(`\n[1/3] 語法檢查 (${files.length} 個 JS 檔)`);
@@ -66,8 +67,11 @@ function smoke() {
 
         const base = 'http://127.0.0.1:3210';
         // 乾淨 CI runner（無 Ollama / 冷磁碟）首次 /api/diagnostics 較慢，超時放寬。
-        const hit = async (p, timeoutMs = 15000) => {
-            const res = await fetch(base + p, { signal: AbortSignal.timeout(timeoutMs) });
+        const hit = async (p, timeoutMs = 15000, token = '') => {
+            const res = await fetch(base + p, {
+                signal: AbortSignal.timeout(timeoutMs),
+                headers: token ? { 'X-Visual-Agent-Token': token } : {},
+            });
             const body = await res.json().catch(() => ({}));
             if (!res.ok || body.success !== true) throw new Error(`${p} -> HTTP ${res.status} ${JSON.stringify(body).slice(0, 200)}`);
             return body;
@@ -83,17 +87,22 @@ function smoke() {
 
         (async () => {
             if (!(await waitReady())) return finish(false, 'server 未就緒');
-            // 核心斷言：server 存活 + /api/meta 正常回。
-            await hit('/api/meta');
-            // /api/diagnostics 是附加健康快照（含 Ollama/browser 偵測），無 Ollama 環境較慢；
-            // 降級為 best-effort，不因它讓整支 CI 紅。
-            try {
-                await hit('/api/diagnostics');
-                finish(true, '/api/meta success:true，/api/diagnostics 正常回');
-            } catch (e) {
-                console.warn(`  ⚠ /api/diagnostics 慢或異常（不致命）：${e.message}`);
-                finish(true, '/api/meta success:true（/api/diagnostics best-effort 略過）');
+            const meta = await hit('/api/meta');
+            if (!meta.localApiToken) throw new Error('/api/meta 未回傳 localApiToken');
+
+            const unauthorized = await fetch(base + '/api/diagnostics', { signal: AbortSignal.timeout(5000) });
+            if (unauthorized.status !== 401) throw new Error(`無 token 的 /api/diagnostics 應回 401，實際為 ${unauthorized.status}`);
+
+            const crossOrigin = await fetch(base + '/api/meta', {
+                headers: { Origin: 'https://evil.example' },
+                signal: AbortSignal.timeout(5000),
+            });
+            if (crossOrigin.status !== 403 || crossOrigin.headers.get('access-control-allow-origin')) {
+                throw new Error('跨來源請求未被正確拒絕');
             }
+
+            await hit('/api/diagnostics', 15000, meta.localApiToken);
+            finish(true, 'meta/diagnostics、local token 與跨來源拒絕皆通過');
         })().catch(e => finish(false, e.message));
     });
 }

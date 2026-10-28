@@ -6,6 +6,10 @@ const DEFAULT_PORT = 19168;
 const PENDING_SESSION_TIMEOUT_MS = 60 * 1000;
 const REJECT_BAN_WINDOW_MS = 10 * 60 * 1000;
 const REJECT_BAN_COUNT = 3;
+const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+const MAX_PENDING_WRITE_BYTES = 16 * 1024 * 1024;
+const MAX_SESSION_MESSAGES = 120;
+const MAX_SESSIONS = 32;
 
 function createId(prefix = 'id') {
     return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -103,6 +107,12 @@ class RemoteAgentService {
 
     handleSocketData(socket, chunk) {
         socket._remoteAgentBuffer += chunk;
+        if (Buffer.byteLength(socket._remoteAgentBuffer, 'utf8') > MAX_FRAME_BYTES) {
+            socket._remoteAgentBuffer = '';
+            this.onError(new Error('Remote frame exceeded the 16 MiB limit.'));
+            socket.destroy();
+            return;
+        }
         const parts = socket._remoteAgentBuffer.split('\n');
         socket._remoteAgentBuffer = parts.pop();
         parts.forEach((line) => {
@@ -119,15 +129,17 @@ class RemoteAgentService {
 
     handlePayload(socket, payload) {
         if (!payload || typeof payload !== 'object') return;
+        const existingSession = this.getSessionBySocket(socket);
         if (payload.type === 'hello') {
-            this.handleHello(socket, payload);
+            if (!existingSession) this.handleHello(socket, payload);
             return;
         }
 
-        const session = this.getSessionBySocket(socket);
+        const session = existingSession;
         if (!session) return;
 
         if (payload.type === 'hello_ack') {
+            if (session.direction !== 'outgoing' || session.status !== 'pending_approval') return;
             this.clearPendingTimeout(session);
             session.peer = { ...(session.peer || {}), ...(payload.profile || {}) };
             session.local = { ...(session.local || {}), ...(payload.acceptedBy || {}) };
@@ -144,6 +156,7 @@ class RemoteAgentService {
         }
 
         if (payload.type === 'hello_reject') {
+            if (session.direction !== 'outgoing' || session.status !== 'pending_approval') return;
             this.clearPendingTimeout(session);
             session.status = 'rejected';
             session.lastEventAt = new Date().toISOString();
@@ -155,6 +168,7 @@ class RemoteAgentService {
         }
 
         if (payload.type === 'hello_cancel') {
+            if (session.status !== 'pending_approval') return;
             this.clearPendingTimeout(session);
             this.emitSystemMessage(session, 'system', payload.reason || 'Peer cancelled the connection invitation.');
             this.markDisconnected(session, 'remote_cancelled');
@@ -162,11 +176,14 @@ class RemoteAgentService {
         }
 
         if (payload.type === 'hello_timeout') {
+            if (session.status !== 'pending_approval') return;
             this.clearPendingTimeout(session);
             this.emitSystemMessage(session, 'system', payload.reason || 'Connection invitation timed out.');
             this.markDisconnected(session, 'timed_out');
             return;
         }
+
+        if (session.status !== 'active') return;
 
         if (payload.type === 'model_share_request') {
             session.modelShare = {
@@ -251,6 +268,7 @@ class RemoteAgentService {
                 width: Number(payload.width) || 0,
                 height: Number(payload.height) || 0,
                 hasContent: payload.hasContent !== false,
+                revision: Number(payload.revision) || 0,
                 target: payload.target || 'remote-user',
                 locale: payload.locale || '',
                 createdAt: payload.createdAt || new Date().toISOString(),
@@ -264,7 +282,7 @@ class RemoteAgentService {
                     updatedAt: message.createdAt,
                 };
             }
-            session.messages.push(message);
+            this.appendSessionMessage(session, message);
             this.onMessage(session, message, payload);
             this.onStateChanged();
             return;
@@ -278,6 +296,11 @@ class RemoteAgentService {
 
     handleHello(socket, payload) {
         this.pruneRejectHistory();
+        if (this.sessions.size >= MAX_SESSIONS) {
+            this.sendRaw(socket, { type: 'hello_reject', reason: 'Too many remote sessions. Disconnect an existing session first.' });
+            socket.end();
+            return;
+        }
         const sessionId = payload.sessionId || createId('session');
         const host = normalizeIp(socket.remoteAddress);
         const bannedUntil = this.banList.get(host) || 0;
@@ -443,7 +466,7 @@ class RemoteAgentService {
                 updatedAt: createdAt,
             };
         }
-        session.messages.push(message);
+        this.appendSessionMessage(session, message);
         session.lastEventAt = message.createdAt;
         this.sendRaw(session.socket, message);
         this.onStateChanged();
@@ -464,7 +487,7 @@ class RemoteAgentService {
             target: payload.target || 'remote-user',
             createdAt: new Date().toISOString(),
         };
-        session.messages.push(message);
+        this.appendSessionMessage(session, message);
         session.lastEventAt = message.createdAt;
         this.onStateChanged();
         return message;
@@ -484,7 +507,7 @@ class RemoteAgentService {
             target: payload.target || 'remote-user',
             createdAt: new Date().toISOString(),
         };
-        session.messages.push(message);
+        this.appendSessionMessage(session, message);
         session.lastEventAt = message.createdAt;
         this.sendRaw(session.socket, message);
         this.onStateChanged();
@@ -506,7 +529,7 @@ class RemoteAgentService {
             target: 'remote-user',
             createdAt: new Date().toISOString(),
         };
-        session.messages.push(message);
+        this.appendSessionMessage(session, message);
         session.lastEventAt = message.createdAt;
         this.sendRaw(session.socket, {
             ...message,
@@ -518,6 +541,7 @@ class RemoteAgentService {
 
     sendChalkboardState(sessionId, payload = {}) {
         const session = this.requireActiveSession(sessionId);
+        session.localChalkboardRevision = (Number(session.localChalkboardRevision) || 0) + 1;
         const message = {
             id: createId('chalk'),
             type: 'chalkboard_state',
@@ -530,10 +554,11 @@ class RemoteAgentService {
             width: Number(payload.width) || 0,
             height: Number(payload.height) || 0,
             hasContent: payload.hasContent !== false,
+            revision: session.localChalkboardRevision,
             target: 'remote-user',
             createdAt: new Date().toISOString(),
         };
-        session.messages.push(message);
+        this.appendSessionMessage(session, message);
         session.lastEventAt = message.createdAt;
         this.sendRaw(session.socket, message);
         this.onStateChanged();
@@ -758,8 +783,15 @@ class RemoteAgentService {
         }
     }
 
+    appendSessionMessage(session, message) {
+        session.messages.push(message);
+        if (session.messages.length > MAX_SESSION_MESSAGES) {
+            session.messages.splice(0, session.messages.length - MAX_SESSION_MESSAGES);
+        }
+    }
+
     emitSystemMessage(session, senderType, text) {
-        session.messages.push({
+        this.appendSessionMessage(session, {
             id: createId('msg'),
             type: 'system_message',
             direction: 'local',
@@ -775,6 +807,11 @@ class RemoteAgentService {
 
     sendRaw(socket, payload) {
         if (!socket || socket.destroyed) return;
+        if (socket.writableLength > MAX_PENDING_WRITE_BYTES) {
+            this.onError(new Error('Remote socket write buffer exceeded the 16 MiB limit.'));
+            socket.destroy();
+            return;
+        }
         socket.write(`${JSON.stringify(payload)}\n`);
     }
 

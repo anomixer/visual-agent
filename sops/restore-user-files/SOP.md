@@ -18,37 +18,41 @@ Network: Optional
 Commands (PowerShell):
 ```powershell
 $backup = "$env:USERPROFILE\Backups\Documents"
-$dest = "$env:USERPROFILE\Documents"
-if ((Test-Path -LiteralPath $backup) -and (Test-Path -LiteralPath $dest)) { $true } else { $false }
+if (-not (Test-Path -LiteralPath $backup -PathType Container)) { throw "Backup folder not found: $backup" }
+$false
 ```
 
-Expected Result: Return True when backup source and restore destination are available.
+Expected Result: Return False after validating the backup so restores remain repeatable.
 
 ## Install
 Commands (PowerShell):
 ```powershell
 $backup = "$env:USERPROFILE\Backups\Documents"
 $dest = "$env:USERPROFILE\Documents"
-if (-not (Test-Path -LiteralPath $backup)) { throw "Backup folder not found: $backup" }
+if (-not (Test-Path -LiteralPath $backup -PathType Container)) { throw "Backup folder not found: $backup" }
 if (-not (Test-Path -LiteralPath $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
 robocopy $backup $dest /E /R:2 /W:2 /NFL /NDL /NP /XJ
 if ($LASTEXITCODE -gt 7) { throw "robocopy restore failed with exit code $LASTEXITCODE" }
-Write-Host "Restore completed."
+Write-Host "Restore completed without deleting extra files from the destination."
 ```
 
 ## Verify
 Commands (PowerShell):
 ```powershell
+$backup = "$env:USERPROFILE\Backups\Documents"
 $dest = "$env:USERPROFILE\Documents"
-$count = (Get-ChildItem -LiteralPath $dest -Recurse -File -ErrorAction SilentlyContinue | Measure-Object).Count
-if ($count -gt 0) { $true } else { throw "Restore destination has no files." }
-```
-
-## Uninstall
-Commands (PowerShell):
-```powershell
-Write-Host "No uninstall action for restore operation."
-$false
+if (-not (Test-Path -LiteralPath $backup -PathType Container)) { throw "Backup folder not found: $backup" }
+if (-not (Test-Path -LiteralPath $dest -PathType Container)) { throw "Restore destination not found: $dest" }
+$backupRoot = [System.IO.Path]::GetFullPath($backup).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+$backupFiles = @(Get-ChildItem -LiteralPath $backup -Recurse -File -Force -ErrorAction Stop)
+foreach ($file in $backupFiles) {
+  $relativePath = $file.FullName.Substring($backupRoot.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar)
+  $restoredFile = Join-Path -Path $dest -ChildPath $relativePath
+  if (-not (Test-Path -LiteralPath $restoredFile -PathType Leaf)) { throw "Restored file missing: $relativePath" }
+  $copiedFile = Get-Item -LiteralPath $restoredFile -Force -ErrorAction Stop
+  if ($copiedFile.Length -ne $file.Length) { throw "Restored file size mismatch: $relativePath" }
+}
+$true
 ```
 
 4. Error Handling

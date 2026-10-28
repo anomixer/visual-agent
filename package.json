@@ -34,6 +34,8 @@
     "scripts": "src/**/*.js",
     "assets": [
       "sops/**/*",
+      "skills/**/*",
+      "plugins/**/*",
       "public/**/*"
     ],
     "targets": [

@@ -1,4 +1,4 @@
-﻿# Visual Agent — 實作需求規格書 (2026.08.07 Updated)
+﻿# Visual Agent — 實作需求規格書 (2026.10.28 Updated)
 
 > 本地優先、無命令列、具備感知能力的 Windows 系統管家
 
@@ -49,11 +49,13 @@
 | **AI 對話** | ✅ | 本地 LLM，支援 Markdown 渲染、語音朗讀 (TTS) 與清除紀錄 |
 | **AI 整合** | ✅ | 支援多種 Provider，自動參數配對，支援 Ollama Native API |
 | **多輪對話** | ✅ | 支援記憶 6 則對話，自動注入 SOP 目錄、任務進度與硬體簡報情境 |
-| **效能優化** | ✅ | 背景任務並行化與模型狀態快取，聊天回應延遲幾乎降至 0 秒 |
+| **效能優化** | ✅ | 背景任務並行化與模型狀態快取，減少非必要的聊天前置等待 |
 | **硬體健康監控** | ✅ | 圓圈式監控，支援 CPU/GPU/RAM/Disk 偵測與顯卡溫度 |
 | **監控插件系統** | ✅ | 支援 `plugins/*.js` 動態擴充監控項目，自動同步至 AppData |
 | **AI Provider 設定** | ✅ | 支援 20+ 種雲端與地端 Provider，自動帶入 Base URL，儲存於 AppData |
-| **互動安全機制** | ✅ | 「先問後做」攔截、按鈕式建議 (SUGGEST)、對話中斷 (AbortController) |
+| **互動安全機制** | ✅ | 系統變更 ACTION 由後端保管並回傳一次性 approval，綁完整動作與 session；支援對話中斷 |
+| **本地 API 防護** | ✅ | Loopback 綁定、Host / Origin / Fetch-Site 檢查、per-process token 與 CORS 白名單 |
+| **Agent Loop 預算** | ✅ | 最多 8 turns、12 次工具呼叫、180 秒總 deadline，重複 ACTION suppression |
 | **自動初始設定** | ✅ | 新手友善！全新電腦啟動後，全自動於背景安裝 Ollama 與下載地端模型（gemma4:e2b-it-qat） |
 | **啟動啟始畫面** | ✅ | 首次執行顯示「環境設定中」，再次執行顯示「伺服器啟動中」，自動淡出 |
 | **UTF-8 編碼** | ✅ | PowerShell 輸出正確顯示中文，使用 `chcp 65001` 和 UTF-8 編碼 |
@@ -95,8 +97,13 @@ browser ──── public/index.html
                  │
                  │ HTTP (localhost:3210)
                  ▼
-             src/server.js      (Express API)
-             src/llm.js         (Ollama 整合)
+             src/server.js      (Express API / workflow orchestration)
+             src/local-api-security.js (本機 API token / origin 邊界)
+             src/safe-fetch.js  (公開網址抓取、SSRF 防護)
+             src/oauth-token-cache.js  (依完整 OAuth 設定分鍵)
+             src/agent/consent.js      (一次性精確動作 approval)
+             src/agent/loop-budget.js  (turn / tool / deadline 預算)
+             src/llm.js         (Ollama / Provider / streaming)
              src/sop-parser.js
              src/sop-executor.js
              src/system.js    (插件載入器)
@@ -110,27 +117,43 @@ browser ──── public/index.html
              sops/<slug>/SOP.md        (SOP 腳本庫)
              %APPDATA%\visual-agent\  (tasks.json, sops/<slug>/SOP.md, plugins/)
 ```
-- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\visual-agent\plugins\` 目慶，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
+- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\visual-agent\plugins\` 目錄，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
+- **漸進拆分原則**：純函式、安全邊界與可獨立測試的預算邏輯優先抽模組；`server.js` 的 Agent 執行主迴圈與 `app.js` 的互動流程需先補行為測試，再採 strangler 式拆分，不全面重寫。
 
-### 2.5 安全邊界（invariants）
+### 2.5 安全與正確性邊界（invariants）
 
-> 本 app 能執行 SOP / PowerShell、持有 API Key，故以下為不可退讓的安全底線（2026.08.23 建立）：
+> 本 app 能執行 SOP / PowerShell、持有 API Key，故以下為不可退讓的現行底線（2026.08.23 建立，2026.10.28 補強）：
 
-- **HTTP API 僅綁本機**：`src/server.js` 以 `app.listen(PORT, '127.0.0.1')` 啟動，供本機前端與 Tauri dev 使用。嚴禁綁 `0.0.0.0`——那會讓區域網路內任何主機遠端觸發 SOP/PowerShell 執行與讀取 API Key（RCE 級）。遠端雙機協作走獨立 raw TCP（`remote-agent.js`，19168），不受此綁定影響。
-- **AI / 遠端內容必須淨化**：本地與遠端 AI 回傳內容經 `marked` 解析後，必須在 `renderMarkdown()` 出口經 `DOMPurify` 淨化再入 DOM，剝除 event handler、`javascript:` 等危險 URI 與 script。嚴禁把未淨化的 `marked.parse` 輸出直接 `innerHTML`。
+- **HTTP API 僅綁本機且需鑑權**：`src/server.js` 以 `app.listen(PORT, '127.0.0.1')` 啟動，嚴禁改綁 `0.0.0.0`。每個 process 產生隨機 local API token；`/api/meta` 供前端取得 token，其餘 `/api/*` 必須帶 `X-Visual-Agent-Token`。Host、Origin、`Sec-Fetch-Site` 與 CORS 均採白名單，不得退回 `Access-Control-Allow-Origin: *`。遠端雙機協作走獨立 raw TCP（`remote-agent.js`，19168）。
+- **Consent 由後端強制**：系統變更類 ACTION 必須先從執行佇列移除並存入 `AgentConsentStore`，前端只能取得不含完整指令的 `pendingActions` 摘要。確認時以 `approvedActionId` consume；approval 綁完整 ACTION 與 local chat session、5 分鐘過期且只能使用一次。無效、跨 session、過期或重放必須回 403。
+- **AI / 遠端 / Exp 內容必須淨化**：Markdown 與動態 HTML 必須經共同安全出口；DOMPurify 缺件或失敗時必須 fail-closed 為 escaped text，不得直接 `innerHTML` 未淨化內容。危險 URI、script 與 event handler 必須移除。
+- **圖片 data URL 不可只信 MIME**：只接受 PNG / JPEG base64，檢查 magic bytes 並限制 16 MiB；SVG、偽裝內容與一般外部 URL 不得作為受信任的本機圖片附件。
+- **Server-side fetch 防 SSRF**：外部文字抓取須使用 `safe-fetch.js`，只允許公開 HTTP(S) 位址，拒絕 URL credentials 與 private / loopback / link-local / non-routable IP；DNS 結果須固定到實際連線，redirect 逐次重驗，並限制時間、次數與回應大小。
 - **外部下載須校驗**：`build.bat` 下載的每個可執行二進位（Node MSI、rustup-init.exe）安裝前必須比對 SHA256，不符即拒裝。
-- **SOP 執行**：SOP 指令以寫檔 `-File` 執行（非 `-Command` 字串拼接）；`consent-before-action` 由 UI 保證。
-- **API Key**：供設定視窗回填與儲存，故 `GET /api/llm/config` 回傳完整值；其區域網路暴露面由「僅綁本機」消滅，不靠 mask 回傳（mask 會導致設定視窗覆寫真 key）。
+- **SOP 執行**：一般與 elevated PowerShell runner 均以 UTF-8 BOM 暫存 `.ps1` 搭配 `-File` 執行，保留中文、例外與 native exit code。一般路徑 timeout 必須終止 process tree；elevated process-tree 行為仍需獨立實機驗收。
+- **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
+- **任務與聊天資料不可靜默遺失**：`tasks.json` 必須 temp-write + rename；task ID 使用 UUID；running task 不可刪除或整批 import 覆寫。同 session 並行聊天完成時須附加到最新歷史，不得用舊快照覆寫。
+- **Agent Loop 必須有總上限**：每輪最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；LLM socket/read timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader。
+- **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
+- **OAuth cache 不得混用憑證**：token cache key 必須包含 token URL、client ID、client secret、scope、audience。
+- **桌面發佈設定不得漂移**：Tauri bundle version 必須等於 `package.json.version`；CSP 不得為 `null`。現階段因既有 inline script/style 保留 `unsafe-inline`，但 script 僅限 self，並禁止 object / frame / 外部表單送出。`pkg.assets` 必須包含 `sops/**/*`、`skills/**/*`、`plugins/**/*`、`public/**/*`。
+- **API Key**：供設定視窗回填與儲存，故 `GET /api/llm/config` 回傳完整值；LAN 暴露面由 loopback 綁定阻絕，本機瀏覽器跨來源讀取由 Origin 檢查與 token 阻絕。不得以 mask 回傳導致設定視窗把真 key 覆寫成遮罩值。
 
 ---
 
 ## 3. API 端點
 
+- 除 `GET /api/meta` 外，下表及其他 `/api/*` 端點均須帶 `X-Visual-Agent-Token`；token 由 `/api/meta.localApiToken` 提供。
+- `POST /api/chat` 可接收 `localChatSessionId`、`agentRunId`、`approvedActionId` 與 `chalkboard`。AI 提出的系統變更動作以 `pendingActions` 回傳；使用者確認後重新送 `/api/chat`，攜帶同一 session 與一次性 `approvedActionId`，不得由前端改送另一段 ACTION 取代原批准內容。
+
 | Method | Path | 功能 |
 |--------|------|------|
+| GET | `/api/meta` | 取得版本、runtime 狀態與本機 API token |
+| GET | `/api/diagnostics` | 取得健康快照（需 token，不重新載入或改寫任務） |
+| GET | `/api/agent-status/:runId` | 查詢 Agent Loop 進度 |
 | GET | `/api/todo` | 取得工作清單 |
 | POST | `/api/todo` | 新增任務 |
-| DELETE | `/api/todo/:id` | 刪除任務 |
+| DELETE | `/api/todo/:id` | 刪除非 running 任務並回傳最新 `todoList`；running 任務拒絕刪除 |
 | POST | `/api/execute/:taskId` | 執行任務 |
 | GET | `/api/recommend` | 取得推薦清單（含 sopId）|
 | GET | `/api/llm/status` | Ollama 狀態 + 模型就緒狀態 |
@@ -138,7 +161,7 @@ browser ──── public/index.html
 | POST | `/api/llm/config` | 更新 LLM Provider 設定 |
 | POST | `/api/chat` | AI 對話（LLM 優先）|
 | GET | `/api/logs` | 全域執行日誌 |
-| POST | `/api/todo/import` | 匯入任務清單 |
+| POST | `/api/todo/import` | 匯入任務清單；有 running task 時拒絕整批取代 |
 
 ---
 
@@ -224,6 +247,13 @@ $true
 ---
 
 ## 5. 未來規劃
+
+### 下一階段必要驗收（2026.10.28 尚未完成）
+- [ ] UAC elevated runner 的 timeout 與整棵 process-tree 終止實測。
+- [ ] 兩台實機的 Chalkboard revision / session 隔離、遠端停止與重連測試。
+- [ ] Vision Model、Agent Loop web research 與真正 consent button 的端對端測試。
+- [ ] 以最新 `pkg.assets` 重建 sidecar / Tauri EXE，於乾淨 Windows 驗證 Skills、Plugins、CLI、Chromium 安裝與 CSP。
+- [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
 - [ ] SOP 線上商城，動態下載更新

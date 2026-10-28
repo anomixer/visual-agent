@@ -5,6 +5,53 @@
 
 ---
 
+## 📌 2026.10.28 — 全面稽核第一階段：安全契約、執行正確性與發佈設定
+
+> 本輪依 `agents.md` / `README*.md` / `spec.md` 逐項對照程式，修正「文件宣稱已完成、實作仍缺失」的項目。版本維持 `2026.8.7`；本輪不全面重寫，也不更換框架。
+
+### 本地 API、consent 與外部內容安全
+- **本地 API 不再只靠綁 localhost**：保留 `127.0.0.1` 綁定，新增 Host 白名單、Origin / `Sec-Fetch-Site` 檢查與每個 server process 隨機產生的 `X-Visual-Agent-Token`。`/api/meta` 供本機前端取得 token，其餘 `/api/*` 必須帶 token；CORS 由舊日誌所述的 `*` 改為明確白名單。
+- **AI 動作改為精確確認**：系統變更類 ACTION 不直接執行，後端回傳 `pendingActions`；前端確認時送出 `approvedActionId`。approval 綁定完整 ACTION 字串與 local chat session，5 分鐘過期、一次性 consume，失效或重放會回 403，避免「按 A 卻執行 B」。
+- **Server-side web fetch 防 SSRF**：新增 `src/safe-fetch.js`，只允許公開 HTTP(S) URL，拒絕 credentials、loopback、private、link-local 與其他非公開位址；DNS 解析後固定連線位址，每次 redirect 重新驗證，並有總 timeout、abort、redirect 與 response bytes 上限。
+- **前端內容淨化 fail-closed**：新增 `public/ui-security.js` 作為 Markdown / HTML 共同安全出口；DOMPurify 缺件或拋錯時退回 escaped text，不直接插入未淨化 HTML。Exps 與遠端內容也走共同出口；動態任務、SOP、模型與 session 文字補 escaping。
+- **圖片輸入嚴格驗證**：畫布、畫面分享等 data URL 只接受有正確 magic bytes 的 PNG / JPEG base64，上限 16 MiB；SVG 或偽裝 MIME 不再進入圖片 sink。
+- **OAuth token cache 隔離設定**：cache key 納入 token URL、client ID、client secret、scope、audience，避免測試設定或切換 Provider 時重用另一組憑證的 token。
+
+### LLM、Agent Loop 與工作中斷
+- **中止訊號真正傳到 LLM**：chat request abort 會串到 Ollama / OpenAI-compatible / Anthropic 與 streaming reader；stream error frame 會拋錯，尾端無換行的 NDJSON frame 也會 flush，reader 會清理。
+- **Agent Loop 有總資源上限**：新增 `AgentLoopBudget`，每輪 chat 最多 8 turns、12 次工具呼叫、總 deadline 180 秒；完整 ACTION 字串去重，首輪 Browser Use 也計入預算。LLM 請求使用剩餘 deadline，時間用盡後走既有 tool-summary fallback，不再額外無限續問。
+- **聊天歷史避免 lost update**：同 session 並行請求完成時，會把本輪訊息附加到最新歷史，不再用請求開始時的舊快照覆寫其他已完成回覆。
+
+### SOP、備份與任務資料正確性
+- **PowerShell 一般路徑實際改用 `-File`**：舊日誌宣稱已是 `-File`，稽核時一般路徑仍為 `-Command`；本輪改為暫存 runner `.ps1`，一般與 elevated runner 都寫 UTF-8 BOM，保留中文輸出、腳本例外與 native `$LASTEXITCODE`。
+- **Timeout 終止 process tree**：Windows 一般執行路徑改用 `taskkill /PID ... /T /F`，不再只 kill 父 PowerShell；暫存目錄於完成或錯誤後清理。Elevated launcher 也使用相同終止函式，但 UAC 後整棵 elevated process tree 尚待專門實測。
+- **備份 / 還原可重複且非破壞**：兩支 SOP 的 Check 在確認來源後固定回 `$false`，避免第二次被誤判 skipped；robocopy 由 `/MIR` 改為 `/E`，不刪目的地額外檔案；Verify 逐一比對來源相對路徑、存在性與檔案大小。兩者不再宣稱支援 uninstall，避免誤刪整份備份或提供無意義復原。
+- **任務持久化與 ID**：`tasks.json` 改同目錄 temp write + rename；task ID 全面改用 `crypto.randomUUID()`。running task 不可刪除、running 時不可整批 import；刪除 API 回傳最新 `todoList`，修正前端把清單設成 undefined 的問題。
+
+### Remote Chalkboard 與畫面擷取
+- Remote queue 在斷線、停止與重連時清理舊工作，避免舊 session 回覆插入新連線。
+- Chalkboard state 新增 per-session revision；前端只套用 incoming state，拒絕舊 revision，並以 async image-load token 避免舊圖晚到覆蓋新圖。忙碌佇列攜帶 session ID，切換 session 後不會把舊畫布套到新 session。
+- 畫面擷取改在 `finally` 停止所有 media tracks，即使 `video.play()`、canvas 或 API 失敗也不殘留 camera / screen capture。
+
+### 發佈與依賴
+- `npm audit fix` 更新 body-parser、proxy-addr、qs 等 transitive dependencies；`npm audit --omit=dev` 為 **0 vulnerabilities**。
+- Tauri bundle version 由 `0.1.0` 對齊 `package.json` 的 `2026.8.7`。
+- Tauri 加入漸進式 CSP：只允許 self script（現階段保留必要的 `unsafe-inline`）、限制連線到本機 API / Tauri IPC，並禁止 object、frame、外部表單送出與非白名單 base URI；現有 inline script/style 尚未完全移除。
+- `pkg.assets` 補上 `skills/**/*` 與 `plugins/**/*`，修正 build 訊息宣稱包含 skills、實際未打包的落差；SOP、public 與 CLI 所需 assets 維持納入。
+
+### 架構處理
+- 採 **strangler 式漸進拆分**，不重寫 app：本輪新增 `local-api-security.js`、`safe-fetch.js`、`oauth-token-cache.js`、`agent/consent.js`、`agent/loop-budget.js`、`public/ui-security.js`，把可獨立測試的安全與預算邏輯移出巨型檔案。
+- `server.js` / `app.js` 仍是主要複雜度熱點；待 Agent Loop、遠端雙機與 consent 的瀏覽器行為測試補齊後，再拆執行主迴圈，避免為了整齊而改壞行為。
+
+### 驗收與尚未覆蓋範圍
+- `npm test`：20 個自研 JS 語法檢查、14 支測試檔（118 組通過記錄）、server smoke（meta / diagnostics、local token、跨來源拒絕）全綠。
+- Windows PowerShell 實測：多行變數、繁體中文輸出、native exit code 7 正確；200ms timeout 後父行程與 grandchild 均停止，grandchild 未再寫入 marker。
+- 瀏覽器實測：惡意 script / event handler / `javascript:` link 未執行、SVG data URL 被拒、暫時任務可建立並正確刪除；真實 Ollama 長回覆可中止，UI 顯示使用者中斷而非連線錯誤。
+- `npm run tauri -- info` 可正確解析版本與 CSP；**尚未重新建置並在乾淨 Windows 驗收新 sidecar / Tauri EXE**。
+- 尚未完成：UAC elevated process-tree 實測、雙機 Chalkboard revision / session 與停止重連實測、vision model 實機驗收、Agent Loop 與真正 consent button 的完整瀏覽器整合測試。上述項目不得由單元測試推定通過。
+
+---
+
 ## 📌 2026.08.23 — 安全加固、測試基建與 spec/README 對齊
 
 ### 安全加固（本次重點）
@@ -22,8 +69,8 @@
 
 ### 未改動（刻意，附理由）
 - **API Key 不 mask 回傳**：`GET /api/llm/config` 供設定視窗回填、再儲存；mask 會使按「儲存」時把真 key 覆寫成遮罩值。區域網路讀 key 的暴露面已由「綁 127.0.0.1」消滅。
-- **CORS 維持 `*`**：綁 localhost 後不再是漏洞（同源本機）；若日後加 token 鑑權再收白名單。
-- **PowerShell 注入面**：SOP 本就以 `-File`（寫檔執行）非 `-Command` 拼字串；外部觸發路徑已由綁 localhost 斷絕，殘留執行僅能由本機 UI 觸發（consent 由 UI 保證）。
+- **CORS 維持 `*`**：綁 localhost 後不再是漏洞（同源本機）；若日後加 token 鑑權再收白名單。（2026.10.28 起已加 token 並改為白名單。）
+- **PowerShell 注入面**：SOP 本就以 `-File`（寫檔執行）非 `-Command` 拼字串；外部觸發路徑已由綁 localhost 斷絕，殘留執行僅能由本機 UI 觸發（consent 由 UI 保證）。（後續稽核發現一般路徑仍為 `-Command`，且 consent 需由後端強制；已於 2026.10.28 修正。）
 
 ### 驗收
 - `npm test` 全綠（11 檔語法 + 冒煙 `/api/meta`、`/api/diagnostics` 皆 `success:true`）。

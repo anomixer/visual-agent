@@ -18,41 +18,41 @@ Network: Optional (required for NAS path)
 Commands (PowerShell):
 ```powershell
 $source = "$env:USERPROFILE\Documents"
-$target = "$env:USERPROFILE\Backups\Documents"
-if ((Test-Path -LiteralPath $source) -and (Test-Path -LiteralPath $target)) { $true } else { $false }
+if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Source folder not found: $source" }
+$false
 ```
 
-Expected Result: Return True when source and target paths both exist.
+Expected Result: Return False after validating the source so backups remain repeatable.
 
 ## Install
 Commands (PowerShell):
 ```powershell
 $source = "$env:USERPROFILE\Documents"
 $target = "$env:USERPROFILE\Backups\Documents"
-if (-not (Test-Path -LiteralPath $source)) { throw "Source folder not found: $source" }
+if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Source folder not found: $source" }
 New-Item -ItemType Directory -Path $target -Force | Out-Null
-robocopy $source $target /MIR /R:2 /W:2 /NFL /NDL /NP /XJ
+robocopy $source $target /E /R:2 /W:2 /NFL /NDL /NP /XJ
 if ($LASTEXITCODE -gt 7) { throw "robocopy failed with exit code $LASTEXITCODE" }
-Write-Host "Backup completed."
+Write-Host "Backup completed without deleting extra files from the target."
 ```
 
 ## Verify
 Commands (PowerShell):
 ```powershell
+$source = "$env:USERPROFILE\Documents"
 $target = "$env:USERPROFILE\Backups\Documents"
-if (-not (Test-Path -LiteralPath $target)) { throw "Backup target not found." }
-$count = (Get-ChildItem -LiteralPath $target -Recurse -File -ErrorAction SilentlyContinue | Measure-Object).Count
-if ($count -gt 0) { $true } else { throw "Backup target has no files." }
-```
-
-## Uninstall
-Commands (PowerShell):
-```powershell
-$target = "$env:USERPROFILE\Backups\Documents"
-if (Test-Path -LiteralPath $target) {
-  Remove-Item -LiteralPath $target -Recurse -Force
+if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Source folder not found: $source" }
+if (-not (Test-Path -LiteralPath $target -PathType Container)) { throw "Backup target not found: $target" }
+$sourceRoot = [System.IO.Path]::GetFullPath($source).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+$sourceFiles = @(Get-ChildItem -LiteralPath $source -Recurse -File -Force -ErrorAction Stop)
+foreach ($file in $sourceFiles) {
+  $relativePath = $file.FullName.Substring($sourceRoot.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar)
+  $targetFile = Join-Path -Path $target -ChildPath $relativePath
+  if (-not (Test-Path -LiteralPath $targetFile -PathType Leaf)) { throw "Backup file missing: $relativePath" }
+  $copiedFile = Get-Item -LiteralPath $targetFile -Force -ErrorAction Stop
+  if ($copiedFile.Length -ne $file.Length) { throw "Backup file size mismatch: $relativePath" }
 }
-$false
+$true
 ```
 
 4. Error Handling
