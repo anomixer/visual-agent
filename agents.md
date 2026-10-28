@@ -5,6 +5,25 @@
 
 ---
 
+## 📌 2026.10.29 — 第十階段：動作任務與模型快取條件的單一出口
+
+> 接續同日第九階段；把 Planner / Loop 內完全相同的任務物件與快取判斷收斂成單一函式。版本維持 `2026.8.7`，輸出與行為不變。
+
+### Agent 動作建立任務
+- `ADD_TASK` 與 `INSTALL_SOP` 各自複製了同一份 SOP 任務物件（`id` / `title` / `description` / `skillId` / `action` / `category` / `status` / `progress` / `logs` / `createdAt`）。
+- 新增 `buildSopTask(sop)`（緊接 `buildTaskTitle`），兩個分支改為 `const task = buildSopTask(mSop);`；欄位順序、字串與預設值（`Maintenance`）維持原樣，`executeTaskId` 與各自的摘要仍留在呼叫端。
+- 既有的 `queueSopTaskById()` 未改動：它會去重並額外寫入 `completedAt`、立即 `saveTasks()`，語意與動作清單不同，不合併。
+
+### 模型清單快取條件
+- `src/llm.js` 的 OpenAI-compatible 與 Ollama 兩條分支使用同一段「只有沒帶 options（或僅 `forceRefresh`）才更新快取」的判斷。
+- 抽出 `shouldUpdateModelCache(options)`，兩處改為單一呼叫；判斷結果與原條件完全相同。
+
+### 測試與驗收
+- `npm test`：23 個 JS 語法、27 支測試檔與 server smoke 全綠（`chat-consent.test.js` 的 ADD_TASK / INSTALL_SOP 行為測試涵蓋本次改動路徑）。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第九階段：i18n 缺鍵修正與字典回歸測試
 
 > 接續同日第八階段；修掉介面直接顯示 `undefined` 的翻譯缺鍵，並新增掃描 `t()` 呼叫的字典測試。版本維持 `2026.8.7`。

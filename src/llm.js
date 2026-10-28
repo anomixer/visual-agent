@@ -605,6 +605,11 @@ async function getRequestHeaders(provider, authConfig = null) {
     return getAuthorizationHeader(authConfig);
 }
 
+function shouldUpdateModelCache(options = {}) {
+    const keys = Object.keys(options);
+    return keys.length === 0 || (keys.length === 1 && options.forceRefresh !== undefined);
+}
+
 async function listModels(options = {}) {
     const forceRefresh = options.forceRefresh || false;
     const now = Date.now();
@@ -655,7 +660,7 @@ async function listModels(options = {}) {
             }
             
             // 只有在非預覽（沒帶 options）時才更新進階快取
-            if (Object.keys(options).length === 0 || (Object.keys(options).length === 1 && options.forceRefresh !== undefined)) {
+            if (shouldUpdateModelCache(options)) {
                 _cachedModels = models;
                 _lastModelsCheck = Date.now();
             }
@@ -693,7 +698,7 @@ async function listModels(options = {}) {
         }
         
         // 只有在非預覽（沒帶 options）時才更新進階快取
-        if (Object.keys(options).length === 0 || (Object.keys(options).length === 1 && options.forceRefresh !== undefined)) {
+        if (shouldUpdateModelCache(options)) {
             _cachedModels = models;
             _lastModelsCheck = Date.now();
         }

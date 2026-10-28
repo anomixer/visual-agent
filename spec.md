@@ -265,6 +265,7 @@ $true
 - [x] 修復任務匯入端點與 payload 落差，並移除 Remote 已停用功能的死碼（2026.10.29 第七階段：`/api/todo/import`、`test/todo-import.test.js`、`test/task-import-ui.test.js`）。
 - [x] 收斂 Agent Loop 三處重複的來源摘要、SOP 加入任務 payload 與四個僅模組內使用的匯出（2026.10.29 第八階段：`formatExtractedSourcesSummary()`、`queueSopTodo()`）。
 - [x] 補齊介面缺漏的翻譯鍵並新增字典掃描測試（2026.10.29 第九階段：經驗庫 4 鍵、`tabs.emptyMessage` 共用、`test/i18n-keys.test.js`）。
+- [x] 收斂動作分支重複建立的 SOP 任務物件與模型清單快取條件（2026.10.29 第十階段：`buildSopTask()`、`shouldUpdateModelCache()`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

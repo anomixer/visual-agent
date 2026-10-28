@@ -717,6 +717,19 @@ function buildTaskTitle(sop, action = 'install') {
     return `📦 ${sop.name}`;
 }
 
+function buildSopTask(sop) {
+    return {
+        id: `task_${crypto.randomUUID()}`,
+        title: buildTaskTitle(sop, sop.recommendedAction),
+        description: 'Scheduled by AI Agent',
+        skillId: sop.id,
+        action: sop.recommendedAction,
+        category: sop.category || 'Maintenance',
+        status: 'pending', progress: 0, logs: [],
+        createdAt: new Date().toISOString()
+    };
+}
+
 function queueSopTaskById(sopsWithState = [], sopId = '', description = 'Scheduled by AI Agent') {
     const targetId = String(sopId || '').trim();
     if (!targetId) return { success: false, error: 'Missing SOP id' };
@@ -4304,16 +4317,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     if (sopId) {
                         const mSop = sopsWithState.find(s => s.id === sopId);
                         if (mSop) {
-                            const task = {
-                                id: `task_${crypto.randomUUID()}`,
-                                title: buildTaskTitle(mSop, mSop.recommendedAction),
-                                description: `Scheduled by AI Agent`,
-                                skillId: mSop.id,
-                                action: mSop.recommendedAction,
-                                category: mSop.category || 'Maintenance',
-                                status: 'pending', progress: 0, logs: [],
-                                createdAt: new Date().toISOString()
-                            };
+                            const task = buildSopTask(mSop);
                             todoList.push(task);
                             hasActionTaken = true;
                             taskListChanged = true;
@@ -4374,16 +4378,7 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                     if (sopId) {
                         const mSop = sopsWithState.find((s) => s.id === sopId);
                         if (mSop) {
-                            const task = {
-                                id: `task_${crypto.randomUUID()}`,
-                                title: buildTaskTitle(mSop, mSop.recommendedAction),
-                                description: 'Scheduled by AI Agent',
-                                skillId: mSop.id,
-                                action: mSop.recommendedAction,
-                                category: mSop.category || 'Maintenance',
-                                status: 'pending', progress: 0, logs: [],
-                                createdAt: new Date().toISOString()
-                            };
+                            const task = buildSopTask(mSop);
                             todoList.push(task);
                             hasActionTaken = true;
                             taskListChanged = true;
