@@ -5,20 +5,20 @@
 
 ---
 
-## 📌 2026.10.29 — 第十八階段：推薦清單資料未變時不重建側邊欄
+## 📌 2026.10.29 — 第十八階段：側邊欄資料未變時不重建
 
-> 接續同日第十七階段；`/api/recommend` 每 2 秒輪詢一次，每次回應都觸發三份側邊欄清單整棵重建。版本維持 `2026.8.7`。
+> 接續同日第十七階段；`loadRecommend` / `loadSops` / `loadSkills` 每次成功都整棵重建側邊欄。版本維持 `2026.8.7`。
 
 ### 輪詢與重繪
-- 推薦清單的安裝狀態在伺服器端有 30 秒快取（`SOP_STATE_TTL_MS`），所以 2 秒輪詢多數回應與前一次完全相同。
-- `loadRecommend()` 原本每次成功都呼叫 `renderSidebarTab()`，等於每 2 秒重建推薦、SOP、Skill 三份清單的全部節點；使用者正在操作卡片（焦點、hover、展開狀態）可能被輪詢打斷。
-- 新增模組層變數 `lastRecommendSignature`，以 `JSON.stringify(recommendList)` 比對；資料未變時只更新 `recommendList` 與隱藏啟動畫面，不重建 DOM。安裝狀態一翻轉（`installed` / `recommendedAction` / `supportsUninstall` 改變）就會產生新 signature 並立即重繪。
-- 切換語系、切換側邊欄分頁、搜尋輸入、載入 SOP / Skill 仍直接呼叫 `renderSidebarTab()`，本地化文字與篩選行為不受影響。
+- `startPolling()` 只在 `recommendList` 為空時才呼叫 `loadRecommend()`，因此穩態輪詢本來就不會打 `/api/recommend`；實際的重建來源是啟動載入與 `refreshSidebarDataSoon()`（對話回覆帶 `sopChanged` 時，250ms debounce 後並行呼叫 `loadRecommend` / `loadSops` / `loadSkills`）。
+- 這三支載入函式即使回應與前一次完全相同，仍會各自觸發 `renderSidebarTab()`，重建推薦、SOP、Skill 三份清單的全部節點；使用者在重建瞬間操作的卡片（焦點、hover、展開狀態）會被重置。
+- 新增模組層變數 `lastRecommendSignature` / `lastSopSignature` / `lastSkillSignature`，以 `JSON.stringify(清單)` 比對；資料未變時只更新本地清單（與 `hideSplash()`），不重建 DOM。`sopChanged` 真的產生新 SOP、或安裝狀態翻轉（`installed` / `recommendedAction` / `supportsUninstall`）時 signature 會改變並立即重繪。
+- 切換語系、切換側邊欄分頁、搜尋輸入，以及 `checkLLMStatus()` 偵測到 Ollama / 模型狀態變化時，仍直接呼叫 `renderSidebarTab()`，本地化文字、篩選與安裝徽章不受影響。
 
 ### 測試與驗收
-- 新增 `test/app-recommend-refresh.test.js`（3 項）：擷取真實 `loadRecommend()` 與 `lastRecommendSignature`，驗證相同 payload 連續三次只渲染一次且 `hideSplash()` 每次都執行、安裝狀態改變會重繪、失敗或空清單不渲染也不拋錯。
+- 新增 `test/app-sidebar-refresh.test.js`（4 項）：擷取真實 `loadRecommend` / `loadSops` / `loadSkills` 與三個 signature，驗證相同 payload 不重繪、`hideSplash()` 照常執行、安裝狀態改變與 SOP 清單變動會重繪、失敗或空清單不渲染也不拋錯。
 - `npm test`：23 個 JS 語法、29 支測試檔與 server smoke 全綠。
-- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify12`）：首次載入渲染 14 個節點；取得第一張卡片節點後等待 5 秒（至少 2 次輪詢），節點仍是同一個物件、子節點數不變、`recCount` 維持 8；切換語系後卡片節點被替換且文字由中文變英文；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify12`）：初次載入三份清單正常（推薦 8、SOP 16、Skill 37）；`refreshSidebarDataSoon()` 後 `renderSidebarTab` 呼叫 0 次且卡片節點未變；在隔離設定檔新增一支 SOP 後 `loadSops()` 讓 SOP 數 16 → 17 並重繪，移除後回到 16；連續兩次 `loadSops()` 皆 0 次重繪；切換語系仍會替換卡片節點並翻譯文字；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
 - 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
 
 ---

@@ -81,6 +81,8 @@ const REMOTE_DIRECTIVE_DEDUP_WINDOW_MS = 8000;
 let lastRemoteRenderSignature = '';
 let lastRemoteSessionListSignature = '';
 let lastRecommendSignature = '';
+let lastSopSignature = '';
+let lastSkillSignature = '';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -5000,8 +5002,8 @@ async function loadRecommend() {
         const data = await api('/api/recommend');
         if (data.success && data.recommendList?.length > 0) {
             recommendList = data.recommendList;
-            // 每 2 秒輪詢都會呼叫；資料未變就不重建推薦 / SOP / Skill 三份清單，
-            // 避免輪詢打斷使用者正在操作的卡片（焦點、hover、展開狀態）。
+            // 啟動載入與 sopChanged 後的刷新都會呼叫；資料未變就不重建推薦 / SOP / Skill
+            // 三份清單，避免刷新打斷使用者正在操作的卡片（焦點、hover、展開狀態）。
             const signature = JSON.stringify(recommendList);
             if (signature !== lastRecommendSignature) {
                 lastRecommendSignature = signature;
@@ -5019,7 +5021,12 @@ async function loadSops() {
         const data = await api('/api/sops');
         if (data.success && Array.isArray(data.sops)) {
             sopsList = data.sops;
-            renderSidebarTab();
+            // 與推薦清單相同的守則：內容未變就不重建側邊欄。
+            const signature = JSON.stringify(sopsList);
+            if (signature !== lastSopSignature) {
+                lastSopSignature = signature;
+                renderSidebarTab();
+            }
         }
     } catch (e) {
         console.error('Load sops failed', e);
@@ -5214,7 +5221,12 @@ async function loadSkills() {
         const data = await api('/api/skills');
         if (data.success && Array.isArray(data.skills)) {
             skillsList = data.skills;
-            renderSidebarTab();
+            // 與推薦清單相同的守則：內容未變就不重建側邊欄。
+            const signature = JSON.stringify(skillsList);
+            if (signature !== lastSkillSignature) {
+                lastSkillSignature = signature;
+                renderSidebarTab();
+            }
         }
     } catch (e) {
         console.error('Load skills failed', e);
