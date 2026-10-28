@@ -90,7 +90,7 @@ passed++;
 const floodService = createService();
 const floodSocket = createSocket();
 floodSocket.setEncoding = () => {};
-floodService.handleIncomingSocket(floodSocket);
+floodService.attachSocketHandlers(floodSocket);
 floodService.handleSocketData(floodSocket, 'x'.repeat(17 * 1024 * 1024));
 assert.equal(floodSocket.destroyed, true);
 passed++;

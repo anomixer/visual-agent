@@ -65,6 +65,10 @@ function buildIdleAiStatus() {
     };
 }
 
+function peerLabel(session, fallback = 'Remote peer') {
+    return session?.peer?.agentName || session?.peer?.machineName || fallback;
+}
+
 class RemoteAgentService {
     constructor(options = {}) {
         this.port = Number(options.port) || DEFAULT_PORT;
@@ -80,12 +84,12 @@ class RemoteAgentService {
 
     start() {
         if (this.server) return;
-        this.server = net.createServer((socket) => this.handleIncomingSocket(socket));
+        this.server = net.createServer((socket) => this.attachSocketHandlers(socket));
         this.server.on('error', (error) => this.onError(error));
         this.server.listen(this.port, '0.0.0.0');
     }
 
-    handleIncomingSocket(socket) {
+    attachSocketHandlers(socket) {
         socket.setEncoding('utf8');
         socket._remoteAgentBuffer = '';
         socket.on('data', (chunk) => this.handleSocketData(socket, chunk));
@@ -150,7 +154,7 @@ class RemoteAgentService {
             session.status = 'active';
             session.connectedAt = new Date().toISOString();
             session.lastEventAt = session.connectedAt;
-            this.emitSystemMessage(session, 'system', `${session.peer.agentName || session.peer.machineName || 'Remote peer'} accepted the connection.`);
+            this.emitSystemMessage(session, 'system', `${peerLabel(session)} accepted the connection.`);
             this.onStateChanged();
             return;
         }
@@ -191,7 +195,7 @@ class RemoteAgentService {
                 status: 'pending',
                 role: 'consumer',
                 requestedAt: payload.createdAt || new Date().toISOString(),
-                requestedBy: payload.requestedBy || session.peer?.agentName || session.peer?.machineName || 'Remote peer',
+                requestedBy: payload.requestedBy || peerLabel(session),
                 expiresAt: payload.expiresAt || '',
                 proxyToken: payload.proxyToken || '',
                 provider: payload.provider || session.peer || null,
@@ -199,7 +203,7 @@ class RemoteAgentService {
                 modelInfo: payload.modelInfo || payload.provider?.modelInfo || null,
                 note: payload.note || '',
             };
-            this.emitSystemMessage(session, 'system', `${session.modelShare.requestedBy} wants to share ${session.peer?.agentName || session.peer?.machineName || 'their AI'} with this machine.`);
+            this.emitSystemMessage(session, 'system', `${session.modelShare.requestedBy} wants to share ${peerLabel(session, 'their AI')} with this machine.`);
             this.onStateChanged();
             return;
         }
@@ -211,7 +215,7 @@ class RemoteAgentService {
                 status: payload.accept ? 'active' : 'rejected',
                 role: payload.accept ? 'provider' : 'none',
                 respondedAt: payload.createdAt || new Date().toISOString(),
-                respondedBy: payload.respondedBy || session.peer?.agentName || session.peer?.machineName || 'Remote peer',
+                respondedBy: payload.respondedBy || peerLabel(session),
                 proxyToken: payload.accept ? (payload.proxyToken || session.modelShare?.proxyToken || '') : '',
                 expiresAt: payload.accept ? (payload.expiresAt || session.modelShare?.expiresAt || '') : '',
                 provider: payload.provider || session.local || session.modelShare?.provider || null,
@@ -231,7 +235,7 @@ class RemoteAgentService {
                 ...buildIdleModelShare(),
                 status: 'idle',
                 cancelledAt: payload.createdAt || new Date().toISOString(),
-                cancelledBy: payload.cancelledBy || session.peer?.agentName || session.peer?.machineName || 'Remote peer',
+                cancelledBy: payload.cancelledBy || peerLabel(session),
                 lastStatus: previousStatus,
             };
             this.emitSystemMessage(
@@ -247,7 +251,7 @@ class RemoteAgentService {
             session.aiStatus = {
                 ...(session.aiStatus || buildIdleAiStatus()),
                 remoteAi: payload.status === 'thinking' ? 'thinking' : 'idle',
-                remoteAiLabel: payload.senderLabel || session.peer?.agentName || session.peer?.machineName || 'Remote AI',
+                remoteAiLabel: payload.senderLabel || peerLabel(session, 'Remote AI'),
                 updatedAt: payload.createdAt || new Date().toISOString(),
             };
             session.lastEventAt = new Date().toISOString();
@@ -278,7 +282,7 @@ class RemoteAgentService {
                 session.aiStatus = {
                     ...(session.aiStatus || buildIdleAiStatus()),
                     remoteAi: 'idle',
-                    remoteAiLabel: message.senderLabel || session.peer?.agentName || session.peer?.machineName || 'Remote AI',
+                    remoteAiLabel: message.senderLabel || peerLabel(session, 'Remote AI'),
                     updatedAt: message.createdAt,
                 };
             }
@@ -367,7 +371,7 @@ class RemoteAgentService {
                 };
                 this.sessions.set(sessionId, session);
                 this.socketToSessionId.set(socket, sessionId);
-                this.attachOutgoingSocket(socket);
+                this.attachSocketHandlers(socket);
                 this.schedulePendingTimeout(session);
                 this.sendRaw(socket, {
                     type: 'hello',
@@ -387,26 +391,6 @@ class RemoteAgentService {
             socket.once('error', (error) => {
                 reject(error);
             });
-        });
-    }
-
-    attachOutgoingSocket(socket) {
-        socket.setEncoding('utf8');
-        socket._remoteAgentBuffer = '';
-        socket.on('data', (chunk) => this.handleSocketData(socket, chunk));
-        socket.on('error', (error) => {
-            const session = this.getSessionBySocket(socket);
-            if (session) {
-                session.lastError = error.message;
-                this.markDisconnected(session, 'error');
-            }
-            this.onError(error);
-        });
-        socket.on('close', () => {
-            const session = this.getSessionBySocket(socket);
-            if (session && session.status !== 'rejected' && session.status !== 'disconnected') {
-                this.markDisconnected(session, 'socket_closed');
-            }
         });
     }
 

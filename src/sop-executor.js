@@ -16,6 +16,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const EventEmitter = require('events');
+const { escapePowerShellSingleQuoted } = require('./pure');
 
 class SOPExecutor extends EventEmitter {
     buildPowerShellRunnerScript(command) {
@@ -60,10 +61,6 @@ class SOPExecutor extends EventEmitter {
                 child.kill('SIGTERM');
             }
         });
-    }
-
-    escapePowerShellSingleQuoted(value) {
-        return String(value).replace(/'/g, "''");
     }
 
     /**
@@ -171,10 +168,9 @@ class SOPExecutor extends EventEmitter {
     }
 
     /**
-     * 嘗試將錯誤訊息比對 sop 的錯誤處理表，找出對應的修復動作
-     * @param {string} errorText - stderr 或 stdout 中的錯誤訊息
-     * @param {object[]} errorHandlers - sop.errorHandling 陣列
-     * @returns {object|null} 匹配到的 errorHandler 或 null
+     * 以 UAC 提權執行單一 PowerShell 指令，輸出寫入暫存檔後回讀。
+     * @param {string} command - PowerShell 指令字串
+     * @returns {Promise<{exitCode: number, stdout: string, stderr: string}>}
      */
     runPowerShellElevated(command) {
         return new Promise((resolve, reject) => {
@@ -189,9 +185,9 @@ class SOPExecutor extends EventEmitter {
             const logPath = path.join(tempDir, 'combined.log');
             const exitPath = path.join(tempDir, 'exitcode.txt');
 
-            const quotedRunnerPath = this.escapePowerShellSingleQuoted(runnerPath);
-            const quotedLogPath = this.escapePowerShellSingleQuoted(logPath);
-            const quotedExitPath = this.escapePowerShellSingleQuoted(exitPath);
+            const quotedRunnerPath = escapePowerShellSingleQuoted(runnerPath);
+            const quotedLogPath = escapePowerShellSingleQuoted(logPath);
+            const quotedExitPath = escapePowerShellSingleQuoted(exitPath);
 
             const runnerScript = [
                 "$utf8NoBom = New-Object System.Text.UTF8Encoding($false)",
@@ -291,6 +287,12 @@ class SOPExecutor extends EventEmitter {
         });
     }
 
+    /**
+     * 嘗試將錯誤訊息比對 sop 的錯誤處理表，找出對應的修復動作
+     * @param {string} errorText - stderr 或 stdout 中的錯誤訊息
+     * @param {object[]} errorHandlers - sop.errorHandling 陣列
+     * @returns {object|null} 匹配到的 errorHandler 或 null
+     */
     matchError(errorText, errorHandlers) {
         if (!errorText || !errorHandlers || errorHandlers.length === 0) return null;
         const combined = errorText.toLowerCase();
@@ -478,18 +480,23 @@ class SOPExecutor extends EventEmitter {
     }
 
     /**
-     * 完整執行一個 SOP（Check → Install → Verify + Error Handling）
+     * SOP 的權限需求是否包含 Administrator / Admin / UAC。
      * @param {object} sop — 由 sop-parser 產生的結構化 sop 物件
-     * @returns {Promise<object>} 執行結果
+     * @returns {boolean}
      */
     sopRequiresElevation(sop) {
         const permissions = sop?.prerequisites?.permissions || '';
         return /administrator|admin|uac/i.test(permissions);
     }
 
+    /**
+     * 完整執行一個 SOP（Check → Install → Verify + Error Handling）
+     * @param {object} sop — 由 sop-parser 產生的結構化 sop 物件
+     * @returns {Promise<object>} 執行結果
+     */
     async execute(sop, options = {}) {
         const action = options.action === 'uninstall' ? 'uninstall' : 'install';
-        const actionPhase = action === 'uninstall' ? 'uninstall' : 'install';
+        const actionPhase = action;
         const actionLabel = action === 'uninstall' ? '解除安裝' : '安裝';
         const result = {
             sopId: sop.id,
@@ -551,11 +558,6 @@ class SOPExecutor extends EventEmitter {
         while (retries <= this.maxRetries) {
             if (!actionStep || actionStep.commands.length === 0) {
                 throw new Error(`SOP 缺少${actionLabel}階段指令`);
-            }
-
-            if (actionStep.commands.length === 0) {
-                actionSuccess = true;
-                break;
             }
 
             if (actionStep.uiMessage) {

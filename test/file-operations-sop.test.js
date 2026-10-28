@@ -20,6 +20,7 @@ const cases = [
 for (const testCase of cases) {
     const sop = parseSOPFile(path.join(__dirname, '..', 'sops', testCase.slug, 'SOP.md'));
     assert.equal(sop.id, testCase.id);
+    assert.equal(sop.sourceFile, 'SOP.md');
     assert.equal(sop.steps.check.commands.length, 1);
     assert.match(sop.steps.check.commands[0], /\$false/);
     assert.doesNotMatch(sop.steps.check.commands[0], /\$true/);

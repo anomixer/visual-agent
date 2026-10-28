@@ -5,6 +5,32 @@
 
 ---
 
+## 📌 2026.10.29 — 第五階段：SOP 解析可測化、Executor 去重與 Remote socket 收斂
+
+> 接續 10.28 第四階段；只搬純邏輯、補測試與移除死碼，不改執行流程與使用者設定。版本維持 `2026.8.7`。
+
+### SOP 解析
+- `src/sop-parser.js` 把檔案讀取與內容解析拆開：`parseSOPFile()` 只負責讀檔並轉呼叫 `parseSOPContent(content, sourceFile)`，解析邏輯現在可直接餵字串測試。
+- 新增 `test/sop-parser.test.js`（31 項）：中英文欄位優先序、需求環境、四階段偵測、code block 合併與 UI 訊息過濾、預期結果、錯誤處理條目、未關閉 code block，以及空內容。
+- `test/file-operations-sop.test.js` 補上 `sourceFile` 斷言，確認委派後檔名仍正確。
+
+### SOPExecutor
+- 移除重複的 `escapePowerShellSingleQuoted()` 方法，改用 `src/pure.js` 的共用實作（含提權路徑三處呼叫）。
+- 刪掉永遠不會執行的 `commands.length === 0` 分支（前一檢查已 throw），`actionPhase` 直接等於 `action`。
+- 修正兩處錯位的 JSDoc：`matchError` 的說明原本掛在 `runPowerShellElevated` 上，`execute` 的說明原本掛在 `sopRequiresElevation` 上。
+- 新增 `test/sop-executor-pure.test.js`（28 項）：`isCheckSatisfied` / `isVerifyFailed` / `matchError` / `sopRequiresElevation` / runner 腳本內容與建構預設值；不啟動子程序。
+
+### Remote Agent 與死碼
+- `handleIncomingSocket` / `attachOutgoingSocket` 重複的 socket 事件註冊收斂為 `attachSocketHandlers()`，incoming / outgoing 共用；測試改呼叫同一入口。
+- 7 處重複的 peer 名稱組裝收斂為 `peerLabel(session, fallback)`，維持原本 `Remote peer` / `their AI` / `Remote AI` 三種 fallback。
+- 移除 `server.js` 中無人呼叫的 `detectGameNewsIntent()`（`isGameDiscoveryRequest()` 仍在使用）。
+
+### 測試與驗收
+- `npm test`：23 個 JS 語法、23 支測試檔與 server smoke 全綠。
+- 未變更 API、SOP、使用者設定與版本號；UAC、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+
+---
+
 ## 📌 2026.10.28 — 第四階段：死碼清理、原生存檔對話框收斂與匯出修正
 
 > 接續同日第三階段；以行為不變為前提，清掉確認無人呼叫的死碼、合併四處重複的 Windows 另存新檔流程，並修正匯出中的舊版本號。版本維持 `2026.8.7`。

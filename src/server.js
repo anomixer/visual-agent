@@ -1344,10 +1344,6 @@ function isGameDiscoveryRequest(text = '') {
     return hasGame && hasDiscovery;
 }
 
-function detectGameNewsIntent(text = '') {
-    return isGameDiscoveryRequest(text);
-}
-
 function isCurrentInfoRequest(text = '') {
     const raw = String(text || '');
     return /(天氣|氣溫|降雨|颱風|物價|價格|報價|新聞|最新|今天|明天|昨日|昨天|匯率|股價|股票|油價|金價|weather|forecast|temperature|rain|price|quote|news|latest|today|tomorrow|yesterday|exchange rate|stock)/i.test(raw)

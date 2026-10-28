@@ -260,6 +260,7 @@ $true
 - [ ] 以最新 `pkg.assets` 重建 sidecar / Tauri EXE，於乾淨 Windows 驗證 Skills、Plugins、CLI、Chromium 安裝與 CSP。
 - [x] 抽出可獨立測試的 SOP 模板、LLM 協定與前端 i18n 套用層（2026.10.28 第三階段：`src/agent/sop-templates.js`、`src/llm/protocol.js`、`app.js` 的 `applyLocaleTo*`）。
 - [x] 集中 Windows 另存新檔流程、清除確認無引用的舊版工作流，並修正任務匯出 `agentVersion`（2026.10.28 第四階段：`src/native-dialogs.js`、`buildTaskExportPayload()`）。
+- [x] SOP 解析可獨立測試、SOPExecutor 純方法與 Remote socket 註冊去重（2026.10.29 第五階段：`parseSOPContent()`、`attachSocketHandlers()`、`test/sop-parser.test.js`、`test/sop-executor-pure.test.js`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

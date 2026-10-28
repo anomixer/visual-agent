@@ -18,7 +18,17 @@ const path = require('path');
  */
 function parseSOPFile(filePath) {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const lines = content.split(/\r?\n/);
+    return parseSOPContent(content, path.basename(filePath));
+}
+
+/**
+ * Parses SOP markdown text into a structured SOP object.
+ * @param {string} content Raw SOP markdown.
+ * @param {string} sourceFile File name recorded on the result.
+ * @returns {object} Structured SOP object.
+ */
+function parseSOPContent(content, sourceFile = '') {
+    const lines = String(content || '').split(/\r?\n/);
 
     const sop = {
         id: null,
@@ -37,7 +47,7 @@ function parseSOPFile(filePath) {
             verify: { commands: [], expectedResult: null, uiMessage: null },
         },
         errorHandling: [],
-        sourceFile: path.basename(filePath),
+        sourceFile,
     };
 
     let currentSection = null;
@@ -264,4 +274,4 @@ function loadAllSOPs(sopsDir) {
     return Array.from(deduped.values());
 }
 
-module.exports = { parseSOPFile, loadAllSOPs };
+module.exports = { parseSOPFile, parseSOPContent, loadAllSOPs };
