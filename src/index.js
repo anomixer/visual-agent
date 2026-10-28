@@ -2,16 +2,16 @@
  * Visual Agent - CLI Entry Point
  *
  * 用法:
- *   node src/index.js                    # 掃描 skills/ 目錄並列出所有 skill
- *   node src/index.js --run <skill-id>   # 執行指定 skill
- *   node src/index.js --run-all          # 依序執行所有 skill
- *   node src/index.js --dry-run <skill-id> # 模擬執行（不實際跑 PowerShell）
- *   node src/index.js --export           # 匯出所有 skill 為 JSON
+ *   node src/index.js                    # 掃描 sops/ 目錄並列出所有 SOP
+ *   node src/index.js --run <sop-id>     # 執行指定 SOP
+ *   node src/index.js --run-all          # 依序執行所有 SOP
+ *   node src/index.js --dry-run <sop-id> # 模擬執行（不實際跑 PowerShell）
+ *   node src/index.js --export           # 匯出所有 SOP 為 JSON
  */
 
 const path = require('path');
 const fs = require('fs');
-const { loadAllSOPs, parseSOPFile } = require('./sop-parser');
+const { loadAllSOPs } = require('./sop-parser');
 const { SOPExecutor } = require('./sop-executor');
 
 // ── Config ─────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ async function main() {
     const args = process.argv.slice(2);
 
     if (args.length === 0) {
-        listSkills();
+        listSOPs();
         return;
     }
 

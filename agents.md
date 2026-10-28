@@ -5,6 +5,32 @@
 
 ---
 
+## 📌 2026.10.29 — 第六階段：CLI 修正與未使用程式碼清理
+
+> 接續同日第五階段；修正實際會拋錯的 CLI 入口，清掉確認未使用的匯入與變數。版本維持 `2026.8.7`。
+
+### CLI
+- `node src/index.js` 無參數時原本呼叫不存在的 `listSkills()`，會落入 catch 顯示「未預期的錯誤: listSkills is not defined」；改為呼叫實際存在的 `listSOPs()`。
+- 移除未使用的 `parseSOPFile` 匯入，並把檔案頂部仍寫「skills/」的用法說明改回 SOP。
+- 新增 `test/cli.test.js`（2 項）：無參數列出 SOP 清單且不再出現 `listSkills is not defined`；`--help` 正常結束。測試只讀 bundled `sops/`，不執行 PowerShell。
+
+### 未使用程式碼
+- `server.js` 移除 7 個未使用的解構匯入（`escapeMarkdown`、`buildExperienceAdvice`、`escapeRegExp`、`formatUsdBillions`、`buildStoreSopMarkdown`、`scoreGitHubAsset`、`isUsefulGitHubAsset`），以及 `defaultPlaywrightBrowserDir`、`isPkg` 兩個未使用常數。
+- `public/app.js` 移除未使用的 `pendingModelShareSessionId`、`centerCol`、`chalkboardHeading`、`chalkTools`。
+- 上述函式仍保留在 `pure.js` / `sop-templates.js` 並持續由測試覆蓋。
+
+### 不穩定的 process tree 測試
+- `test/sop-executor.test.js` 原本以 200ms 逾時驗證「孫行程不會存活」，但 `powershell.exe` 啟動本身就要數百毫秒，孫行程常在逾時後才被建立，導致斷言在「沒測到」與「測到卻失敗」之間跳動。
+- 以獨立探針重現：200ms 逾時下 10 次有 2 次孫行程真的啟動，且這 2 次都存活下來；代表 `taskkill /T` 可能落在「子行程正在建立」的競態窗口。
+- 測試改為先讓父行程等待孫行程寫出 `started` 檔，之後才進入 30 秒睡眠，逾時時間放寬到 3000ms；逾時後再寫入 trigger 檔，若孫行程仍存活就會輸出 marker，讓斷言直接反映真實結果。連續 4 次執行皆穩定；另以覆寫 `terminateProcessTree` 為 no-op 的探針確認測試會正確失敗。
+- 未改動 `terminateProcessTree` 的行為；「子行程剛好成立於 taskkill 快照瞬間而成為孤兒」的窄窗競態仍存在，需以 Windows Job Object 才能完整關閉，暫列為已知限制。
+
+### 測試與驗收
+- `npm test`：23 個 JS 語法、24 支測試檔與 server smoke 全綠。
+- 未變更 API、SOP、使用者設定與版本號。
+
+---
+
 ## 📌 2026.10.29 — 第五階段：SOP 解析可測化、Executor 去重與 Remote socket 收斂
 
 > 接續 10.28 第四階段；只搬純邏輯、補測試與移除死碼，不改執行流程與使用者設定。版本維持 `2026.8.7`。

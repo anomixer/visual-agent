@@ -18,7 +18,6 @@ if (!fs.existsSync(visualAgentDir)) {
     fs.mkdirSync(visualAgentDir, { recursive: true });
 }
 const appDataBrowserDir = path.join(visualAgentDir, 'playwright-browsers');
-const defaultPlaywrightBrowserDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright');
 if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
     process.env.PLAYWRIGHT_BROWSERS_PATH = appDataBrowserDir;
 }
@@ -39,12 +38,12 @@ const { createLocalApiSecurity } = require('./local-api-security');
 const { safeFetchText } = require('./safe-fetch');
 // 純函式集（自本檔抽出，見 src/pure.js）— 解構回本地綁定，原有呼叫點不需改動。
 const {
-    tokenizeForMatch, scoreByTokenSet, escapeMarkdown, redactSensitiveText,
+    tokenizeForMatch, scoreByTokenSet, redactSensitiveText,
     compactMarkdownSnippet, buildChatHistoryForRequest, normalizeChalkboardAttachment,
-    getTaskDurationText, pickExperienceHighlights, buildExperienceAdvice,
+    getTaskDurationText, pickExperienceHighlights,
     buildExperienceMarkdown, detectAgentFinanceIntent,
     extractWingetSearchQuery, parseWingetSearchOutput, slugifyWingetPackage,
-    escapeRegExp, formatUsdBillions, buildNvidiaSnapshotLines,
+    buildNvidiaSnapshotLines,
     escapePowerShellSingleQuoted, buildTaskExportPayload,
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
@@ -57,8 +56,8 @@ const { AgentLoopBudget } = require('./agent/loop-budget');
 const { buildRecommendationPromptNotes } = require('./agent/prompts');
 // SOP 模板與 GitHub asset 排序（自本檔抽出，見 src/agent/sop-templates.js）。
 const {
-    buildWingetSopMarkdown, buildStoreSopMarkdown, buildMicrosoftStoreSopMarkdown,
-    buildGitHubReleaseSopMarkdown, pickBestGitHubAsset, scoreGitHubAsset, isUsefulGitHubAsset,
+    buildWingetSopMarkdown, buildMicrosoftStoreSopMarkdown,
+    buildGitHubReleaseSopMarkdown, pickBestGitHubAsset,
 } = require('./agent/sop-templates');
 const app = express();
 const PORT = 3210;
@@ -75,7 +74,6 @@ app.use(express.static(path.join(__dirname, '../public'), {
         }
     },
 }));
-const isPkg = typeof process.pkg !== 'undefined';
 
 function getPlaywrightBrowserDirCandidates() {
     // 只認 appData 自己管理的安裝目錄，避免誤判圖 %LOCALAPPDATA%\ms-playwright 等系統安裝位置
