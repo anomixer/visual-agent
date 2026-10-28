@@ -287,7 +287,7 @@ const I18N = {
             toggleSidebar: '切換側邊欄 (Ctrl+B)',
             toggleLog: '切換任務日誌 (Ctrl+J)',
             toggleChat: '切換 AI 對話 (Ctrl+Alt+B)',
-            refresh: '重新整理',
+            refresh: 'Refresh 畫面',
             exit: '離開',
         },
         footer: {
@@ -697,8 +697,8 @@ const I18N = {
         footer: {
             tasks: '{count} tasks',
             switchTo: 'Switch to Traditional Chinese',
-            importTasks: 'Import Task List',
-            exportTasks: 'Export Task List',
+            importTasks: 'Import Tasks',
+            exportTasks: 'Export Tasks',
         },
         tabs: {
             recommend: '💡 Recommended',
@@ -6041,7 +6041,38 @@ function createSkillCard(skill) {
     return card;
 }
 
-function updateLocaleUI() {
+function setLocaleText(id, text) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = text;
+}
+
+function setLocaleTitle(id, text) {
+    const element = document.getElementById(id);
+    if (element) element.title = text;
+}
+
+function setLocalePlaceholder(id, text) {
+    const element = document.getElementById(id);
+    if (element) element.placeholder = text;
+}
+
+function setLocaleElementText(element, text) {
+    if (element) element.textContent = text;
+}
+
+function applyLocaleTexts(entries) {
+    Object.entries(entries).forEach(([id, text]) => setLocaleText(id, text));
+}
+
+function applyLocaleTitles(entries) {
+    Object.entries(entries).forEach(([id, text]) => setLocaleTitle(id, text));
+}
+
+function applyLocalePlaceholders(entries) {
+    Object.entries(entries).forEach(([id, text]) => setLocalePlaceholder(id, text));
+}
+
+function applyLocaleToShell() {
     document.documentElement.lang = currentLocale;
     if (btnLang) {
         btnLang.textContent = t('localeLabel');
@@ -6051,39 +6082,55 @@ function updateLocaleUI() {
     if (splashText && !document.getElementById('splashOverlay')?.classList.contains('hidden')) {
         splashText.textContent = localStorage.getItem('visual_agent_has_run') ? t('splash.starting') : t('splash.firstRun');
     }
-    const menuFileTextEl = document.getElementById('menuFileText');
-    const menuView = document.getElementById('menuView');
-    const menuHelp = document.getElementById('menuHelp');
-    if (menuFileTextEl) menuFileTextEl.textContent = t('titlebar.file');
-    if (menuView) menuView.textContent = t('titlebar.view');
-    if (menuHelp) menuHelp.textContent = t('titlebar.help');
+    applyLocaleTexts({
+        menuFileText: t('titlebar.file'),
+        menuView: t('titlebar.view'),
+        menuHelp: t('titlebar.help'),
+        menuRefreshText: t('titlebar.refresh'),
+        menuExitText: t('titlebar.exit'),
+        importTasksText: t('footer.importTasks'),
+        exportTasksText: t('footer.exportTasks'),
+        llmLabel: t('titlebar.llmReady'),
+    });
     const llmTitle = document.getElementById('llmStatus');
     if (llmTitle) llmTitle.title = t('titlebar.aiSettings');
     if (btnToggleSidebar) btnToggleSidebar.title = t('titlebar.toggleSidebar');
     if (btnTogglePanel) btnTogglePanel.title = t('titlebar.toggleLog');
     if (btnToggleChat) btnToggleChat.title = t('titlebar.toggleChat');
-    const sidebarTabRecommend = document.querySelector('.sidebar-tab[data-sidebar-tab="recommend"] span');
-    const sidebarTabSops = document.querySelector('.sidebar-tab[data-sidebar-tab="sops"] span');
-    const sidebarTabSkills = document.querySelector('.sidebar-tab[data-sidebar-tab="skills"] span');
-    if (sidebarTabRecommend) sidebarTabRecommend.textContent = t('tabs.recommend');
-    if (sidebarTabSops) sidebarTabSops.textContent = t('tabs.sops');
-    if (sidebarTabSkills) sidebarTabSkills.textContent = t('tabs.skills');
+
+    document.title = currentLocale === 'en-US' ? 'Visual Agent - System Butler' : 'Visual Agent - 系統管家';
+    const appTitle = document.getElementById('appTitle');
+    if (appTitle) appTitle.textContent = document.title;
+}
+
+function applyLocaleToWorkspace() {
+    setLocaleElementText(document.querySelector('.sidebar-tab[data-sidebar-tab="recommend"] span'), t('tabs.recommend'));
+    setLocaleElementText(document.querySelector('.sidebar-tab[data-sidebar-tab="sops"] span'), t('tabs.sops'));
+    setLocaleElementText(document.querySelector('.sidebar-tab[data-sidebar-tab="skills"] span'), t('tabs.skills'));
+
     const tabHardware = document.querySelector('#tab-hardware .tab-title');
     const tabBrowser = document.querySelector('#tab-browser .tab-title');
     const tabTodo = document.querySelector('#tab-todolist .tab-title');
-    if (tabHardware) tabHardware.textContent = t('tabs.hardware');
-    const hwTitle = document.getElementById('hw-title');
-    const hwSubtitle = document.getElementById('hw-subtitle');
-    const hwLabelCpu = document.getElementById('hw-label-cpu');
-    const hwLabelGpu = document.getElementById('hw-label-gpu');
-    const hwLabelRam = document.getElementById('hw-label-ram');
-    const hwLabelDisk = document.getElementById('hw-label-disk');
-    if (hwTitle) hwTitle.textContent = t('hardware.title');
-    if (hwSubtitle) hwSubtitle.textContent = t('hardware.subtitle');
-    if (hwLabelCpu) hwLabelCpu.textContent = t('hardware.cpu');
-    if (hwLabelGpu) hwLabelGpu.textContent = t('hardware.gpu');
-    if (hwLabelRam) hwLabelRam.textContent = t('hardware.ram');
-    if (hwLabelDisk) hwLabelDisk.textContent = t('hardware.disk');
+    setLocaleElementText(tabHardware, t('tabs.hardware'));
+    setLocaleElementText(tabBrowser, t('tabs.browser'));
+    setLocaleElementText(tabTodo, t('tabs.todolist'));
+    setLocaleElementText(document.querySelector('[data-bottom-tab="logs"]'), t('tabs.logs'));
+    setLocaleElementText(document.querySelector('[data-bottom-tab="exps"]'), t('tabs.exps'));
+
+    applyLocaleTexts({
+        'hw-title': t('hardware.title'),
+        'hw-subtitle': t('hardware.subtitle'),
+        'hw-label-cpu': t('hardware.cpu'),
+        'hw-label-gpu': t('hardware.gpu'),
+        'hw-label-ram': t('hardware.ram'),
+        'hw-label-disk': t('hardware.disk'),
+        'chalk-kicker': t('chalkboardWelcome.kicker'),
+        'chalk-title': t('chalkboardWelcome.hintTitle'),
+        'chalk-desc': t('chalkboardWelcome.hintBody'),
+        'todo-empty-title': t('todo.emptyTitle'),
+        'todo-empty-hint': t('todo.emptyHint'),
+    });
+
     const hwCpuModel = document.getElementById('hw-cpu-model');
     const hwGpuName = document.getElementById('hw-gpu-name');
     const hwDiskName = document.getElementById('hw-disk-name');
@@ -6096,26 +6143,10 @@ function updateLocaleUI() {
     if (hwDiskName && (hwDiskName.textContent === '掃描中...' || hwDiskName.textContent === 'Scanning...')) {
         hwDiskName.textContent = t('hardware.scanning');
     }
-    const chalkKicker = document.getElementById('chalk-kicker');
-    const chalkTitle = document.getElementById('chalk-title');
-    const chalkDesc = document.getElementById('chalk-desc');
-    if (chalkKicker) chalkKicker.textContent = t('chalkboardWelcome.kicker');
-    if (chalkTitle) chalkTitle.textContent = t('chalkboardWelcome.hintTitle');
-    if (chalkDesc) chalkDesc.textContent = t('chalkboardWelcome.hintBody');
+}
 
-    const todoEmptyTitle = document.getElementById('todo-empty-title');
-    const todoEmptyHint = document.getElementById('todo-empty-hint');
-    if (todoEmptyTitle) todoEmptyTitle.textContent = t('todo.emptyTitle');
-    if (todoEmptyHint) todoEmptyHint.textContent = t('todo.emptyHint');
-
-    if (tabBrowser) tabBrowser.textContent = t('tabs.browser');
-    if (tabTodo) tabTodo.textContent = t('tabs.todolist');
-    const logTab = document.querySelector('[data-bottom-tab="logs"]');
-    const expsTab = document.querySelector('[data-bottom-tab="exps"]');
-    if (logTab) logTab.textContent = t('tabs.logs');
-    if (expsTab) expsTab.textContent = t('tabs.exps');
-    const remoteChatTab = document.querySelector('.chat-mode-tab[data-chat-mode="remote"]');
-    if (remoteChatTab) remoteChatTab.textContent = t('remote.remoteTab');
+function applyLocaleToChat() {
+    setLocaleElementText(document.querySelector('.chat-mode-tab[data-chat-mode="remote"]'), t('remote.remoteTab'));
     if (chatModelBadge) {
         if (!chatModelBadge.textContent || chatModelBadge.textContent === 'AI 模型' || chatModelBadge.textContent === 'AI Model') {
             chatModelBadge.textContent = t('chat.modelBadge');
@@ -6144,168 +6175,101 @@ function updateLocaleUI() {
     if (btnAcceptRemoteRequest) btnAcceptRemoteRequest.textContent = t('remote.accept');
     if (btnRejectRemoteRequest) btnRejectRemoteRequest.textContent = t('remote.reject');
 
-    // Update experience search placeholder
-    if (expSearchInput) expSearchInput.placeholder = t('exps.searchPlaceholder');
-    if (btnExpsExport) {
-        btnExpsExport.textContent = t('exps.exportButton');
-        btnExpsExport.title = t('exps.exportTooltip');
-    }
-
-    // Update log empty message
-    const logEmptyMessage = document.getElementById('logEmptyMessage');
-    if (logEmptyMessage) logEmptyMessage.textContent = t('logs.emptyMessage');
-
-    // Update exps empty message
-    const expsEmptyMessage = document.getElementById('expsEmptyMessage');
-    if (expsEmptyMessage) expsEmptyMessage.textContent = t('exps.emptyMessage');
-
-    // Update menu elements
-    const menuFileText = document.getElementById('menuFileText');
-    if (menuFileText) menuFileText.textContent = t('titlebar.file');
-
-    const menuViewText = document.getElementById('menuView');
-    if (menuViewText) menuViewText.textContent = t('titlebar.view');
-
-    const menuHelpText = document.getElementById('menuHelp');
-    if (menuHelpText) menuHelpText.textContent = t('titlebar.help');
-
-    const importTasksText = document.getElementById('importTasksText');
-    if (importTasksText) importTasksText.textContent = t('footer.importTasks');
-
-    const exportTasksText = document.getElementById('exportTasksText');
-    if (exportTasksText) exportTasksText.textContent = t('footer.exportTasks');
-
-    const menuRefreshText = document.getElementById('menuRefreshText');
-    if (menuRefreshText) menuRefreshText.textContent = t('titlebar.refresh');
-
-    const menuExitText = document.getElementById('menuExitText');
-    if (menuExitText) menuExitText.textContent = t('titlebar.exit');
-
-    // Update LLM status
-    const llmLabel = document.getElementById('llmLabel');
-    if (llmLabel) llmLabel.textContent = t('titlebar.llmReady');
-
-    // Chat Input Area
     if (chatInput) chatInput.placeholder = t('chat.placeholder');
     if (btnSend) btnSend.title = t('chat.send');
     const inputHint = document.querySelector('.input-hint');
     if (inputHint) inputHint.textContent = t('chat.hint');
     switchChatMode(activeChatMode);
+}
 
-    // AI Settings Modal
-    const settingsTitle = document.querySelector('.provider-modal .modal-header h3');
-    if (settingsTitle) settingsTitle.textContent = t('settings.title');
+function applyLocaleToPanels() {
+    if (expSearchInput) expSearchInput.placeholder = t('exps.searchPlaceholder');
+    if (btnExpsExport) {
+        btnExpsExport.textContent = t('exps.exportButton');
+        btnExpsExport.title = t('exps.exportTooltip');
+    }
+    applyLocaleTexts({
+        logEmptyMessage: t('logs.emptyMessage'),
+        expsEmptyMessage: t('exps.emptyMessage'),
+    });
+}
+
+function applyLocaleToSettings() {
+    setLocaleElementText(document.querySelector('.provider-modal .modal-header h3'), t('settings.title'));
 
     const labels = document.querySelectorAll('.provider-modal .form-group label');
     if (labels.length > 0) {
-        labels.forEach(l => {
-            const txt = l.firstChild?.textContent?.trim();
-            if (txt === 'AI Provider') l.firstChild.textContent = t('settings.provider');
-            if (txt === '連線網址 (Base URL)' || txt === 'Base URL') l.firstChild.textContent = t('settings.baseUrl');
-            if (txt === '認證方式' || txt === 'Authentication') l.firstChild.textContent = t('settings.authType');
-            if (txt === 'API Key') l.firstChild.textContent = t('settings.apiKey');
-            if (txt === 'Token URL') l.firstChild.textContent = t('settings.tokenUrl');
-            if (txt === 'Client ID') l.firstChild.textContent = t('settings.clientId');
-            if (txt === 'Client Secret') l.firstChild.textContent = t('settings.clientSecret');
-            if (txt === 'Scope') l.firstChild.textContent = t('settings.scope');
-            if (txt === 'Audience / Resource (選填)' || txt === 'Audience / Resource (Optional)') l.firstChild.textContent = t('settings.audience') + (currentLocale === 'zh-TW' ? ' (選填)' : ' (Optional)');
-            if (txt === 'Vision 多模態模型' || txt === 'Vision Model') l.firstChild.textContent = t('settings.visionModel');
+        labels.forEach((label) => {
+            const text = label.firstChild?.textContent?.trim();
+            if (text === 'AI Provider') label.firstChild.textContent = t('settings.provider');
+            if (text === '連線網址 (Base URL)' || text === 'Base URL') label.firstChild.textContent = t('settings.baseUrl');
+            if (text === '認證方式' || text === 'Authentication') label.firstChild.textContent = t('settings.authType');
+            if (text === 'API Key') label.firstChild.textContent = t('settings.apiKey');
+            if (text === 'Token URL') label.firstChild.textContent = t('settings.tokenUrl');
+            if (text === 'Client ID') label.firstChild.textContent = t('settings.clientId');
+            if (text === 'Client Secret') label.firstChild.textContent = t('settings.clientSecret');
+            if (text === 'Scope') label.firstChild.textContent = t('settings.scope');
+            if (text === 'Audience / Resource (選填)' || text === 'Audience / Resource (Optional)') {
+                label.firstChild.textContent = t('settings.audience') + (currentLocale === 'zh-TW' ? ' (選填)' : ' (Optional)');
+            }
+            if (text === 'Vision 多模態模型' || text === 'Vision Model') label.firstChild.textContent = t('settings.visionModel');
         });
     }
 
-    const modelNameLabel = document.querySelector('label[style*="display:flex"] span');
-    if (modelNameLabel) modelNameLabel.textContent = t('settings.modelName');
-
+    setLocaleElementText(document.querySelector('label[style*="display:flex"] span'), t('settings.modelName'));
     if (btnRefreshModels) btnRefreshModels.textContent = t('settings.refresh');
-    if (settingBaseUrl) settingBaseUrl.placeholder = t('settings.baseUrlPlaceholder');
-    if (settingApiKey2) settingApiKey2.placeholder = t('settings.apiKeyPlaceholder');
-    if (settingModelName) settingModelName.placeholder = t('settings.modelNamePlaceholder');
-    if (settingVisionModelName) settingVisionModelName.placeholder = t('settings.visionModelPlaceholder');
+    applyLocalePlaceholders({
+        settingBaseUrl: t('settings.baseUrlPlaceholder'),
+        settingApiKey2: t('settings.apiKeyPlaceholder'),
+        settingModelName: t('settings.modelNamePlaceholder'),
+        settingVisionModelName: t('settings.visionModelPlaceholder'),
+    });
 
     if (providerHelpTitle && providerHelpTitle.id === 'providerHelpTitle') providerHelpTitle.textContent = t('settings.helpTitle');
     if (providerHelpText && providerHelpText.id === 'providerHelpText') providerHelpText.textContent = t('settings.helpText');
-    const mHelp = document.getElementById('modelHelpText');
-    if (mHelp) mHelp.textContent = t('settings.modelHelp');
-    const vHelp = document.getElementById('visionModelHelpText');
-    if (vHelp) vHelp.textContent = t('settings.visionHelp');
-
+    applyLocaleTexts({
+        modelHelpText: t('settings.modelHelp'),
+        visionModelHelpText: t('settings.visionHelp'),
+        labelModelName: t('settings.modelName'),
+        labelVisionModel: t('settings.visionModel'),
+    });
     if (btnTestProviderSettings) btnTestProviderSettings.textContent = t('settings.test');
     if (btnSaveProviderSettings) btnSaveProviderSettings.textContent = t('settings.save');
 
-    // Model Name & Vision Model Labels
-    const labelModelName = document.getElementById('labelModelName');
-    if (labelModelName) labelModelName.textContent = t('settings.modelName');
-    const labelVisionModel = document.getElementById('labelVisionModel');
-    if (labelVisionModel) labelVisionModel.textContent = t('settings.visionModel');
-
-    // Auth Type Options
     const authOptions = document.querySelectorAll('#settingAuthType option');
     if (authOptions.length >= 3) {
         authOptions[0].textContent = t('settings.authNone');
         authOptions[1].textContent = t('settings.authApiKey');
         authOptions[2].textContent = t('settings.authOAuth');
     }
+}
 
-    // Text Tool Modal
-    const textToolTitle = document.querySelector('.text-tool-modal h3');
-    if (textToolTitle) textToolTitle.textContent = t('textTool.title');
+function applyLocaleToTextTool() {
+    setLocaleElementText(document.querySelector('.text-tool-modal h3'), t('textTool.title'));
+    applyLocaleTexts({
+        textToolContentLabel: t('textTool.content'),
+        textToolFontFamilyLabel: t('textTool.fontFamily'),
+        textToolFontStyleLabel: t('textTool.fontStyle'),
+        textToolFontSizeLabel: t('textTool.fontSize'),
+        textToolColorLabel: t('textTool.color'),
+        textToolAlignLabel: t('textTool.align'),
+        textToolBoldLabel: t('textTool.bold'),
+        textToolItalicLabel: t('textTool.italic'),
+        textToolUsageTitle: t('textTool.usage'),
+        textToolUsageText: t('textTool.usageText'),
+        btnCancelTextTool: t('textTool.cancel'),
+        btnApplyTextTool: t('textTool.apply'),
+        textToolStyleChalk: t('textTool.styleOptions.chalk'),
+        textToolStyleBoard: t('textTool.styleOptions.board'),
+        textToolStyleClean: t('textTool.styleOptions.clean'),
+        textToolStyleSerif: t('textTool.styleOptions.serif'),
+        textToolStyleMono: t('textTool.styleOptions.mono'),
+        textToolAlignLeft: t('textTool.alignOptions.left'),
+        textToolAlignCenter: t('textTool.alignOptions.center'),
+        textToolAlignRight: t('textTool.alignOptions.right'),
+    });
+    setLocalePlaceholder('textToolContent', t('textTool.contentPlaceholder'));
 
-    const textToolContentLabel = document.getElementById('textToolContentLabel');
-    if (textToolContentLabel) textToolContentLabel.textContent = t('textTool.content');
-
-    const textToolContent = document.getElementById('textToolContent');
-    if (textToolContent) textToolContent.placeholder = t('textTool.contentPlaceholder');
-
-    const textToolFontFamilyLabel = document.getElementById('textToolFontFamilyLabel');
-    if (textToolFontFamilyLabel) textToolFontFamilyLabel.textContent = t('textTool.fontFamily');
-
-    const textToolFontStyleLabel = document.getElementById('textToolFontStyleLabel');
-    if (textToolFontStyleLabel) textToolFontStyleLabel.textContent = t('textTool.fontStyle');
-
-    const textToolFontSizeLabel = document.getElementById('textToolFontSizeLabel');
-    if (textToolFontSizeLabel) textToolFontSizeLabel.textContent = t('textTool.fontSize');
-
-    const textToolColorLabel = document.getElementById('textToolColorLabel');
-    if (textToolColorLabel) textToolColorLabel.textContent = t('textTool.color');
-
-    const textToolAlignLabel = document.getElementById('textToolAlignLabel');
-    if (textToolAlignLabel) textToolAlignLabel.textContent = t('textTool.align');
-
-    const textToolBoldLabel = document.getElementById('textToolBoldLabel');
-    if (textToolBoldLabel) textToolBoldLabel.textContent = t('textTool.bold');
-
-    const textToolItalicLabel = document.getElementById('textToolItalicLabel');
-    if (textToolItalicLabel) textToolItalicLabel.textContent = t('textTool.italic');
-
-    const textToolUsageTitle = document.getElementById('textToolUsageTitle');
-    if (textToolUsageTitle) textToolUsageTitle.textContent = t('textTool.usage');
-
-    const textToolUsageText = document.getElementById('textToolUsageText');
-    if (textToolUsageText) textToolUsageText.textContent = t('textTool.usageText');
-
-    const btnCancelTextTool = document.getElementById('btnCancelTextTool');
-    if (btnCancelTextTool) btnCancelTextTool.textContent = t('textTool.cancel');
-
-    const btnApplyTextTool = document.getElementById('btnApplyTextTool');
-    if (btnApplyTextTool) btnApplyTextTool.textContent = t('textTool.apply');
-
-    // Text Tool Font Style Options
-    const textToolStyleChalk = document.getElementById('textToolStyleChalk');
-    if (textToolStyleChalk) textToolStyleChalk.textContent = t('textTool.styleOptions.chalk');
-
-    const textToolStyleBoard = document.getElementById('textToolStyleBoard');
-    if (textToolStyleBoard) textToolStyleBoard.textContent = t('textTool.styleOptions.board');
-
-    const textToolStyleClean = document.getElementById('textToolStyleClean');
-    if (textToolStyleClean) textToolStyleClean.textContent = t('textTool.styleOptions.clean');
-
-    const textToolStyleSerif = document.getElementById('textToolStyleSerif');
-    if (textToolStyleSerif) textToolStyleSerif.textContent = t('textTool.styleOptions.serif');
-
-    const textToolStyleMono = document.getElementById('textToolStyleMono');
-    if (textToolStyleMono) textToolStyleMono.textContent = t('textTool.styleOptions.mono');
-
-    // Text Tool Font Family Options
     const fontOptions = document.querySelectorAll('#textToolFontFamily option');
     if (fontOptions.length >= 7) {
         fontOptions[0].textContent = t('textTool.fontOptions.kaiti');
@@ -6316,99 +6280,49 @@ function updateLocaleUI() {
         fontOptions[5].textContent = t('textTool.fontOptions.timesnewroman');
         fontOptions[6].textContent = t('textTool.fontOptions.couriernew');
     }
+}
 
-    // Text Tool Alignment Options
-    const textToolAlignLeft = document.getElementById('textToolAlignLeft');
-    if (textToolAlignLeft) textToolAlignLeft.textContent = t('textTool.alignOptions.left');
+function applyLocaleToChalkboardTools() {
+    applyLocaleTitles({
+        chalkEraser: t('chalkboard.tools.eraser'),
+        chalkWhite: t('chalkboard.tools.chalkWhite'),
+        chalkRed: t('chalkboard.tools.chalkRed'),
+        chalkYellow: t('chalkboard.tools.chalkYellow'),
+        chalkGreen: t('chalkboard.tools.chalkGreen'),
+        chalkBlue: t('chalkboard.tools.chalkBlue'),
+        chalkSizeSmall: t('chalkboard.tools.sizeSmall'),
+        chalkSizeMedium: t('chalkboard.tools.sizeMedium'),
+        chalkSizeLarge: t('chalkboard.tools.sizeLarge'),
+        chalkSelectButton: t('chalkboard.tools.select'),
+        chalkLineButton: t('chalkboard.tools.line'),
+        chalkRectButton: t('chalkboard.tools.rect'),
+        chalkCircleButton: t('chalkboard.tools.circle'),
+        chalkTextButton: t('chalkboard.tools.text'),
+        chalkCopyButton: t('chalkboard.tools.copy'),
+        chalkCutButton: t('chalkboard.tools.cut'),
+        chalkPasteButton: t('chalkboard.tools.paste'),
+        chalkClearButton: t('chalkboard.tools.clear'),
+        chalkUndoButton: t('chalkboard.tools.undo'),
+        chalkRedoButton: currentLocale === 'en-US' ? 'Redo' : '重做',
+        chalkUploadButton: t('chalkboard.tools.upload'),
+        chalkSaveButton: t('chalkboard.tools.save'),
+    });
+}
 
-    const textToolAlignCenter = document.getElementById('textToolAlignCenter');
-    if (textToolAlignCenter) textToolAlignCenter.textContent = t('textTool.alignOptions.center');
-
-    const textToolAlignRight = document.getElementById('textToolAlignRight');
-    if (textToolAlignRight) textToolAlignRight.textContent = t('textTool.alignOptions.right');
-
-    // Chalkboard Tools Tooltips
-    const chalkEraser = document.getElementById('chalkEraser');
-    if (chalkEraser) chalkEraser.title = t('chalkboard.tools.eraser');
-
-    const chalkWhite = document.getElementById('chalkWhite');
-    if (chalkWhite) chalkWhite.title = t('chalkboard.tools.chalkWhite');
-
-    const chalkRed = document.getElementById('chalkRed');
-    if (chalkRed) chalkRed.title = t('chalkboard.tools.chalkRed');
-
-    const chalkYellow = document.getElementById('chalkYellow');
-    if (chalkYellow) chalkYellow.title = t('chalkboard.tools.chalkYellow');
-
-    const chalkGreen = document.getElementById('chalkGreen');
-    if (chalkGreen) chalkGreen.title = t('chalkboard.tools.chalkGreen');
-
-    const chalkBlue = document.getElementById('chalkBlue');
-    if (chalkBlue) chalkBlue.title = t('chalkboard.tools.chalkBlue');
-
-    const chalkSizeSmall = document.getElementById('chalkSizeSmall');
-    if (chalkSizeSmall) chalkSizeSmall.title = t('chalkboard.tools.sizeSmall');
-
-    const chalkSizeMedium = document.getElementById('chalkSizeMedium');
-    if (chalkSizeMedium) chalkSizeMedium.title = t('chalkboard.tools.sizeMedium');
-
-    const chalkSizeLarge = document.getElementById('chalkSizeLarge');
-    if (chalkSizeLarge) chalkSizeLarge.title = t('chalkboard.tools.sizeLarge');
-
-    const chalkSelectButton = document.getElementById('chalkSelectButton');
-    if (chalkSelectButton) chalkSelectButton.title = t('chalkboard.tools.select');
-
-    const chalkLineButton = document.getElementById('chalkLineButton');
-    if (chalkLineButton) chalkLineButton.title = t('chalkboard.tools.line');
-
-    const chalkRectButton = document.getElementById('chalkRectButton');
-    if (chalkRectButton) chalkRectButton.title = t('chalkboard.tools.rect');
-
-    const chalkCircleButton = document.getElementById('chalkCircleButton');
-    if (chalkCircleButton) chalkCircleButton.title = t('chalkboard.tools.circle');
-
-    const chalkTextButton = document.getElementById('chalkTextButton');
-    if (chalkTextButton) chalkTextButton.title = t('chalkboard.tools.text');
-
-    const chalkCopyButton = document.getElementById('chalkCopyButton');
-    if (chalkCopyButton) chalkCopyButton.title = t('chalkboard.tools.copy');
-
-    const chalkCutButton = document.getElementById('chalkCutButton');
-    if (chalkCutButton) chalkCutButton.title = t('chalkboard.tools.cut');
-
-    const chalkPasteButton = document.getElementById('chalkPasteButton');
-    if (chalkPasteButton) chalkPasteButton.title = t('chalkboard.tools.paste');
-
-    const chalkClearButton = document.getElementById('chalkClearButton');
-    if (chalkClearButton) chalkClearButton.title = t('chalkboard.tools.clear');
-
-    const chalkUndoButton = document.getElementById('chalkUndoButton');
-    if (chalkUndoButton) chalkUndoButton.title = t('chalkboard.tools.undo');
-    const chalkRedoButton = document.getElementById('chalkRedoButton');
-    if (chalkRedoButton) chalkRedoButton.title = currentLocale === 'en-US' ? 'Redo' : '重做';
-
-    const chalkUploadButton = document.getElementById('chalkUploadButton');
-    if (chalkUploadButton) chalkUploadButton.title = t('chalkboard.tools.upload');
-
-    const chalkSaveButton = document.getElementById('chalkSaveButton');
-    if (chalkSaveButton) chalkSaveButton.title = t('chalkboard.tools.save');
+function applyLocaleToFooter() {
     if (btnToggleLog) btnToggleLog.textContent = t('buttons.collapse');
     if (statusTasks) statusTasks.textContent = t('footer.tasks', { count: todoList.length });
-    // Title and menu i18n
-    document.title = currentLocale === 'en-US' ? 'Visual Agent - System Butler' : 'Visual Agent - 系統管家';
-    const _appTitle = document.getElementById('appTitle');
-    if (_appTitle) _appTitle.textContent = document.title;
-    const _menuHelp = document.getElementById('menuHelp');
-    if (_menuHelp) _menuHelp.textContent = currentLocale === 'en-US' ? 'Help' : '說明';
-    const _menuView = document.getElementById('menuView');
-    if (_menuView) _menuView.textContent = currentLocale === 'en-US' ? 'View' : '檢視';
+}
 
-    // File Menu i18n
-    const isEn = currentLocale === 'en-US';
-    const _mft = document.getElementById('menuFileText'); if (_mft) _mft.textContent = isEn ? 'File' : '檔案';
-    const _itt = document.getElementById('importTasksText'); if (_itt) _itt.textContent = isEn ? 'Import Tasks' : '匯入任務清單';
-    const _ett = document.getElementById('exportTasksText'); if (_ett) _ett.textContent = isEn ? 'Export Tasks' : '匯出任務清單';
-    const _mrt = document.getElementById('menuRefreshText'); if (_mrt) _mrt.textContent = isEn ? 'Refresh' : 'Refresh 畫面';
+function updateLocaleUI() {
+    applyLocaleToShell();
+    applyLocaleToWorkspace();
+    applyLocaleToChat();
+    applyLocaleToPanels();
+    applyLocaleToSettings();
+    applyLocaleToTextTool();
+    applyLocaleToChalkboardTools();
+    applyLocaleToFooter();
     updateLLMStatusText(window.__lastLLMStatus);
     renderSidebarTab();
     renderTodoList();

@@ -5,6 +5,32 @@
 
 ---
 
+## 📌 2026.10.28 — 第三階段：巨型檔案拆解與重複邏輯收斂
+
+> 接續同日第二階段，處理維護性熱點；不改行為契約、不改使用者設定。版本維持 `2026.8.7`。
+
+### LLM 協定層
+- 新增 `src/llm/protocol.js`：history / content 正規化、Provider URL 解析、401 與 API error、回應欄位抽取（choices / reasoning / Anthropic array / Ollama message-response）、`<think>` / `<reasoning>` 處理。
+- `chatWithLLM` 由 280 行降為協調流程；三處重複的 non-OK 錯誤處理與兩套 URL 分支改共用 helper。`src/llm.js` 1151 → 1033 行。
+- 順帶修正 legacy completion 回應（只有 `choices[0].text`、沒有 `message`）永遠讀不到的問題。
+
+### SOP 模板
+- 新增 `src/agent/sop-templates.js`：winget / Microsoft Store / GitHub Release markdown builder 與 GitHub asset 過濾、評分、挑選。
+- 檔案寫入與 SOP ID 建立仍留在 `server.js`；`server.js` 6179 → 5875 行。
+- 模板輸出以 `test/sop-templates.test.js` 鎖定：section、來源參數、PowerShell 單引號轉義、regex 跳脫、asset 排序。
+
+### 前端 i18n
+- `updateLocaleUI` 由 377 行改為 17 行協調函式，依 shell / workspace / chat / panels / settings / text tool / chalkboard / footer 拆成 `applyLocaleTo*`，元素寫入改用 map 與小 helper。`public/app.js` 8812 → 8726 行。
+- 移除重複且互相覆寫的選單字串寫入；`titlebar.refresh`（zh-TW）與 `footer.importTasks/exportTasks`（en-US）字典值對齊原本最終畫面文字，輸出維持不變。
+- `test/app-i18n.test.js` 直接擷取真實函式，以最小 DOM 驗證 zh-TW / en-US 兩套接線與渲染呼叫順序。
+
+### 測試與驗收
+- 新增 `test/llm-protocol.test.js`（7）、`test/sop-templates.test.js`（7）、`test/app-i18n.test.js`（3）。
+- `npm test`：22 個 JS 語法、19 支測試檔、server smoke 全綠。
+- 尚未處理：`/api/chat` 路由仍有約 1,380 行，`sendChat` / `setupEventListeners` 與 `RemoteAgentService` 仍是大型單體；UAC、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+
+---
+
 ## 📌 2026.10.28 — 第二階段：Consent 執行鏈與本機多對話正確性
 
 > 延續同日第一階段稽核，針對 consent、Agent Loop 與本機多對話補行為測試並修正可重現缺陷。版本維持 `2026.8.7`；不重寫框架、不改使用者設定。

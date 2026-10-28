@@ -314,7 +314,10 @@ visual-agent/
 │   │   ├── actions.js
 │   │   ├── consent.js
 │   │   ├── loop-budget.js
-│   │   └── prompts.js
+│   │   ├── prompts.js
+│   │   └── sop-templates.js
+│   ├── llm/
+│   │   └── protocol.js
 │   ├── index.js
 │   ├── llm.js
 │   ├── local-api-security.js

@@ -200,7 +200,7 @@ function createChatHarness() {
     const realFiles = new Set([
         SERVER,
         ...['pure.js', 'local-api-security.js', 'agent/actions.js', 'agent/consent.js',
-            'agent/loop-budget.js', 'agent/prompts.js'].map((file) => path.join(ROOT, 'src', file)),
+            'agent/loop-budget.js', 'agent/prompts.js', 'agent/sop-templates.js'].map((file) => path.join(ROOT, 'src', file)),
     ]);
     const injected = new Map([
         ['express', express], ['path', path], ['fs', memory.api], ['crypto', crypto],

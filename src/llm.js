@@ -3,6 +3,13 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { OAuthTokenCache } = require('./oauth-token-cache');
+const {
+    normalizeHistoryMessages,
+    resolveChatUrl,
+    assertChatResponseOk,
+    extractReplyContent,
+    parseChatReply,
+} = require('./llm/protocol');
 const DEFAULT_MODEL = 'gemma4:e2b-it-qat';
 let currentModel = DEFAULT_MODEL;
 
@@ -797,8 +804,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
             'Content-Type': 'application/json',
             ...(await getRequestHeaders(provider, authConfig))
         };
-        const apiRoot = baseUrl.replace(/\/v1\/?$/, '');
-        const chatUrl = `${apiRoot}${meta.chat || '/messages'}`;
+        const chatUrl = resolveChatUrl('anthropic', baseUrl, meta.chat);
         const body = {
             model: modelName,
             max_tokens: 1024,
@@ -822,17 +828,9 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
                 body: JSON.stringify(body),
                 signal: requestAbort.signal,
             });
-            if (!res.ok) {
-                const errText = await res.text();
-                if (res.status === 401) {
-                    throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
-                }
-                throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
-            }
+            await assertChatResponseOk(res, provider);
             const data = await res.json();
-            const content = Array.isArray(data?.content)
-                ? data.content.filter(item => item?.type === 'text').map(item => item.text).join('\n').trim()
-                : '';
+            const content = extractReplyContent(data);
             if (!content) {
                 throw new Error('AI engine returned empty content. Please verify the Anthropic model name and permissions.');
             }
@@ -846,26 +844,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
     // 正規化 history：
     // - 多數 OpenAI-compatible / Ollama 不接受無 tool_call_id 的 role:tool
     // - 工具觀察結果應以 user 訊息帶入（server 已用 user；此處再保底）
-    const historyMessages = history
-        .map((m) => {
-            const rawRole = String(m?.role || 'user');
-            const role = rawRole === 'assistant'
-                ? 'assistant'
-                : (rawRole === 'system' ? 'system' : 'user');
-            let content = m?.content;
-            if (Array.isArray(content)) {
-                content = content.map((part) => {
-                    if (typeof part === 'string') return part;
-                    return part?.text || part?.content || '';
-                }).join('\n');
-            } else if (content == null) {
-                content = '';
-            } else if (typeof content !== 'string') {
-                content = String(content);
-            }
-            return { role, content };
-        })
-        .filter((m) => m.content.trim());
+    const historyMessages = normalizeHistoryMessages(history);
 
     const messages = meta.type === 'ollama'
         ? [
@@ -884,33 +863,17 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
         ...(await getRequestHeaders(provider, authConfig))
     };
 
-    const apiRoot = baseUrl.replace(/\/v1\/?$/, '');
-    let chatUrl = '';
+    const chatUrl = resolveChatUrl(meta.type, baseUrl, meta.chat);
 
-    if (meta.type === 'ollama') {
-        // 使用 Ollama 原生 API 路徑
-        chatUrl = `${apiRoot}/api/chat`;
-    } else {
-        // 使用 OpenAI 相容路徑
-        chatUrl = baseUrl.endsWith('/') ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`;
-    }
-    
     console.log(`[LLM] Sending chat: Provider=${provider}, URL=${chatUrl}, Model=${modelName}, History length=${history.length}`);
 
-    const body = meta.type === 'ollama'
-        ? {
-            model: modelName,
-            messages,
-            stream: false,
-        }
-        : {
-            model: modelName,
-            messages,
-            stream: false,
-        };
-
     // 移除硬編碼的 options 與 tokens 限制，尊重模型自訂設定與完整輸出能力
-    body.temperature = 0.7;
+    const body = {
+        model: modelName,
+        messages,
+        stream: false,
+        temperature: 0.7,
+    };
 
     // 串流（僅 Ollama）：呼叫端傳 onDelta 時，逐 token 回傳，讓前端即時渲染。
     // 不傳 onDelta 時走下方非串流路徑——其餘 7 個呼叫點（agent loop、摘要等）不受影響。
@@ -925,13 +888,7 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
                 body: JSON.stringify(streamBody),
                 signal: requestAbort.signal,
             });
-            if (!streamRes.ok) {
-                const errText = await streamRes.text();
-                if (streamRes.status === 401) {
-                    throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
-                }
-                throw new Error(`API error (${streamRes.status}): ${errText.substring(0, 200)}`);
-            }
+            await assertChatResponseOk(streamRes, provider);
             reader = streamRes.body.getReader();
             const decoder = new TextDecoder('utf-8');
             let buf = '';
@@ -971,96 +928,36 @@ async function chatWithLLM(userMessage, history = [], options = {}, locale = 'zh
     }
 
     const requestAbort = createRequestAbort(options.timeoutMs ?? CHAT_TIMEOUT_MS, options.signal);
-    let res;
     try {
-        res = await fetch(chatUrl, {
+        const res = await fetch(chatUrl, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
             signal: requestAbort.signal,
         });
-    } catch (fetchErr) {
-        requestAbort.cleanup();
-        throw chatRequestError(fetchErr, requestAbort);
-    }
+        await assertChatResponseOk(res, provider);
 
-    if (!res.ok) {
-        const errText = await res.text();
-        requestAbort.cleanup();
-        if (res.status === 401) {
-            throw new Error(`AI engine authentication failed (401). Please check your ${provider} API Key in Settings.`);
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const html = await res.text();
+            throw new Error(`API error: Expected JSON but got ${contentType}. Content start: ${html.substring(0, 100)}`);
         }
-        throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
-    }
 
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-        const html = await res.text();
-        requestAbort.cleanup();
-        throw new Error(`API error: Expected JSON but got ${contentType}. Content start: ${html.substring(0, 100)}`);
-    }
+        // 兼顧 OpenAI 與 Ollama 的各種欄位格式（含 reasoning / array content）
+        const data = await res.json();
+        const { finalReply } = parseChatReply(data);
 
-    let data;
-    try {
-        data = await res.json();
+        if (!finalReply) {
+            console.error(`[LLM] 收到空的回應！原始資料:`, JSON.stringify(data));
+            throw new Error('AI 引擎回傳了空內容，這可能是因為模型正在加載或上下文過長，請再試一次。');
+        }
+
+        return finalReply;
     } catch (error) {
         throw chatRequestError(error, requestAbort);
     } finally {
         requestAbort.cleanup();
     }
-    
-    // 兼顧 OpenAI 與 Ollama 的各種欄位格式（含 reasoning / array content）
-    const normalizeContent = (value) => {
-        if (value == null) return '';
-        if (typeof value === 'string') return value;
-        if (Array.isArray(value)) {
-            return value.map((part) => {
-                if (typeof part === 'string') return part;
-                return part?.text || part?.content || '';
-            }).join('\n');
-        }
-        if (typeof value === 'object') {
-            return value.text || value.content || JSON.stringify(value);
-        }
-        return String(value);
-    };
-
-    let content = '';
-    const choiceMsg = data?.choices?.[0]?.message;
-    if (choiceMsg) {
-        content = normalizeContent(choiceMsg.content)
-            || normalizeContent(choiceMsg.reasoning_content)
-            || normalizeContent(choiceMsg.reasoning)
-            || normalizeContent(data.choices[0].text);
-    } else if (data?.message) {
-        content = normalizeContent(data.message.content)
-            || normalizeContent(data.message.reasoning_content);
-    } else if (data?.content) {
-        content = normalizeContent(data.content);
-    } else if (data?.response) {
-        content = normalizeContent(data.response); // Ollama /api/generate
-    }
-
-    content = String(content || '').trim();
-
-    // 處理思考標籤 (Thought Tags)
-    // 如果模型只回傳了 <think>...</think>，我們保留它（或者至少不轉為空字串導致報錯）
-    const thoughtMatch = content.match(/<think>([\s\S]*?)<\/think>/i)
-        || content.match(/<reasoning>([\s\S]*?)<\/reasoning>/i);
-    const thought = thoughtMatch ? thoughtMatch[1].trim() : null;
-    const cleanContent = content
-        .replace(/<think>[\s\S]*?<\/think>/gi, '')
-        .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
-        .trim();
-
-    const finalReply = cleanContent || thought || '';
-
-    if (!finalReply) {
-        console.error(`[LLM] 收到空的回應！原始資料:`, JSON.stringify(data));
-        throw new Error('AI 引擎回傳了空內容，這可能是因為模型正在加載或上下文過長，請再試一次。');
-    }
-
-    return finalReply;
 }
 
 async function testProviderConnection({ provider, baseUrl, authConfig, model }) {
@@ -1070,12 +967,7 @@ async function testProviderConnection({ provider, baseUrl, authConfig, model }) 
         ...(await getRequestHeaders(provider, authConfig))
     };
 
-    const apiRoot = baseUrl.replace(/\/v1\/?$/, '');
-    const chatUrl = meta.type === 'ollama'
-        ? `${apiRoot}/api/chat`
-        : meta.type === 'anthropic'
-            ? `${apiRoot}${meta.chat || '/messages'}`
-            : (baseUrl.endsWith('/') ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`);
+    const chatUrl = resolveChatUrl(meta.type, baseUrl, meta.chat);
 
     const body = meta.type === 'anthropic'
         ? {
@@ -1101,13 +993,8 @@ async function testProviderConnection({ provider, baseUrl, authConfig, model }) 
         signal: AbortSignal.timeout(30000)
     });
 
-    if (!res.ok) {
-        const errText = await res.text();
-        if (res.status === 401) {
-            throw new Error(`AI 引擎身份驗證失敗 (401)。請確認您是否為 ${provider} 提供了正確的 API Key。`);
-        }
-        throw new Error(`API error (${res.status}): ${errText.substring(0, 200)}`);
-    }
+    await assertChatResponseOk(res, provider, (name) =>
+        `AI 引擎身份驗證失敗 (401)。請確認您是否為 ${name} 提供了正確的 API Key。`);
 
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
@@ -1116,18 +1003,13 @@ async function testProviderConnection({ provider, baseUrl, authConfig, model }) 
     }
 
     const data = await res.json();
-    const reply = data?.choices?.[0]?.message?.content
-        || (Array.isArray(data?.content) ? data.content.filter(item => item?.type === 'text').map(item => item.text).join('\n') : '')
-        || data?.message?.content
-        || data?.content
-        || data?.response
-        || '';
+    const reply = extractReplyContent(data);
 
-    if (!String(reply).trim()) {
+    if (!reply) {
         throw new Error('Model responded but content is empty. Please verify the model name and provider format.');
     }
 
-    return String(reply).trim();
+    return reply;
 }
 
 module.exports = {
