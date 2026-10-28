@@ -5,6 +5,26 @@
 
 ---
 
+## 📌 2026.10.29 — 第二十階段：任務清單不再夾帶執行記錄
+
+> 接續同日第十九階段；`/api/todo` 每 2 秒回傳所有任務的完整 `logs`，但前端只在任務詳情視窗使用。版本維持 `2026.8.7`。
+
+### 清單與詳情分離
+- 任務的 `logs` 會隨 SOP 執行累積，且沒有上限；`/api/todo` 每 2 秒把全部歷史任務的 log 一起回傳，前端還要用整份 `todoList` 計算繪製簽章。任務越多、跑過的安裝越長，輪詢負擔越大。
+- 新增 `publicTodoList()`：清單類回應（`GET /api/todo`、`POST /api/todo`、`DELETE /api/todo/:id`、`POST /api/todo/import`）只回傳任務欄位，省略 `logs`。
+- `GET /api/task/:taskId/status` 仍回傳完整任務（含 `logs`）；`/api/todo/export` 與 `/api/todo/export-file` 也維持完整內容，匯出檔不受影響。
+- 前端 `showTaskModal(task)` 改為先以清單資料顯示基本欄位，開啟詳情時再抓一次完整任務補上執行記錄；若呼叫端傳入的任務本身已帶 logs，就不重複抓取。原本共用的 modal 內容組裝抽為 `renderTaskModalBody()`。
+- 伺服器端 `todoList` 與 `tasks.json` 仍保存完整 logs，重新載入或匯出都不會遺失。
+
+### 測試與驗收
+- 新增 `test/todo-payload.test.js`（2 項，真實 HTTP + 隔離 harness）：`GET /api/todo` 不含 `logs` 且其他欄位完整、`/api/task/:id/status` 與 `/api/todo/export` 仍保有完整 log、刪除與匯入回應同樣是無 log 的清單形狀、匯入後伺服器仍保留 logs。
+- 既有 `test/todo-import.test.js`、`test/todo-export.test.js` 不需修改且維持通過。
+- `npm test`：23 個 JS 語法、31 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify14`，以 `/api/todo/import` 種入 1 筆含 2 行 log 的任務）：清單卡片正常顯示標題與狀態；點開詳情後顯示 2 行執行記錄，內容為剛種入的 marker；`/api/todo` 回應不含 log 文字而 `/api/task/verify-log-task/status` 仍完整；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第十九階段：AI 狀態列未變時不重寫 DOM
 
 > 接續同日第十八階段；`/api/llm/status` 每 2 秒輪詢，狀態多數時間完全相同。版本維持 `2026.8.7`。

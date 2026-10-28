@@ -7692,7 +7692,13 @@ function showExpDetail(entry) {
 // ════════════════════════════════════════════════════════
 //  TASK MODAL
 // ════════════════════════════════════════════════════════
-function showTaskModal(task) {
+async function fetchTaskDetail(taskId) {
+    if (!taskId) return null;
+    const data = await api(`/api/task/${encodeURIComponent(taskId)}/status`);
+    return data?.success && data.task ? data.task : null;
+}
+
+function renderTaskModalBody(task) {
     modalTitle.textContent = task.title;
     modalBody.innerHTML = `
         <div class="task-detail-row">
@@ -7721,6 +7727,12 @@ function showTaskModal(task) {
             ${task.logs.map(l => `<div class="task-log-item log-entry ${escapeHtml(l.type || 'info')}" style="font-family:var(--font-mono);font-size:10px;padding:2px 6px">${escapeHtml(l.message || l)}</div>`).join('')}
           </div>` : ''}
     `;
+}
+
+async function showTaskModal(task) {
+    // 清單輪詢已省略 logs，開啟詳情時再抓完整任務補上執行記錄。
+    const detail = task.logs?.length ? null : await fetchTaskDetail(task.id);
+    renderTaskModalBody(detail || task);
     modalOverlay.classList.add('visible');
 }
 

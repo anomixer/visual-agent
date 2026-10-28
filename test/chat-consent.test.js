@@ -84,7 +84,8 @@ async function setup(t) {
     const todos = async () => {
         const response = await request('GET', '/api/todo');
         assert.equal(response.status, 200);
-        return response.body.todoList;
+        // 清單回應自 2026.10.29 起省略 logs；這裡比較的是任務狀態，補回空陣列與 fixture 對齊。
+        return response.body.todoList.map((task) => ({ ...task, logs: task.logs || [] }));
     };
     return { harness, request, chat, todos };
 }

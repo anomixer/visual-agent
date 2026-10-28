@@ -3497,9 +3497,14 @@ app.get('/api/skills', (req, res) => {
     }
 });
 
+// 任務執行記錄只在開啟詳情時需要；清單類回應省略，避免每次輪詢都夾帶所有歷史 log。
+function publicTodoList(list = todoList) {
+    return list.map(({ logs, ...task }) => task);
+}
+
 // GET /api/todo  取得 To-Do List
 app.get('/api/todo', (req, res) => {
-    res.json({ success: true, todoList });
+    res.json({ success: true, todoList: publicTodoList() });
 });
 app.get('/api/exps', (req, res) => {
     try {
@@ -3538,16 +3543,16 @@ app.post('/api/todo', async (req, res) => {
     };
     todoList.push(task);
     saveTasks();
-    res.json({ success: true, task, todoList });
+    res.json({ success: true, task, todoList: publicTodoList() });
 });
 // DELETE /api/todo/:id 移除任務
 app.delete('/api/todo/:id', (req, res) => {
     if (runningSOP === req.params.id) {
-        return res.json({ success: false, error: 'Cannot delete a running task', todoList });
+        return res.json({ success: false, error: 'Cannot delete a running task', todoList: publicTodoList() });
     }
     todoList = todoList.filter((t) => t.id !== req.params.id);
     saveTasks();
-    res.json({ success: true, todoList });
+    res.json({ success: true, todoList: publicTodoList() });
 });
 // POST /api/todo/import 匯入任務清單
 app.post('/api/todo/import', (req, res) => {
@@ -3559,7 +3564,7 @@ app.post('/api/todo/import', (req, res) => {
         if (Array.isArray(tasks)) {
             todoList = tasks;
             saveTasks();
-            res.json({ success: true, count: tasks.length, todoList });
+            res.json({ success: true, count: tasks.length, todoList: publicTodoList() });
         } else {
             res.json({ success: false, error: 'Invalid format: expected { tasks: [...] }' });
         }

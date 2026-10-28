@@ -275,6 +275,7 @@ $true
 - [x] 經驗庫只在面板可見時輪詢，切換或展開時補抓（2026.10.29 第十七階段：`isExpsPanelVisible()`、`switchBottomTab` / `expandLog` / `toggleLog`）。
 - [x] 推薦清單資料未變時不重建側邊欄（2026.10.29 第十八階段：`lastRecommendSignature` / `lastSopSignature` / `lastSkillSignature`，清單或安裝狀態改變仍立即重繪）。
 - [x] AI 狀態列未變時不重寫 DOM（2026.10.29 第十九階段：`lastLLMStatusSignature`，輪詢失敗會清空簽章以重新套用）。
+- [x] 任務清單回應省略 `logs`，詳情與匯出保留（2026.10.29 第二十階段：`publicTodoList()`、`GET /api/task/:taskId/status`、`showTaskModal()` 開啟時補抓）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
