@@ -80,6 +80,7 @@ const notifiedRemoteDisconnectSessionIds = new Set();
 const REMOTE_DIRECTIVE_DEDUP_WINDOW_MS = 8000;
 let lastRemoteRenderSignature = '';
 let lastRemoteSessionListSignature = '';
+let lastRecommendSignature = '';
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -4999,7 +5000,13 @@ async function loadRecommend() {
         const data = await api('/api/recommend');
         if (data.success && data.recommendList?.length > 0) {
             recommendList = data.recommendList;
-            renderSidebarTab();
+            // 每 2 秒輪詢都會呼叫；資料未變就不重建推薦 / SOP / Skill 三份清單，
+            // 避免輪詢打斷使用者正在操作的卡片（焦點、hover、展開狀態）。
+            const signature = JSON.stringify(recommendList);
+            if (signature !== lastRecommendSignature) {
+                lastRecommendSignature = signature;
+                renderSidebarTab();
+            }
             hideSplash(); // 抓到資料後隱藏
         }
     } catch (e) {
