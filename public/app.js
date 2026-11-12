@@ -552,7 +552,7 @@ const I18N = {
             exportFallback: '原生匯出失敗，已改用瀏覽器下載：{error}',
             exportFailed: '匯出任務清單失敗：{error}',
             importSuccess: '任務清單已匯入',
-            importFailed: '匯入失敗：JSON 格式錯誤',
+            importFailed: '匯入失敗',
         },
         diagnostics: {
             title: '診斷資訊',
@@ -970,7 +970,7 @@ const I18N = {
             exportFallback: 'Native export failed, fallback to browser download: {error}',
             exportFailed: 'Task list export failed: {error}',
             importSuccess: 'Task list imported',
-            importFailed: 'Import failed: JSON format error',
+            importFailed: 'Import failed',
         },
         diagnostics: {
             title: 'Diagnostics',
@@ -6551,7 +6551,7 @@ function renderTaskCard(task) {
           <span class="task-title">${escapeHtml(task.title || '')}</span>
           <div class="task-actions">
             ${spinner}
-            ${task.skillId && task.status === 'pending' ? `<button class="btn-task run" title="${escapeHtml(t('buttons.execute'))}" data-id="${escapeHtml(task.id)}">▶</button>` : ''}
+            ${(task.skillId || task.dynamicCmd) && task.status === 'pending' ? `<button class="btn-task run" title="${escapeHtml(t('buttons.execute'))}" data-id="${escapeHtml(task.id)}">▶</button>` : ''}
             ${task.status !== 'running' ? `<button class="btn-task delete" title="${escapeHtml(t('buttons.delete'))}" data-id="${escapeHtml(task.id)}">✕</button>` : ''}
           </div>
         </div>
@@ -7931,7 +7931,7 @@ function importTasks(file) {
                 return;
             }
             addUILog(`❌ ${t('tasks.importFailed')}${data.error ? `: ${data.error}` : ''}`, 'error');
-        } catch { addUILog('❌ ' + t('tasks.importFailed'), 'error'); }
+        } catch (err) { addUILog(`❌ ${t('tasks.importFailed')}${err?.message ? `: ${err.message}` : ''}`, 'error'); }
     };
     reader.readAsText(file);
 }

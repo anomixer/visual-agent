@@ -167,6 +167,28 @@ eq('reconcile 多筆中斷', pure.reconcileInterruptedTasks([{ status: 'running'
 eq('reconcile 無 logs 欄位也能補', pure.reconcileInterruptedTasks([{ status: 'running' }]).tasks[0].logs.length, 1);
 eq('reconcile 非陣列輸入回空', pure.reconcileInterruptedTasks(null), { tasks: [], interrupted: 0 });
 
+// 匯入檔是使用者提供的任意 JSON，整份取代 todoList 後會落地；
+// 不良元素會讓清單回應在每次輪詢都拋錯，且重啟也救不回來，因此必須整批拒絕。
+const importFixture = [{ id: 'a', status: 'pending', logs: [] }, { id: 'b', status: 'success', logs: [] }];
+eq('validate 合法清單原樣通過', pure.validateImportedTasks(importFixture), { tasks: importFixture });
+eq('validate 空陣列合法', pure.validateImportedTasks([]), { tasks: [] });
+check('validate 非陣列回 Invalid format', /Invalid format/.test(pure.validateImportedTasks({}).error));
+check('validate 非陣列 undefined 回 Invalid format', /Invalid format/.test(pure.validateImportedTasks(undefined).error));
+check('validate null 元素被拒', /tasks\[1\]/.test(pure.validateImportedTasks([{ id: 'a' }, null]).error));
+check('validate 字串元素被拒', /expected an object/.test(pure.validateImportedTasks(['oops']).error));
+check('validate 陣列元素被拒', /expected an object/.test(pure.validateImportedTasks([[]]).error));
+check('validate 缺 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ title: 'no id' }]).error));
+check('validate 空白 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ id: '   ' }]).error));
+check('validate 非字串 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ id: 7 }]).error));
+check('validate 重複 id 被拒', /Duplicate task id: a/.test(pure.validateImportedTasks([{ id: 'a' }, { id: 'a' }]).error));
+check('validate logs 非陣列被拒', /logs must be an array/.test(pure.validateImportedTasks([{ id: 'a', logs: 'broken' }]).error));
+check('validate 未知 status 被拒', /unknown status/.test(pure.validateImportedTasks([{ id: 'a', status: 'paused' }]).error));
+eq('validate 缺 logs 與 status 仍合法', pure.validateImportedTasks([{ id: 'a' }]), { tasks: [{ id: 'a' }] });
+eq('validate 五種已知 status 都合法',
+    pure.validateImportedTasks(['pending', 'running', 'success', 'failed', 'skipped'].map((status, i) => ({ id: `t${i}`, status }))).tasks.length,
+    5);
+eq('validate 不改動傳入的清單', importFixture.length, 2);
+
 // ---- 結果 ----
 console.log(`\n[pure.test] ${pass} passed, ${fail} failed`);
 if (fail) {

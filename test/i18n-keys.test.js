@@ -60,6 +60,17 @@ test('every static t() key resolves in both locales', () => {
     assert.deepEqual(missing, [], `Missing translation keys: ${missing.join(', ')}`);
 });
 
+test('the import failure label does not blame JSON for server-side refusals', () => {
+    const packs = loadLocalePacks();
+    // 同一個鍵也用於伺服器的驗證與 running 拒絕，寫死「JSON 格式錯誤」會誤導使用者。
+    for (const locale of ['zh-TW', 'en-US']) {
+        const label = packs[locale].tasks.importFailed;
+        assert.equal(typeof label, 'string');
+        assert.ok(!/JSON/i.test(label), `${locale}.tasks.importFailed should stay generic: ${label}`);
+        assert.ok(!label.includes('格式錯誤'), `${locale}.tasks.importFailed should stay generic: ${label}`);
+    }
+});
+
 test('experience panel labels exist in both locales', () => {
     const packs = loadLocalePacks();
     for (const locale of ['zh-TW', 'en-US']) {

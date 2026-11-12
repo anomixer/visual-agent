@@ -328,6 +328,39 @@ function reconcileInterruptedTasks(tasks = []) {
     return { tasks: reconciled, interrupted };
 }
 
+const IMPORTABLE_TASK_STATUSES = ['pending', 'running', 'success', 'failed', 'skipped'];
+
+// 匯入檔是使用者提供的任意 JSON，整份取代 todoList 後會直接落地。
+// 不良元素會讓 publicTodoList() 的解構或 task.logs.map() 拋錯，使工作清單在每次輪詢都 500，
+// 且因為已寫入 tasks.json，重啟也救不回來；因此在這裡一次性驗證，失敗就整批拒絕。
+function validateImportedTasks(tasks) {
+    if (!Array.isArray(tasks)) {
+        return { error: 'Invalid format: expected { tasks: [...] }' };
+    }
+    const seen = new Set();
+    for (let index = 0; index < tasks.length; index += 1) {
+        const task = tasks[index];
+        const label = `tasks[${index}]`;
+        if (!task || typeof task !== 'object' || Array.isArray(task)) {
+            return { error: `Invalid task at ${label}: expected an object` };
+        }
+        if (typeof task.id !== 'string' || !task.id.trim()) {
+            return { error: `Invalid task at ${label}: missing a task id` };
+        }
+        if (seen.has(task.id)) {
+            return { error: `Duplicate task id: ${task.id}` };
+        }
+        seen.add(task.id);
+        if (task.logs !== undefined && !Array.isArray(task.logs)) {
+            return { error: `Invalid task at ${label}: logs must be an array` };
+        }
+        if (task.status !== undefined && !IMPORTABLE_TASK_STATUSES.includes(task.status)) {
+            return { error: `Invalid task at ${label}: unknown status ${JSON.stringify(task.status)}` };
+        }
+    }
+    return { tasks };
+}
+
 // 全域 log 只保留最近 500 筆；序號單調遞增，客戶端游標才不會因丟棄最舊項目而錯位。
 const LOG_BUFFER_LIMIT = 500;
 
@@ -400,6 +433,7 @@ module.exports = {
     escapePowerShellSingleQuoted,
     buildTaskExportPayload,
     reconcileInterruptedTasks,
+    validateImportedTasks,
     appendLogWithSeq,
     LOG_BUFFER_LIMIT,
     selectLogsForClient,

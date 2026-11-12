@@ -80,3 +80,26 @@ test('importTasks reports the server refusal instead of failing silently', async
     assert.equal(context.logs.at(-1).level, 'error');
     assert.match(context.logs.at(-1).message, /running/);
 });
+
+test('importTasks surfaces the exact rejected entry and keeps the current list', async () => {
+    const { context, calls } = await runImport(
+        { success: false, error: 'Invalid task at tasks[0]: expected an object' },
+        JSON.stringify({ tasks: [null] })
+    );
+
+    assert.equal(calls.length, 1);
+    assert.equal(context.rendered, 0);
+    assert.equal(context.todoList[0].id, 'previous-task');
+    assert.equal(context.logs.at(-1).level, 'error');
+    assert.match(context.logs.at(-1).message, /Invalid task at tasks\[0\]: expected an object/);
+});
+
+test('a file that is not JSON reports the parse error rather than a bare label', async () => {
+    const { context, calls } = await runImport({ success: true }, '{ not json');
+
+    assert.equal(calls.length, 0, 'an unreadable file must not replace the task list');
+    assert.equal(context.rendered, 0);
+    assert.equal(context.todoList[0].id, 'previous-task');
+    assert.equal(context.logs.at(-1).level, 'error');
+    assert.match(context.logs.at(-1).message, /tasks\.importFailed: .+/);
+});

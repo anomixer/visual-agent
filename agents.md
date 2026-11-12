@@ -5,6 +5,42 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十一階段：不良匯入檔不再永久破壞工作清單
+
+> 接續同日第三十階段；`POST /api/todo/import` 整批取代 `todoList` 並立即落地。版本維持 `2026.8.7`。
+
+### 一個壞元素就能讓工作清單永久停擺（可用性 + 資料）
+- 匯入路由只檢查 `Array.isArray(tasks)`，元素本身完全不驗證，而且先 `todoList = tasks` + `saveTasks()` 才組回應。
+- 實測（隔離 harness、真實 HTTP）`{ tasks: [null] }`：`publicTodoList()` 的 `({ logs, ...task })` 解構拋 `Cannot destructure property 'logs' of 'object null'`，import 回應變成 `success:false`，但 `[null]` **已經寫進 tasks.json**。此後 `GET /api/todo` 每次輪詢回 500 HTML，`/api/task/:id/status` 也在 `todoList.find((t) => t.id === ...)` 拋錯；前端 `api()` 的 `res.json()` 解析 HTML 失敗後被 catch 吞掉，工作清單從此靜默停擺。
+- `reconcileInterruptedTasks()` 用 `task?.status` 且原樣保留 null，所以**重啟也救不回來**，使用者只能手改 `tasks.json`。
+- 其他實測結果：`{ tasks: ['oops'] }` 的字串被 rest 解構成 `{"0":"o","1":"o","2":"p","3":"s"}` 落地；缺 id 的任務無法定位詳情；重複 id 讓 `find()` 只回第一筆、刪除卻一次移除兩筆；`logs: 'broken'` 使詳情視窗的 `task.logs?.length` 為真但 `task.logs.map` 拋錯，modal 無法渲染；未知 status（如 `paused`）會原樣顯示未翻譯字串，被歸在 pending 分組卻沒有 ▶。
+- 修正：`src/pure.js` 新增 `validateImportedTasks()`，在邊界一次驗證「必須是物件、`id` 為非空字串、`id` 不得重複、`logs` 若存在必須是陣列、`status` 若存在必須是五種已知值」，任一不合格就**整批拒絕**並指出 `tasks[index]` 與原因；既有清單與 `tasks.json` 完全不動。缺 `logs` / `status` 仍視為合法（手寫檔可省略），不強迫補欄位。
+
+### 匯入的 running 任務在 UI 永久卡住
+- 第二十七階段只在啟動時 reconcile。匯入檔若帶 `status: 'running'`（例如從被中斷的那台機器匯出），本行程 `runningSOP` 是 null，卡片會永遠顯示 spinner，且 ▶ 與 ✕ 都不渲染（✕ 的條件是 `status !== 'running'`），使用者無法刪除也無法執行。
+- 修正：import 路由對驗證後的清單呼叫既有的 `reconcileInterruptedTasks()`，與啟動同一條規則——標為 failed、保留停止時的 progress、補一筆中斷記錄，並隨 `saveTasks()` 落地。
+
+### 動態指令任務沒有執行入口
+- 第三十階段修好 executor 輸入結構後，`dynamicCmd` 任務仍無法從 UI 執行：卡片 ▶ 的條件是 `task.skillId && status === 'pending'`，而 dynamicCmd 任務沒有 skillId。
+- 改為 `(task.skillId || task.dynamicCmd) && status === 'pending'`；running / success / failed / skipped 仍不顯示 ▶。
+
+### 匯入失敗訊息一律歸咎 JSON
+- `tasks.importFailed` 寫死「匯入失敗：JSON 格式錯誤」/「Import failed: JSON format error」，但同一個鍵也用於伺服器拒絕（running、驗證失敗），因此畫面上會出現「匯入失敗：JSON 格式錯誤: Invalid task at tasks[0]…」這種互相矛盾的訊息。
+- 改為通用的「匯入失敗」/「Import failed」，伺服器錯誤照舊附在後面；`importTasks()` 的 catch 分支改附上真正的解析錯誤（原本只有裸標籤，使用者無從得知是檔案壞掉還是被伺服器拒絕）。
+
+### 測試與驗收
+- `test/pure.test.js` 新增 17 項 `validateImportedTasks`（合法清單與空陣列原樣通過、非陣列與 undefined、null / 字串 / 陣列元素、缺 id / 空白 id / 非字串 id、重複 id、logs 非陣列、未知 status、缺 logs 與 status 仍合法、五種已知 status、不改動傳入清單），全檔 89 項。
+- `test/todo-import.test.js` 由 3 項增至 12 項：7 種不良匯入各自驗證「整批拒絕 + `tasks.json` byte-identical + 之後 `GET /api/todo` 與 `/api/task/:id/status` 仍 200」、匯入的 running 被 reconcile 且已落地、合法匯出檔 round-trip 仍保留完整 logs。
+- 新增 `test/task-card-actions.test.js`（5 項，擷取真實 `renderTaskCard` 與真實 I18N）：pending SOP 任務有 ▶ / ✕ 且點擊只呼叫 `executeTask` / `deleteTask` 並 stopPropagation（不會同時開詳情）、pending dynamicCmd 無 skillId 仍有 ▶、兩者皆無則無 ▶、四種非 pending 狀態都無 ▶（running 也無 ✕）、zh-TW / en-US 狀態文字。
+- `test/task-import-ui.test.js` 由 3 項增至 5 項：驗證拒絕時保留原清單並顯示精確條目、非 JSON 檔案回報解析錯誤且 0 次 API 呼叫。`test/i18n-keys.test.js` 新增 1 項：兩個語系的 `importFailed` 不得寫死 JSON / 格式錯誤。
+- 敏感性探測：還原 import 路由與 ▶ 條件後，17 項相關測試中 9 項失敗（8 pass / 9 fail），確認不是空轉；隨後以 md5 確認 `src/pure.js` / `src/server.js` / `public/app.js` 還原為探測前內容。
+- `npm test`：25 個 JS 語法、44 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify25`，動態指令只有 `Write-Output`，未安裝、未提權）：以真實 `importTasks()` + `File` 匯入 `{ tasks: [null] }` → 工作日志顯示「❌ 匯入失敗: Invalid task at tasks[0]: expected an object」，原有卡片仍在、`/api/todo` 仍回 200 且 id 不變；匯入含 running 與 dynamicCmd 的清單 → running 立即變成「失敗 / progress 40」且 ✕ 出現，dynamicCmd 卡片出現 ▶；實際點 ▶ → status `success` / progress 100、5 筆 log 含輸出 marker、完成後 ▶ 消失；中斷任務詳情顯示原有 info 加一筆 error 中斷記錄，class 正確；en-US 下卡片為 Failed / Completed，解析錯誤顯示「❌ Import failed: Expected property name or '}' in JSON at position 2…」、驗證錯誤顯示「❌ Import failed: Invalid task at tasks[0]: logs must be an array」；切回 zh-TW 後 console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成**：`POST /api/todo` 未帶 category 時仍存硬編中文「一般」，en-US 卡片會顯示中文分類（本輪未改，因為會動到既有 `tasks.json` 的 stored 值與匯出內容）。匯入仍是整批取代且無預覽 / 確認，匯入空陣列會清空全部任務（屬文件明列的取代語意）。`FileReader.onerror` 未接，檔案讀取失敗仍靜默。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權，刪除僅限自己建立的暫存目錄。
+
+---
+
 ## 📌 2026.11.12 — 第三十階段：中斷執行的診斷記錄落地，動態指令任務不再一律失敗
 
 > 接續同日第二十九階段；第二十七階段已能把重啟後殘留的 `running` 任務 reconciled 為 `failed`。版本維持 `2026.8.7`。

@@ -46,7 +46,7 @@ const {
     buildNvidiaSnapshotLines,
     formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted, buildTaskExportPayload, selectLogsForClient,
-    appendLogWithSeq, reconcileInterruptedTasks,
+    appendLogWithSeq, reconcileInterruptedTasks, validateImportedTasks,
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
 const { pickSaveFilePath } = require('./native-dialogs');
@@ -3617,16 +3617,15 @@ app.post('/api/todo/import', (req, res) => {
         if (runningSOP) {
             return res.json({ success: false, error: 'Cannot import tasks while a task is running' });
         }
-        const { tasks } = req.body;
-        if (Array.isArray(tasks)) {
-            todoList = tasks;
-            saveTasks();
-            res.json({ success: true, count: tasks.length, todoList: publicTodoList() });
-        } else {
-            res.json({ success: false, error: 'Invalid format: expected { tasks: [...] }' });
+        const validated = validateImportedTasks(req.body?.tasks);
+        if (validated.error) {
+            return res.json({ success: false, error: validated.error });
         }
-
-
+        // 匯入檔可能來自上一次被中斷的執行；本行程沒有任務在跑，running 一律視為已中斷。
+        const { tasks } = reconcileInterruptedTasks(validated.tasks);
+        todoList = tasks;
+        saveTasks();
+        res.json({ success: true, count: tasks.length, todoList: publicTodoList() });
     } catch (err) {
         res.json({ success: false, error: err.message });
     }
