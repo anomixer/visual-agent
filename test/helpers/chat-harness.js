@@ -221,6 +221,11 @@ function createChatHarness() {
             getLocalIPv4List: () => ['127.0.0.1'],
         }],
         [path.join(ROOT, 'src/safe-fetch.js'), { safeFetchText: () => deny('safeFetchText') }],
+        // debug.log 的輪替與尾端讀取由 test/debug-log.test.js 以暫存目錄覆蓋，這裡不碰檔案系統。
+        [path.join(ROOT, 'src/debug-log.js'), {
+            appendDebugLog: () => {},
+            readDebugLogTail: (logPath) => ({ path: logPath, lines: [], exists: false }),
+        }],
         [path.join(ROOT, 'package.json'), JSON.parse(hostFs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))],
     ]);
     const cache = new Map();

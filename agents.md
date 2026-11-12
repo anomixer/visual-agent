@@ -5,6 +5,30 @@
 
 ---
 
+## 📌 2026.10.29 — 第二十五階段：debug.log 輪替與診斷尾端讀取
+
+> 接續同日第二十四階段；`fileLog()` 有 50 個呼叫點（搜尋、影片、Skill 載入、遠端錯誤等）。版本維持 `2026.8.7`。
+
+### 無限成長與整檔讀取
+- `fileLog()` 直接 `fs.appendFileSync` 到 `%APPDATA%\visual-agent\debug.log`，從不輪替；長時間使用後檔案會持續變大，且每次寫入都與診斷讀取共用同一份檔案。
+- `readDebugLogTail()` 為了取最後 80 行，先 `fs.readFileSync` 把整份檔案讀進記憶體再 split；檔案越大，每次開啟「診斷資訊」或打 `/api/diagnostics` 的成本越高。
+
+### 收斂到單一模組
+- 新增 `src/debug-log.js`：
+  - `appendDebugLog(logPath, message, options)` 寫入一行後檢查大小，超過 `DEFAULT_MAX_BYTES`（1 MiB）就只保留尾端一半（`keepBytes`），之後要再累積半份才會重寫，不會每次 append 都搬整份檔案。
+  - 截取尾端以位元組為單位，開頭可能是半行甚至半個 UTF-8 字元；`dropPartialFirstLine()` 丟掉第一個不完整行，避免診斷視窗出現亂碼。
+  - `readDebugLogTail(logPath, maxLines, options)` 改用 `openSync` / `fstatSync` / `readSync` 只讀尾端 `DEFAULT_TAIL_BYTES`（256 KiB），再取最後 N 行；回傳形狀 `{ path, lines, exists }` 與錯誤處理維持原樣。
+- `server.js` 的 `fileLog()` 與 `readDebugLogTail()` 改為薄封裝，50 個呼叫點與 `/api/diagnostics?tail=` 參數都不需改動。
+
+### 測試與驗收
+- 新增 `test/debug-log.test.js`（8 項，只用 `os.tmpdir()` 暫存目錄）：時間戳行格式、超過上限後檔案仍在上限內且保留最新行、丟棄最舊行、從完整行開始、中文輪替後不出現 U+FFFD、尾端讀取只回指定行數、檔案遠大於讀取窗口時仍正確、檔案不存在回 `exists:false`，並靜態鎖住 server 已改走此模組、不再裸 `appendFileSync`。
+- `test/helpers/chat-harness.js` 為 `src/debug-log.js` 加入 inert 注入（與 sop-executor / llm / system 一致），避免 consent 測試載入真實檔案系統。
+- `npm test`：24 個 JS 語法、36 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify19`）：先種入 4,108,934 bytes 的舊 `debug.log`，並在隔離 skills 目錄放一個 `SKILL.md` 為目錄的壞 skill；啟動後 `GET /api/skills` 觸發真實 `fileLog('Skill load failed … EISDIR')`，檔案輪替為 524,827 bytes、最舊的 `old-line-0` 已丟棄、新錯誤行存在、無 U+FFFD；`/api/diagnostics?tail=2` 只回最後 2 行；前端 `openDiagnosticsModal()` 正常顯示該錯誤行，console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除（壞 skill 只存在於隔離暫存目錄）。
+
+---
+
 ## 📌 2026.10.29 — 第二十四階段：日誌游標改用序號，緩衝滿載不再停滯
 
 > 接續同日第二十三階段；全域日誌緩衝上限 500 筆，超過後 `shift()`。版本維持 `2026.8.7`。

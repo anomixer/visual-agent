@@ -319,6 +319,7 @@ visual-agent/
 │   │   └── sop-templates.js
 │   ├── llm/
 │   │   └── protocol.js
+│   ├── debug-log.js
 │   ├── index.js
 │   ├── llm.js
 │   ├── local-api-security.js

@@ -50,6 +50,8 @@ const {
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
 const { pickSaveFilePath } = require('./native-dialogs');
+// APPDATA debug.log 的輪替寫入與尾端讀取（見 src/debug-log.js）。
+const debugLogStore = require('./debug-log');
 // ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
 const { extractActionsFromReply, parseActionArg, parseBrowserUseMode } = require('./agent/actions');
 const { AgentConsentStore, isSystemChangingAction } = require('./agent/consent');
@@ -2942,17 +2944,7 @@ app.get('/api/meta', (req, res) => {
 });
 
 function readDebugLogTail(maxLines = 80) {
-    const logPath = path.join(visualAgentDir, 'debug.log');
-    try {
-        if (!fs.existsSync(logPath)) {
-            return { path: logPath, lines: [], exists: false };
-        }
-        const text = fs.readFileSync(logPath, 'utf8');
-        const lines = text.split(/\r?\n/).filter(Boolean).slice(-Math.max(1, maxLines));
-        return { path: logPath, lines, exists: true };
-    } catch (error) {
-        return { path: logPath, lines: [`Failed to read debug log: ${error.message}`], exists: false };
-    }
+    return debugLogStore.readDebugLogTail(path.join(visualAgentDir, 'debug.log'), maxLines);
 }
 
 function getListenPortDiagnostic(port) {
@@ -5342,9 +5334,7 @@ app.get('/api/logs', (req, res) => {
  * 寫入 Debug Log 到 APPDATA，修復打包後看不到 Console 的問題
  */
 function fileLog(msg) {
-    const logPath = path.join(visualAgentDir, 'debug.log');
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(logPath, `[${timestamp}] ${msg}\n`);
+    debugLogStore.appendDebugLog(path.join(visualAgentDir, 'debug.log'), msg);
 }
 
 

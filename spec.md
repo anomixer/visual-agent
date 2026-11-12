@@ -281,6 +281,7 @@ $true
 - [x] 硬體探測重疊時共用同一次外掛執行（2026.10.29 第二十二階段：`getSystemHealth()` 進行中共用 promise、實際流程移入 `collectSystemHealth()`、測試以 `options.pluginDirs` 注入假外掛）。
 - [x] 日誌輪詢不重複請求，後端重啟後自動重置游標（2026.10.29 第二十三階段：`logPollInFlight`、`selectLogsForClient()` 的 `since > 筆數` → `reset: true`、`pollLogs()` 清空面板）。
 - [x] 日誌游標改用遞增序號，緩衝滿 500 筆後不再錯位卡住；前端日誌節點上限 600（2026.10.29 第二十四階段：`appendLogWithSeq()`、`selectLogsForClient()` 以 `seq` 判斷增量與重置、`trimLogEntries()`）。
+- [x] `debug.log` 寫入輪替（1 MiB 上限）且診斷只讀檔案尾端（2026.10.29 第二十五階段：`src/debug-log.js` 的 `appendDebugLog()` / `readDebugLogTail()`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -852,7 +853,8 @@ $true
 ### 23.2 診斷 API
 - 後端必須提供 `GET /api/diagnostics`，回傳 app 版本、PID、Node 版本、平台、AppData 路徑、HTTP/Remote port owner、LLM provider/model 狀態、Browser runtime 狀態、任務/SOP/Skill 數量與 debug log tail。
 - 診斷 API 不得依賴 LLM 對話成功；即使 Ollama 或 Browser runtime 缺失，也必須回傳可讀狀態。
-- debug log 僅回傳末段，避免一次暴露過多本機紀錄。
+- debug log 僅回傳末段，避免一次暴露過多本機紀錄；讀取只碰檔案尾端（預設 256 KiB 窗口），不得把整份 `debug.log` 讀進記憶體。
+- `debug.log` 寫入必須有上限：超過 1 MiB 時只保留尾端約一半，並從完整行開始（丟棄可能截斷的 UTF-8 字元），避免長期執行後無限成長。
 
 ### 23.3 UI 診斷
 - UI 必須提供「診斷資訊」入口（標題列「說明」選單），讓使用者在回報 issue 前可複製診斷摘要。
