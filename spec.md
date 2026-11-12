@@ -140,6 +140,7 @@ browser ──── public/index.html
 - **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。健康的任務檔不得在啟動時被重寫。
 - **Agent Loop 必須有總上限**：每個 `/api/chat` 請求在入口建立單一 `AgentLoopBudget`，首輪 ACTION、自動即時資訊搜尋 / 抽取、迴圈工具與每輪 LLM 呼叫共用最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；待確認的系統變更動作不得佔用工具額度。LLM 與頁面抓取 timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader、搜尋、抽取、`fetch_title` 與瀏覽器 fallback。提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）必須接收 abort，但仍使用各自 timeout，不得宣稱這些分支與一般 chat 共用同一預算；Playwright 已發出的導覽仍可能等到自身 timeout。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
+- **Browser 分頁快照不得重疊、亂序或整份重送**：`ensureBrowserSession()` 必須共用同一個進行中的開啟 promise，不得讓並行呼叫各自 `newContext()` 而洩漏前一組 page。`GET /api/browser/session/snapshot` 一律回 `snapshotHash`；帶 `?since=<上次收到的雜湊>` 且截圖位元組相同時只回 `unchanged: true` 與雜湊，不重送 base64。前端輪詢必須有 in-flight 守衛，使用者導覽 / 上一頁 / 重新載入期間以計數器暫停輪詢，且只有使用者操作可推進序號，晚到的舊快照不得覆蓋較新的導覽結果。伺服器每次輪詢仍會實際截圖，不得宣稱省下截圖成本。
 - **OAuth cache 不得混用憑證**：token cache key 必須包含 token URL、client ID、client secret、scope、audience。
 - **桌面發佈設定不得漂移**：Tauri bundle version 必須等於 `package.json.version`；CSP 不得為 `null`。現階段因既有 inline script/style 保留 `unsafe-inline`，但 script 僅限 self，並禁止 object / frame / 外部表單送出。`pkg.assets` 必須包含 `sops/**/*`、`skills/**/*`、`plugins/**/*`、`public/**/*`。
 - **API Key**：供設定視窗回填與儲存，故 `GET /api/llm/config` 回傳完整值；LAN 暴露面由 loopback 綁定阻絕，本機瀏覽器跨來源讀取由 Origin 檢查與 token 阻絕。不得以 mask 回傳導致設定視窗把真 key 覆寫成遮罩值。
@@ -167,6 +168,7 @@ browser ──── public/index.html
 | POST | `/api/llm/config` | 更新 LLM Provider 設定 |
 | POST | `/api/chat` | AI 對話（LLM 優先）|
 | GET | `/api/logs` | 全域執行日誌（`?since=` 為上一筆 `seq`，只回更新的項目；緩衝僅留最新 500 筆，游標超出範圍或落在已丟棄區段時回 `reset: true` 與全部日誌） |
+| GET | `/api/browser/session/snapshot` | Browser 分頁快照（`?since=` 為上次收到的 `snapshotHash`；畫面相同時只回 `unchanged: true` 與雜湊，不含 base64） |
 | POST | `/api/todo/import` | 匯入任務清單（回傳最新 `todoList`，同樣不含 `logs`）；有 running task 時拒絕整批取代 |
 
 ---
@@ -287,6 +289,7 @@ $true
 - [x] 本機對話持久化限制在 2 MiB 且配額溢出不中斷對話（2026.10.29 第二十六階段：`LOCAL_CHAT_PERSIST_LIMIT`、`buildLocalChatPersistPayload()` 先文字後回填附件、`saveLocalChatSessions()` try/catch）。
 - [x] 重啟後不再殘留永久「執行中」的任務（2026.11.12 第二十七階段：`reconcileInterruptedTasks()`、`loadTasks()` 啟動時標為 failed 並補中斷記錄）。
 - [x] 冒煙測試改用隔離暫存 AppData，不再讀寫使用者真實設定（2026.11.12 第二十七階段：`scripts/check.js` 以 `mkdtempSync` 建立 profile，等子行程結束後刪除）。
+- [x] Browser 分頁快照輪詢不重疊、不亂序、畫面未變不重送（2026.11.12 第二十八階段：`ensureBrowserSession()` 共用開啟 promise、`snapshotHash` / `?since=`、前端 `snapshotInFlight` / `snapshotActionsInFlight` / `snapshotSeq`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

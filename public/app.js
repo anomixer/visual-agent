@@ -93,6 +93,10 @@ let browserTabState = {
     started: false,
     currentUrl: '',
     snapshotTimer: null,
+    snapshotHash: '',
+    snapshotSeq: 0,
+    snapshotInFlight: false,
+    snapshotActionsInFlight: 0,
 };
 let browserRuntimeReady = false;
 
@@ -1633,9 +1637,9 @@ async function runBrowserInstallWorkflow() {
     return true;
 }
 
-function updateBrowserSnapshot(snapshotDataUrl = '', pageTitle = '', pageUrl = '') {
+function updateBrowserSnapshot(snapshotDataUrl = '', pageTitle = '', pageUrl = '', imageUnchanged = false) {
     if (browserPageTitle) browserPageTitle.textContent = pageTitle || '';
-    if (browserSnapshotImage) {
+    if (browserSnapshotImage && !imageUnchanged) {
         if (snapshotDataUrl) {
             browserSnapshotImage.src = snapshotDataUrl;
             browserSnapshotImage.style.display = 'block';
@@ -1654,6 +1658,11 @@ function updateBrowserSnapshot(snapshotDataUrl = '', pageTitle = '', pageUrl = '
     }
 }
 
+function applyBrowserSnapshotResponse(data = {}, fallbackUrl = '') {
+    browserTabState.snapshotHash = data.snapshotHash || '';
+    updateBrowserSnapshot(data.snapshotDataUrl || '', data.title || '', data.url || fallbackUrl, Boolean(data.unchanged));
+}
+
 async function ensureBrowserSessionStarted() {
     if (browserTabState.started) return true;
     setBrowserStatus('Starting Playwright session...');
@@ -1669,13 +1678,25 @@ async function ensureBrowserSessionStarted() {
 
 async function refreshBrowserSnapshot() {
     if (!browserTabState.started) return;
-    const data = await api('/api/browser/session/snapshot');
-    if (!data?.success) {
-        setBrowserStatus(`Snapshot failed: ${data?.error || 'unknown error'}`);
-        return;
+    // fullPage 截圖可能比 2 秒輪詢間隔久；重疊呼叫會堆疊多份 Playwright 截圖。
+    if (browserTabState.snapshotInFlight || browserTabState.snapshotActionsInFlight > 0) return;
+    browserTabState.snapshotInFlight = true;
+    // 只有導覽 / 上一頁這類使用者操作會推進序號；輪詢本身不可把較新的導覽結果判為過期。
+    const seq = browserTabState.snapshotSeq;
+    try {
+        const since = browserTabState.snapshotHash;
+        const data = await api(`/api/browser/session/snapshot${since ? `?since=${encodeURIComponent(since)}` : ''}`);
+        // 導覽已發出時，這份晚到的舊畫面不可覆蓋它。
+        if (seq !== browserTabState.snapshotSeq) return;
+        if (!data?.success) {
+            setBrowserStatus(`Snapshot failed: ${data?.error || 'unknown error'}`);
+            return;
+        }
+        applyBrowserSnapshotResponse(data);
+        setBrowserStatus(data.url ? `Viewing: ${data.url}` : 'Browser session ready');
+    } finally {
+        browserTabState.snapshotInFlight = false;
     }
-    updateBrowserSnapshot(data.snapshotDataUrl || '', data.title || '', data.url || '');
-    setBrowserStatus(data.url ? `Viewing: ${data.url}` : 'Browser session ready');
 }
 
 function startBrowserSnapshotPolling() {
@@ -1698,31 +1719,45 @@ async function browserNavigate(url = '') {
     const ok = await ensureBrowserSessionStarted();
     if (!ok) return;
     setBrowserStatus(`Navigating: ${target}`);
-    const data = await api('/api/browser/session/navigate', {
-        method: 'POST',
-        body: { url: target },
-    });
-    if (!data?.success) {
-        setBrowserStatus(`Navigate failed: ${data?.error || 'unknown error'}`);
-        return;
+    const seq = ++browserTabState.snapshotSeq;
+    browserTabState.snapshotActionsInFlight += 1;
+    try {
+        const data = await api('/api/browser/session/navigate', {
+            method: 'POST',
+            body: { url: target },
+        });
+        if (seq !== browserTabState.snapshotSeq) return;
+        if (!data?.success) {
+            setBrowserStatus(`Navigate failed: ${data?.error || 'unknown error'}`);
+            return;
+        }
+        applyBrowserSnapshotResponse(data, target);
+        setBrowserStatus(`Loaded: ${data.url || target}`);
+    } finally {
+        browserTabState.snapshotActionsInFlight -= 1;
     }
-    updateBrowserSnapshot(data.snapshotDataUrl || '', data.title || '', data.url || target);
-    setBrowserStatus(`Loaded: ${data.url || target}`);
 }
 
 async function browserAction(action = '') {
     const ok = await ensureBrowserSessionStarted();
     if (!ok) return;
-    const data = await api('/api/browser/session/action', {
-        method: 'POST',
-        body: { action },
-    });
-    if (!data?.success) {
-        setBrowserStatus(`${action} failed: ${data?.error || 'unknown error'}`);
-        return;
+    const seq = ++browserTabState.snapshotSeq;
+    browserTabState.snapshotActionsInFlight += 1;
+    try {
+        const data = await api('/api/browser/session/action', {
+            method: 'POST',
+            body: { action },
+        });
+        if (seq !== browserTabState.snapshotSeq) return;
+        if (!data?.success) {
+            setBrowserStatus(`${action} failed: ${data?.error || 'unknown error'}`);
+            return;
+        }
+        applyBrowserSnapshotResponse(data);
+        setBrowserStatus(`Done: ${action}`);
+    } finally {
+        browserTabState.snapshotActionsInFlight -= 1;
     }
-    updateBrowserSnapshot(data.snapshotDataUrl || '', data.title || '', data.url || '');
-    setBrowserStatus(`Done: ${action}`);
 }
 
 function getMentionHighlightNames() {

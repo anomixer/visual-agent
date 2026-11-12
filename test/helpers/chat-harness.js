@@ -79,7 +79,7 @@ function createMemoryFs(root, deny) {
     };
 }
 
-function createChatHarness({ seedFiles = {} } = {}) {
+function createChatHarness({ seedFiles = {}, playwright } = {}) {
     const sandboxRoot = path.join(ROOT, 'test', `.chat-harness-${crypto.randomUUID()}`);
     const violations = [];
     const consoleEntries = [];
@@ -100,7 +100,12 @@ function createChatHarness({ seedFiles = {} } = {}) {
     const memory = createMemoryFs(sandboxRoot, deny);
     // 相對於 sandboxRoot 的路徑；在 server 模組載入前寫入，才能測到 loadTasks() 這類啟動行為。
     for (const [relative, content] of Object.entries(seedFiles)) {
-        memory.api.writeFileSync(path.join(sandboxRoot, relative), content, 'utf8');
+        const target = path.join(sandboxRoot, relative);
+        // 父目錄也要存在，目錄掃描（例如 Playwright 執行檔搜尋）才看得到種子檔案。
+        for (let dir = path.dirname(target); dir.startsWith(sandboxRoot) && dir !== sandboxRoot; dir = path.dirname(dir)) {
+            memory.api.mkdirSync(dir);
+        }
+        memory.api.writeFileSync(target, content, 'utf8');
     }
     const fixtures = [FIXTURE_SOP_ID, OTHER_SOP_ID].map((id, index) => ({
         id,
@@ -212,7 +217,8 @@ function createChatHarness({ seedFiles = {} } = {}) {
         ['child_process', { execSync: () => deny('child_process.execSync'),
             spawnSync: () => deny('child_process.spawnSync'), spawn: () => deny('child_process.spawn') }],
         ['net', blocked('net')],
-        ['playwright', { chromium: { launch: () => deny('playwright.chromium.launch') } }],
+        // 預設拒絕啟動瀏覽器；只有明確傳入假 playwright 的測試才能走 Browser session 路徑。
+        ['playwright', playwright || { chromium: { launch: () => deny('playwright.chromium.launch') } }],
         [path.join(ROOT, 'src/sop-parser.js'), { loadAllSOPs: () => clone(fixtures) }],
         [path.join(ROOT, 'src/sop-executor.js'), { SOPExecutor: InertExecutor }],
         [path.join(ROOT, 'src/llm.js'), fakeLlm],

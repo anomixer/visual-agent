@@ -5,6 +5,38 @@
 
 ---
 
+## 📌 2026.11.12 — 第二十八階段：Browser 分頁快照不再重疊、亂序與整份重送
+
+> 接續同日第二十七階段；Browser 分頁每 2 秒抓一次 `fullPage` PNG。版本維持 `2026.8.7`。
+
+### 量測（本機 i9-14900 + RTX 4000 Ada，headless Chromium，本機 fixture 頁）
+- `captureBrowserSnapshot()` 單次成本：400 段文字（約 20,000px 高）747–870 ms、PNG 1.84 MB、base64 2.46 MB；2,500 段（約 125,000px 高）4.06–4.46 s、PNG 8.11 MB、base64 10.82 MB。
+- 未設守衛的 2 秒輪詢在長頁上實測 **peak 4 份同時截圖**（`setInterval` 不等前一輪回來）。
+- 靜止頁面每次輪詢仍整份重送：短頁 2.46 MB / 2 秒，長頁 10.82 MB / 2 秒，前端還要重新 JSON parse、base64 解碼與 PNG 解碼。
+- 以原 `ensureBrowserSession()` 的邏輯重現並行呼叫：兩個呼叫各自 `newContext()` + `newPage()`，只有一組被記住，**洩漏 1 個 context**（實測 contexts 1 → 3）。
+
+### 修正
+- `ensureBrowserSession()` 改為協調函式：page 仍存活就直接回傳（順帶省去每次呼叫都遞迴掃描 Playwright cache 找執行檔），否則共用進行中的 `openBrowserSession()` promise，結束後（含失敗）清除。實際開啟流程原封不動移入 `openBrowserSession()`。
+- `captureBrowserSnapshot()` 額外回 `snapshotHash`（PNG 的 SHA256）。`GET /api/browser/session/snapshot?since=<hash>` 與新截圖雜湊相同時只回 `{ success, title, url, unchanged: true, snapshotHash }`，不含 base64。比對依據是「前端上次收到的影像」而非伺服器全域狀態，因此 AI 的 Browser Use 截圖不會讓 UI 誤判為未變。
+- 前端 `refreshBrowserSnapshot()` 加 `snapshotInFlight` 守衛，並在導覽 / 上一頁 / 重新整理進行中（`snapshotActionsInFlight` 計數）暫停輪詢，避免白抓一份舊頁面。
+- 保序：只有使用者操作會 `++snapshotSeq`，輪詢只讀取序號；晚到的舊快照若序號已變就丟棄。`applyBrowserSnapshotResponse()` 統一記錄 hash 並套用影像，`unchanged` 時只更新標題與網址、不重寫 `img.src`。
+
+### 驗收時發現並修掉的設計錯誤
+- 第一版讓輪詢也 `++snapshotSeq`。實機驗收立刻暴露：長頁導覽需 4.5 s，期間輪詢把序號推進到 14，導覽自己的回應反被判為過期丟棄，畫面停在 `about:blank`，直到下一次輪詢（8.2 s，與導覽同時截圖）才自愈。
+- 改為「輪詢讀序號、只有使用者操作推進序號」，並在操作期間暫停輪詢後重測：導覽 381 ms 立即套用，7 秒後標題 / 網址 / 影像不變，序號維持 1。
+
+### 測試與驗收
+- 新增 `test/browser-snapshot.test.js`（3 項，真實 HTTP + 假 Playwright）：並行 start 只 launch / newContext / newPage 各一次；`since` 命中回 `unchanged` 且不含 base64、仍會實際截圖、PNG 改變後回新影像與新雜湊、無 `since` 或未知 `since` 回完整影像；導覽與 reload 一律回完整影像，其雜湊可供下一次輪詢沿用。
+- `test/helpers/chat-harness.js` 新增 `playwright` 注入（預設仍 deny launch）與種子檔案的父目錄建立，讓目錄掃描找得到假執行檔；不啟動任何真實瀏覽器。
+- 新增 `test/app-browser-snapshot.test.js`（7 項，擷取真實函式）：重疊輪詢只發一次且結束後釋放、第一次不帶 since 之後帶上次 hash、`unchanged` 不重寫 src 但更新標題網址、失敗保留 hash 並釋放守衛、操作後 hash 供輪詢沿用、操作期間暫停輪詢、兩次重疊導覽只套用最新且計數歸零。
+- 以還原舊行為的副本實測：3 項 server 測試全部失敗（launch 2 次、`unchanged` 為 undefined），確認測試不是空轉。
+- `npm test`：24 個 JS 語法、40 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify22`，`PLAYWRIGHT_BROWSERS_PATH` 唯讀指向既有 cache，fixture 頁由本機 3999 提供）：長頁 5 個並行 `refreshBrowserSnapshot()` 只發出 1 個請求（peak 1、4,124 ms），導覽結果立即套用且未被後續輪詢覆蓋；短頁連續 5 次輪詢全為 `unchanged: true`、影像字元總數 0（修正前為 5 × 29,190）、每次約 30 ms；`/api/agent/browser-use` snapshot 仍正常回影像與 64 字元雜湊；console 無 error / warn。驗收後已停止實例與 fixture server、確認 3210 / 19168 / 3999 不再監聽並刪除暫存設定檔與探測腳本。
+- **尚未完成**：伺服器仍會每次輪詢實際截圖，長頁約 4 秒的截圖成本未消除（只消除重疊與重送）；極長頁的 fullPage PNG 位元組不穩定（實測同一頁雜湊在 `df95e10a` / `c1334c7d` 之間跳動），dedupe 會 miss，屬已知限制。背景分頁的 Chrome 計時器節流會使輪詢變慢，驗收時改以手動呼叫驅動。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權，刪除僅限自己建立的暫存目錄。
+
+---
+
 ## 📌 2026.11.12 — 第二十七階段：重啟後不再殘留永久「執行中」的任務
 
 > 接續 10.29 第二十六階段；`runningSOP` 只存在記憶體，但 `tasks.json` 會保存 `status: 'running'`。版本維持 `2026.8.7`。

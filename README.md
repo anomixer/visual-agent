@@ -171,6 +171,8 @@ http://localhost:3210
 - Browser runtime ready 狀態由 `/api/meta.browserExecutable` 驗證，接受 Playwright cache 內的 `chrome-headless-shell.exe` 或 `chrome.exe`。
 - 若第一次啟動顯示 Browser 不可用，請執行 `install-playwright-chromium` SOP 補裝。
 - 這樣可避免把 Chromium 綁進 MSI / EXE，安裝包會維持較小。
+- 快照每 2 秒輪詢一次，但不會重疊：上一輪未回來就跳過，導覽 / 上一頁 / 重新載入期間暫停輪詢；只有使用者操作會推進序號，晚到的舊畫面不會覆蓋較新的導覽結果。
+- 畫面與上次相同時，`/api/browser/session/snapshot?since=<snapshotHash>` 只回 `unchanged: true` 與雜湊，不重送數 MB 的 base64 圖片。伺服器每次輪詢仍會實際截圖，因此極長頁面的截圖耗時並未減少。
 
 ---
 

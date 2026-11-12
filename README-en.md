@@ -171,6 +171,8 @@ The system can automatically detect whether Ollama exists. If it is missing, it 
 - Browser runtime readiness is verified by `/api/meta.browserExecutable`, which accepts `chrome-headless-shell.exe` or `chrome.exe` from the Playwright cache.
 - If Browser is unavailable on first launch, run the `install-playwright-chromium` SOP to install it.
 - This avoids bundling Chromium into the MSI / EXE and keeps the installer smaller.
+- Snapshots are polled every 2 seconds but never overlap: a poll is skipped while the previous one is in flight, and polling is suspended during navigate / back / reload. Only user actions advance the sequence, so a late old snapshot cannot overwrite a newer navigation.
+- When the page is unchanged, `/api/browser/session/snapshot?since=<snapshotHash>` returns only `unchanged: true` and the hash instead of re-sending a multi-MB base64 image. The server still captures on every poll, so the capture cost on very tall pages is not reduced.
 
 ---
 

@@ -1516,7 +1516,18 @@ function hasPlaywrightBrowserBinary() {
     return !!resolvePlaywrightBrowserExecutable();
 }
 
+let browserSessionPending = null;
+
+// 快照輪詢、UI 導覽與 AI 的 Browser Use 可能同時要求 session；各自 newContext 會洩漏前一組 page。
 async function ensureBrowserSession() {
+    if (browserSession.page && !browserSession.page.isClosed()) return browserSession.page;
+    if (!browserSessionPending) {
+        browserSessionPending = openBrowserSession().finally(() => { browserSessionPending = null; });
+    }
+    return browserSessionPending;
+}
+
+async function openBrowserSession() {
     if (!isPlaywrightAvailable()) {
         throw new Error('Playwright not installed. Run npm.cmd install to enable Browser tab.');
     }
@@ -1529,9 +1540,6 @@ async function ensureBrowserSession() {
         const err = new Error('Browser unavailable: Playwright Chromium not installed. Run the install_playwright_chromium SOP.');
         err.sopId = 'install_playwright_chromium';
         throw err;
-    }
-    if (browserSession.page && !browserSession.page.isClosed()) {
-        return browserSession.page;
     }
     if (!browserSession.browser) {
         browserSession.browser = await playwright.chromium.launch({
@@ -1580,6 +1588,7 @@ async function captureBrowserSnapshot(page) {
         title: title || '',
         url: url || '',
         snapshotDataUrl: `data:image/png;base64,${png.toString('base64')}`,
+        snapshotHash: crypto.createHash('sha256').update(png).digest('hex'),
     };
 }
 
@@ -5251,6 +5260,17 @@ app.get('/api/browser/session/snapshot', async (req, res) => {
     try {
         const page = await ensureBrowserSession();
         const snap = await captureBrowserSnapshot(page);
+        // fullPage PNG 動輒數 MB；畫面與上次相同時只回雜湊，不重送 base64。
+        const since = String(req.query?.since || '').trim();
+        if (since && since === snap.snapshotHash) {
+            return res.json({
+                success: true,
+                title: snap.title,
+                url: snap.url,
+                unchanged: true,
+                snapshotHash: snap.snapshotHash,
+            });
+        }
         res.json({ success: true, ...snap });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message, playwrightAvailable: isPlaywrightAvailable() });
