@@ -317,6 +317,7 @@ $true
 - [x] 建立任務不再探測全部 SOP，加入／刪除失敗會顯示原因（2026.11.12 第三十二階段：移除 `POST /api/todo` 未被讀取的 `annotateSOPRuntimeState()`、`logTaskFailure()` 單一出口與 `task.addFailed` / `task.deleteFailed` 兩語系鍵）。
 - [x] Skill 巢狀 tags／category 與來源分組生效（2026.11.12 第三十三階段：`parseSkillFrontmatter()` 解析 `metadata:` 縮排鍵、`/api/skills` 補 `source`，Skills 側邊欄恢復 18／19 兩群、category 細分與標籤徽章）。
 - [x] 任務分類在渲染層本地化、每支內建 SOP 都有雙語 UI preset，讀檔失敗不再靜默（2026.11.12 第三十四階段：`categories` 字典補齊 10 個實際分類值、4 支 SOP 補 `sopUi`、`renderTaskCard()` / `renderTaskModalBody()` 走 `localizeCategory()`、`queueSopTaskById()` 改用 `getLocalizedItem()`、`FileReader.onerror` ×2 與 `img.onerror`）。
+- [x] 移除 / 備份 / 還原 / 掃描型 SOP 不再被標示為「安裝」（2026.11.12 第三十五階段：新增 `getDisplayAction()` 與 `actions.run` / `task.addRunTask`，卡片標題、按鈕、徽章、log 與任務 chip 全部改走顯示動詞，送出的 `action` payload 不變）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -764,8 +765,14 @@ $true
 - **詳情視窗與匯出文字不得寫死語系**：任務詳情（狀態 / 分類 / 動作 / SOP ID / 建立時間 / 執行記錄 / 無 SOP 替代字）與經驗詳情（來源 / 更新時間）的標籤必須走 `t()`；日期與經驗庫匯出時間戳須依 `currentLocale` 選擇 `zh-TW` / `en-US` 格式。已知限制：切換語系時已開啟的 modal 不會即時重繪，需關閉重開。
 - **分類值只在渲染層本地化，儲存值不得改寫**：`task.category` 在 `tasks.json`、`/api/todo` 與匯出檔中一律保留建立當下的原值（可能是英文 SOP 分類、硬編「一般」或動態指令的 `SOP`）；任務卡片與詳情視窗顯示時必須經 `localizeCategory()` 翻譯，未知分類原樣顯示，空值在卡片退回 `task.general`、在詳情顯示 `—`。嚴禁為了畫面一致而改寫已儲存的分類或標題。
 - **`categories` 字典必須涵蓋所有實際出現的分類值**：包含 16 支內建 SOP 的 `Category` 欄位、伺服器 fallback（`Maintenance`、`一般`）與動態指令任務（`SOP`），且大小寫變體都要有鍵；新增 SOP 時需同步補字典，否則該分類在另一語系會原樣外露。
-- **每支內建 SOP 在兩個語系都必須有 `sopUi` preset**（`title` / `description` / `category`），否則 zh-TW 側邊欄會直接顯示 SOP 檔內的英文名稱與描述。preset `title` 不得以引號或其他非字母數字字元開頭，因為 `getActionTitle()` 會先剝除 leading 非字母數字字元、再剝除既有動詞並套上 `actions.installTitle` / `uninstallTitle`；英文名稱建議用名詞片語，避免出現 `Install Back Up …` 這類雙動詞。
+- **每支內建 SOP 在兩個語系都必須有 `sopUi` preset**（`title` / `description` / `category`），否則 zh-TW 側邊欄會直接顯示 SOP 檔內的英文名稱與描述。preset `title` 不得以引號或其他非字母數字字元開頭，因為 `getActionTitle()` 會先剝除 leading 非字母數字字元再判斷動詞；英文名稱建議用名詞片語，避免出現 `Install Back Up …` 這類雙動詞。
 - **建立任務的兩個入口都必須本地化**：側邊欄 `queueSopTodo()` 與依 ID 建立 `queueSopTaskById()` 都要先經 `getLocalizedItem()` 再組 payload，不得各自取原始英文 `name` / `description` / `category`。
+- **顯示動詞與執行階段必須分離**：`action` 只有 `install` / `uninstall` 兩種值，決定 executor 跑哪個 SOP 階段，**不得直接當成顯示動詞**。所有動詞文案（卡片標題、＋／▶ 按鈕 title、`sidebar.actionable` 徽章、加入／執行 log 與 chat bubble、任務卡片與詳情的動作 chip）都必須先經 `getDisplayAction(title, action)`：
+  - `uninstall` 維持 `uninstall`；否則剝除開頭非字母數字字元後，只有開頭是 `安裝|下載` 或 `Install|Download` + 空白才判為 `install`，其餘一律為中性的 `run`（zh `執行` / en `Run`）。
+  - `run` 時 `getActionTitle()` 必須原樣回傳標題，不得剝除 SOP 自己的動詞；＋ 按鈕改用 `task.addRunTask`，不得套用 `加入{action}清單`。
+  - 判斷必須錨在標題開頭：`Scan and Install Drivers via Windows Update`、`檢查並安裝驅動程式` 句中的安裝字樣是 SOP 真正要做的事，不算誤導。
+  - 這條規則保護的是移除 / 備份 / 還原 / 掃描型 SOP（目前為 `rec_remove_copilot`、`rec_backup`、`sys_backup_user_files`、`sys_restore_user_files`、`rec_driver_check`，皆無 `## Uninstall` 階段）。把破壞性動作顯示成「安裝」屬誤導文案，不得回歸。
+  - **送出的 payload 與 `recommendedAction` 不得跟著改**：仍送原始 `action`，executor 仍跑 Install 階段；把 `recommendedAction` 改成 `uninstall` 會導向不存在的 `steps.uninstall`。
 - **對話分頁動態過濾**：
   - 本機與遠端聊天分頁名稱在切換語系時需動態翻譯（例如：「本機對話 1」 ↔ 「Local Chat 1」）。
   - 對話分頁的過濾與翻譯必須使用非 ASCII 安全的正則表達式 `/^(?:本機對話|Local Chat)(?:\s+\d+)?$/i`，嚴禁使用 `\b`（單字邊界符）以防止在中文等非 ASCII 字元上發生比對失效。

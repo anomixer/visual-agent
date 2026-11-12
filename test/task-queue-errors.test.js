@@ -43,7 +43,7 @@ function loadLocalePacks(locale) {
 
 const DECLARATIONS = [
     'getLocalePack', 'formatI18n', 't', 'localizeCategory', 'localizeRiskLevel', 'getLocalizedItem',
-    'getActionLabel', 'getActionTitle', 'logTaskFailure', 'queueSopTodo',
+    'getDisplayAction', 'getActionLabel', 'getActionTitle', 'logTaskFailure', 'queueSopTodo',
     'addSopToTodo', 'addAndExecuteSop', 'addRecommendToTodo', 'addAndExecuteRecommend', 'deleteTask',
 ].map(extractFunction).join('\n');
 

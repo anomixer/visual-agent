@@ -612,6 +612,7 @@ const I18N = {
             unnamedItem: '未命名項目',
             autoExecute: '自動執行：{title}',
             addActionTask: '加入{action}清單',
+            addRunTask: '加入工作清單',
             runActionNow: '立即{action}',
             installCompleted: '{title} 安裝 / 執行完成',
             uninstallCompleted: '{title} 解除安裝完成',
@@ -659,6 +660,7 @@ const I18N = {
         actions: {
             install: '安裝',
             uninstall: '解除安裝',
+            run: '執行',
             installTitle: '安裝 {title}',
             uninstallTitle: '解除安裝 {title}',
         },
@@ -1049,6 +1051,7 @@ const I18N = {
             unnamedItem: 'Untitled Item',
             autoExecute: 'Auto-executing: {title}',
             addActionTask: 'Add {action} task',
+            addRunTask: 'Add to work list',
             runActionNow: '{action} now',
             installCompleted: '{title} installed / executed successfully',
             uninstallCompleted: '{title} uninstalled successfully',
@@ -1096,6 +1099,7 @@ const I18N = {
         actions: {
             install: 'Install',
             uninstall: 'Uninstall',
+            run: 'Run',
             installTitle: 'Install {title}',
             uninstallTitle: 'Uninstall {title}',
         },
@@ -5934,13 +5938,26 @@ function renderRecommendList() {
     }
 }
 
+// action 只有 install / uninstall，決定 executor 跑哪個階段；但備份、還原、停用型 SOP
+// 的 Install 階段並不是安裝，標題開頭不是安裝類動詞時，顯示上改用中性的「執行」。
+function getDisplayAction(title, action) {
+    if (action === 'uninstall') return 'uninstall';
+    const subject = String(title || '').replace(/^[^\p{L}\p{N}]+/u, '');
+    if (/^(?:安裝|下載)/u.test(subject)) return 'install';
+    if (/^(?:Install|Download)\s/i.test(subject)) return 'install';
+    return 'run';
+}
+
 function getActionLabel(action) {
-    return action === 'uninstall' ? t('actions.uninstall') : t('actions.install');
+    if (action === 'uninstall') return t('actions.uninstall');
+    if (action === 'run') return t('actions.run');
+    return t('actions.install');
 }
 
 function getActionTitle(title, action) {
     if (!title) return t('task.unnamedItem');
-    const normalizedAction = action === 'uninstall' ? 'uninstall' : 'install';
+    const normalizedAction = getDisplayAction(title, action);
+    if (normalizedAction === 'run') return title;
 
     // 提取主體：移掉開頭的表情符號與常見動詞
     let subject = String(title)
@@ -5959,7 +5976,8 @@ function createRecommendCard(item) {
     const localized = getLocalizedItem(item);
     const isInstalled = Boolean(localized.installed);
     const action = isInstalled && localized.supportsUninstall ? 'uninstall' : 'install';
-    const actionLabel = getActionLabel(action);
+    const displayAction = getDisplayAction(localized.title, action);
+    const actionLabel = getActionLabel(displayAction);
     const isActionable = Boolean(localized.skillId) && (!isInstalled || localized.supportsUninstall);
     const card = document.createElement('div');
     card.className = `recommend-card ${isInstalled && !localized.supportsUninstall ? 'installed' : ''}`;
@@ -5975,7 +5993,7 @@ function createRecommendCard(item) {
           </div>
           ${isActionable ? `
               <div class="recommend-btn-group">
-                <button class="btn-add-todo" title="${escapeHtml(t('task.addActionTask', { action: actionLabel }))}">＋</button>
+                <button class="btn-add-todo" title="${escapeHtml(displayAction === 'run' ? t('task.addRunTask') : t('task.addActionTask', { action: actionLabel }))}">＋</button>
                 <button class="btn-run-now" title="${escapeHtml(t('task.runActionNow', { action: actionLabel }))}">▶</button>
               </div>
           ` : ''}
@@ -6086,14 +6104,15 @@ function createSopCard(sop) {
     const requiresAdmin = /administrator|admin|uac/i.test(sop?.prerequisites?.permissions || '');
     const riskLabel = sop.riskLevel || t('sidebar.unknownRisk');
     const action = sop.installed && sop.supportsUninstall ? 'uninstall' : 'install';
-    const actionLabel = getActionLabel(action);
+    const displayAction = getDisplayAction(sop.name || sop.id, action);
+    const actionLabel = getActionLabel(displayAction);
     const isActionable = !sop.installed || sop.supportsUninstall;
 
     card.innerHTML = `
         <div class="recommend-card-top">
           <div class="recommend-title">${escapeHtml(getActionTitle(sop.name || sop.id, action))}${sop.installed ? `<span style="font-size:10px; color:${sop.supportsUninstall ? '#f59e0b' : '#4ec9b0'}; margin-left:6px; font-weight:normal;">${escapeHtml(sop.supportsUninstall ? t('sidebar.uninstallBadge') : t('sidebar.readyBadge'))}</span>` : ''}</div>
           ${isActionable ? `<div class="recommend-btn-group sop-btn-group">
-            <button class="btn-add-todo" title="${escapeHtml(t('task.addActionTask', { action: actionLabel }))}">＋</button>
+            <button class="btn-add-todo" title="${escapeHtml(displayAction === 'run' ? t('task.addRunTask') : t('task.addActionTask', { action: actionLabel }))}">＋</button>
             <button class="btn-run-now" title="${escapeHtml(t('task.runActionNow', { action: actionLabel }))}">▶</button>
           </div>` : ''}
         </div>
@@ -6608,7 +6627,7 @@ function renderTaskCard(task) {
         </div>
         <div class="task-meta">
           <span class="task-category">${escapeHtml(task.category ? localizeCategory(task.category) : t('task.general'))}</span>
-          <span class="task-category">${escapeHtml(getActionLabel(task.action || 'install'))}</span>
+          <span class="task-category">${escapeHtml(getActionLabel(getDisplayAction(task.title, task.action || 'install')))}</span>
           <span class="task-status" data-status="${escapeHtml(task.status || '')}">${escapeHtml(localizeStatus(task.status))}</span>
         </div>
         <div class="task-progress">
@@ -6636,7 +6655,7 @@ async function addRecommendToTodo(item) {
     if (data.success) {
         todoList = data.todoList;
         renderTodoList();
-        addUILog(`＋ ${t('task.addedToList', { action: getActionLabel(action), title: getActionTitle(localized.title, action) })}`, 'info');
+        addUILog(`＋ ${t('task.addedToList', { action: getActionLabel(getDisplayAction(localized.title, action)), title: getActionTitle(localized.title, action) })}`, 'info');
         openTab('todolist');
     } else {
         logTaskFailure('task.addFailed', data);
@@ -6656,7 +6675,7 @@ async function addAndExecuteRecommend(item) {
         openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
-            addUILog(`▶ ${t('task.startingAction', { action: getActionLabel(action), title: getActionTitle(localized.title, action) })}`, 'info');
+            addUILog(`▶ ${t('task.startingAction', { action: getActionLabel(getDisplayAction(localized.title, action)), title: getActionTitle(localized.title, action) })}`, 'info');
             appendChatBubble('ai', `🚀 ${t('task.startingProcess', { title: getActionTitle(localized.title, action) })}`);
             expandLog();
             await executeTask(newTask.id);
@@ -7537,7 +7556,7 @@ async function addSopToTodo(sop) {
     if (data.success) {
         todoList = data.todoList;
         renderTodoList();
-        addUILog(`＋ ${t('task.addedSOPToList', { action: getActionLabel(action), name: localized.name || localized.id })}`, 'info');
+        addUILog(`＋ ${t('task.addedSOPToList', { action: getActionLabel(getDisplayAction(localized.name || localized.id, action)), name: localized.name || localized.id })}`, 'info');
         openTab('todolist');
     } else {
         logTaskFailure('task.addFailed', data);
@@ -7552,8 +7571,8 @@ async function addAndExecuteSop(sop) {
         openTab('todolist');
         const newTask = data.task || data.todoList[data.todoList.length - 1];
         if (newTask?.id) {
-            addUILog(`▶ ${t('task.startingSOPAction', { action: getActionLabel(action), name: localized.name || localized.id })}`, 'info');
-            appendChatBubble('ai', `🚀 ${t('task.startingSOPProcess', { name: localized.name || localized.id, action: getActionLabel(action) })}`);
+            addUILog(`▶ ${t('task.startingSOPAction', { action: getActionLabel(getDisplayAction(localized.name || localized.id, action)), name: localized.name || localized.id })}`, 'info');
+            appendChatBubble('ai', `🚀 ${t('task.startingSOPProcess', { name: localized.name || localized.id, action: getActionLabel(getDisplayAction(localized.name || localized.id, action)) })}`);
             expandLog();
             await executeTask(newTask.id);
         }
@@ -7889,7 +7908,7 @@ function renderTaskModalBody(task) {
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">${escapeHtml(t('task.detailAction'))}</span>
-          <span class="task-detail-value">${escapeHtml(getActionLabel(task.action || 'install'))}</span>
+          <span class="task-detail-value">${escapeHtml(getActionLabel(getDisplayAction(task.title, task.action || 'install')))}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">${escapeHtml(t('task.detailSopId'))}</span>

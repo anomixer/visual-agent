@@ -43,7 +43,7 @@ It becomes: create a task -> show a suggested action button -> you confirm -> el
 | Feature | Description |
 |------|------|
 | Recommendation list | Common system optimization and installation items; supports search, add task, and immediate execution |
-| SOP list | Switch the left panel to view all SOPs; supports search by name, ID, category, and direct execution |
+| SOP list | Switch the left panel to view all SOPs; supports search by name, ID, category, and direct execution. Each card's verb matches what the SOP actually does: Install, Uninstall, or a neutral Run for backup / restore / removal / scan SOPs, so a removal item is never labelled as an install |
 | Work list | Shows task status, progress, and results; supports JSON export/import. Export prefers the native save dialog, and the browser-download fallback keeps the full execution log too. Import files are validated first, and a malformed file is rejected as a whole without touching the current list. When adding or deleting a task fails, the work log shows the reason returned by the server; a selected import file that cannot be read is reported the same way instead of doing nothing. Task categories are displayed in the UI language, while the stored value and exported content stay unchanged. If the app is force-closed mid-run, the task is marked failed on the next start and keeps the log and progress from before the interruption |
 | AI chat | Supports Ollama, local OpenAI-compatible API, and cloud providers |
 | Provider settings | Configure Provider, Base URL, API Key, OAuth 2.0, and model name |

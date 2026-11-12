@@ -5,6 +5,37 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十五階段：移除型 SOP 不再被標示成「安裝」
+
+> 接續同日第三十四階段；`action` 只有 install / uninstall 兩種值，前端卻把它直接當成顯示動詞。版本維持 `2026.8.7`。
+
+### 症狀：一張寫著「安裝」的卡片，實際會移除軟體
+- `rec_remove_copilot` 的 Install 階段執行的是停用 Copilot 登錄檔與移除 AppxPackage，但卡片標題是「安裝 Windows Copilot」、按鈕是「加入安裝清單／立即安裝」、徽章是「⚡ 可安裝」。使用者看到的是新增軟體，按下 ▶ 卻是移除。
+- 根因在 `getActionTitle()`：`const normalizedAction = action === 'uninstall' ? 'uninstall' : 'install';` 之後無條件套用 `actions.installTitle`，把 SOP 自己的動詞剝掉再冠上「安裝」。`getActionLabel()` 同樣只有 uninstall / install 兩條路。
+- 16 支內建 SOP 中有 6 支沒有 `## Uninstall` 階段，其中 5 支的 Install 階段根本不是安裝：`rec_remove_copilot`（移除）、`rec_backup`（建立還原點）、`sys_backup_user_files`（備份）、`sys_restore_user_files`（還原）、`rec_driver_check`（掃描）。第 6 支 `install_playwright_chromium` 確實是安裝，不受影響。
+- 備份 / 還原 / 還原點 / 驅動檢查這 4 支至少還保留了自己的動詞當主體（「安裝 備份文件資料夾」），語意錯但不危險；Copilot 那支是把破壞性動作講成新增動作，屬誤導文案。
+
+### 顯示與執行分離
+- 新增 `getDisplayAction(title, action)`：`uninstall` 照舊；否則剝掉開頭非字母數字（表情符號、「」引號）後，只有開頭是 `安裝|下載` 或 `Install|Download` + 空白才回 `install`，其餘一律回中性的 `run`。
+- `getActionLabel()` 增加 `run` 分支（zh `執行` / en `Run`），`getActionTitle()` 在 `run` 時原樣回傳標題，不再剝動詞。
+- 兩個卡片工廠（`createRecommendCard` / `createSopCard`）、4 個加入／執行的 log 與 chat bubble、任務卡片與詳情視窗的動作 chip，全部改走 `getDisplayAction()`。徽章 `sidebar.actionable` / `actionableShort` 本來就吃 `actionLabel`，因此自動跟著變成「⚡ 可執行」。
+- 新增 `task.addRunTask`（加入工作清單 / Add to work list）：`run` 沒有受詞可套進 `加入{action}清單`，硬套會變成「加入執行清單」。
+- **送出的 payload 完全不變**：`action` 仍是原始的 `install`，executor 仍跑 Install 階段。這是純顯示層修正。
+- 刻意不改的兩處：`evaluateSOPInstalledState()` 的 `recommendedAction`（改成 uninstall 會導向不存在的 `steps.uninstall`），以及 `buildTaskCompletionMessage()`（只與 `actions.uninstall` 比較，install 與 run 落在同一條 `安裝 / 執行完成` 分支，輸出已經正確）。
+- 規則是「只改寫開頭是安裝類動詞的標題」，不是「所有 install 都原樣輸出」：後者會把目前正確的 `下載語言模型 → 安裝 語言模型` 一起改壞。`Scan and Install Drivers via Windows Update` 因為 regex 錨在開頭，正確判為 `run`。
+
+### 測試與驗收
+- 新增 `test/sop-action-verb.test.js`（13 項）：擷取真實 `getDisplayAction` / `getActionTitle` / `createSopCard` / `createRecommendCard` / `renderTaskCard` / `renderTaskModalBody` / `addRecommendToTodo`，SOP 清單直接讀 repo `sops/*/SOP.md`（唯讀）。鎖住前提（16 支、5 支無 Uninstall）、Copilot 卡片標題／兩個按鈕／徽章都不含安裝字樣、5 支非安裝 SOP 保留自己的動詞、安裝型 SOP 不受影響且仍可翻成解除安裝、下載型維持安裝家族、16×2×2 無重複動詞、點 ＋ 仍 POST `action:'install'` 且不執行、queue log 說執行不說安裝、任務 chip 與詳情、手動與動態標題不被強制冠動詞、en-US 無中文外洩。
+- 驅動檢查的名稱是「檢查並安裝驅動程式」，句中的「安裝」是它真正要做的事，因此該項斷言改用錨在開頭的 `LEADING_INSTALL`，不是全文搜尋。
+- `test/category-i18n.test.js` 的標題測試改依 `getDisplayAction()` 分支：`run` 必須逐字等於 SOP 名稱。另外 3 支測試檔的 DECLARATIONS 補上 `getDisplayAction`。
+- 6 個突變探針全部被抓到（`getDisplayAction` 永遠回 install、`getActionLabel` 移除 run 分支、任務 chip 退回原始 action、SOP 卡片退回原始 action、字典刪掉 `actions.run`、`getActionTitle` 移除 run 短路），分別由 16 / 10 / 2 / 4 / 8 / 8 項測試攔下；探針後 `public/app.js` md5 `c23ed675f487c114eb42cc5509882c93` 與還原後一致。
+- `npm test`：25 個 JS 語法、51 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify29`）：zh-TW 16 張 SOP 卡片中 5 支非安裝 SOP 全部顯示「加入工作清單／立即執行」，Copilot 為「移除 Windows Copilot」＋「⚡ 可執行」；推薦清單 8 張同樣正確；安裝型仍「加入安裝清單／立即安裝」，已安裝者仍翻成「加入解除安裝清單／立即解除安裝」。點 Copilot 的 ＋ 攔到的 payload 為 `{"title":"移除 Windows Copilot","skillId":"rec_remove_copilot","action":"install"}`，任務建立為 pending 且未執行；任務卡片 chip 與詳情「動作」皆為「執行」，工作日誌為「＋ 已加入執行：移除 Windows Copilot」。切 en-US 後為 `Remove Windows Copilot` / `Add to work list` / `Run now` / `⚡ Run available`，任務 chip 與詳情為 `Run`，SOP 清單無中文；切回 zh-TW 正常。console 無 error / warn。驗收後已停止實例（PID 9156）、確認 3210 / 19168 不再監聽並刪除暫存設定檔與探針腳本。
+- **尚未完成**：未真的執行 Copilot SOP 確認移除結果（會動到登錄檔與 AppxPackage）；本輪只驗證文案與 payload。UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更 SOP 檔案、執行語意、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.11.12 — 第三十四階段：任務分類終於會翻譯，讀檔失敗不再靜默
 
 > 接續同日第三十三階段；把「分類本地化」從側邊欄擴到任務卡片與詳情，並補上兩個 `FileReader` 的失敗路徑。版本維持 `2026.8.7`。

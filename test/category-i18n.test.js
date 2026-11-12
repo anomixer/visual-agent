@@ -44,7 +44,7 @@ function loadLocalePacks(locale) {
 const DECLARATIONS = [
     'getLocalePack', 'formatI18n', 't', 'escapeHtml',
     'localizeCategory', 'localizeRiskLevel', 'localizeStatus', 'getLocalizedItem',
-    'getActionLabel', 'getActionTitle', 'renderTaskCard', 'renderTaskModalBody', 'queueSopTaskById',
+    'getDisplayAction', 'getActionLabel', 'getActionTitle', 'renderTaskCard', 'renderTaskModalBody', 'queueSopTaskById',
 ].map(extractFunction).join('\n');
 
 function createElement() {
@@ -147,9 +147,15 @@ test('action titles stay readable for every bundled SOP', () => {
     for (const locale of ['zh-TW', 'en-US']) {
         const { context } = createContext({ locale });
         for (const action of ['install', 'uninstall']) {
-            const label = context.getActionLabel(action);
             for (const sop of SOP_ITEMS) {
-                const title = context.getActionTitle(context.getLocalizedItem(sop).name, action);
+                const name = context.getLocalizedItem(sop).name;
+                const display = context.getDisplayAction(name, action);
+                const title = context.getActionTitle(name, action);
+                if (display === 'run') {
+                    assert.equal(title, name, `${locale} ${sop.id} ${action}: a non-install SOP must keep its own verb, got "${title}"`);
+                    continue;
+                }
+                const label = context.getActionLabel(display);
                 assert.ok(title.startsWith(label), `${locale} ${sop.id} ${action}: "${title}" should start with "${label}"`);
                 assert.ok(title.length > label.length, `${locale} ${sop.id} ${action} lost its subject: "${title}"`);
                 assert.ok(!/^(Install|安裝)\s+(Install|安裝)/.test(title), `${locale} ${sop.id} duplicates the verb: "${title}"`);
