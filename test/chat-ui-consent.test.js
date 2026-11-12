@@ -8,22 +8,31 @@ const { test } = require('node:test');
 
 const sourcePath = path.join(__dirname, '..', 'public', 'app.js');
 const source = fs.readFileSync(sourcePath, 'utf8');
+const persistLimitMatches = [...source.matchAll(/^const LOCAL_CHAT_PERSIST_LIMIT = [^;]+;\r?$/gm)];
+assert.equal(persistLimitMatches.length, 1, 'Expected one actual declaration of LOCAL_CHAT_PERSIST_LIMIT');
 const declarations = [
-    'createLocalChatSession', 'normalizeLocalChatSessions', 'saveLocalChatSessions',
-    'getActiveLocalChatSession', 'touchLocalChatSession',
-    'getActiveAbortController', 'setActiveAbortController', 'isModePending',
-    'getThinkingIdForMode', 'setThinkingIdForMode', 'updateSendButtonState',
-    'addLocalSessionMessage', 'renderLocalChatMessages',
-    'appendChatBubble', 'appendAgentActionConsent', 'sendChat',
-].map((name) => {
-    // These top-level declarations end at an unindented closing brace.
-    const matches = [...source.matchAll(new RegExp(`^(?:async )?function ${name}\\([^]*?^\\}\\r?$`, 'gm'))];
-    assert.equal(matches.length, 1, `Expected one actual declaration of ${name}`);
-    return new vm.Script(matches[0][0], {
+    new vm.Script(persistLimitMatches[0][0], {
         filename: sourcePath,
-        lineOffset: source.slice(0, matches[0].index).split('\n').length - 1,
-    });
-});
+        lineOffset: source.slice(0, persistLimitMatches[0].index).split('\n').length - 1,
+    }),
+    ...[
+        'createLocalChatSession', 'normalizeLocalChatSessions', 'saveLocalChatSessions',
+        'buildLocalChatPersistPayload',
+        'getActiveLocalChatSession', 'touchLocalChatSession',
+        'getActiveAbortController', 'setActiveAbortController', 'isModePending',
+        'getThinkingIdForMode', 'setThinkingIdForMode', 'updateSendButtonState',
+        'addLocalSessionMessage', 'renderLocalChatMessages',
+        'appendChatBubble', 'appendAgentActionConsent', 'sendChat',
+    ].map((name) => {
+        // These top-level declarations end at an unindented closing brace.
+        const matches = [...source.matchAll(new RegExp(`^(?:async )?function ${name}\\([^]*?^\\}\\r?$`, 'gm'))];
+        assert.equal(matches.length, 1, `Expected one actual declaration of ${name}`);
+        return new vm.Script(matches[0][0], {
+            filename: sourcePath,
+            lineOffset: source.slice(0, matches[0].index).split('\n').length - 1,
+        });
+    }),
+];
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const noop = () => {};

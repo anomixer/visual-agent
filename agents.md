@@ -5,6 +5,36 @@
 
 ---
 
+## 📌 2026.10.29 — 第二十六階段：本機對話持久化預算，配額溢出不中斷對話
+
+> 接續同日第二十五階段；每新增一則訊息都會 `touchLocalChatSession()` → `saveLocalChatSessions()`。版本維持 `2026.8.7`。
+
+### 配額溢出與同步序列化
+- `saveLocalChatSessions()` 直接 `JSON.stringify(localChatSessions.slice(0, 24))`，內容包含 Chalkboard 附件的完整 PNG base64（單張可達數百 KB 至數 MB），且沒有任何大小上限。
+- 兩個後果：`localStorage.setItem` 拋出的 `QuotaExceededError` 會沿 `addLocalSessionMessage()` 往上冒到聊天送出流程；以及每送一則訊息就要同步序列化整份歷史附件，訊息越多越慢。
+- 同一個 origin 的配額還可能被其他資料佔用，因此「寫入失敗」是必須容忍的正常情況，不是例外。
+
+### 先文字、再回填附件
+- 新增 `LOCAL_CHAT_PERSIST_LIMIT`（2 MiB）與 `buildLocalChatPersistPayload(sessions, limit)`：
+  - 先複製一份把所有 `imageDataUrl` 清空的 clone，只序列化文字；文字本身已超過預算就直接回傳，不再做任何附件處理。
+  - 剩餘預算依「工作階段 `updatedAt` 新到舊、訊息新到舊」回填附件。data URL 只含 JSON 安全字元，長度可直接估算，不需要為了量大小而重複 stringify。
+  - 只改動持久化用的副本，記憶體中的 `localChatSessions` 與附件完全不受影響（每 session 仍上限 120 則）。
+- `saveLocalChatSessions()` 的兩個 `setItem` 包進 try/catch，失敗只 `console.warn`，不中斷對話。
+
+### 測試與驗收
+- 新增 `test/app-chat-persist.test.js`（5 項，擷取真實 `LOCAL_CHAT_PERSIST_LIMIT` / `buildLocalChatPersistPayload` / `saveLocalChatSessions`）：小歷史原樣保存、超預算時丟最舊附件但保留文字與最新附件、不改動傳入的 sessions、無附件超預算時原樣回傳、寫入失敗不拋錯且只 warn 一次。
+- `test/chat-ui-consent.test.js` 的宣告擷取清單補上新的 const 與函式；缺漏時 try/catch 會吞掉 `ReferenceError`，讓 9 項 consent 測試在 `persisted()` 讀到 `undefined` 而失敗。
+- `npm test`：24 個 JS 語法、37 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify20`）：
+  - 8 張 1,000,022 字元 PNG 附件 → 未拋錯，儲存 2,015,908 字元 ≤ 2,097,152，最新 2 張保留、較舊 6 張只留文字，記憶體中 8 張附件完整。
+  - 實際尺寸 6 張 300,022 字元附件 → 全數保留（1,802,075 字元），每則新增耗時 3–21 ms；重新載入後 6 則訊息與附件完整還原。
+  - 把 `localStorage.setItem` 換成會拋 `QuotaExceededError` 的替身 → `saveLocalChatSessions()` 不拋錯，只留下 1 筆 warn；console 無 error / warn。
+  - 驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成**：記憶體中的附件總量仍無上限（24 sessions × 120 則）。實測把單一 session 塞到 404M 字元附件（heap 1.6 GB）時，每次保存仍因 GC 壓力耗時約 1.3 秒；同樣演算法在正常資料量下只需 14 ms。本輪只限制持久化大小，未改記憶體保留策略。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第二十五階段：debug.log 輪替與診斷尾端讀取
 
 > 接續同日第二十四階段；`fileLog()` 有 50 個呼叫點（搜尋、影片、Skill 載入、遠端錯誤等）。版本維持 `2026.8.7`。

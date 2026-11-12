@@ -35,6 +35,7 @@
 - **分頁系統**：中間區域採用 Chrome 風格分頁，Chalkboard 為常駐分頁。
 - **完全去 Terminal 化**：嚴禁顯示黑底白字 CMD/PowerShell 視窗
 - **所有面板邊界可拖拉**調整大小，佈局持久化到 `localStorage`
+- **本機對話持久化有預算**：`local_chat_sessions_v1` 上限 2 MiB。先保存全部文字，再依工作階段與訊息的新到舊回填附件 base64；超出預算的舊附件只留在記憶體，不寫入 storage。配額已滿導致寫入失敗時不得中斷對話流程。
 - 深色主題為主，支援切換淺色模式
 - **國際化支援**：完整中英雙語 UI，AI Engine Settings dialog 與 AI chat 根據語系自動切換
 
@@ -282,6 +283,7 @@ $true
 - [x] 日誌輪詢不重複請求，後端重啟後自動重置游標（2026.10.29 第二十三階段：`logPollInFlight`、`selectLogsForClient()` 的 `since > 筆數` → `reset: true`、`pollLogs()` 清空面板）。
 - [x] 日誌游標改用遞增序號，緩衝滿 500 筆後不再錯位卡住；前端日誌節點上限 600（2026.10.29 第二十四階段：`appendLogWithSeq()`、`selectLogsForClient()` 以 `seq` 判斷增量與重置、`trimLogEntries()`）。
 - [x] `debug.log` 寫入輪替（1 MiB 上限）且診斷只讀檔案尾端（2026.10.29 第二十五階段：`src/debug-log.js` 的 `appendDebugLog()` / `readDebugLogTail()`）。
+- [x] 本機對話持久化限制在 2 MiB 且配額溢出不中斷對話（2026.10.29 第二十六階段：`LOCAL_CHAT_PERSIST_LIMIT`、`buildLocalChatPersistPayload()` 先文字後回填附件、`saveLocalChatSessions()` try/catch）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

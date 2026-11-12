@@ -1816,10 +1816,43 @@ function normalizeLocalChatSessions() {
     }
 }
 
+// localStorage 配額只有數 MB，但訊息會保留附件 base64；先限制持久化大小，超出就從最舊的附件開始丟影像。
+const LOCAL_CHAT_PERSIST_LIMIT = 2 * 1024 * 1024;
+
+function buildLocalChatPersistPayload(sessions = [], limit = LOCAL_CHAT_PERSIST_LIMIT) {
+    const clone = sessions.map((session) => ({
+        ...session,
+        messages: (session.messages || []).map((message) => ({ ...message, imageDataUrl: '' })),
+    }));
+    // 每則訊息都會呼叫一次；先只序列化文字，避免把不會被保存的附件 base64 也整份 stringify。
+    const baseJson = JSON.stringify(clone);
+    if (baseJson.length >= limit) return baseJson;
+
+    // data URL 只含 JSON 安全字元，長度可直接估算；從最新的工作階段與訊息開始回填附件直到預算用完。
+    let room = limit - baseJson.length;
+    const pairs = clone.map((session, index) => ({ session, source: sessions[index] }));
+    pairs.sort((a, b) => new Date(b.session.updatedAt || 0).getTime() - new Date(a.session.updatedAt || 0).getTime());
+    for (const { session, source } of pairs) {
+        const messages = session.messages || [];
+        for (let i = messages.length - 1; i >= 0; i--) {
+            const image = source.messages?.[i]?.imageDataUrl || '';
+            if (!image || image.length > room) continue;
+            messages[i].imageDataUrl = image;
+            room -= image.length;
+        }
+    }
+    return JSON.stringify(clone);
+}
+
 function saveLocalChatSessions() {
     normalizeLocalChatSessions();
-    localStorage.setItem('local_chat_sessions_v1', JSON.stringify(localChatSessions.slice(0, 24)));
-    localStorage.setItem('selected_local_chat_session_id', selectedLocalChatSessionId || '');
+    try {
+        localStorage.setItem('local_chat_sessions_v1', buildLocalChatPersistPayload(localChatSessions.slice(0, 24)));
+        localStorage.setItem('selected_local_chat_session_id', selectedLocalChatSessionId || '');
+    } catch (e) {
+        // 同一個 origin 的配額可能被其他資料佔用；持久化失敗不可中斷對話流程。
+        console.warn('Save local chat sessions failed', e);
+    }
 }
 
 function loadLocalChatSessions() {
