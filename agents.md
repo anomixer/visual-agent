@@ -5,6 +5,50 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十九階段：設定檔改為原子置換，寫到一半不再毀掉 API Key
+
+> 接續同日第三十八階段；上一輪把「寫不進去卻說已儲存」修好後，留下的缺口是 `config.json` 仍直接覆寫。版本維持 `2026.8.7`。
+
+### 症狀：寫入中途失敗，舊設定一起陪葬
+- `saveConfig()` 直接 `fs.writeFileSync(CONFIG_PATH, …)`：這個呼叫會**先把既有檔案截斷成 0**，再寫入新內容。
+- 截斷之後、寫完之前若行程被砍、磁碟滿或斷電，磁碟上就只剩半截 JSON。`loadConfig()` 的 `JSON.parse` 失敗後只 `console.warn` 並保留預設值，**使用者的 Provider、Base URL 與 API Key 全部消失，而且沒有備份可還原**。
+- `tasks.json` 早在第一階段稽核就改成 temp write + rename，設定檔一直沒跟進。
+
+### 重現（真實檔案系統 + 真實行程被砍，不需要系統管理員權限）
+- 探針在隔離 APPDATA 先種入含 `ORIGINAL-SECRET-KEY-9f3a` 的 `config.json`（319 bytes），再 spawn 一個子行程載入真實 `src/llm.js`，用 192 MB 的 API Key 觸發 `saveConfig()`（JSON 約 402 MB，把寫入窗口拉寬到可觀察）。
+- 父行程以 `statSync` 緊密輪詢，**一看到 `config.json` 尺寸改變就立刻 `SIGKILL`**。修正前記錄到 `observedSizeBeforeKill=0`：獨立的父行程真的看到使用者的設定被截斷成 0 bytes，這就是資料遺失窗口。
+- 同一探針在修正後執行兩種時點：暫存檔剛建立（0 bytes）時砍、暫存檔已寫滿 402 MB 但尚未 rename 時砍。兩次 `config.json` 都維持 **319 bytes、可解析、`ORIGINAL-SECRET-KEY-9f3a` 完好**，只有 `config.json.<pid>.tmp` 留在目錄裡。
+- 附帶量測：`JSON.stringify` 對 256 MB 字串會拋 `RangeError: Invalid string length`（V8 字串上限），因此探針 payload 上限約 240 MB；這是探針本身的限制，與一般 1 KB 設定檔無關。
+
+### 修正
+- `saveConfig()` 改為與 `saveTasks()` 相同的命名慣例：寫入同目錄的 `config.json.<pid>.tmp`，`fsyncSync` 後 `renameSync` 置換。帶 pid 可避免兩個行程互相覆寫暫存檔；同目錄確保 rename 不跨磁碟區。
+- 加上 `fsyncSync`：只 rename 不 fsync 時，斷電後可能出現「檔名已換、資料還沒落地」，等於沒修到斷電情境。設定檔只有 1 KB 左右，且只在使用者儲存設定時才寫，成本可忽略。
+- 失敗時 `try { fs.unlinkSync(tempFile) } catch {}` 清掉自己剛寫的暫存檔再 rethrow；**只刪自己 pid 的暫存檔**，別的 pid 可能屬於仍在執行的行程。
+- 第三十八階段的行為完全不變：錯誤仍然往外拋，`updateProviderSettings()` / `setCurrentModel()` 仍然回滾七個欄位，背景自動選模仍是 best-effort。
+
+### 測試與驗收
+- 新增 `test/llm-config-atomic.test.js`（5 項，**真實 `src/llm.js`** + 暫存 APPDATA）：成功存檔後目錄裡沒有任何 `.tmp`；暫存路徑被換成目錄時 `openSync` 失敗，`config.json` **逐位元組不變**且記憶體回滾；`config.json` 被換成目錄時 rename 失敗，剛寫好的暫存檔被清掉；別的 pid 留下的半截暫存檔不會擋住下一次存檔、也不會被順手刪掉；最後 **spawn 一個全新 node 行程**載入設定，確認七個欄位與寫入內容完全一致。
+- `test/llm-config-save.test.js` 5 項維持通過，只更新註解：`config.json` 換成目錄後現在是 **rename 失敗（EPERM）**，不再是 `writeFileSync` 的 EISDIR。`test/llm-settings-routes.test.js` 5 項不受影響。
+- 突變探針 4 個（改回原地覆寫、失敗不清暫存檔、重新吞掉錯誤、跳過記憶體回滾）**全數被測到，4/4**；其中「跳過回滾」第一次只被舊測試抓到，因為新測試的前後 provider 相同使斷言失效，已把記憶體先對齊 Ollama 後重測，兩支測試都抓得到。
+- `npm test`：25 個 JS 語法、**56 支測試檔**與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify33`）：
+  - zh-TW 正常儲存 → 無 alert、視窗關閉並 reload，磁碟 `config.json` 寫入 provider / model / vision，目錄無 `.tmp`。
+  - `config.json` 換成目錄後儲存 → alert「儲存失敗：EPERM: operation not permitted, rename '…config.json.25824.tmp' -> '…config.json'」，**視窗保持開啟**；`GET /api/llm/config` 仍是 OpenAI／gpt-4o-mini（已回滾），目錄無殘留暫存檔。
+  - 切 en-US 重試 → alert「Save failed: EPERM: …」，視窗仍開啟，標題為 `AI Engine Settings`。
+  - 移除目錄後重試 → 無 alert，`config.json` 正確寫入 `sk-recovered-verify33` 與 vision model，無 `.tmp`。
+  - console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔與探針腳本。
+- 最終 `src/llm.js` md5 `bb40871d8052e4f4855a72059edb1f48`。
+
+### 尚未完成
+- **真實斷電未實測**：本輪以 `SIGKILL` 在真實檔案系統上重現同一條程式路徑，`fsync` 的斷電保固無法在不斷電的情況下驗證。
+- **真實磁碟全滿（ENOSPC）與檔案被鎖住（EPERM）未實測**：仍以「路徑被目錄佔住」重現失敗分支。
+- `SIGKILL` 後留下的 `config.json.<pid>.tmp` 不會被自動清理（cleanup 沒機會執行）。它不影響下次存檔，真實設定檔只有 1 KB，但目前沒有啟動時清理舊暫存檔的機制。
+- `remote-profile.json` 仍是直接覆寫。它損毀時 `loadRemoteProfile()` 會退回預設名稱且下次儲存自我修復，不會遺失不可回復的密鑰，因此本輪刻意未一起改。
+- UAC elevated process-tree、雙機 Chalkboard、Vision 模型、乾淨 Windows EXE 仍須實機驗收。
+- 未變更 SOP、版本號；未執行安裝、提權或刪除，也未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.12 — 第三十八階段：AI 引擎設定寫不進去時不再宣稱「已儲存」
 
 > 接續同日第三十七階段；同一類「記憶體已改、磁碟沒改」的缺陷在 LLM 設定路徑上更嚴重，因為它會弄丟使用者的 API Key。版本維持 `2026.8.7`。

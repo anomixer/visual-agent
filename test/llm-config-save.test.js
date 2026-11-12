@@ -16,7 +16,7 @@ const originalFetch = global.fetch;
 const DEFAULT_MODEL = 'gemma4:e2b-it-qat';
 
 function blockConfigWrites() {
-    // 把 config.json 換成目錄：writeFileSync 必定失敗（EISDIR），不需要系統管理員或 attrib。
+    // 把 config.json 換成目錄：暫存檔寫成功後 rename 必定失敗（EPERM），不需要系統管理員或 attrib。
     fs.rmSync(configPath, { recursive: true, force: true });
     fs.mkdirSync(configPath, { recursive: true });
 }

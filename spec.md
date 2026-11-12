@@ -145,6 +145,7 @@ browser ──── public/index.html
 - **診斷日誌必須是 best-effort**：`appendDebugLog()` 本身可能因磁碟滿或檔案被鎖住而拋錯，因此 `fileLog()` 必須包 try/catch。錯誤處理路徑自己拋錯會蓋掉真正的錯誤，讓全域 JSON 出口失效。
 - **模型名稱必須是字串**：`POST /api/llm/model` 的 `modelName` 非字串或去除空白後為空時必須回 400，不得賦值給 `currentModel` 或寫入 config。
 - **LLM 設定寫檔失敗不得宣稱已儲存**：`saveConfig()` 不得吞掉寫檔錯誤，否則 `updateProviderSettings()` / `setCurrentModel()` 已改完模組層設定、磁碟卻沒改，端點仍回 `success:true`，重啟後使用者的 Provider、Base URL、API Key 與 Vision Model 全部消失。兩個函式都必須先快照再套用，`saveConfig()` 拋錯時還原所有被指派的欄位（`updateProviderSettings()` 是七個）並 rethrow；`POST /api/llm/config` 與 `POST /api/llm/model` 必須回 500 JSON 帶真實原因，前端設定視窗保持開啟、模型選單把失敗寫進工作日誌。
+- **設定檔必須原子置換**：`config.json` 與 `tasks.json` 一樣必須 temp-write + rename，不得直接 `writeFileSync` 覆寫。原地覆寫會先把既有檔案截斷成 0，寫到一半失敗（行程被砍、磁碟滿、斷電）就留下半截 JSON，`loadConfig()` 解析失敗後靜默退回預設值，API Key 沒有備份可還原。暫存檔必須與目標同目錄（rename 不跨磁碟區）並帶 pid（避免兩個行程互相覆寫），rename 前必須 `fsync`，否則斷電後可能「檔名已換、資料未落地」。失敗時只能清掉自己 pid 的暫存檔，不得刪除其他 pid 可能仍在使用的檔案。
 - **背景自動選模的存檔失敗不得影響就緒判定**：`checkOllamaStatus()` 把 `currentModel` 換成 `DEFAULT_MODEL` 後的 `saveConfig()` 必須是 best-effort。讓錯誤往外拋會被外層 `catch (tagsErr)` 接住並跳過 `status.modelReady = true`，已存在的模型會被判為未就緒。
 - **chat 內的模型切換失敗不得中斷整段回覆**：`SWITCH_MODEL` 分支位於 `/api/chat` 的 async handler 內且沒有外層 try/catch，`setCurrentModel()` 拋錯時必須就地接住、把原因放進 `actionSummaries` 回覆使用者，不得讓全域 JSON 出口把整段 chat 變成 500。失敗時不得設定 `hasActionTaken`（它只決定要不要 `saveTasks()`）。
 - **客戶端讀檔與圖片解碼失敗必須可見**：`FileReader` 的 `onerror` 不是 `onload` 的一部分，未接時讀檔失敗（權限、檔案被移走、I/O 錯誤）會完全沒有回饋。任務匯入與 Chalkboard 圖片上傳都必須註冊 `reader.onerror`，把 `reader.error?.message`（無訊息時 `Unknown error`）一起寫進工作日誌的 error 等級；Chalkboard 另需 `img.onerror` 攔截「讀得到位元組但無法解碼」的檔案。失敗時不得送出請求、不得改動畫布，且必須重設 file input 讓使用者能重試同一個檔案。
@@ -328,7 +329,8 @@ $true
 - [x] Skills 面板分類標題與來源標籤本地化，字典不再焊死啟動語系（2026.11.12 第三十六階段：`categories` 補 15 個 skill 分類、兩個分組標題走 `localizeCategory()`、`sidebar.skillSourceHermes` / `skillHermesBadgeTitle`、搜尋字串納入分類、`settings.visionHelp` 移除 `currentLocale` 三元運算式）。
 - [x] API 錯誤一律回 JSON、寫檔失敗回滾記憶體狀態（2026.11.12 第三十七階段：全域 JSON error middleware 保留 4xx–5xx 原值且不外送 stack、`app.use('/api')` JSON 404 出口、`POST`/`DELETE /api/todo` 寫檔失敗回滾、`fileLog()` best-effort、`POST /api/llm/model` 拒絕非字串 modelName）。
 - [x] LLM 設定寫檔失敗可見且回滾（2026.11.12 第三十八階段：`saveConfig()` 不再吞錯誤、`updateProviderSettings()` 七欄位快照回滾、`setCurrentModel()` 回滾、自動選模存檔 best-effort、`POST /api/llm/config` 與 `/api/llm/model` 回 500 JSON、chat `SWITCH_MODEL` 失敗仍回覆原因、前端模型選單補錯誤記錄與 `settings.saveFailed` / `llm.modelSwitchFailed` 雙語鍵）。
-- [ ] `config.json` 改用 temp-write + rename（目前直接 `writeFileSync`，斷電或磁碟滿會留下半截 JSON，`loadConfig()` 解析失敗後靜默退回預設值，API Key 一樣會消失）。
+- [x] `config.json` 改用 temp-write + rename（2026.11.12 第三十九階段：同目錄 `config.json.<pid>.tmp` → `fsyncSync` → `renameSync`，失敗只清自己 pid 的暫存檔並 rethrow；真實 `SIGKILL` 探針證實修正前 `config.json` 被截斷成 0、修正後逐位元組不變）。
+- [ ] `remote-profile.json` 仍直接覆寫（損毀時退回預設名稱且下次儲存自我修復，不遺失不可回復的密鑰，優先度低）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

@@ -117,9 +117,26 @@ function saveConfig() {
         currentAuthConfig,
         currentVisionModel
     };
-    // 寫不進去就必須讓呼叫端知道。吞掉錯誤會變成「記憶體已改、磁碟沒改」，
-    // 端點卻回 Settings saved，重啟後使用者的 Provider 與 API Key 全部消失。
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+    // 直接覆寫會先把 config.json 截斷成 0，寫到一半失敗（磁碟滿、行程被砍、斷電）
+    // 就留下半截 JSON；loadConfig() 解析失敗後退回預設值，API Key 再也拿不回來。
+    const tempFile = `${CONFIG_PATH}.${process.pid}.tmp`;
+    try {
+        const fd = fs.openSync(tempFile, 'w');
+        try {
+            fs.writeFileSync(fd, JSON.stringify(config, null, 2), 'utf-8');
+            fs.fsyncSync(fd);
+        } finally {
+            fs.closeSync(fd);
+        }
+        fs.renameSync(tempFile, CONFIG_PATH);
+    } catch (err) {
+        try {
+            fs.unlinkSync(tempFile);
+        } catch {
+            // 暫存檔可能根本沒建立，或本身就是失敗原因（例如被換成目錄）。
+        }
+        throw err;
+    }
 }
 
 /**

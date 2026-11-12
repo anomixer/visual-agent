@@ -439,6 +439,8 @@ That means `%APPDATA%\visual-agent\tasks.json` could not be written: the disk is
 **Q: Saving AI engine settings shows “Save failed: EISDIR / EPERM / ENOSPC”?**
 That means `%APPDATA%\visual-agent\config.json` could not be written: the disk is full, the file is read-only or locked by another program, or a directory with that name occupies the path. When the settings cannot be persisted they are not applied in memory either — the settings dialog stays open and shows the real cause instead of pretending to save and then losing your provider and API key on restart. Clear the cause and press “Save & Refresh” again. If switching models from the model menu fails, the work log records “Model switch failed” with the reason; if you ask the AI to switch models in chat and the save fails, the AI explains the reason instead of aborting the whole reply.
 
+The config file is written to a temporary file and then swapped into place. If a save is interrupted halfway (the process is killed, the disk fills up, the power goes out), the existing `config.json` is never truncated or corrupted — your previous settings and API key stay intact, and you can simply save again once the cause is cleared. A leftover `config.json.<pid>.tmp` in that folder is a temp file from a process that was force-killed before cleanup; it does not affect the next save.
+
 **Q: How do I report an issue?**
 Open “Help → Diagnostics” in the title bar, copy the diagnostic summary, and include it together with the steps you took and the tail of the debug log.
 
