@@ -7318,6 +7318,15 @@ async function attachRemoteFile(file) {
 // ════════════════════════════════════════════════════════
 //  LOG PANEL
 // ════════════════════════════════════════════════════════
+// 伺服器端只保留最新 500 筆；前端節點數也設上限，避免長時間執行後 DOM 無限成長。
+const LOG_ENTRY_LIMIT = 600;
+
+function trimLogEntries() {
+    while (logEntries.childElementCount > LOG_ENTRY_LIMIT) {
+        logEntries.firstElementChild.remove();
+    }
+}
+
 function addLogEntry(logItem) {
     const cleanMsg = stripAnsi(logItem.message);
     const emptyEl = logEntries.querySelector('.log-empty');
@@ -7357,6 +7366,7 @@ function addLogEntry(logItem) {
     el.className = `log-entry ${level}`;
     el.innerHTML = `<span class="log-time">${time}</span><span>${escapeHtml(cleanMsg)}</span>`;
     logEntries.appendChild(el);
+    trimLogEntries();
     if (shouldStickToBottom) {
         logBody.scrollTop = logBody.scrollHeight;
     }

@@ -307,16 +307,31 @@ function buildTaskExportPayload(tasks = [], agentVersion = '', exportedAt = new 
     return { exportedAt, agentVersion, tasks };
 }
 
+// 全域 log 只保留最近 500 筆；序號單調遞增，客戶端游標才不會因丟棄最舊項目而錯位。
+const LOG_BUFFER_LIMIT = 500;
+
+function appendLogWithSeq(buffer = [], entry = {}, limit = LOG_BUFFER_LIMIT) {
+    const last = buffer[buffer.length - 1];
+    const seq = (last && Number.isFinite(last.seq) ? last.seq : 0) + 1;
+    const stored = { ...entry, seq };
+    buffer.push(stored);
+    while (buffer.length > limit) buffer.shift();
+    return stored;
+}
+
 function selectLogsForClient(allLogs = [], sinceParam = '') {
     const since = Number.parseInt(String(sinceParam ?? ''), 10);
+    const tail = allLogs[allLogs.length - 1];
+    const lastSeq = tail && Number.isFinite(tail.seq) ? tail.seq : 0;
     if (!Number.isSafeInteger(since) || since <= 0) {
-        return { logs: allLogs, total: allLogs.length };
+        return { logs: allLogs, total: lastSeq };
     }
-    // since 超過現有筆數代表伺服器重啟或緩衝被截斷，客戶端游標已失效；回全部並要求前端重置。
-    if (since > allLogs.length) {
-        return { logs: allLogs, total: allLogs.length, reset: true };
+    // 游標大於最新序號（伺服器重啟）或已落在被丟棄的區段（緩衝滿了）都無法再接續，回全部並要求前端重置。
+    const headSeq = allLogs.length && Number.isFinite(allLogs[0].seq) ? allLogs[0].seq : 1;
+    if (since > lastSeq || since < headSeq - 1) {
+        return { logs: allLogs, total: lastSeq, reset: true };
     }
-    return { logs: allLogs.slice(since), total: allLogs.length };
+    return { logs: allLogs.filter((entry) => entry.seq > since), total: lastSeq };
 }
 
 function buildNvidiaSnapshotLines(snapshot = {}) {
@@ -363,5 +378,7 @@ module.exports = {
     formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted,
     buildTaskExportPayload,
+    appendLogWithSeq,
+    LOG_BUFFER_LIMIT,
     selectLogsForClient,
 };

@@ -46,6 +46,7 @@ const {
     buildNvidiaSnapshotLines,
     formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted, buildTaskExportPayload, selectLogsForClient,
+    appendLogWithSeq,
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
 const { pickSaveFilePath } = require('./native-dialogs');
@@ -3779,8 +3780,8 @@ app.post('/api/execute/:taskId', async (req, res) => {
     executor.on('log', (event) => {
         const logEntry = { ...event, timestamp: new Date().toISOString() };
         task.logs.push(logEntry);
-        logs.push(logEntry);
-        if (logs.length > 500) logs.shift();
+        // 全域緩衝滿了會丟最舊的，因此改用遞增序號當游標；筆數當游標會錯位卡住。
+        appendLogWithSeq(logs, logEntry);
     });
     executor.on('phase:start', (e) => {
         const progressMap = { check: 20, install: 40, uninstall: 40, verify: 80 };
@@ -3789,8 +3790,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
     executor.on('ui:message', (e) => {
         const logEntry = { level: 'ui', message: e.message, timestamp: new Date().toISOString() };
         task.logs.push(logEntry);
-        logs.push(logEntry);
-        if (logs.length > 500) logs.shift();
+        appendLogWithSeq(logs, logEntry);
     });
     // Run async
     res.json({ success: true, message: 'Task execution started' });
@@ -3802,7 +3802,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
         if (task.skillId) sopStateCache.delete(task.skillId);
         const finishLog = { level: 'success', message: `Task '${task.title}' completed (status: ${result.status})`, timestamp: new Date().toISOString() };
         task.logs.push(finishLog);
-        logs.push(finishLog);
+        appendLogWithSeq(logs, finishLog);
         // 針對 AI 引擎相關任務，強制清除快取並重新偵測
         if (sop.id === 'rec_install_ollama' || sop.id === 'rec_pull_llm_model' || task.skillId === 'rec_pull_llm_model' || task.dynamicCmd?.includes('ollama')) {
             console.log(`[Server] AI-related task completed: ${sop.id || 'dynamic'}, invalidating cache...`);
@@ -3818,7 +3818,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
         if (task.skillId) sopStateCache.delete(task.skillId);
         const errLog = { level: 'error', message: `Task execution crashed: ${err.message}`, timestamp: new Date().toISOString() };
         task.logs.push(errLog);
-        logs.push(errLog);
+        appendLogWithSeq(logs, errLog);
         appendTaskExperience(task, sop);
     } finally {
         runningSOP = null;

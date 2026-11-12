@@ -5,6 +5,34 @@
 
 ---
 
+## 📌 2026.10.29 — 第二十四階段：日誌游標改用序號，緩衝滿載不再停滯
+
+> 接續同日第二十三階段；全域日誌緩衝上限 500 筆，超過後 `shift()`。版本維持 `2026.8.7`。
+
+### 游標與緩衝錯位
+- 全域 `logs` 只在 SOP 執行時寫入，`executor` 事件在超過 500 筆後 `logs.shift()`；前端游標卻仍是「已收到的筆數」（`currentLogIndex = data.total`）。
+- 一旦緩衝開始丟棄最舊項目，`since` 與陣列索引就對不上：`since === logs.length` 會永久回空陣列，日誌面板從此停住；游標落後較多時，回傳的 slice 也會是位移後的錯誤段落。
+- 這個缺陷只在累積 500 筆執行 log 後出現，短時間驗收看不出來。
+
+### 序號化
+- `src/pure.js` 新增 `appendLogWithSeq(buffer, entry, limit)`：寫入時附上單調遞增的 `seq`，超過 `LOG_BUFFER_LIMIT`（500）才丟最舊的；`server.js` 四個寫入點（executor log、`ui:message`、完成、失敗）全部改走此函式，不再有裸 `logs.push`。
+- `selectLogsForClient(allLogs, since)` 的 `since` 改為「上一筆序號」：`total` 回最新序號；`since > total`（後端重啟）或 `since < 最舊序號 - 1`（游標落在已丟棄區段）都回全部並標記 `reset: true`，其餘只回 `seq > since` 的項目。前端的「`reset` 清面板、`currentLogIndex = total`」邏輯不需改動。
+- 任務本身的 `task.logs` 不受影響：仍保留完整歷程、不加 `seq`，匯出與詳情格式不變。
+
+### 前端節點上限
+- 伺服器只留 500 筆，但前端 `#logEntries` 從不刪除節點，長時間執行會持續成長；`addLogEntry()` 新增 `trimLogEntries()`，超過 `LOG_ENTRY_LIMIT`（600）就移除最舊節點，保留進度條原地更新與貼底行為。
+
+### 測試與驗收
+- `test/pure.test.js`：新增 6 項 `appendLogWithSeq`（首筆序號、遞增、不改動原物件、上限丟最舊、丟棄後序號連續、上限後接續）與 3 項游標案例（落在丟棄區段重置、緊接最舊項目可增量、空緩衝），日誌預期全部改為 `seq` 形狀（60 項）。
+- 新增 `test/app-log-dom-cap.test.js`（3 項）：擷取真實 `LOG_ENTRY_LIMIT` / `trimLogEntries`，驗證未達上限不刪、超過上限先丟最舊，並確認 `addLogEntry()` 真的呼叫裁剪。
+- 新增 `test/server-log-buffer.test.js`（2 項）：靜態鎖住 `server.js` 沒有裸 `logs.push`、四個寫入點都走 `appendLogWithSeq`。
+- `npm test`：23 個 JS 語法、35 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify18`）：以真實 `addLogEntry()` 連續寫入 605 筆後，`#logEntries` 節點數為 600、第一筆為 `cap-5`、最後一筆為 `cap-604`；把 `currentLogIndex` 設為 999 後呼叫 `pollLogs()`，游標回到 `total: 0` 且下一次仍正常輪詢；`/api/logs` 無參數 / `since=0` 回 `total: 0` 無 `reset`，`since=2` / `since=999` 回 `reset: true`；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成**：未以真實 SOP 執行累積 500 筆以上日誌驗證線上丟棄與 `reset` 時序（會執行安裝）；本輪以純函式、靜態接線與瀏覽器節點上限互補。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.10.29 — 第二十三階段：日誌輪詢避免重複與後端重啟後停滯
 
 > 接續同日第二十二階段；日誌面板每 2 秒以 `since` 游標增量抓取。版本維持 `2026.8.7`。

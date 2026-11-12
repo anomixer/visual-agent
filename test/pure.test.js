@@ -117,16 +117,34 @@ eq('extracted sources zh-TW', pure.formatExtractedSourcesSummary(extractedFixtur
 eq('extracted sources en-US', pure.formatExtractedSourcesSummary(extractedFixture.slice(0, 1), 'en-US'),
     'Extracted source content:\nSource 1: A\nURL: https://a\nText A');
 
-// /api/logs?since= 增量回傳
-const logFixture = [{ ts: 1 }, { ts: 2 }, { ts: 3 }];
+// 全域 log 緩衝：序號遞增，滿了丟最舊的
+const seqBuffer = [];
+eq('appendLogWithSeq 首筆序號為 1', pure.appendLogWithSeq(seqBuffer, { ts: 'a' }).seq, 1);
+eq('appendLogWithSeq 逐筆遞增', pure.appendLogWithSeq(seqBuffer, { ts: 'b' }).seq, 2);
+const originalEntry = { ts: 'c' };
+pure.appendLogWithSeq(seqBuffer, originalEntry);
+eq('appendLogWithSeq 不改動原物件', 'seq' in originalEntry, false);
+const cappedBuffer = [];
+for (let i = 1; i <= 7; i++) pure.appendLogWithSeq(cappedBuffer, { ts: i }, 5);
+eq('appendLogWithSeq 超過上限丟最舊', cappedBuffer.map((e) => e.ts), [3, 4, 5, 6, 7]);
+eq('appendLogWithSeq 丟棄後序號仍連續', cappedBuffer.map((e) => e.seq), [3, 4, 5, 6, 7]);
+eq('appendLogWithSeq 上限後新序號接續', pure.appendLogWithSeq(cappedBuffer, { ts: 8 }, 5).seq, 8);
+
+// /api/logs?since= 增量回傳（since 為上一筆序號）
+const logFixture = [{ ts: 1, seq: 1 }, { ts: 2, seq: 2 }, { ts: 3, seq: 3 }];
 eq('logs 無 since 回全部', pure.selectLogsForClient(logFixture), { logs: logFixture, total: 3 });
 eq('logs since=0 回全部', pure.selectLogsForClient(logFixture, '0'), { logs: logFixture, total: 3 });
 eq('logs since 非數字回全部', pure.selectLogsForClient(logFixture, 'abc'), { logs: logFixture, total: 3 });
 eq('logs since 負數回全部', pure.selectLogsForClient(logFixture, '-5'), { logs: logFixture, total: 3 });
-eq('logs since=2 回增量', pure.selectLogsForClient(logFixture, '2'), { logs: [{ ts: 3 }], total: 3 });
-// 游標超過現有筆數代表後端重啟或緩衝截斷，回全部並標記 reset 讓前端重整面板。
-eq('logs since 超出長度要求重置', pure.selectLogsForClient(logFixture, '99'), { logs: logFixture, total: 3, reset: true });
-eq('logs since 等於長度屬正常靜默', pure.selectLogsForClient(logFixture, '3'), { logs: [], total: 3 });
+eq('logs since=2 回增量', pure.selectLogsForClient(logFixture, '2'), { logs: [{ ts: 3, seq: 3 }], total: 3 });
+// 游標超過最新序號代表後端重啟，回全部並標記 reset 讓前端重整面板。
+eq('logs since 超過最新序號要求重置', pure.selectLogsForClient(logFixture, '99'), { logs: logFixture, total: 3, reset: true });
+eq('logs since 等於最新序號屬正常靜默', pure.selectLogsForClient(logFixture, '3'), { logs: [], total: 3 });
+// 緩衝滿了會丟最舊的；游標落在被丟棄的區段就必須重置，不能用位移後的索引硬接。
+const trimmedFixture = [{ ts: 'a', seq: 498 }, { ts: 'b', seq: 499 }, { ts: 'c', seq: 500 }];
+eq('logs 游標落在丟棄區段要求重置', pure.selectLogsForClient(trimmedFixture, '100'), { logs: trimmedFixture, total: 500, reset: true });
+eq('logs 游標緊接最舊項目可增量', pure.selectLogsForClient(trimmedFixture, '497'), { logs: trimmedFixture, total: 500 });
+eq('logs 空緩衝回 total 0', pure.selectLogsForClient([], '5'), { logs: [], total: 0, reset: true });
 
 // ---- 結果 ----
 console.log(`\n[pure.test] ${pass} passed, ${fail} failed`);
