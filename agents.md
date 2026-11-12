@@ -5,6 +5,36 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十二階段：新增任務不再探測全部 SOP，加入／刪除失敗不再靜默
+
+> 接續同日第三十一階段；側邊欄「＋ 加入」與「▶ 立即執行」都走 `POST /api/todo`。版本維持 `2026.8.7`。
+
+### 建立任務時的無效探測（效能）
+- `POST /api/todo` 一進入就 `await annotateSOPRuntimeState(sops)`，但 `sopsWithState` 在整個 handler 內從未被讀取；真正需要的只有 `matchedSOP` 一支，而下一行已經用既有的 `evaluateSOPInstalledState(matchedSOP)`（含 30 秒 TTL 快取）取得狀態。
+- 16 支內建 SOP 都有 Check 階段，其中 14 支各開一支 PowerShell（`SOPExecutor` timeout 20 秒），另外 2 支走 Ollama 狀態查詢。等於每次建立任務都平行跑 14 支子程序，結果直接丟棄。
+- 以「逐函式 body 統計識別字出現次數」掃過 `src/*.js` 與 `public/app.js`（2,567 個宣告），全庫只有這一個宣告後從未讀取的區域變數。
+- 實測（隔離設定檔 `%TEMP%\va-ui-verify26`，只跑 Check 階段，未安裝、未提權）：冷快取 `POST /api/todo { skillId: 'rec_install_chrome' }` 修正前 **1,006 ms**、修正後 **266 ms**；修正後緊接的 `GET /api/sops` 仍花 **977 ms**（16 支全掃），證明探測只是移回真正需要它的端點，沒有少做。兩次解析出的標題與 action 相同（`🗑️ Uninstall Google Chrome` / `uninstall`）。
+- 側邊欄四個呼叫端（`queueSopTodo`、`addRecommendToTodo`、`addAndExecuteRecommend`）一律帶 `action`，`evaluateSOPInstalledState` 本來就被短路；但修正前那個無效 await 不受 `action` 影響，冷快取點擊仍得等 14 支探測。修正後以側邊欄真實 payload 實測冷快取只需 **12 ms**，且緊接的 `/api/sops` 仍是 977 ms（未被預熱）。
+- 修正：移除該行無效 await。`GET /api/sops`、`/api/recommend` 與 `/api/chat` 的 annotate 呼叫完全不動。
+
+### 加入／刪除任務失敗完全沒有回饋
+- `api()` 把網路錯誤與非 JSON 回應（例如 500 HTML）都包成 `{ success:false, error }` 回傳，不拋例外。
+- `addSopToTodo`、`addAndExecuteSop`、`addRecommendToTodo`、`addAndExecuteRecommend`、`deleteTask` 都只有 `if (data.success) {…}`，失敗時不寫日誌也不提示，點擊看起來完全沒反應——與第三十一階段修掉的匯入靜默失敗同一類。
+- 可重現路徑：`saveTasks()` 落地失敗（磁碟滿、權限）→ async 路由拋錯 → Express 5 回 500 HTML；或任務在卡片渲染後、點擊前剛好變成 running，`DELETE /api/todo/:id` 回 `Cannot delete a running task`，前端靜默吞掉。
+- 修正：新增 `logTaskFailure(key, data)` 單一出口（格式與 `importTasks` 一致：標籤＋伺服器原因），五個呼叫端補上 else 分支；新增 `task.addFailed`／`task.deleteFailed` 兩個語系鍵。成功路徑、請求 payload、渲染與執行順序都不變。
+
+### 測試與驗收
+- `test/helpers/chat-harness.js` 新增 `sops` 測試接縫：只有測試會傳入自訂 SOP 清單（含 Check 指令）與計數 executor，預設仍是兩支 consent fixture，不執行任何子程序。
+- 新增 `test/todo-create-probes.test.js`（6 項，真實 HTTP）：建立 SOP 任務只探測被選到的那支、明確帶 action 時 0 次探測、手動任務 0 次探測、已安裝仍解析為 uninstall 且只探測一次、30 秒快取仍吸收重複建立、`GET /api/sops` 仍探測每一支 SOP。
+- 新增 `test/task-queue-errors.test.js`（8 項，擷取真實函式與真實 I18N）：四種加入失敗與刪除拒絕都寫出 error 日誌並含伺服器原因、原清單與渲染不受影響、不會執行從未建立的任務、不會觸發 browser runtime 刷新、`api()` 包裝的傳輸錯誤同樣回報、成功路徑仍 queue／render／execute、en-US 標籤無中文殘留。
+- 敏感性探測：還原無效 await → 6 項中 5 項失敗（1 pass / 5 fail，只有「`/api/sops` 仍全探測」該項通過）；把 `logTaskFailure` 改成 no-op → 8 項中 6 項失敗。隨後以 md5 確認 `src/server.js`（`99d697a8…`）與 `public/app.js`（`4e0fc20f…`）還原為探測前內容。
+- `npm test`：25 個 JS 語法、46 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify26`，只點擊「＋ 加入」與卡片 ✕，未點擊任何 ▶ 執行安裝）：側邊欄 16 支 SOP 正常；把 `api` 暫時換成只攔截 `POST /api/todo` 的拒絕回應後點「＋」→ 工作日誌出現「❌ 加入任務失敗: Synthetic refusal for verification」（class `log-entry error`），任務數 4 → 4，攔截 1 次，隨後還原 `api`；同樣攔截 DELETE 後點卡片 ✕ → 「❌ 刪除任務失敗: Cannot delete a running task」，卡片仍在；還原後真實點「＋」→ 4 → 5、info 日誌「＋ 已加入安裝 SOP：安裝 Steam」、中央切到任務日誌；真實點 ✕ → 5 → 4 且無 error 日誌；en-US 下兩則拒絕分別為「❌ Failed to add task: …」與「❌ Failed to delete task: …」，切回 zh-TW 後 console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成／已知限制**：任務卡片標題仍用伺服器儲存的英文 SOP 名（`📦 Install Steam`），zh-TW 介面下與側邊欄的「安裝 Steam」不一致；本輪未改，因為改 stored title 會動到既有 `tasks.json` 與匯出內容，應在渲染層做本地化。`POST /api/todo` 仍沒有 try/catch，落地失敗回 500 HTML（前端現在至少會顯示失敗原因）。硬編「一般」分類、匯入整批取代無預覽、`FileReader.onerror` 未接，沿用第三十一階段記錄。未以真實安裝任務驗證（只跑 Check 階段）。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權，刪除僅限自己建立的暫存目錄。
+
+---
+
 ## 📌 2026.11.12 — 第三十一階段：不良匯入檔不再永久破壞工作清單
 
 > 接續同日第三十階段；`POST /api/todo/import` 整批取代 `todoList` 並立即落地。版本維持 `2026.8.7`。

@@ -84,7 +84,7 @@ function createMemoryFs(root, deny) {
     };
 }
 
-function createChatHarness({ seedFiles = {}, playwright, executor } = {}) {
+function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) {
     const sandboxRoot = path.join(ROOT, 'test', `.chat-harness-${crypto.randomUUID()}`);
     const violations = [];
     const consoleEntries = [];
@@ -112,7 +112,7 @@ function createChatHarness({ seedFiles = {}, playwright, executor } = {}) {
         }
         memory.api.writeFileSync(target, content, 'utf8');
     }
-    const fixtures = [FIXTURE_SOP_ID, OTHER_SOP_ID].map((id, index) => ({
+    const fixtures = sops ? clone(sops) : [FIXTURE_SOP_ID, OTHER_SOP_ID].map((id, index) => ({
         id,
         name: `Consent fixture ${index + 1}`,
         description: 'Synthetic consent test only; no executable commands.',

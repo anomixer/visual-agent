@@ -621,6 +621,8 @@ const I18N = {
             exportCancelled: '已取消匯出任務清單',
             addedToList: '已加入{action}：{title}',
             addedSOPToList: '已加入{action} SOP：{name}',
+            addFailed: '加入任務失敗',
+            deleteFailed: '刪除任務失敗',
             startingAction: '開始{action}：{title}',
             startingSOPAction: '開始{action} SOP：{name}',
             detailStatus: '狀態',
@@ -1039,6 +1041,8 @@ const I18N = {
             exportCancelled: 'Task list export cancelled',
             addedToList: 'Added {action}: {title}',
             addedSOPToList: 'Added {action} SOP: {name}',
+            addFailed: 'Failed to add task',
+            deleteFailed: 'Failed to delete task',
             startingAction: 'Starting {action}: {title}',
             startingSOPAction: 'Starting {action} SOP: {name}',
             detailStatus: 'Status',
@@ -6587,6 +6591,8 @@ async function addRecommendToTodo(item) {
         renderTodoList();
         addUILog(`＋ ${t('task.addedToList', { action: getActionLabel(action), title: getActionTitle(localized.title, action) })}`, 'info');
         openTab('todolist');
+    } else {
+        logTaskFailure('task.addFailed', data);
     }
 }
 
@@ -6611,6 +6617,8 @@ async function addAndExecuteRecommend(item) {
                 await refreshBrowserRuntimeAvailability();
             }
         }
+    } else {
+        logTaskFailure('task.addFailed', data);
     }
 }
 
@@ -6651,6 +6659,7 @@ async function executeTask(taskId) {
 async function deleteTask(taskId) {
     const data = await api(`/api/todo/${taskId}`, { method: 'DELETE' });
     if (data.success) { todoList = data.todoList; renderTodoList(); }
+    else { logTaskFailure('task.deleteFailed', data); }
 }
 
 // ════════════════════════════════════════════════════════
@@ -7483,6 +7492,8 @@ async function addSopToTodo(sop) {
         renderTodoList();
         addUILog(`＋ ${t('task.addedSOPToList', { action: getActionLabel(action), name: localized.name || localized.id })}`, 'info');
         openTab('todolist');
+    } else {
+        logTaskFailure('task.addFailed', data);
     }
 }
 
@@ -7499,11 +7510,18 @@ async function addAndExecuteSop(sop) {
             expandLog();
             await executeTask(newTask.id);
         }
+    } else {
+        logTaskFailure('task.addFailed', data);
     }
 }
 
 function addUILog(msg, level = 'info') {
     addLogEntry({ message: msg, level, timestamp: new Date().toISOString() });
+}
+
+// api() 把網路與非 JSON 錯誤也包成 { success:false }，不寫進工作日誌的話點擊會完全沒有反應。
+function logTaskFailure(key, data) {
+    addUILog(`❌ ${t(key)}${data?.error ? `: ${data.error}` : ''}`, 'error');
 }
 
 function formatDiagnosticValue(value) {

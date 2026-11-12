@@ -3576,7 +3576,6 @@ app.get('/api/exps', (req, res) => {
 app.post('/api/todo', async (req, res) => {
     const { title, description, skillId, category, action } = req.body;
     const sops = loadAllSOPs(SOPS_DIR);
-    const sopsWithState = await annotateSOPRuntimeState(sops);
     const matchedSOP = sops.find((s) => s.id === skillId);
     const resolvedAction = action || (matchedSOP ? (await evaluateSOPInstalledState(matchedSOP)).recommendedAction : 'install');
     const resolvedTitle = matchedSOP ? buildTaskTitle(matchedSOP, resolvedAction) : (title || 'Unnamed Task');
