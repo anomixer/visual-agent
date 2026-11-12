@@ -3566,40 +3566,58 @@ app.get('/api/exps', (req, res) => {
 });
 // POST /api/todo 新增任務到 To-Do List
 app.post('/api/todo', async (req, res) => {
-    const { title, description, skillId, category, action } = req.body;
-    const sops = loadAllSOPs(SOPS_DIR);
-    const matchedSOP = sops.find((s) => s.id === skillId);
-    const resolvedAction = action || (matchedSOP ? (await evaluateSOPInstalledState(matchedSOP)).recommendedAction : 'install');
-    const resolvedTitle = matchedSOP ? buildTaskTitle(matchedSOP, resolvedAction) : (title || 'Unnamed Task');
-    const resolvedDescription = matchedSOP
-        ? (resolvedAction === 'uninstall'
-            ? `Uninstall ${String(matchedSOP.name || matchedSOP.id || '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^安裝\s*/u, '').replace(/^下載\s*/u, '').replace(/^Install\s+/gi, '').replace(/^Download\s+/gi, '').trim()}`
-            : matchedSOP.name)
-        : (description || '');
-    const task = {
-        id: `task_${crypto.randomUUID()}`,
-        title: resolvedTitle,
-        description: resolvedDescription,
-        skillId: skillId || null,
-        action: resolvedAction,
-        category: category || (matchedSOP ? matchedSOP.category : '一般'),
-        status: 'pending', // pending | running | success | failed | skipped
-        progress: 0,
-        logs: [],
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-    };
-    todoList.push(task);
-    saveTasks();
-    res.json({ success: true, task, todoList: publicTodoList() });
+    try {
+        const { title, description, skillId, category, action } = req.body;
+        const sops = loadAllSOPs(SOPS_DIR);
+        const matchedSOP = sops.find((s) => s.id === skillId);
+        const resolvedAction = action || (matchedSOP ? (await evaluateSOPInstalledState(matchedSOP)).recommendedAction : 'install');
+        const resolvedTitle = matchedSOP ? buildTaskTitle(matchedSOP, resolvedAction) : (title || 'Unnamed Task');
+        const resolvedDescription = matchedSOP
+            ? (resolvedAction === 'uninstall'
+                ? `Uninstall ${String(matchedSOP.name || matchedSOP.id || '').replace(/^[^\p{L}\p{N}]+/u, '').replace(/^安裝\s*/u, '').replace(/^下載\s*/u, '').replace(/^Install\s+/gi, '').replace(/^Download\s+/gi, '').trim()}`
+                : matchedSOP.name)
+            : (description || '');
+        const task = {
+            id: `task_${crypto.randomUUID()}`,
+            title: resolvedTitle,
+            description: resolvedDescription,
+            skillId: skillId || null,
+            action: resolvedAction,
+            category: category || (matchedSOP ? matchedSOP.category : '一般'),
+            status: 'pending', // pending | running | success | failed | skipped
+            progress: 0,
+            logs: [],
+            createdAt: new Date().toISOString(),
+            completedAt: null,
+        };
+        todoList.push(task);
+        try {
+            saveTasks();
+        } catch (err) {
+            // 寫不進磁碟就不該留下任務，否則畫面看得到、重啟後消失。
+            todoList.pop();
+            throw err;
+        }
+        res.json({ success: true, task, todoList: publicTodoList() });
+    } catch (err) {
+        fileLog(`POST /api/todo failed: ${err.message}`);
+        res.status(500).json({ success: false, error: err.message, todoList: publicTodoList() });
+    }
 });
 // DELETE /api/todo/:id 移除任務
 app.delete('/api/todo/:id', (req, res) => {
     if (runningSOP === req.params.id) {
         return res.json({ success: false, error: 'Cannot delete a running task', todoList: publicTodoList() });
     }
+    const previous = todoList;
     todoList = todoList.filter((t) => t.id !== req.params.id);
-    saveTasks();
+    try {
+        saveTasks();
+    } catch (err) {
+        todoList = previous;
+        fileLog(`DELETE /api/todo/${req.params.id} failed: ${err.message}`);
+        return res.status(500).json({ success: false, error: err.message, todoList: publicTodoList() });
+    }
     res.json({ success: true, todoList: publicTodoList() });
 });
 // POST /api/todo/import 匯入任務清單
@@ -3757,7 +3775,10 @@ app.all('/api/llm/models', async (req, res) => {
 // POST /api/llm/model 切換模型
 app.post('/api/llm/model', (req, res) => {
     const { modelName } = req.body;
-    if (!modelName) return res.json({ success: false, error: 'Missing modelName' });
+    // 非字串（物件、數字）會被當成型號名稱賦值並寫進 config，端點卻回 success:true。
+    if (typeof modelName !== 'string' || !modelName.trim()) {
+        return res.status(400).json({ success: false, error: 'Missing modelName' });
+    }
     llm.setCurrentModel(modelName);
     res.json({ success: true, currentModel: llm.getCurrentModel() });
 });
@@ -5397,7 +5418,11 @@ app.get('/api/logs', (req, res) => {
  * 寫入 Debug Log 到 APPDATA，修復打包後看不到 Console 的問題
  */
 function fileLog(msg) {
-    debugLogStore.appendDebugLog(path.join(visualAgentDir, 'debug.log'), msg);
+    // 診斷日誌是 best-effort：磁碟滿或檔案被鎖住時 appendDebugLog 會拋錯，
+    // 若讓它往外拋，錯誤處理路徑自己也會失敗，真正的錯誤反而被蓋掉。
+    try {
+        debugLogStore.appendDebugLog(path.join(visualAgentDir, 'debug.log'), msg);
+    } catch { /* 診斷檔寫不進去也不能影響請求處理 */ }
 }
 
 
@@ -5589,6 +5614,23 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
     await closeBrowserSession();
     process.exit(0);
+});
+
+// 打錯的 API 路徑（例如舊版前端呼叫 /api/import）原本會拿到 Express 的 HTML 404，
+// 前端 api() 解析失敗後只留下「Unexpected token '<'」，真正原因看不到。
+app.use('/api', (req, res) => {
+    res.status(404).json({ success: false, error: `Unknown API endpoint: ${req.method} ${req.originalUrl}` });
+});
+
+// 全域 JSON 錯誤出口。Express 預設 handler 回的是 HTML stack 頁面，前端 api() 的 res.json()
+// 只會得到「Unexpected token '<'」，真正原因（ENOSPC / EPERM）完全看不到，stack 也一併外送。
+app.use((err, req, res, next) => {
+    fileLog(`Unhandled ${req.method} ${req.originalUrl}: ${err?.stack || err}`);
+    if (res.headersSent) return next(err);
+    // body-parser 這類中介層自帶 status（例如 JSON 語法錯誤是 400），不要一律蓋成 500。
+    const status = Number(err?.status || err?.statusCode);
+    res.status(status >= 400 && status < 600 ? status : 500)
+        .json({ success: false, error: String(err?.message || err || 'Internal server error') });
 });
 
 function getPortOwnerHint(port) {

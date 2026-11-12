@@ -21,12 +21,19 @@ function createMemoryFs(root, deny) {
     const files = new Map();
     const dirs = new Set([root]);
     const key = (file) => path.resolve(String(file));
+    let writeFailure = null;
     const checkWrite = (file) => {
         const resolved = key(file);
         const relative = path.relative(root, resolved);
         if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
             deny(`fs write outside sandbox: ${resolved}`);
         }
+        return resolved;
+    };
+    const guardWrite = (file) => {
+        const resolved = checkWrite(file);
+        const failure = writeFailure && writeFailure(resolved);
+        if (failure) throw failure;
         return resolved;
     };
     const missing = (file) => Object.assign(new Error(`ENOENT: ${file}`), { code: 'ENOENT' });
@@ -41,17 +48,17 @@ function createMemoryFs(root, deny) {
         },
         writeFileSync(file, data, options) {
             const encoding = typeof options === 'string' ? options : options?.encoding;
-            files.set(checkWrite(file), Buffer.from(data, encoding || 'utf8'));
+            files.set(guardWrite(file), Buffer.from(data, encoding || 'utf8'));
         },
         appendFileSync(file, data, options) {
-            const resolved = checkWrite(file);
+            const resolved = guardWrite(file);
             const previous = files.get(resolved) || Buffer.alloc(0);
             const encoding = typeof options === 'string' ? options : options?.encoding;
             files.set(resolved, Buffer.concat([previous, Buffer.from(data, encoding || 'utf8')]));
         },
         renameSync(from, to) {
             const source = checkWrite(from);
-            const destination = checkWrite(to);
+            const destination = guardWrite(to);
             if (!files.has(source)) throw missing(from);
             files.set(destination, files.get(source));
             files.delete(source);
@@ -81,6 +88,11 @@ function createMemoryFs(root, deny) {
             },
         }),
         snapshot: () => Object.fromEntries([...files].map(([file, data]) => [file, data.toString('utf8')])),
+        setWriteFailure(predicate) { writeFailure = predicate; },
+        throwIfWriteFails(file) {
+            const failure = writeFailure && writeFailure(key(file));
+            if (failure) throw failure;
+        },
     };
 }
 
@@ -237,8 +249,9 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
         }],
         [path.join(ROOT, 'src/safe-fetch.js'), { safeFetchText: () => deny('safeFetchText') }],
         // debug.log 的輪替與尾端讀取由 test/debug-log.test.js 以暫存目錄覆蓋，這裡不碰檔案系統。
+        // 但仍要重現「磁碟滿時 append 會拋錯」，否則測不到 fileLog 的 best-effort 保護。
         [path.join(ROOT, 'src/debug-log.js'), {
-            appendDebugLog: () => {},
+            appendDebugLog: (logPath) => memory.throwIfWriteFails(logPath),
             readDebugLogTail: (logPath) => ({ path: logPath, lines: [], exists: false }),
         }],
         [path.join(ROOT, 'package.json'), JSON.parse(hostFs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))],
@@ -317,6 +330,10 @@ module.exports = {
         getState: captured.getState,
         setSopAction: captured.setSopAction,
         getFiles: memory.snapshot,
+        failWrites(predicate) {
+            assert.ok(predicate === null || typeof predicate === 'function');
+            memory.setWriteFailure(predicate);
+        },
         advanceTime(milliseconds) {
             assert.ok(Number.isFinite(milliseconds) && milliseconds >= 0);
             now += milliseconds;

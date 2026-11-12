@@ -5,6 +5,44 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十七階段：API 錯誤一律回 JSON，寫檔失敗不再留下幽靈任務
+
+> 接續同日第三十六階段；本輪從「磁碟滿／檔案被鎖住」這個真實情境重現出 HTML 500 與記憶體／磁碟不一致。版本維持 `2026.8.7`。
+
+### 症狀一：真正的錯誤被換成「Unexpected token '<'」
+- `saveTasks()` 是「寫 `tasks.json.<pid>.tmp` 再 rename」，磁碟滿（ENOSPC）或檔案被鎖住（EPERM）時會拋錯。`POST /api/todo` 與 `DELETE /api/todo/:id` 原本都沒有自己的 try/catch，錯誤直接落到 Express 5 的預設 error handler。
+- 預設 handler 回的是 **HTML stack 頁面**（`<!DOCTYPE html><title>Error</title><pre>Error: ENOSPC … at C:\…`）。前端 `api()` 的 `res.json()` 解析失敗後被 catch 吞掉，工作日誌只留下「Unexpected token '<' … is not valid JSON」，真正原因完全看不到，stack 還一併外送給客戶端。
+- 重現方式：把隔離設定檔的 `tasks.json` 設為唯讀（`attrib +R`），rename 就會得到 EPERM，回應是 `text/html`。這不是推測，是實際打出來的回應。
+
+### 症狀二：記憶體與磁碟分岔
+- `POST /api/todo` 先 `todoList.push(task)` 才 `saveTasks()`；寫檔失敗後任務仍留在記憶體，畫面看得到、重啟後消失。
+- `DELETE /api/todo/:id` 先 filter 掉任務才 `saveTasks()`；寫檔失敗後畫面上的任務不見了，磁碟卻還在，重啟後又跑回來。
+
+### 症狀三：打錯的 API 路徑與非字串模型名稱
+- 未匹配的 `/api/*` 路徑走 Express 預設 404，同樣是 HTML。第七階段修過的「前端呼叫 `/api/import`、後端只有 `/api/todo/import`」就是踩到這條，按下匯入完全沒有反應。
+- `POST /api/llm/model` 只檢查 `!modelName`，`{"modelName":{"nested":true}}` 這種非字串會被接受、回 `success:true`，並直接賦值給 `currentModel` 後 `saveConfig()`。實測該請求回 200 / `success:true`。
+
+### 修正
+- 新增**全域 JSON error middleware**，掛在所有路由之後：先 `fileLog` 記錄完整 stack（只進本機 debug.log），`res.headersSent` 時交回 `next(err)`，其餘回 `{ success:false, error }`。`err.status` / `err.statusCode` 落在 400–599 時原樣保留（body-parser 的 JSON 語法錯誤是 400），不是一律蓋成 500。
+- 靜態盤點 51 個路由，其中 **16 個沒有自己的 try/catch**（`GET /api/meta`、`GET`+`POST /api/remote/profile`、`GET /api/remote/state`、3 個 model-share 路由、`POST /api/remote/model-proxy/chat`、`GET /api/todo`、`GET /api/todo/export`、`POST /api/llm/model`、`GET /api/task/:taskId/status`、`GET /api/agent-status/:runId`、`GET /api/agent/capability`、`POST /api/chalkboard/draft`、`GET /api/llm/config`）。這 16 個現在全部由同一個出口涵蓋，不必逐一路線補 try/catch。
+- `POST /api/todo` 包上 try/catch，且 `saveTasks()` 失敗時 `todoList.pop()` 把剛 push 的任務收回再往外拋；`DELETE /api/todo/:id` 失敗時 `todoList = previous` 還原。兩者都回 500 JSON 並附最新 `publicTodoList()`，前端因此能同步畫面。
+- `fileLog()` 改為 **best-effort**：`appendDebugLog` 本身沒有 try/catch，磁碟全滿時連「記錄錯誤」這件事都會拋錯，若讓它往外拋，錯誤處理路徑自己也會失敗，真正的 ENOSPC 反而被蓋掉。
+- 新增 `app.use('/api', …)` 的 JSON 404 出口，錯誤訊息帶上 method 與完整路徑（`Unknown API endpoint: POST /api/import`），打錯端點時一眼看得出來。只掛在 `/api` 之下，靜態檔案與非 API 路徑行為不變。
+- `POST /api/llm/model` 改為 `typeof modelName !== 'string' || !modelName.trim()` 時回 **400**（原本缺漏時回 200 + `success:false`），非字串不再進入 `setCurrentModel()`。
+
+### 測試與驗收
+- 新增 `test/todo-save-failure.test.js`（8 項，真實 HTTP + 隔離 harness）：寫檔失敗時 POST 回 JSON 且不留下幽靈任務、DELETE 回 JSON 且任務仍在、磁碟恢復可寫後兩者都正常、磁碟全滿（連 debug.log 都寫不進去）仍回 JSON、body-parser 的 400 狀態不被蓋成 500、路由 handler 自己拋錯仍回 JSON、未知 API 端點回 JSON 404、非字串／空白 modelName 一律 400。每項都斷言回應不得含 stack（`at …js:行號`）也不得含 `<!DOCTYPE` / `<html`。
+- `test/helpers/chat-harness.js` 的 in-memory fs 新增寫入失敗注入：`guardWrite()` 統一管 `writeFileSync` / `appendFileSync` / `renameSync`，`harness.failWrites(predicate)` 可只讓特定檔案失敗。`saveTasks()` 的 tmp 檔名帶 pid，harness 的假 pid 是 424242，因此比對用前綴而非完整檔名。
+- **harness 盲點**：原本 `src/debug-log.js` 的 stub 是 `appendDebugLog: () => {}`，`fileLog` 永遠不會拋錯，「best-effort」探針因此完全測不到。改為 `memory.throwIfWriteFails(logPath)` 後，磁碟全滿那一項才真的能攔下探針。
+- **測試自身的盲點**：第 6 項原本用 `POST /api/llm/model` 送 JSON `null` 當「路由拋錯」觸發點，但 body-parser 的 strict 模式會先回 400，根本進不到路由 —— 等於只測到 body-parser 路徑。改用 `POST /api/remote/profile` 搭配 `remote-profile.json` 寫入失敗：`saveRemoteProfile()` 的 `writeFileSync` 在沒有 try/catch 的路由 handler 內拋錯，這才是真正的路由層觸發。
+- 8 個突變探針全部被抓到，分別由 2 / 1 / 2 / 3 / 2 / 1 / 1 / 1 項測試攔下：移除全域 error middleware、middleware 把狀態一律蓋成 500、middleware 外送 stack、POST 保留未存檔任務、DELETE 保留未落地移除、`fileLog` 不再是 best-effort、移除 `/api` JSON 404 出口、modelName 不再檢查型別。探針後 `src/server.js` 已還原為位元組相同（md5 `a88635c09eb00ebe2ecb99976d9c363b`）。
+- `npm test`：25 個 JS 語法、53 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify31`）：正常「＋ 加入」與「✕ 刪除」皆可運作；把 `tasks.json` 設唯讀後再按加入，工作日誌顯示「❌ 加入任務失敗: EPERM: operation not permitted, rename …tasks.json.10880.tmp -> …tasks.json」，`todoList` 筆數不變（幽靈任務已收回），刪除同樣顯示真實 EPERM 且卡片仍在；解除唯讀後刪除→0、加入→1，完全恢復。未知端點 `POST /api/import` 回 404 JSON `Unknown API endpoint: POST /api/import`；`GET /api/task/%/status` 回 400 JSON `Failed to decode param '%'`（router 層拋錯也走同一出口）；modelName 送物件／數字／空白／缺漏皆回 400 JSON，送正確字串仍回 200 且模型不變；`/app.js` 靜態請求仍 200。console 只有探針請求本身造成的 404／400 網路記錄，無應用程式 error / warn。驗收後已停止實例（PID 10648 → 10880）、確認 3210 / 19168 不再監聽並刪除暫存設定檔、探針腳本與備份。
+- **尚未完成**：真實磁碟滿與斷電造成的 torn write 未實測（本輪以唯讀檔與 in-memory 寫入失敗模擬）；`POST /api/llm/config` 在 `saveConfig()` 失敗前就已改動記憶體設定的既有問題未動。UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.11.12 — 第三十六階段：Skills 分類標題終於會翻譯，字典不再焊死啟動語系
 
 > 接續同日第三十五階段；第三十三階段修好巢狀 category 解析後，Skills 面板的 15 個分組標題仍然是原始英文。版本維持 `2026.8.7`。

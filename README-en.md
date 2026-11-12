@@ -433,6 +433,9 @@ The Chalkboard attachment is sent as a cropped PNG. If the current text model ca
 **Q: `npm start` immediately returns to the prompt?**
 Usually `3210` or `19168` is already occupied by another Visual Agent process. The startup flow now shows the occupied PID. Close the old process first, or just use the already running `http://localhost:3210`.
 
+**Q: Adding or deleting a task fails with ENOSPC / EPERM in the work log?**
+That means `%APPDATA%\visual-agent\tasks.json` could not be written: the disk is full (ENOSPC), or the file is marked read-only or locked by another program (EPERM). When the write fails the task is neither added nor deleted, so the UI and the file on disk stay consistent — you will not get a phantom task that disappears after a restart. Free up disk space or clear the read-only flag / lock, then retry. Every API error (including a mistyped endpoint) is reported as JSON with the real cause, never just "Unexpected token '<'".
+
 **Q: How do I report an issue?**
 Open “Help → Diagnostics” in the title bar, copy the diagnostic summary, and include it together with the steps you took and the tail of the debug log.
 
