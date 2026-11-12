@@ -228,7 +228,7 @@ src-tauri\target\release\bundle\nsis\
 
 - `skills/<slug>/SKILL.md`
   The first line must be `---`, followed by `name: <slug>`, and the file should follow the [agentskills.io](https://agentskills.io) format.
-  Nested `tags` and `category` under `metadata:` are parsed (`tags` accepts `["a", "b"]`, comma-separated, or space-separated keywords) and drive the sidebar tag badges, category sub-sections, and search scope. `source` (`visual-agent` / `hermes-agent`) is returned by `/api/skills` and determines the two source groups, "Visual Agent × 18" and "From Hermes Agent × 19".
+  Nested `tags` and `category` under `metadata:` are parsed (`tags` accepts `["a", "b"]`, comma-separated, or space-separated keywords) and drive the sidebar tag badges, category sub-sections, and search scope. `source` (`visual-agent` / `hermes-agent`) is returned by `/api/skills` and determines the two source groups, "Visual Agent × 18" and "From Hermes Agent × 19". Skills without a `category` fall into the default `Skills` group. Category headings, source headings, and the Hermes badge tooltip all follow the UI locale, and the search box also accepts a category name (for example "IoT" or "Development").
 - `sops/<slug>/SOP.md`
   The first line must be `# Visual Agent SOP File v1`
 - `exps/exp-yyyymmdd.md`

@@ -5,6 +5,38 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十六階段：Skills 分類標題終於會翻譯，字典不再焊死啟動語系
+
+> 接續同日第三十五階段；第三十三階段修好巢狀 category 解析後，Skills 面板的 15 個分組標題仍然是原始英文。版本維持 `2026.8.7`。
+
+### 症狀一：中文介面的 Skills 面板全是英文標題
+- `renderSkillList()` 的分組標題直接印 `skill.category`，來源標題與 Hermes 徽章 tooltip 也寫死英文。zh-TW 使用者看到的是 `Skills`、`platform`、`media`、`From Hermes Agent`、`Converted from Hermes Agent`。
+- 實際分類值不是只有 SOP 那 10 個。用真實 `parseSkillFrontmatter()` 掃 37 支內建 skill 得到 **15 個分類**：`Skills`（18 支 visual-agent 原生 skill 的預設值）＋ 14 個 Hermes 小寫值（ai、communication、creative、data、development、devops、iot、knowledge、media、meta、platform、productivity、research、security）。
+- `Skills` 這個預設值來自 `category: scalar('category') || 'Skills'`，用 `^category:` 之類的 grep 掃 frontmatter 會完全漏掉它 —— 18 支原生 skill 的 SKILL.md 根本沒有 category 欄位。本輪改用真實 parser 列舉，才沒有漏掉最大的一群。
+- Skill 分類不會進 `tasks.json`（只有 SOP 分類會），因此不需要 zh→en 反向映射，補字典即可。
+
+### 症狀二：`visionHelp` 永遠停在啟動時的語言
+- `const I18N = {…}` 只在腳本載入時建立一次。字面量裡唯一一個讀 `currentLocale` 的三元運算式（`settings.visionHelp`）因此在啟動當下就被求值並焊死：以 en-US 啟動後切到 zh-TW，Vision 模型說明會永遠顯示英文，`setLocale()` 再怎麼呼叫都不會重算。
+- 這不是漏翻譯，是**字典裡混入了會隨時間變動的運算式**。修法是把該鍵還原成純中文字串，讓 en-US 側自己的字典值負責英文。
+
+### 修正
+- zh-TW / en-US 各補 15 個 `categories` 鍵（`Skills`→技能、`iot`→物聯網、`meta`→自我改進、`devops`→DevOps…）。
+- 兩個分組標題都改走 `createSidebarSectionHeader(localizeCategory(cat))`；來源標題改用新鍵 `sidebar.skillSourceHermes`（來自 Hermes Agent / From Hermes Agent），Hermes 徽章 tooltip 改用 `sidebar.skillHermesBadgeTitle`（由 Hermes Agent 轉換而來 / Converted from Hermes Agent）。
+- Skill 搜尋字串加入 `localizeCategory(skill.category)`，因此中文介面可以直接搜「物聯網」「開發」；`skillPlaceholder` 同步改為「搜尋 Skill 名稱、描述、標籤或分類...」。名稱／slug／描述／標籤搜尋行為不變。
+- `settings.visionHelp` 移除 `currentLocale` 三元運算式。
+
+### 測試與驗收
+- 新增 `test/skill-category-i18n.test.js`（10 項）：直接 require 真實 `parseSkillFrontmatter()`，唯讀掃 repo `skills/*/SKILL.md` 並重現伺服器的 `category || 'Skills'` 與 source 預設。鎖住前提（37 支 / 19 支 Hermes / 15 個分類 / 18 支落在 `Skills`）、每個分類在兩語系都有鍵、zh-TW 面板無原始英文標題、en-US 標題為 Title Case、來源標題與徽章 tooltip 隨語系切換、原生 skill 卡片不出現 Hermes 徽章、依本地化分類搜尋、名稱／slug／描述／標籤搜尋未被破壞、未知分類原樣退回、卡片數反映篩選結果。
+- `test/i18n-keys.test.js` 新增第 4 項「字典必須是與語系無關的資料」：`loadLocalePacks()` 改為可傳入 `currentLocale`，分別以 zh-TW / en-US 載入後攤平比對，任何隨啟動語系漂移的鍵都會被列名；另直接斷言 I18N 字面量內不得出現 `currentLocale`。**這條測試就是抓出 visionHelp 的那條** —— 先前 harness 傳空 sandbox，`ReferenceError: currentLocale is not defined` 反而暴露了字面量裡真的在讀它。
+- `test/skill-list-ui.test.js` 的 DECLARATIONS 補 `localizeCategory`，兩處舊契約斷言改為本地化後的字串。
+- 9 個突變探針全部被抓到，分別由 2 / 3 / 3 / 4 / 4 / 3 / 1 / 2 / 1 項測試攔下：兩個分組標題退回原始 category、zh 字典刪 `categories.Skills`、zh 刪 `categories.iot`、en 刪 `categories.meta`、來源標題寫死英文、徽章 tooltip 寫死英文、搜尋字串拿掉 category、visionHelp 三元運算式還原。其中 `en categories.devops` 探針因 zh/en 共用完全相同的 `devops: 'DevOps',` 一行而無法套用（2 hits），改以 en 專有的 `meta` 探針替代。探針後 `public/app.js` 已還原為位元組相同（探針前 md5 `41495a06bec442cdd1ac638999141e04`）。
+- `npm test`：25 個 JS 語法、52 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify30`）：zh-TW 37 張卡片、15 個本地化標題（技能／平台／AI／創作／資料／DevOps／自我改進／通訊／開發／知識／媒體／工作效率／安全／研究／物聯網），來源為 `Visual Agent18` ＋ `⚗️來自 Hermes Agent19`，徽章 title 為「由 Hermes Agent 轉換而來」。分類搜尋：物聯網→1（hermes-smart-home）、開發→2、hermes-github→1、zzz-none→0。切 en-US 後 15 個標題皆為 Title Case、來源與徽章皆英文，面板唯一的中文是 Yuanbao skill 自己 SKILL.md 描述裡的「元寶」（來源內容，非 UI 缺陷）。visionHelp 以真實失敗情境驗收：把隔離設定檔的 `ui_locale` 設為 `en-US` 啟動，再 `setLocale('zh-TW')`，`I18N['zh-TW'].settings.visionHelp`、`#visionModelHelpText` 與 `t('settings.visionHelp')` 三者皆為中文。console 無 error / warn。驗收後已停止實例（PID 30808）、確認 3210 / 19168 不再監聽並刪除暫存設定檔與探針腳本。
+- **尚未完成**：`tokenizeForMatch()` 沒有中文斷詞，Skill／SOP 的模糊推薦比對對中文查詢仍只靠 substring fallback；本輪只修渲染層本地化，未動比對 heuristic。UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更 SOP／SKILL 檔案、skill 分類儲存值、LLM 設定、版本號；未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.11.12 — 第三十五階段：移除型 SOP 不再被標示成「安裝」
 
 > 接續同日第三十四階段；`action` 只有 install / uninstall 兩種值，前端卻把它直接當成顯示動詞。版本維持 `2026.8.7`。

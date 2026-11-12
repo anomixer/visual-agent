@@ -22,7 +22,7 @@ function readBlock(startIndex) {
     throw new Error('Unbalanced block while reading the locale dictionary');
 }
 
-function loadLocalePacks() {
+function loadLocalePacks(currentLocale = 'zh-TW') {
     const literalStart = source.indexOf('const I18N = {');
     assert.ok(literalStart >= 0, 'Expected to find the I18N literal');
     const openBrace = source.indexOf('{', literalStart);
@@ -36,7 +36,7 @@ function loadLocalePacks() {
         chunks.push(`${marker}${readBlock(assignOpen)});`);
     }
 
-    const sandbox = { currentLocale: 'zh-TW', I18N: undefined };
+    const sandbox = { currentLocale, I18N: undefined };
     return vm.runInNewContext(`${chunks.join('\n')}\nI18N;`, sandbox, { filename: sourcePath });
 }
 
@@ -78,4 +78,26 @@ test('experience panel labels exist in both locales', () => {
             assert.equal(typeof packs[locale].exps[key], 'string', `${locale}.exps.${key} should be defined`);
         }
     }
+});
+
+test('the dictionary is locale-independent data, not baked at load time', () => {
+    // I18N 只在腳本載入時建立一次；任何讀取 currentLocale 的三元運算式都會把啟動語系焊死，
+    // 之後切換語系不會重算，該字串會永遠停在啟動時的語言。
+    const fromZh = loadLocalePacks('zh-TW');
+    const fromEn = loadLocalePacks('en-US');
+    const flatten = (value, prefix = '') => Object.entries(value).flatMap(([key, item]) => (
+        item && typeof item === 'object' ? flatten(item, `${prefix}${key}.`) : [[`${prefix}${key}`, item]]
+    ));
+    const zhEntries = new Map(flatten(fromZh));
+    const drifted = flatten(fromEn)
+        .filter(([key, item]) => zhEntries.get(key) !== item)
+        .map(([key]) => key);
+    assert.deepEqual(drifted, [], `these keys change with the load-time locale: ${drifted.join(', ')}`);
+
+    const literalStart = source.indexOf('const I18N = {');
+    const literal = readBlock(source.indexOf('{', literalStart));
+    assert.ok(!/currentLocale/.test(literal), 'the I18N literal must not reference currentLocale');
+
+    assert.match(fromEn['zh-TW'].settings.visionHelp, /[\u4e00-\u9fff]/);
+    assert.ok(!/[\u4e00-\u9fff]/.test(fromEn['en-US'].settings.visionHelp));
 });

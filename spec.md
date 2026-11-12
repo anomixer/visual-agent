@@ -318,6 +318,7 @@ $true
 - [x] Skill 巢狀 tags／category 與來源分組生效（2026.11.12 第三十三階段：`parseSkillFrontmatter()` 解析 `metadata:` 縮排鍵、`/api/skills` 補 `source`，Skills 側邊欄恢復 18／19 兩群、category 細分與標籤徽章）。
 - [x] 任務分類在渲染層本地化、每支內建 SOP 都有雙語 UI preset，讀檔失敗不再靜默（2026.11.12 第三十四階段：`categories` 字典補齊 10 個實際分類值、4 支 SOP 補 `sopUi`、`renderTaskCard()` / `renderTaskModalBody()` 走 `localizeCategory()`、`queueSopTaskById()` 改用 `getLocalizedItem()`、`FileReader.onerror` ×2 與 `img.onerror`）。
 - [x] 移除 / 備份 / 還原 / 掃描型 SOP 不再被標示為「安裝」（2026.11.12 第三十五階段：新增 `getDisplayAction()` 與 `actions.run` / `task.addRunTask`，卡片標題、按鈕、徽章、log 與任務 chip 全部改走顯示動詞，送出的 `action` payload 不變）。
+- [x] Skills 面板分類標題與來源標籤本地化，字典不再焊死啟動語系（2026.11.12 第三十六階段：`categories` 補 15 個 skill 分類、兩個分組標題走 `localizeCategory()`、`sidebar.skillSourceHermes` / `skillHermesBadgeTitle`、搜尋字串納入分類、`settings.visionHelp` 移除 `currentLocale` 三元運算式）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -764,7 +765,9 @@ $true
 - **UI 元素涵蓋範圍**：工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、Chalkboard 工具、經驗知識庫、以及系統對話視窗，皆需根據 `currentLocale` 即時更新。
 - **詳情視窗與匯出文字不得寫死語系**：任務詳情（狀態 / 分類 / 動作 / SOP ID / 建立時間 / 執行記錄 / 無 SOP 替代字）與經驗詳情（來源 / 更新時間）的標籤必須走 `t()`；日期與經驗庫匯出時間戳須依 `currentLocale` 選擇 `zh-TW` / `en-US` 格式。已知限制：切換語系時已開啟的 modal 不會即時重繪，需關閉重開。
 - **分類值只在渲染層本地化，儲存值不得改寫**：`task.category` 在 `tasks.json`、`/api/todo` 與匯出檔中一律保留建立當下的原值（可能是英文 SOP 分類、硬編「一般」或動態指令的 `SOP`）；任務卡片與詳情視窗顯示時必須經 `localizeCategory()` 翻譯，未知分類原樣顯示，空值在卡片退回 `task.general`、在詳情顯示 `—`。嚴禁為了畫面一致而改寫已儲存的分類或標題。
-- **`categories` 字典必須涵蓋所有實際出現的分類值**：包含 16 支內建 SOP 的 `Category` 欄位、伺服器 fallback（`Maintenance`、`一般`）與動態指令任務（`SOP`），且大小寫變體都要有鍵；新增 SOP 時需同步補字典，否則該分類在另一語系會原樣外露。
+- **`categories` 字典必須涵蓋所有實際出現的分類值**：包含 16 支內建 SOP 的 `Category` 欄位、伺服器 fallback（`Maintenance`、`一般`）、動態指令任務（`SOP`），以及 **37 支內建 skill 的 15 個分類**（`Skills` 預設值 ＋ 14 個 Hermes 小寫值：ai、communication、creative、data、development、devops、iot、knowledge、media、meta、platform、productivity、research、security），且大小寫變體都要有鍵；新增 SOP／skill 時需同步補字典，否則該分類在另一語系會原樣外露。列舉分類時必須用真實 `parseSkillFrontmatter()`，不得只 grep frontmatter 的 `^category:` —— 18 支原生 skill 沒有 category 欄位，其值來自 parser 的 `|| 'Skills'` 預設。
+- **Skills 面板的分組標題、來源標題與徽章 tooltip 都必須本地化**：`renderSkillList()` 的兩個 `createSidebarSectionHeader()` 都要吃 `localizeCategory(cat)`，不得直接印 `skill.category`；Hermes 來源標題走 `sidebar.skillSourceHermes`、徽章 tooltip 走 `sidebar.skillHermesBadgeTitle`，不得寫死英文。Skill 搜尋字串必須包含 `localizeCategory(skill.category)`，讓中文介面能直接搜分類名；`skillPlaceholder` 需如實列出可搜尋的欄位。skill 分類不進 `tasks.json`，因此不需 zh→en 反向映射。
+- **I18N 字典必須是與語系無關的純資料**：`const I18N = {…}` 只在腳本載入時建立一次，字面量內**嚴禁出現 `currentLocale` 或任何隨時間變動的運算式**（含三元運算式），否則該鍵會被焊死在啟動語系，之後 `setLocale()` 不會重算。每個語系的字串一律放在自己的字典分支。回歸測試會分別以 zh-TW / en-US 載入字典、攤平比對，任何漂移的鍵都必須為空。
 - **每支內建 SOP 在兩個語系都必須有 `sopUi` preset**（`title` / `description` / `category`），否則 zh-TW 側邊欄會直接顯示 SOP 檔內的英文名稱與描述。preset `title` 不得以引號或其他非字母數字字元開頭，因為 `getActionTitle()` 會先剝除 leading 非字母數字字元再判斷動詞；英文名稱建議用名詞片語，避免出現 `Install Back Up …` 這類雙動詞。
 - **建立任務的兩個入口都必須本地化**：側邊欄 `queueSopTodo()` 與依 ID 建立 `queueSopTaskById()` 都要先經 `getLocalizedItem()` 再組 payload，不得各自取原始英文 `name` / `description` / `category`。
 - **顯示動詞與執行階段必須分離**：`action` 只有 `install` / `uninstall` 兩種值，決定 executor 跑哪個 SOP 階段，**不得直接當成顯示動詞**。所有動詞文案（卡片標題、＋／▶ 按鈕 title、`sidebar.actionable` 徽章、加入／執行 log 與 chat bubble、任務卡片與詳情的動作 chip）都必須先經 `getDisplayAction(title, action)`：

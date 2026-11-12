@@ -458,7 +458,7 @@ const I18N = {
             visionModelPlaceholder: '留空則自動挑選可看圖模型',
             refresh: '🔄 刷新清單',
             modelHelp: '雲端模型通常需要手動填入 model 名稱，本地引擎可直接從清單選擇。',
-            visionHelp: currentLocale === "en-US" ? "Used for reading Chalkboard sketches and multi-modal content. Leave empty for auto-selection." : "用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。",
+            visionHelp: '用於讀取 Chalkboard 草圖、上傳圖片與其他多模態內容。留空時，系統會自動挑選同 Provider 的 vision 模型。',
             test: '測試模型',
             textToolTitle: '文字工具',
             save: '儲存並刷新',
@@ -647,7 +647,7 @@ const I18N = {
             installedHeader: '── 已就緒 / 已安裝 ──',
             recommendPlaceholder: '搜尋推薦項目...',
             sopPlaceholder: '搜尋 SOP 名稱、ID 或分類...',
-            skillPlaceholder: '搜尋 Skill 名稱、描述或標籤...',
+            skillPlaceholder: '搜尋 Skill 名稱、描述、標籤或分類...',
             readyBadge: '✅ 已安裝',
             uninstallBadge: '🗑 可解除安裝',
             actionable: '⚡ 可{action} (SOP)',
@@ -656,6 +656,8 @@ const I18N = {
             risk: '風險 {value}',
             unknownRisk: '未標示',
             otherCategory: '其他',
+            skillSourceHermes: '來自 Hermes Agent',
+            skillHermesBadgeTitle: '由 Hermes Agent 轉換而來',
         },
         actions: {
             install: '安裝',
@@ -683,6 +685,21 @@ const I18N = {
             Backup: '備份',
             Maintenance: '維護',
             General: '一般',
+            Skills: '技能',
+            ai: 'AI',
+            communication: '通訊',
+            creative: '創作',
+            data: '資料',
+            development: '開發',
+            devops: 'DevOps',
+            iot: '物聯網',
+            knowledge: '知識',
+            media: '媒體',
+            meta: '自我改進',
+            platform: '平台',
+            productivity: '工作效率',
+            research: '研究',
+            security: '安全',
         },
         risks: {
             Low: '低',
@@ -1086,7 +1103,7 @@ const I18N = {
             installedHeader: '-- Ready / Installed --',
             recommendPlaceholder: 'Search recommendations...',
             sopPlaceholder: 'Search SOP name, ID, or category...',
-            skillPlaceholder: 'Search Skill name, description, or tags...',
+            skillPlaceholder: 'Search Skill name, description, tags, or category...',
             readyBadge: '✅ Installed',
             uninstallBadge: '🗑 Uninstall available',
             actionable: '⚡ {action} available (SOP)',
@@ -1095,6 +1112,8 @@ const I18N = {
             risk: 'Risk {value}',
             unknownRisk: 'Unspecified',
             otherCategory: 'Other',
+            skillSourceHermes: 'From Hermes Agent',
+            skillHermesBadgeTitle: 'Converted from Hermes Agent',
         },
         actions: {
             install: 'Install',
@@ -1136,6 +1155,21 @@ const I18N = {
             '備份': 'Backup',
             '維護': 'Maintenance',
             '一般': 'General',
+            Skills: 'Skills',
+            ai: 'AI',
+            communication: 'Communication',
+            creative: 'Creative',
+            data: 'Data',
+            development: 'Development',
+            devops: 'DevOps',
+            iot: 'IoT',
+            knowledge: 'Knowledge',
+            media: 'Media',
+            meta: 'Self-Improvement',
+            platform: 'Platform',
+            productivity: 'Productivity',
+            research: 'Research',
+            security: 'Security',
         },
         risks: {
             Low: 'Low',
@@ -6154,7 +6188,7 @@ function renderSkillList() {
 
     const filtered = skillsList.filter((skill) => {
         if (!recSearchQuery) return true;
-        const searchStr = `${skill.name || ''} ${skill.slug || ''} ${skill.description || ''} ${skill.tags || ''}`.toLowerCase();
+        const searchStr = `${skill.name || ''} ${skill.slug || ''} ${skill.description || ''} ${skill.tags || ''} ${localizeCategory(skill.category)}`.toLowerCase();
         return searchStr.includes(recSearchQuery);
     });
 
@@ -6182,7 +6216,7 @@ function renderSkillList() {
             visualAgentGroups[cat].push(skill);
         });
         Object.entries(visualAgentGroups).forEach(([cat, items]) => {
-            skillListContainer.appendChild(createSidebarSectionHeader(cat));
+            skillListContainer.appendChild(createSidebarSectionHeader(localizeCategory(cat)));
             items.forEach((skill) => skillListContainer.appendChild(createSkillCard(skill)));
         });
     }
@@ -6191,7 +6225,7 @@ function renderSkillList() {
     if (hermesSkills.length) {
         const hermesHeader = document.createElement('div');
         hermesHeader.className = 'skill-source-header skill-source-header--hermes';
-        hermesHeader.innerHTML = `<span class="skill-source-icon">⚗️</span><span>From Hermes Agent</span><span class="skill-source-count">${hermesSkills.length}</span>`;
+        hermesHeader.innerHTML = `<span class="skill-source-icon">⚗️</span><span>${escapeHtml(t('sidebar.skillSourceHermes'))}</span><span class="skill-source-count">${hermesSkills.length}</span>`;
         skillListContainer.appendChild(hermesHeader);
 
         const hermesGroups = {};
@@ -6201,7 +6235,7 @@ function renderSkillList() {
             hermesGroups[cat].push(skill);
         });
         Object.entries(hermesGroups).forEach(([cat, items]) => {
-            skillListContainer.appendChild(createSidebarSectionHeader(cat));
+            skillListContainer.appendChild(createSidebarSectionHeader(localizeCategory(cat)));
             items.forEach((skill) => skillListContainer.appendChild(createSkillCard(skill)));
         });
     }
@@ -6213,7 +6247,7 @@ function createSkillCard(skill) {
     const tags = Array.isArray(skill.tags) ? skill.tags.slice(0, 4).join(', ') : (skill.tags || '');
     const isHermes = skill.source === 'hermes-agent';
     const sourceBadge = isHermes
-        ? `<span class="skill-source-badge" title="Converted from Hermes Agent">⚗️ Hermes</span>`
+        ? `<span class="skill-source-badge" title="${escapeHtml(t('sidebar.skillHermesBadgeTitle'))}">⚗️ Hermes</span>`
         : '';
     card.innerHTML = `
         <div class="recommend-card-top">

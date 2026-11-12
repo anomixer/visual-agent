@@ -229,7 +229,7 @@ src-tauri\target\release\bundle\nsis\
 
 - `skills/<slug>/SKILL.md`
   第一行固定為 `---`，然後 `name: <slug>` ，遵循 [agentskills.io](https://agentskills.io) 格式製作
-  `metadata:` 底下的巢狀 `tags` 與 `category` 會被解析（`tags` 接受 `["a", "b"]`、逗號或空白分隔關鍵字），並決定側邊欄的標籤徽章、category 細分與搜尋範圍；`source`（`visual-agent` / `hermes-agent`）由 `/api/skills` 一併回傳，決定「Visual Agent × 18」與「From Hermes Agent × 19」兩個來源群組。
+  `metadata:` 底下的巢狀 `tags` 與 `category` 會被解析（`tags` 接受 `["a", "b"]`、逗號或空白分隔關鍵字），並決定側邊欄的標籤徽章、category 細分與搜尋範圍；`source`（`visual-agent` / `hermes-agent`）由 `/api/skills` 一併回傳，決定「Visual Agent × 18」與「來自 Hermes Agent × 19」兩個來源群組。沒有 `category` 的 skill 會落在預設的 `Skills` 群組。分類標題、來源標題與 Hermes 徽章說明都隨介面語系翻譯，搜尋框也可以直接輸入分類名（例如「物聯網」「開發」）。
 - `sops/<slug>/SOP.md`
   第一行固定為 `# Visual Agent SOP File v1`
 - `exps/exp-yyyymmdd.md`

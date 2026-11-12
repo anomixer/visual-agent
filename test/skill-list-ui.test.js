@@ -42,7 +42,7 @@ function loadLocalePacks(locale) {
 }
 
 const DECLARATIONS = [
-    'getLocalePack', 'formatI18n', 't', 'escapeHtml',
+    'getLocalePack', 'formatI18n', 't', 'escapeHtml', 'localizeCategory',
     'createSidebarSectionHeader', 'createSidebarEmptyState', 'createSkillCard', 'renderSkillList',
 ].map(extractFunction).join('\n');
 
@@ -98,7 +98,7 @@ test('skills split into the Visual Agent and From Hermes Agent source groups', (
     assert.ok(headers[0].innerHTML.includes('Visual Agent'));
     assert.ok(headers[0].innerHTML.includes('>1<'), 'the Visual Agent count must be 1, not the whole library');
     assert.ok(headers[1].className.includes('skill-source-header--hermes'));
-    assert.ok(headers[1].innerHTML.includes('From Hermes Agent'));
+    assert.ok(headers[1].innerHTML.includes('來自 Hermes Agent'));
     assert.ok(headers[1].innerHTML.includes('>1<'));
     assert.equal(count.textContent, '2');
     assert.equal(cards(container).length, 2);
@@ -118,8 +118,8 @@ test('each source group is subdivided by its own category', () => {
         HERMES_SKILL,
         { ...HERMES_SKILL, slug: 'hermes-probe-2', name: 'hermes-probe-2', category: 'media' },
     ]);
-    assert.deepEqual(sectionHeaders(container).map((header) => header.textContent), ['Skills', 'platform', 'media']);
-    assert.deepEqual(sourceHeaders(container).map((header) => header.innerHTML.includes('From Hermes Agent')), [false, true]);
+    assert.deepEqual(sectionHeaders(container).map((header) => header.textContent), ['技能', '平台', '媒體']);
+    assert.deepEqual(sourceHeaders(container).map((header) => header.innerHTML.includes('來自 Hermes Agent')), [false, true]);
 });
 
 test('the card shows at most four tags and the Hermes badge', () => {
