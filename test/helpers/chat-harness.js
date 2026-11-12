@@ -56,6 +56,11 @@ function createMemoryFs(root, deny) {
             files.set(destination, files.get(source));
             files.delete(source);
         },
+        unlinkSync(file) {
+            const resolved = checkWrite(file);
+            if (!files.has(resolved)) throw missing(file);
+            files.delete(resolved);
+        },
         readdirSync(dir, options) {
             const resolved = key(dir);
             if (!dirs.has(resolved)) throw missing(dir);
@@ -79,7 +84,7 @@ function createMemoryFs(root, deny) {
     };
 }
 
-function createChatHarness({ seedFiles = {}, playwright } = {}) {
+function createChatHarness({ seedFiles = {}, playwright, executor } = {}) {
     const sandboxRoot = path.join(ROOT, 'test', `.chat-harness-${crypto.randomUUID()}`);
     const violations = [];
     const consoleEntries = [];
@@ -208,7 +213,7 @@ function createChatHarness({ seedFiles = {}, playwright } = {}) {
     });
     const realFiles = new Set([
         SERVER,
-        ...['pure.js', 'local-api-security.js', 'native-dialogs.js', 'agent/actions.js', 'agent/consent.js',
+        ...['pure.js', 'local-api-security.js', 'native-dialogs.js', 'task-run-log.js', 'agent/actions.js', 'agent/consent.js',
             'agent/loop-budget.js', 'agent/prompts.js', 'agent/sop-templates.js'].map((file) => path.join(ROOT, 'src', file)),
     ]);
     const injected = new Map([
@@ -220,7 +225,7 @@ function createChatHarness({ seedFiles = {}, playwright } = {}) {
         // 預設拒絕啟動瀏覽器；只有明確傳入假 playwright 的測試才能走 Browser session 路徑。
         ['playwright', playwright || { chromium: { launch: () => deny('playwright.chromium.launch') } }],
         [path.join(ROOT, 'src/sop-parser.js'), { loadAllSOPs: () => clone(fixtures) }],
-        [path.join(ROOT, 'src/sop-executor.js'), { SOPExecutor: InertExecutor }],
+        [path.join(ROOT, 'src/sop-executor.js'), { SOPExecutor: executor || InertExecutor }],
         [path.join(ROOT, 'src/llm.js'), fakeLlm],
         [path.join(ROOT, 'src/system.js'), { getSystemHealth: async () => ({
             cpu: { model: 'Fixture CPU', load: 0 }, gpu: { name: 'Fixture GPU', load: 0 },

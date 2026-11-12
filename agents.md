@@ -5,6 +5,42 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十階段：中斷執行的診斷記錄落地，動態指令任務不再一律失敗
+
+> 接續同日第二十九階段；第二十七階段已能把重啟後殘留的 `running` 任務 reconciled 為 `failed`。版本維持 `2026.8.7`。
+
+### 執行期間的日誌與進度完全沒有落地（診斷資料遺失）
+- 先確認呼叫點：`saveTasks()` 只在「執行開始」與 `finally` 各呼叫一次，**不是**每 500 ms checkpoint。因此執行期間 `task.logs` 與 `task.progress` 只存在記憶體，`tasks.json` 停留在 `logs: []` / `progress: 10`。
+- 行程被強制結束（當機、工作管理員結束行程、斷電）時 `finally` 不會跑，第二十七階段的中斷復原只能補一句通用訊息：使用者看不出停在哪個階段、跑過哪些指令、下載到哪裡。
+- 不採用「每 500 ms 整份 checkpoint」：實測 `saveTasks()` 單次成本為 1 任務 × 3600 logs = 769.2 KB / 2.52 ms、20 任務 × 1000 logs = 4263.2 KB / 10.95 ms、50 任務 × 3600 logs = 38460.8 KB / 101.27 ms。整份重寫會把全部歷史任務的 logs 一起重送，歷史越多越慢。
+- 也不截斷 `task.logs`：那會破壞「詳情與匯出保留完整執行歷程」的契約並銷毀使用者資料。
+- 新增 `src/task-run-log.js` 與 `%APPDATA%\visual-agent\running-task.jsonl`：append-only JSONL，每筆 `{ taskId, progress, entry }` 只追加新增的那一行。`log` 與 `ui:message` 各追加一筆記錄，`phase:start` 追加 progress-only 記錄（`entry: null`），因此階段進度即使沒有新日誌也會落地。
+- 執行開始前 `clearRunLog()`，`finally` 的 `saveTasks()` 之後再 `clearRunLog()`；正常結束不留 sidecar，完整 logs 仍由 `tasks.json` 保存。
+- `parseRunLog()` 逐行寬容解析：行程被強制結束時最後一行可能只寫到一半，壞行與不同 `taskId` 的記錄一律跳過，不讓整份記錄報廢。
+- `appendRunLogRecord()` / `clearRunLog()` 的失敗只寫 `debug.log`，不中斷執行；checkpoint 失敗時最終的 `saveTasks()` 仍會寫入完整 logs。
+
+### 復原結果沒有寫回，第二次重啟就遺失
+- 第二十七階段 reconcile 後只改記憶體。run log 在啟動時已被消費，因此第二次重啟只剩通用中斷訊息（實測 logCount 1 / progress 10，第一次復原的 9 筆全數消失）。
+- `loadTasks()` 的 `if (interrupted)` 補上 `saveTasks()`，把復原的 logs / progress 與中斷記錄一起落地。與「健康的任務檔不得在啟動時被重寫」相容：沒有中斷任務時仍不寫檔，`test/task-restart.test.js` 的 byte-identical 斷言維持通過。
+
+### 動態指令任務一律瞬間失敗
+- `/api/execute/:taskId` 為 `task.dynamicCmd` 建立的虛擬 SOP 使用 `phases:`，且 commands 是 `{ type: 'ui' }` / `{ type: 'powershell', content }` 物件。executor 讀的是 `sop.steps.check.commands`，因此一律拋 `Cannot read properties of undefined (reading 'check')`；即使補上 steps，`runPhaseCommands()` 的 `cmd.trim()` 也會對物件拋 `trim is not a function`。
+- 改為與 `sop-parser` 一致的形狀：`steps.{check,install,uninstall,verify}`、commands 為**字串陣列**、UI 訊息放 `uiMessage`、`errorHandling: []`。空的 check / verify 代表不做前置檢查與事後驗證，executor 會直接以 action 結果判定成功。順帶修正「動體指令」→「動態指令」錯字。
+- 影響面：`dynamicCmd` 只能由 `/api/todo/import` 或手改 `tasks.json` 產生，app 內沒有建立入口；但匯入是文件明列的功能，匯入的動態指令任務過去 100% 失敗。
+
+### 測試與驗收
+- 新增 `test/task-run-log.test.js`（11 項）：5 項純函式（單行記錄格式、entry 順序與最新 progress、半截最後一行不丟棄先前記錄、不同 taskId 的記錄被忽略、空或垃圾輸入）；6 項真實 HTTP + 隔離 harness（執行中每筆 log 落地而 `tasks.json` byte-identical、啟動復原 logs/progress 且中斷記錄在最末並消費 sidecar、殘留的其他任務 sidecar 被忽略且清除、正常結束保存完整 logs 並移除 sidecar、健康清單不被重寫也不建 sidecar、復原結果已落地所以第二次重啟仍保有日誌）。最後一項以第一個 harness 寫出的 `tasks.json` 種入**第二個** harness 驗證。
+- 新增 `test/task-dynamic-cmd.test.js`（3 項）：以**真實** `SOPExecutor` 子類捕捉 `{ sop, options }` 並全程 `dryRun: true`，斷言虛擬 SOP 的四個 phase、`install.commands` 為字串陣列、`uiMessage` 含指令、其餘 phase 為空、`errorHandling` 為陣列；端到端任務達到 `success` / progress 100 且日誌含 `[DRY-RUN]` 與動態指令提示、無 `Cannot read properties` / `trim is not a function`；無 dynamicCmd 也無 skillId 的任務被明確拒絕且維持 pending。
+- `test/helpers/chat-harness.js` 只加 4 行接縫：in-memory fs 的 `unlinkSync`、可注入的 `executor`（預設仍是 InertExecutor）、`task-run-log.js` 加入真實模組 allowlist。不執行真實 PowerShell、不讀寫使用者 APPDATA。
+- 敏感性探測：還原 3 個 run-log 接線點後 11 項中 4 項失敗（6 pass / 4 fail），確認測試不是空轉；隨後還原為原本內容。
+- `npm test`：25 個 JS 語法、43 支測試檔與 server smoke 全綠。
+- 實機 crash / restart 驗收（隔離設定檔 `%TEMP%\va-ui-verify24`，指令只有 `Write-Output` 與 `Start-Sleep`，未安裝、未提權、未刪除任何使用者資料）：執行中磁碟 `tasks.json` 為 running / progress 10 / 0 logs，sidecar 已有 7 筆且 progress 40；`taskkill /T /F` 後 sidecar 10 筆存活；第一次重啟復原 9 筆 logs / progress 40 **並寫回磁碟**；第二次重啟仍為 9 筆 / 40、沒有重複的中斷記錄、sidecar 已消費、清單回應不含 logs、匯出含 9 筆 logs 與 `agentVersion 2026.8.7`。
+- 瀏覽器驗收（同一隔離實例）：復原任務的 `.task-card` 顯示「失敗」，點開詳情後 9 筆執行記錄的 class 依序為 `ui` / `info` ×7 / `error`，最後一筆為中斷訊息，標籤為「狀態／分類／動作／SOP ID（無）／建立時間／執行記錄」。另以 `/api/todo/import` 種入 dynamicCmd 任務並走真實 `executeTask()`：status `success` / progress 100、6 筆 log（`ui` / `info` ×3 / `success` ×2）含兩個輸出 marker，詳情視窗 class 與「已完成」正確，sidecar 已移除，console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽，並刪除暫存設定檔與 4 支探測腳本。
+- **尚未完成**：任務卡片的 ▶ 按鈕只在 `task.skillId && status === 'pending'` 時渲染，因此 dynamicCmd-only 任務在 UI 上沒有可見的執行入口（本輪以 `executeTask()` 驗證伺服器與 executor 路徑，未改 UI）。torn write 只以模擬壞行覆蓋，未實機斷電驗證檔案系統層級行為。每筆任務的 `logs` 仍無上限，`tasks.json` 會隨執行次數持續成長。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權，刪除僅限自己建立的暫存目錄與探測腳本。
+
+---
+
 ## 📌 2026.11.12 — 第二十九階段：匯出不再遺失執行記錄，詳情視窗補上語系與日誌顏色
 
 > 接續同日第二十八階段；第二十階段把 `logs` 從清單回應移除後，前端 `todoList` 已不含執行記錄。版本維持 `2026.8.7`。

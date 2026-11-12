@@ -50,6 +50,8 @@ const {
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
 const { pickSaveFilePath } = require('./native-dialogs');
+// 執行中任務的 append-only 日誌（見 src/task-run-log.js）。
+const { RUN_LOG_FILE_NAME, serializeRunLogRecord, parseRunLog } = require('./task-run-log');
 // APPDATA debug.log 的輪替寫入與尾端讀取（見 src/debug-log.js）。
 const debugLogStore = require('./debug-log');
 // ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
@@ -131,6 +133,7 @@ function resolvePlaywrightBrowserExecutable() {
 
 
 const TASKS_FILE = path.join(visualAgentDir, 'tasks.json');
+const RUN_LOG_FILE = path.join(visualAgentDir, RUN_LOG_FILE_NAME);
 const REMOTE_PROFILE_FILE = path.join(visualAgentDir, 'remote-profile.json');
 const SOPS_DIR = path.join(visualAgentDir, 'sops');
 const SKILLS_DIR = path.join(visualAgentDir, 'skills');
@@ -3464,11 +3467,53 @@ function loadTasks() {
         todoList = [];
     }
 
+    recoverInterruptedRunLog();
     const { tasks, interrupted } = reconcileInterruptedTasks(todoList);
     todoList = tasks;
     if (interrupted) {
+        // 復原結果必須落地：run log 已被消費，沒寫回的話下一次重啟就只剩通用中斷訊息。
+        saveTasks();
         console.warn(`[Tasks] ${interrupted} task(s) interrupted by the previous shutdown; marked as failed.`);
         fileLog(`Reconciled ${interrupted} interrupted task(s) to failed on startup.`);
+    }
+}
+
+
+// 執行期間 task.logs 只存在記憶體，tasks.json 停留在啟動執行時的空 logs 與 progress 10。
+// 沒有這份 append-only 記錄，被中斷的任務就只剩一句通用訊息，看不出停在哪個階段。
+function recoverInterruptedRunLog() {
+    let raw;
+    try {
+        if (!fs.existsSync(RUN_LOG_FILE)) return;
+        raw = fs.readFileSync(RUN_LOG_FILE, 'utf-8');
+    } catch {
+        return;
+    }
+    const interruptedTask = todoList.find((task) => task?.status === 'running');
+    if (interruptedTask) {
+        const { logs, progress } = parseRunLog(raw, interruptedTask.id);
+        if (logs.length) interruptedTask.logs = logs;
+        if (progress !== null) interruptedTask.progress = progress;
+    }
+    clearRunLog();
+}
+
+
+function appendRunLogRecord(task, entry) {
+    try {
+        fs.appendFileSync(RUN_LOG_FILE, serializeRunLogRecord(task.id, task.progress, entry), 'utf-8');
+    } catch (err) {
+        // checkpoint 失敗不可中斷執行；最終的 saveTasks() 仍會寫入完整 logs。
+        fileLog(`Failed to append the running task log: ${err.message}`);
+    }
+}
+
+
+function clearRunLog() {
+    try {
+        if (fs.existsSync(RUN_LOG_FILE)) fs.unlinkSync(RUN_LOG_FILE);
+    } catch (err) {
+        fileLog(`Failed to clear the running task log: ${err.message}`);
     }
 }
 
@@ -3741,23 +3786,21 @@ app.post('/api/execute/:taskId', async (req, res) => {
 
     let sop;
     if (task.dynamicCmd) {
-        // 建立虛擬 SOP
+        // 虛擬 SOP 必須與 sop-parser 的結構一致：executor 讀 steps.<phase>.commands（字串陣列），
+        // UI 訊息放在 uiMessage；空的 check / verify 代表不做前置檢查與事後驗證。
         sop = {
             id: task.id,
             name: task.title,
-            phases: {
+            steps: {
+                check: { commands: [] },
                 install: {
-                    commands: [
-                        { type: 'ui', message: `🚀 執行動體指令: ${task.dynamicCmd}` },
-                        { type: 'powershell', content: task.dynamicCmd }
-
-                    ]
-                }
-
-
-            }
-
-
+                    commands: [task.dynamicCmd],
+                    uiMessage: `🚀 執行動態指令: ${task.dynamicCmd}`,
+                },
+                uninstall: { commands: [] },
+                verify: { commands: [] },
+            },
+            errorHandling: [],
         };
     } else {
         if (!task.skillId) {
@@ -3780,22 +3823,26 @@ app.post('/api/execute/:taskId', async (req, res) => {
     task.progress = 10;
     task.logs = [];
     runningSOP = task.id;
+    clearRunLog();
     saveTasks();
     const dryRun = req.body.dryRun ?? false;
     const executor = new SOPExecutor({ dryRun });
     executor.on('log', (event) => {
         const logEntry = { ...event, timestamp: new Date().toISOString() };
         task.logs.push(logEntry);
+        appendRunLogRecord(task, logEntry);
         // 全域緩衝滿了會丟最舊的，因此改用遞增序號當游標；筆數當游標會錯位卡住。
         appendLogWithSeq(logs, logEntry);
     });
     executor.on('phase:start', (e) => {
         const progressMap = { check: 20, install: 40, uninstall: 40, verify: 80 };
         task.progress = progressMap[e.phase] || task.progress;
+        appendRunLogRecord(task, null);
     });
     executor.on('ui:message', (e) => {
         const logEntry = { level: 'ui', message: e.message, timestamp: new Date().toISOString() };
         task.logs.push(logEntry);
+        appendRunLogRecord(task, logEntry);
         appendLogWithSeq(logs, logEntry);
     });
     // Run async
@@ -3829,6 +3876,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
     } finally {
         runningSOP = null;
         saveTasks();
+        clearRunLog();
     }
 
 

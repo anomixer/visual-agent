@@ -119,7 +119,7 @@ browser ──── public/index.html
                  │ PowerShell / API
                  ▼
              sops/<slug>/SOP.md        (SOP 腳本庫)
-             %APPDATA%\visual-agent\  (tasks.json, sops/<slug>/SOP.md, plugins/)
+             %APPDATA%\visual-agent\  (tasks.json, running-task.jsonl, sops/<slug>/SOP.md, plugins/)
 ```
 - **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\visual-agent\plugins\` 目錄，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
 - **漸進拆分原則**：純函式、安全邊界與可獨立測試的預算邏輯優先抽模組；`server.js` 的 Agent 執行主迴圈與 `app.js` 的互動流程需先補行為測試，再採 strangler 式拆分，不全面重寫。
@@ -138,7 +138,8 @@ browser ──── public/index.html
 - **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
 - **任務與聊天資料不可靜默遺失**：`tasks.json` 必須 temp-write + rename；task ID 使用 UUID；running task 不可刪除或整批 import 覆寫。同 session 並行聊天完成時須附加到最新歷史，不得用舊快照覆寫。
 - **匯出必須來自伺服器的完整任務**：清單類回應不含 `logs`，因此前端不得直接序列化 `todoList` 作為匯出內容。原生另存新檔失敗時的瀏覽器 fallback 必須改抓 `GET /api/todo/export`，以 `Array.isArray(payload.tasks)` 驗證後下載整份 `{ exportedAt, agentVersion, tasks }` wrapper（該端點不回 `success` 欄位）。驗證失敗或請求失敗必須在工作日志顯示錯誤，不得只寫 console；原生成功與使用者取消都不得再觸發 fallback。
-- **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。健康的任務檔不得在啟動時被重寫。
+- **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。復原結果必須寫回 `tasks.json`（run log 已被消費，不寫回則第二次重啟只剩通用中斷訊息）；健康的任務檔不得在啟動時被重寫。
+- **中斷執行必須留下診斷記錄**：`saveTasks()` 只在執行開始與結束時呼叫，因此執行期間的 `task.logs` / `progress` 必須另外以 append-only JSONL（`%APPDATA%\visual-agent\running-task.jsonl`，每筆 `{ taskId, progress, entry }`）落地，只追加新增的那一行，不得為了 checkpoint 整份重寫 `tasks.json`。`log` / `ui:message` 各追加一筆，`phase:start` 追加 progress-only 記錄。執行開始前與 `finally` 寫檔後都必須清除 sidecar；解析必須逐行寬容（半截的最後一行與不同 `taskId` 的記錄跳過，不丟棄整份）；append / 清除失敗只寫 `debug.log`，不得中斷執行。不得以截斷 `task.logs` 作為成長控制手段。
 - **Agent Loop 必須有總上限**：每個 `/api/chat` 請求在入口建立單一 `AgentLoopBudget`，首輪 ACTION、自動即時資訊搜尋 / 抽取、迴圈工具與每輪 LLM 呼叫共用最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；待確認的系統變更動作不得佔用工具額度。LLM 與頁面抓取 timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader、搜尋、抽取、`fetch_title` 與瀏覽器 fallback。提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）必須接收 abort，但仍使用各自 timeout，不得宣稱這些分支與一般 chat 共用同一預算；Playwright 已發出的導覽仍可能等到自身 timeout。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
 - **Browser 分頁快照不得重疊、亂序或整份重送**：`ensureBrowserSession()` 必須共用同一個進行中的開啟 promise，不得讓並行呼叫各自 `newContext()` 而洩漏前一組 page。`GET /api/browser/session/snapshot` 一律回 `snapshotHash`；帶 `?since=<上次收到的雜湊>` 且截圖位元組相同時只回 `unchanged: true` 與雜湊，不重送 base64。前端輪詢必須有 in-flight 守衛，使用者導覽 / 上一頁 / 重新載入期間以計數器暫停輪詢，且只有使用者操作可推進序號，晚到的舊快照不得覆蓋較新的導覽結果。伺服器每次輪詢仍會實際截圖，不得宣稱省下截圖成本。
@@ -255,6 +256,16 @@ $true
 - 開發時：`skills/<slug>/SKILL.md` / `sops/<slug>/SOP.md`
 - 執行時：`%APPDATA%\visual-agent\skills\` / `%APPDATA%\visual-agent\sops\`
 
+### 4.3 Executor 輸入結構（所有 SOP 來源一致）
+
+`SOPExecutor.execute()` 只讀 `sop-parser` 產出的結構，任何在程式內動態組出的 SOP（例如 `task.dynamicCmd` 的虛擬 SOP）都必須符合同一形狀，不得自創欄位：
+
+- `sop.steps.{check,install,uninstall,verify}`，每個 phase 為 `{ commands: [], expectedResult, uiMessage }`。
+- `commands` 是**字串陣列**（parser 已把同一 code block 的多行 join 成一個字串）；executor 會對每個元素呼叫 `.trim()`，物件形狀的 command 會直接拋錯。
+- 人類可讀的進度說明放在 `step.uiMessage`（executor 以 `ui:message` 事件送出），不是 command 陣列裡的 `{ type: 'ui' }` 物件。
+- `sop.errorHandling` 為陣列。`phases` 只是 executor 的**結果**欄位，不是輸入。
+- 空的 `check` / `verify` 代表不做前置檢查與事後驗證，executor 會直接以 action 階段的結果判定成功；action 階段沒有 commands 則必須明確報錯，不得靜默成功。
+
 ---
 
 ## 5. 未來規劃
@@ -294,6 +305,8 @@ $true
 - [x] 冒煙測試改用隔離暫存 AppData，不再讀寫使用者真實設定（2026.11.12 第二十七階段：`scripts/check.js` 以 `mkdtempSync` 建立 profile，等子行程結束後刪除）。
 - [x] Browser 分頁快照輪詢不重疊、不亂序、畫面未變不重送（2026.11.12 第二十八階段：`ensureBrowserSession()` 共用開啟 promise、`snapshotHash` / `?since=`、前端 `snapshotInFlight` / `snapshotActionsInFlight` / `snapshotSeq`）。
 - [x] 匯出 fallback 保留完整執行記錄，詳情視窗日誌顏色與語系正確（2026.11.12 第二十九階段：`exportTasks()` 改抓 `/api/todo/export` 並驗證 wrapper、`renderTaskModalBody()` 改用 `l.level`、`task.detail*` / `exps.detail*` i18n 鍵與語系日期）。
+- [x] 中斷執行的日誌與進度會落地，復原結果可跨多次重啟保留（2026.11.12 第三十階段：`src/task-run-log.js` append-only JSONL、`appendRunLogRecord()` / `recoverInterruptedRunLog()` / `clearRunLog()`、`loadTasks()` 在有中斷任務時 `saveTasks()`）。
+- [x] 動態指令任務可正常執行（2026.11.12 第三十階段：`/api/execute/:taskId` 的虛擬 SOP 改為 `steps` + 字串 commands + `uiMessage`，與 `sop-parser` 結構一致）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
