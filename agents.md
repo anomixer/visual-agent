@@ -5,6 +5,33 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十三階段：Skill 的巢狀 tags／category 與來源分組終於生效
+
+> 接續同日第三十二階段；Skills 側邊欄依 `source` 分成 Visual Agent／Hermes 兩群，群內再依 `category` 細分。版本維持 `2026.8.7`。
+
+### frontmatter 只比對行首鍵，巢狀欄位全部漏接
+- `loadSkillDocuments()` 以 `fmText.match(/^tags:\s*(.+)$/m)` 這類「行首鍵」regex 取欄位，但 agentskills.io 規格（spec §4.1）把 `tags` 與 `category` 縮排在 `metadata:` 底下。實際 37 支內建 skill 全部照規格寫，於是 **37/37 的 tags 解析為空陣列、19/19 支 Hermes skill 的 category 退回預設 `'Skills'`**。
+- 影響三層：`/api/skills` 回傳的 `tags` 一律 `[]`；`createSkillCard()` 的標籤徽章從來沒機會渲染，而搜尋框 placeholder 卻寫著「搜尋 Skill 名稱、描述或標籤」；`buildOnDemandSkillAndSopContext()` 的 token haystack 少了 tags 與 category 兩段，按需注入 skill 的比對面變窄。
+- 修正：`src/pure.js` 新增 `parseSkillFrontmatter(frontmatter, fallbackName)`，逐行記錄縮排後組出階層，同鍵取最淺層（頂層優先於巢狀重複鍵）。`tags` 同時接受 spec 寫的 `["system", "tool"]`、逗號分隔與內建實際使用的空白分隔關鍵字；block 清單（`- item`）保留多字詞項目並忽略裸 `-`。字串值統一去頭尾引號，`description` 內的冒號不會被誤切。
+- `loadSkillDocuments()` 改為呼叫此函式，不再自行用 regex 重推欄位；`source` 的 `hermes-` 前綴 fallback 仍留在 server（純函式只負責解析）。
+- 回歸確認：逐一比對 37 支 skill 修正前後的 `name` / `description` / `source`，全部相同（比對時對舊解析套上同一個 server fallback，否則會誤判 19 支 source 回歸）；另以 13 組查詢（8 中文 + 5 英文）比對按需注入的 top-4 skill 排序，修正前後完全一致。
+
+### `/api/skills` 漏掉 `source`，37 支全歸在同一群
+- 前端 `renderSkillList()` 依 `skill.source` 分群（`hermes-agent` 走「From Hermes Agent」並顯示 `⚗️ Hermes` 徽章），但路由的 payload 只挑 `slug` / `name` / `description` / `tags` / `category`，`source` 根本沒送出去。
+- 實測側邊欄只有一個群組標頭、計數 **37**，Hermes 群與徽章完全不存在——與 2026.06.08 記錄的「18 原生 / 19 Hermes 兩群」設計不符。
+- 修正：payload 補上 `source: skill.source || 'visual-agent'`，並在 spec §3 API 表列為必要欄位。前端未改動。
+
+### 測試與驗收
+- 新增 `test/skill-frontmatter.test.js`（12 項）：巢狀解析、spec 陣列與逗號分隔、block 清單多字詞、頂層優先、引號與含冒號描述、空／undefined／null frontmatter 預設值、CRLF 與 tab 縮排、URL 與 `compatibility:` 不被誤判；另讀取 repo `skills/`（唯讀）斷言 37 支都有至少一個單字關鍵字 tag、name 等於 slug、description 非空，19 支 Hermes category 不為 `'Skills'` 且 source 正確、18 支原生為 `'Skills'`、Hermes category 至少 10 種；靜態鎖住 server 的 import 與委派接線；最後以隔離 harness 種入 3 支 skill 走真實 HTTP `GET /api/skills` 驗證 tags／category／source。
+- 新增 `test/skill-list-ui.test.js`（8 項，擷取真實 `renderSkillList` / `createSkillCard` 與真實 I18N）：兩個來源標頭與各自計數、缺 source 仍歸 Visual Agent、群內 category 細分、最多 4 個 tags 且徽章只出現在 Hermes、無 tags 不渲染徽章、搜尋命中 name／slug／tags 與空狀態、空清單與重複渲染不累積、`<script>` 等內容跳脫。
+- 敏感性探測（4 次，皆以 md5 確認還原為探測前位元組）：server 改回舊行首 regex → 12 項中 2 項失敗；解析器限制只認 `indent === 0` → 8 項失敗；路由移除 `source` → 1 項失敗；前端把 Hermes 過濾改成恆 false → 8 項中 5 項失敗。
+- `npm test`：25 個 JS 語法、48 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify27`，只讀取與搜尋，未執行任何 SOP）：`/api/skills` 的 bySource 為 `{ visual-agent: 18, hermes-agent: 19 }`；Skills 分頁顯示「Visual Agent」18（1 個 `Skills` section、18 個標籤徽章、0 個 Hermes 徽章）與「From Hermes Agent」19（14 個 category section、19 個 `⚗️` 徽章、19 個標籤徽章）；搜尋 `macos` → 1 張卡（Hermes 群計數 1）、`robocopy` → 2 張原生卡、清空 → 37 張且兩群恢復；已截圖留存；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成／已知限制**：Skills 群內的 category 標頭（`platform`、`media` 等）在 zh-TW 介面仍是英文原值，需要渲染層本地化；任務卡片與詳情的 `task.category` 也仍直接顯示儲存值（硬編「一般」與 SOP 英文分類混雜），列為下一批。中文查詢幾乎比對不到 skill，因為 `tokenizeForMatch()` 沒有 CJK 斷詞，本輪未動。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權，刪除僅限自己建立的暫存目錄。
+
+---
+
 ## 📌 2026.11.12 — 第三十二階段：新增任務不再探測全部 SOP，加入／刪除失敗不再靜默
 
 > 接續同日第三十一階段；側邊欄「＋ 加入」與「▶ 立即執行」都走 `POST /api/todo`。版本維持 `2026.8.7`。

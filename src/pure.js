@@ -410,6 +410,51 @@ function formatExtractedSourcesSummary(extracted = [], locale = 'zh-TW') {
         ].filter(Boolean).join('\n')).join('\n\n');
 }
 
+function unquoteYamlScalar(value = '') {
+    return String(value || '').trim().replace(/^["']|["']$/g, '');
+}
+
+// agentskills.io 的 SKILL.md 把 category / tags 縮排在 metadata: 底下，
+// 只比對行首鍵會讓每支 skill 的 tags 變空、category 退回 'Skills'。
+function parseSkillFrontmatter(frontmatter = '', fallbackName = '') {
+    const entries = [];
+    String(frontmatter || '').split(/\r?\n/).forEach((line) => {
+        const listItem = line.match(/^\s*-\s+(.*)$/);
+        if (listItem) {
+            const owner = entries[entries.length - 1];
+            if (owner && !owner.value) owner.items.push(unquoteYamlScalar(listItem[1]));
+            return;
+        }
+        const field = line.match(/^(\s*)([A-Za-z_][A-Za-z0-9_-]*):(.*)$/);
+        if (!field) return;
+        entries.push({ indent: field[1].length, key: field[2], value: field[3].trim(), items: [] });
+    });
+
+    const shallowest = (key) => entries.reduce((picked, entry) => (
+        entry.key === key && (!picked || entry.indent < picked.indent) ? entry : picked
+    ), null);
+    const scalar = (key) => {
+        const entry = shallowest(key);
+        return entry ? unquoteYamlScalar(entry.value) : '';
+    };
+
+    const tagsEntry = shallowest('tags');
+    const tags = tagsEntry
+        ? (tagsEntry.items.length
+            ? tagsEntry.items.filter(Boolean)
+            // spec 寫 ["system", "tool"]，但內建與 Hermes skill 實際用空白分隔的關鍵字。
+            : unquoteYamlScalar(tagsEntry.value).replace(/^\[|\]$/g, '').split(/[,\s]+/).map(unquoteYamlScalar).filter(Boolean))
+        : [];
+
+    return {
+        name: scalar('name') || fallbackName,
+        description: scalar('description'),
+        category: scalar('category') || 'Skills',
+        tags,
+        source: scalar('source'),
+    };
+}
+
 module.exports = {
     tokenizeForMatch,
     scoreByTokenSet,
@@ -434,6 +479,7 @@ module.exports = {
     buildTaskExportPayload,
     reconcileInterruptedTasks,
     validateImportedTasks,
+    parseSkillFrontmatter,
     appendLogWithSeq,
     LOG_BUFFER_LIMIT,
     selectLogsForClient,

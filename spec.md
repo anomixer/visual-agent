@@ -167,6 +167,7 @@ browser ──── public/index.html
 | DELETE | `/api/todo/:id` | 刪除非 running 任務並回傳最新 `todoList`；running 任務拒絕刪除 |
 | POST | `/api/execute/:taskId` | 執行任務 |
 | GET | `/api/recommend` | 取得推薦清單（含 sopId）|
+| GET | `/api/skills` | 取得 Skills 清單（`slug` / `name` / `description` / `tags` / `category` / `source`；`source` 決定前端來源分群，不得省略）|
 | GET | `/api/llm/status` | Ollama 狀態 + 模型就緒狀態 |
 | GET | `/api/llm/config` | 取得 LLM Provider 設定 |
 | POST | `/api/llm/config` | 更新 LLM Provider 設定 |
@@ -198,6 +199,8 @@ Skills 的目錄架構與 `SKILL.md` 的語法，**嚴格遵守 [agentskills.io/
     tags: ["system", "tool"]
   ---
   ```
+- **巢狀欄位必須被解析**：`category` 與 `tags` 依規範縮排在 `metadata:` 底下，解析器不得只比對行首鍵（否則全部 skill 的 tags 會變空、category 退回 `Skills`）。頂層鍵優先於巢狀重複鍵；`tags` 同時接受 `["a", "b"]`、逗號分隔與空白分隔關鍵字，block 清單（`- item`）保留多字詞項目。
+- **解析單一出口**：frontmatter 解析集中在 `src/pure.js` 的 `parseSkillFrontmatter()`，`loadSkillDocuments()` 不得自行以 regex 重推欄位；`source` 的 `hermes-` 前綴 fallback 留在 server。
 
 #### 4.1.1 Skills 來源（source）欄位
 - `source: visual-agent`（預設）：Visual Agent 原生 skill，針對 Windows 本地操作優化。
@@ -311,6 +314,7 @@ $true
 - [x] 動態指令任務可正常執行（2026.11.12 第三十階段：`/api/execute/:taskId` 的虛擬 SOP 改為 `steps` + 字串 commands + `uiMessage`，與 `sop-parser` 結構一致）。
 - [x] 不良匯入檔整批拒絕且不破壞既有清單，匯入的 running 任務不再永久卡住（2026.11.12 第三十一階段：`validateImportedTasks()`、import 路由套用 `reconcileInterruptedTasks()`、卡片 ▶ 放行 `dynamicCmd`、`tasks.importFailed` 不再寫死 JSON 格式錯誤）。
 - [x] 建立任務不再探測全部 SOP，加入／刪除失敗會顯示原因（2026.11.12 第三十二階段：移除 `POST /api/todo` 未被讀取的 `annotateSOPRuntimeState()`、`logTaskFailure()` 單一出口與 `task.addFailed` / `task.deleteFailed` 兩語系鍵）。
+- [x] Skill 巢狀 tags／category 與來源分組生效（2026.11.12 第三十三階段：`parseSkillFrontmatter()` 解析 `metadata:` 縮排鍵、`/api/skills` 補 `source`，Skills 側邊欄恢復 18／19 兩群、category 細分與標籤徽章）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -665,6 +669,7 @@ $true
 
 ### 11.5 Skills 與 Action
 - Sidebar 必須提供 Skills 清單，來源為 `skills/<slug>/SKILL.md`。
+- Skills 清單必須依 `source` 分成「Visual Agent」與「From Hermes Agent」兩群並各自計數；Hermes 卡片需顯示來源徽章。群內依 `category` 細分，卡片顯示最多 4 個 tags；搜尋必須涵蓋 name、slug、description 與 tags。
 - Action parser 必須支援 `[ACTION:...]` 與 `Action=Computer_Use...`。
 - Browser Use / Computer Use 執行後必須回傳可見摘要。
 

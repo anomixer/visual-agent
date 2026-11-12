@@ -47,6 +47,7 @@ const {
     formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted, buildTaskExportPayload, selectLogsForClient,
     appendLogWithSeq, reconcileInterruptedTasks, validateImportedTasks,
+    parseSkillFrontmatter,
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
 const { pickSaveFilePath } = require('./native-dialogs');
@@ -436,19 +437,9 @@ function loadSkillDocuments(forceRefresh = false) {
                 const content = fs.readFileSync(skillFile, 'utf8');
                 const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/m);
                 const fmText = fmMatch ? fmMatch[1] : '';
-                const nameMatch = fmText.match(/^name:\s*(.+)$/m);
-                const descMatch = fmText.match(/^description:\s*(.+)$/m);
-                const categoryMatch = fmText.match(/^category:\s*(.+)$/m);
-                const tagsBlockMatch = fmText.match(/^tags:\s*\r?\n((?:\s+-\s*.+\r?\n?)+)/m);
-                const tagsInlineMatch = fmText.match(/^tags:\s*(.+)$/m);
-                const displayName = nameMatch ? nameMatch[1].trim().replace(/^["']|["']$/g, '') : entry.name;
-                const description = descMatch ? descMatch[1].trim().replace(/^["']|["']$/g, '') : '';
-                const tags = tagsBlockMatch
-                    ? tagsBlockMatch[1].split(/\r?\n/).map((line) => line.replace(/^\s+-\s*/, '').trim()).filter(Boolean)
-                    : (tagsInlineMatch ? tagsInlineMatch[1].trim().replace(/^\[|\]$/g, '').split(',').map((tag) => tag.trim()).filter(Boolean) : []);
-                const category = categoryMatch ? categoryMatch[1].trim().replace(/^["']|["']$/g, '') : 'Skills';
-                const sourceMatch = fmText.match(/^source:\s*(.+)$/m);
-                const sourceRaw = sourceMatch ? sourceMatch[1].trim().replace(/^["']|["']$/g, '') : '';
+                const {
+                    name: displayName, description, category, tags, source: sourceRaw,
+                } = parseSkillFrontmatter(fmText, entry.name);
                 const source = sourceRaw || (entry.name.startsWith('hermes-') ? 'hermes-agent' : 'visual-agent');
                 docs.push({
                     slug: entry.name,
@@ -3547,6 +3538,7 @@ app.get('/api/skills', (req, res) => {
             description: skill.description || '',
             tags: skill.tags || [],
             category: skill.category || 'Skills',
+            source: skill.source || 'visual-agent',
         }));
         res.json({ success: true, skills });
     } catch (e) {
