@@ -440,7 +440,7 @@ Other LAN devices cannot reach an API bound only to `127.0.0.1`. Local malicious
 Content passes through a shared DOMPurify safety boundary that removes scripts, event handlers, and dangerous URIs. If the sanitizer is missing or fails, the UI renders escaped text instead of inserting the original HTML.
 
 **Q: How do I run tests and dependency audits?**
-Run `npm test` for syntax checks, `test/*.test.js` unit / Windows behavior tests, and the server smoke test (`/api/meta`, `/api/diagnostics`, token enforcement, and cross-origin rejection). Run `npm audit --omit=dev` for production dependencies. These do not replace UAC, two-PC, Vision, or clean-EXE validation.
+Run `npm test` for syntax checks, `test/*.test.js` unit / Windows behavior tests, and the server smoke test (`/api/meta`, `/api/diagnostics`, token enforcement, and cross-origin rejection). The smoke server runs against a temporary isolated `APPDATA` / `LOCALAPPDATA` that is deleted afterwards, so it never touches your real config, task list, or `debug.log`. Run `npm audit --omit=dev` for production dependencies. These do not replace UAC, two-PC, Vision, or clean-EXE validation.
 
 ---
 

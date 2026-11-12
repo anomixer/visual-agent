@@ -137,6 +137,7 @@ browser ──── public/index.html
 - **SOP 執行**：一般與 elevated PowerShell runner 均以 UTF-8 BOM 暫存 `.ps1` 搭配 `-File` 執行，保留中文、例外與 native exit code。一般路徑 timeout 必須終止 process tree；elevated process-tree 行為仍需獨立實機驗收。
 - **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
 - **任務與聊天資料不可靜默遺失**：`tasks.json` 必須 temp-write + rename；task ID 使用 UUID；running task 不可刪除或整批 import 覆寫。同 session 並行聊天完成時須附加到最新歷史，不得用舊快照覆寫。
+- **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。健康的任務檔不得在啟動時被重寫。
 - **Agent Loop 必須有總上限**：每個 `/api/chat` 請求在入口建立單一 `AgentLoopBudget`，首輪 ACTION、自動即時資訊搜尋 / 抽取、迴圈工具與每輪 LLM 呼叫共用最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；待確認的系統變更動作不得佔用工具額度。LLM 與頁面抓取 timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader、搜尋、抽取、`fetch_title` 與瀏覽器 fallback。提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）必須接收 abort，但仍使用各自 timeout，不得宣稱這些分支與一般 chat 共用同一預算；Playwright 已發出的導覽仍可能等到自身 timeout。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
 - **OAuth cache 不得混用憑證**：token cache key 必須包含 token URL、client ID、client secret、scope、audience。
@@ -284,6 +285,8 @@ $true
 - [x] 日誌游標改用遞增序號，緩衝滿 500 筆後不再錯位卡住；前端日誌節點上限 600（2026.10.29 第二十四階段：`appendLogWithSeq()`、`selectLogsForClient()` 以 `seq` 判斷增量與重置、`trimLogEntries()`）。
 - [x] `debug.log` 寫入輪替（1 MiB 上限）且診斷只讀檔案尾端（2026.10.29 第二十五階段：`src/debug-log.js` 的 `appendDebugLog()` / `readDebugLogTail()`）。
 - [x] 本機對話持久化限制在 2 MiB 且配額溢出不中斷對話（2026.10.29 第二十六階段：`LOCAL_CHAT_PERSIST_LIMIT`、`buildLocalChatPersistPayload()` 先文字後回填附件、`saveLocalChatSessions()` try/catch）。
+- [x] 重啟後不再殘留永久「執行中」的任務（2026.11.12 第二十七階段：`reconcileInterruptedTasks()`、`loadTasks()` 啟動時標為 failed 並補中斷記錄）。
+- [x] 冒煙測試改用隔離暫存 AppData，不再讀寫使用者真實設定（2026.11.12 第二十七階段：`scripts/check.js` 以 `mkdtempSync` 建立 profile，等子行程結束後刪除）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

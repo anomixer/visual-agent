@@ -441,7 +441,7 @@ Chalkboard 附件會以裁切後 PNG 傳送；目前文字模型不支援辨識�
 顯示前會經共同 `DOMPurify` 安全出口，剝除 event handler、script 與危險 URI；若淨化元件缺件或失敗，會退回 escaped text，而不是直接插入原始 HTML。
 
 **Q: 開發時怎麼跑測試與依賴稽核？**
-`npm test` 會執行全部自研 JS 語法檢查、`test/*.test.js` 單元 / Windows 行為測試，以及 server 冒煙（`/api/meta`、`/api/diagnostics`、token 與跨來源拒絕）。`npm audit --omit=dev` 檢查正式環境依賴。這些測試不取代 UAC、雙機、Vision 或乾淨 EXE 實機驗收。
+`npm test` 會執行全部自研 JS 語法檢查、`test/*.test.js` 單元 / Windows 行為測試，以及 server 冒煙（`/api/meta`、`/api/diagnostics`、token 與跨來源拒絕）。冒煙 server 使用暫存的隔離 `APPDATA` / `LOCALAPPDATA`，結束後自動刪除，不會動到你真實的設定、任務清單或 `debug.log`。`npm audit --omit=dev` 檢查正式環境依賴。這些測試不取代 UAC、雙機、Vision 或乾淨 EXE 實機驗收。
 
 ---
 

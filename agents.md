@@ -5,6 +5,40 @@
 
 ---
 
+## 📌 2026.11.12 — 第二十七階段：重啟後不再殘留永久「執行中」的任務
+
+> 接續 10.29 第二十六階段；`runningSOP` 只存在記憶體，但 `tasks.json` 會保存 `status: 'running'`。版本維持 `2026.8.7`。
+
+### 中斷執行後的永久卡死
+- `/api/execute/:taskId` 把任務設為 `running` 後立刻 `saveTasks()`；若行程在執行中被結束（當機、被 kill、關機、直接關掉 app），檔案就留下 `running` 與中途的 progress。
+- `loadTasks()` 原樣還原，而 `runningSOP` 重啟後是 `null`，於是這個任務永遠停在「執行中」：
+  - `renderTodoList()` 對 `status === 'running'` 不畫刪除鈕，只畫 spinner → UI 無法移除。
+  - Agent 的 `REMOVE_TASK` 看到 `status === 'running'` 直接拒絕，`CLEAR_ALL` 也因「有任務執行中」拒絕整批清空。
+  - `queueSopTaskById()` 與前端的去重都把 `running` 視為進行中，同一支 SOP 因此無法重新加入（回 `reused: true`）。
+  - Ollama / 模型 bootstrap 的 `isRunning` 判斷被擋住，自動安裝不會啟動。
+  - `/api/diagnostics` 的 `runningTaskCount` 永遠多算一個幽靈任務。
+- 使用者唯一的逃生口是手動編輯 `tasks.json`。
+
+### 啟動時 reconciled
+- `src/pure.js` 新增 `reconcileInterruptedTasks(tasks)` → `{ tasks, interrupted }`：只把 `running` 改為 `failed`，保留原有 logs 與停止時的 progress，補一筆 `level: 'error'` 的中斷記錄，**不捏造 `completedAt`**（否則 `getTaskDurationText()` 會算出從建立到重啟的假時長）。不改動傳入的任務物件；非陣列輸入回空清單。
+- `loadTasks()` 套用結果，有中斷時才 `console.warn` + `fileLog` 一次。健康的任務檔不會在啟動時被重寫，仍由既有 `saveTasks()` 路徑持久化。
+
+### 冒煙測試不再動到真實 AppData
+- `scripts/check.js` 的 smoke 以繼承的環境變數 spawn `src/server.js`，也就是使用者真實的 `%APPDATA%`：每次 `npm test` 都會同步 bundled assets、讀真實 `tasks.json`、寫真實 `debug.log`。本輪讓啟動會改任務狀態後，這個缺口必須先補。
+- 改為 `mkdtempSync` 建立暫存 profile，以 `APPDATA` / `LOCALAPPDATA` 覆寫 spawn 環境，結束後刪除。
+- 實作時先踩到一個坑：第一版把清理放在子行程的 `exit` 事件，但呼叫端在 `smoke()` resolve 後立刻 `process.exit(0)`，事件根本來不及送達，暫存 profile 因此洩漏。`finish()` 改為等子行程真的結束才 settle，清理留在 `exit` handler。
+
+### 測試與驗收
+- `test/pure.test.js` 新增 13 項（共 73）：只改 running、回報中斷數、保留 progress 與原有 log、中斷 log 為 error 且時間戳可解析、不改動傳入物件、未中斷任務原樣保留、空清單、多筆中斷、無 logs 欄位、非陣列輸入。
+- 新增 `test/task-restart.test.js`（3 項，真實 HTTP）：`test/helpers/chat-harness.js` 新增 `createChatHarness({ seedFiles })`，在 server 模組載入前把相對 sandboxRoot 的檔案寫進記憶體 fs，才測得到 `loadTasks()` 這種啟動行為。驗證 running → failed 且 progress / 原有 log 保留、`completedAt` 仍為 null、pending / success 不受影響、reconciled 後可刪除且匯出不再是 running、健康任務檔啟動後位元組不變。
+- 此 harness 不能斷言 `/api/diagnostics`：它的 port owner 探測使用 `child_process.execSync`，會被 `assertSafe()` 列為 blocked 操作。
+- `npm test`：24 個 JS 語法、38 支測試檔與 server smoke 全綠，且無殘留 `va-smoke-*` 暫存目錄。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify21`，啟動前直接把 `tasks.json` 種成 progress 40 的 running 任務與 2 筆 log marker，等同當機留下的狀態）：啟動 log 出現 `[Tasks] 1 task(s) interrupted by the previous shutdown; marked as failed.`；卡片顯示「失敗」、有 ✕ 刪除鈕、無 spinner；詳情視窗依序顯示 2 筆原 marker 與 `Task execution interrupted: the server stopped before it finished.`；點 ✕ 後任務移除並顯示空狀態；`debug.log` 留有 reconciliation 記錄；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成**：未在真實 SOP 執行中真的 kill 行程重現（會執行安裝）；本輪以「種入當機後會留下的持久化狀態」模擬，並只處理啟動時的殘留。server 持續運行但 executor 卡住的情境不在本次範圍。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權，刪除僅限自己建立的暫存目錄。
+
+---
+
 ## 📌 2026.10.29 — 第二十六階段：本機對話持久化預算，配額溢出不中斷對話
 
 > 接續同日第二十五階段；每新增一則訊息都會 `touchLocalChatSession()` → `saveLocalChatSessions()`。版本維持 `2026.8.7`。

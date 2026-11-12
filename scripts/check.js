@@ -9,6 +9,7 @@
 const { spawnSync, spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 
 const ROOT = path.join(__dirname, '..');
 const NODE = process.execPath;
@@ -48,22 +49,44 @@ function syntaxCheck() {
 function smoke() {
     return new Promise((resolve, reject) => {
         console.log('\n[3/3] 冒煙測試（起 server → 打 /api/meta，並健康快照 /api/diagnostics）');
-        const child = spawn(NODE, [path.join(ROOT, 'src', 'server.js')], { cwd: ROOT });
+        // 冒煙 server 會同步 bundled assets、載入 tasks.json 並寫 debug.log；
+        // 用隔離設定檔，避免測試動到使用者真實的 AppData。
+        const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'va-smoke-'));
+        const child = spawn(NODE, [path.join(ROOT, 'src', 'server.js')], {
+            cwd: ROOT,
+            env: {
+                ...process.env,
+                APPDATA: path.join(profile, 'roaming'),
+                LOCALAPPDATA: path.join(profile, 'local'),
+            },
+        });
         let out = '';
         let done = false;
+        let exited = false;
         const timer = setTimeout(() => finish(false, 'server 未在 45s 內就緒'), 45000);
+
+        const removeProfile = () => {
+            // Windows 可能在行程剛結束時仍鎖住檔案；清不掉也不要蓋掉真正的測試結果。
+            try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); } catch {}
+        };
 
         const finish = (ok, reason) => {
             if (done) return; done = true;
             clearTimeout(timer);
             child.kill('SIGTERM');
             console.log(ok ? `  ✓ ${reason}` : `  ✗ ${reason}\n${out}`);
-            ok ? resolve() : reject(new Error(reason));
+            // 呼叫端在 smoke() resolve 後就 process.exit()；必須等子行程真的結束再清設定檔。
+            const settle = () => { ok ? resolve() : reject(new Error(reason)); };
+            if (exited) settle(); else child.once('exit', settle);
         };
 
         child.stdout.on('data', d => out += d);
         child.stderr.on('data', d => out += d);
-        child.on('exit', code => finish(false, `server 提前結束 (code ${code})`));
+        child.on('exit', code => {
+            exited = true;
+            removeProfile();
+            finish(false, `server 提前結束 (code ${code})`);
+        });
 
         const base = 'http://127.0.0.1:3210';
         // 乾淨 CI runner（無 Ollama / 冷磁碟）首次 /api/diagnostics 較慢，超時放寬。
