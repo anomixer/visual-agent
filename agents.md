@@ -5,6 +5,56 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十八階段：AI 引擎設定寫不進去時不再宣稱「已儲存」
+
+> 接續同日第三十七階段；同一類「記憶體已改、磁碟沒改」的缺陷在 LLM 設定路徑上更嚴重，因為它會弄丟使用者的 API Key。版本維持 `2026.8.7`。
+
+### 症狀：設定消失，但畫面說儲存成功
+- `src/llm.js` 的 `saveConfig()` 把整段包在 try/catch 裡，只 `console.error('[LLM] Failed to save config:', e.message)`，**呼叫端完全無法得知失敗**。
+- `updateProviderSettings()` 先指派 `currentProvider / currentBaseUrl / currentAuthConfig / currentAuthType / currentApiKey / currentModel / currentVisionModel` 七個模組層變數，再呼叫 `saveConfig()`；`setCurrentModel()` 同樣先改 `currentModel` 再存檔。
+- `POST /api/llm/config` 因此無條件回 `{ success:true, message:'Settings saved' }`，`POST /api/llm/model` 回 `{ success:true, currentModel }`。前端收到 success 就關閉設定視窗、寫入「🚀 AI 引擎設定已更新，正在重新啟動服務...」，並在 1 秒後 `location.reload()`。
+- 重啟後 `loadConfig()` 讀到的仍是舊設定：**使用者輸入的 Provider、Base URL、API Key、Vision Model 全部消失**，畫面卻一路顯示成功。
+
+### 重現（不需要系統管理員權限）
+- 把隔離設定檔的 `config.json` 換成**目錄**，`fs.writeFileSync` 必定失敗（`EISDIR`），比 `attrib +R` 更簡單且跨平台。
+- 真實模組探針：`updateProviderSettings('OpenAI', …)` 與 `setCurrentModel('probe-model-2')` 都**沒有拋錯**，`getCurrentProvider()` 已變成 OpenAI、`getCurrentModel()` 已變成 probe-model-2，磁碟上的 `config.json` 仍是目錄。
+- 真實 HTTP（隔離實例）：`POST /api/llm/config` 回 **HTTP 200 `{"success":true,"message":"Settings saved"}`**，`GET /api/llm/config` 顯示記憶體已是 OpenAI/gpt-4o-mini；`POST /api/llm/model` 同樣回 200 success。
+
+### 修正
+- `saveConfig()` 移除吞錯誤的 try/catch，寫檔失敗直接拋出，讓呼叫端能決定怎麼處理。
+- `updateProviderSettings()` 先快照七個欄位，`saveConfig()` 失敗時**逐一還原**（模組層 `let` 綁定無法用 `Object.assign` 還原）、`invalidateCache()` 後 rethrow；成功路徑的行為與原本完全相同。
+- `setCurrentModel()` 同樣快照 `currentModel`、失敗還原並 rethrow。
+- `checkOllamaStatus()` 的自動選模（`currentModel = DEFAULT_MODEL` 後存檔）**刻意保留 best-effort**：這是背景行為，寫不進設定檔不該讓已存在的模型被判為未就緒。若讓錯誤往外拋，會被外層 `catch (tagsErr)` 接住並跳過 `status.modelReady = true`，AI 指示燈會無故變黃。
+- `POST /api/llm/config` 與 `POST /api/llm/model` 加 try/catch，失敗回 **500 JSON** 帶真實原因（EISDIR／EPERM／ENOSPC），並寫進 `debug.log`。
+- `/api/chat` 的 `SWITCH_MODEL` 分支加 try/catch：設定檔寫不進去時仍把原因放進 `actionSummaries` 回覆使用者，**不得讓整段 chat 變成 500**（該分支位於 async route handler 內、沒有外層 try/catch，第三十七階段的全域 JSON 出口會把它變成 500 並丟掉整段回覆）。失敗時不設 `hasActionTaken`，因為它只用來決定要不要 `saveTasks()`。
+- 前端：模型選單的 `if (res.success)` 原本沒有 else，切換失敗完全靜默；補上工作日誌 error 記錄。設定視窗的 `alert('儲存失敗: ' + …)` 寫死中文，改為 `t('settings.saveFailed')`。新增 `settings.saveFailed` 與 `llm.modelSwitchFailed` 兩組 zh-TW／en-US 鍵。
+
+### 測試與驗收
+- 新增 `test/llm-config-save.test.js`（5 項，**真實 `src/llm.js`** + 暫存 APPDATA）：成功存檔會把七個欄位寫進磁碟、失敗會拋錯且七個欄位全部回滾、`setCurrentModel` 失敗回滾、磁碟恢復可寫後立即正常、自動選模在無法存檔時仍 `modelReady: true`。
+  - **為何不能用 chat-harness**：harness 把 `src/llm.js` 整個換成 `fakeLlm`，真實的 `saveConfig()` 根本不會被載入，因此沿用 `test/llm-stream.test.js` 的模式（require 前先設定暫存 APPDATA）。
+- 新增 `test/llm-settings-routes.test.js`（5 項，真實 HTTP + 隔離 harness）：兩個端點失敗時回 500 JSON 帶 EISDIR 且不含 `Settings saved`、成功時仍回 200、磁碟恢復後立即正常、**已批准的 `SWITCH_MODEL` 存檔失敗時 chat 仍回 200 且回覆說明原因**、成功時回覆「Switched model to」。
+  - `SWITCH_MODEL` 屬 `SYSTEM_CHANGING_ACTION`，一定要先提案取得 `pendingActions`、再用 `approvedActionId` 確認才會進到 dispatcher；測試走的是這條真實 consent 路徑。
+  - harness 新增 `failSettings(error)` 與 `modelSwitches` 接縫，`fakeLlm` 補上 `setCurrentModel`／`updateProviderSettings`（原本沒有這兩個方法）。
+- 突變探針：llm.js 5 個（吞回錯誤、不回滾、只回滾 provider、setCurrentModel 不回滾、自動選模讓錯誤往外拋）全數被測到；server.js 4 個（SWITCH_MODEL 移除 try/catch、兩個端點吞錯誤仍回 success、失敗卻回覆「已切換」）全數被測到。**9/9**。
+- `npm test`：25 個 JS 語法、55 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify32`，`config.json` 為目錄）：
+  - zh-TW 按儲存 → alert「儲存失敗：EISDIR: illegal operation on a directory, open '…\config.json'」，**設定視窗保持開啟**（成功路徑才會關閉）。
+  - 切 en-US 重試 → alert「Save failed: EISDIR: …」，視窗仍開啟。
+  - 模型選單列出 32 個項目，點選後工作日誌出現「❌ 模型切換失敗：EISDIR: …」，選單正常關閉。
+  - `GET /api/llm/config` 全程維持 Ollama／gemma4:e2b-it-qat，確認記憶體已回滾。
+  - 移除目錄後重試 → 無 alert、視窗關閉、工作日誌「🚀 AI 引擎設定已更新…」，磁碟 `config.json` 確實寫入七個欄位。
+  - console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔與探針腳本。
+- 最終 `src/llm.js` md5 `7cf6165e386dfe049a154f44d4addeb6`、`src/server.js` md5 `879114d62a513cf6e88af23d767d7958`、`public/app.js` md5 `744a559e2201b9af57db1f3cd920e117`。
+
+### 尚未完成
+- `config.json` 仍是直接 `writeFileSync`，**沒有 temp-write + rename**：斷電或磁碟滿在寫入中途會留下半截 JSON，`loadConfig()` 的 `JSON.parse` 失敗後只 `console.warn` 並保留預設值，使用者的 API Key 一樣會消失。`tasks.json` 已有原子寫入，設定檔尚未跟進。
+- 真實磁碟全滿、檔案被其他行程鎖住（EPERM）與斷電 torn write 未實測；本輪以 EISDIR 重現同一條程式路徑。
+- `SWITCH_MODEL` 未出現在任何 system prompt 或 skill 文件，實際上只能由模型自發輸出；本輪以 scripted 回覆走完整 consent 路徑驗證，未以真實 LLM 端到端重現（本機模型在探針中輸出了格式錯誤的控制碼，未觸發該分支）。
+- UAC elevated process-tree、雙機 Chalkboard、Vision 模型、乾淨 Windows EXE 仍須實機驗收。
+- 未變更 SOP、版本號；未執行安裝、提權或刪除，也未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.12 — 第三十七階段：API 錯誤一律回 JSON，寫檔失敗不再留下幽靈任務
 
 > 接續同日第三十六階段；本輪從「磁碟滿／檔案被鎖住」這個真實情境重現出 HTML 500 與記憶體／磁碟不一致。版本維持 `2026.8.7`。

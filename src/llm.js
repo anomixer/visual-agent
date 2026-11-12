@@ -107,21 +107,19 @@ function loadConfig() {
  * 儲存設定
  */
 function saveConfig() {
-    try {
-        if (!fs.existsSync(APP_DATA_DIR)) fs.mkdirSync(APP_DATA_DIR, { recursive: true });
-        const config = {
-            currentModel,
-            currentProvider,
-            currentBaseUrl,
-            currentApiKey,
-            currentAuthType,
-            currentAuthConfig,
-            currentVisionModel
-        };
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-    } catch (e) {
-        console.error('[LLM] Failed to save config:', e.message);
-    }
+    if (!fs.existsSync(APP_DATA_DIR)) fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+    const config = {
+        currentModel,
+        currentProvider,
+        currentBaseUrl,
+        currentApiKey,
+        currentAuthType,
+        currentAuthConfig,
+        currentVisionModel
+    };
+    // 寫不進去就必須讓呼叫端知道。吞掉錯誤會變成「記憶體已改、磁碟沒改」，
+    // 端點卻回 Settings saved，重啟後使用者的 Provider 與 API Key 全部消失。
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
 /**
@@ -152,6 +150,15 @@ function normalizeAuthConfig(authConfig = {}, legacyApiKey = '') {
 }
 
 function updateProviderSettings(provider, baseUrl, apiKey, model, authConfig = null, visionModel = '') {
+    const previous = {
+        provider: currentProvider,
+        baseUrl: currentBaseUrl,
+        authConfig: currentAuthConfig,
+        authType: currentAuthType,
+        apiKey: currentApiKey,
+        model: currentModel,
+        visionModel: currentVisionModel
+    };
     currentProvider = provider;
     currentBaseUrl = baseUrl;
     currentAuthConfig = normalizeAuthConfig(authConfig || {}, apiKey);
@@ -159,7 +166,20 @@ function updateProviderSettings(provider, baseUrl, apiKey, model, authConfig = n
     currentApiKey = currentAuthType === 'api_key' ? (currentAuthConfig.apiKey || '') : '';
     if (model) currentModel = model;
     currentVisionModel = visionModel || '';
-    saveConfig();
+    try {
+        saveConfig();
+    } catch (err) {
+        // 沒落地就不能留在記憶體，否則畫面顯示新 Provider、重啟後回到舊的。
+        currentProvider = previous.provider;
+        currentBaseUrl = previous.baseUrl;
+        currentAuthConfig = previous.authConfig;
+        currentAuthType = previous.authType;
+        currentApiKey = previous.apiKey;
+        currentModel = previous.model;
+        currentVisionModel = previous.visionModel;
+        invalidateCache();
+        throw err;
+    }
     invalidateCache();
 }
 
@@ -517,7 +537,12 @@ async function checkOllamaStatus(force = false) {
                             foundModel = chatModels.find(m => m.name === DEFAULT_MODEL);
                             if (foundModel) {
                                 currentModel = DEFAULT_MODEL;
-                                saveConfig();
+                                // 自動選模是背景行為：寫不進設定檔不該讓已存在的模型被判為未就緒。
+                                try {
+                                    saveConfig();
+                                } catch (saveErr) {
+                                    console.warn('[LLM] Failed to persist auto-selected model:', saveErr.message);
+                                }
                             }
                         }
                         if (!foundModel) {
@@ -714,8 +739,15 @@ async function listModels(options = {}) {
  */
 function setCurrentModel(modelName) {
     console.log(`[LLM] Switching model to: ${modelName}`);
+    const previous = currentModel;
     currentModel = modelName;
-    saveConfig();
+    try {
+        saveConfig();
+    } catch (err) {
+        currentModel = previous;
+        invalidateCache();
+        throw err;
+    }
     invalidateCache();
 }
 

@@ -144,6 +144,9 @@ browser ──── public/index.html
 - **持久化失敗必須回滾記憶體狀態**：`POST /api/todo` 與 `DELETE /api/todo/:id` 在 `saveTasks()` 拋錯時，必須把剛 push 的任務收回 / 把剛 filter 掉的任務還原，再回 500 JSON 並附最新 `publicTodoList()`。不得留下「畫面看得到、重啟後消失」的幽靈任務，也不得留下「畫面已刪除、重啟後又出現」的未落地移除。
 - **診斷日誌必須是 best-effort**：`appendDebugLog()` 本身可能因磁碟滿或檔案被鎖住而拋錯，因此 `fileLog()` 必須包 try/catch。錯誤處理路徑自己拋錯會蓋掉真正的錯誤，讓全域 JSON 出口失效。
 - **模型名稱必須是字串**：`POST /api/llm/model` 的 `modelName` 非字串或去除空白後為空時必須回 400，不得賦值給 `currentModel` 或寫入 config。
+- **LLM 設定寫檔失敗不得宣稱已儲存**：`saveConfig()` 不得吞掉寫檔錯誤，否則 `updateProviderSettings()` / `setCurrentModel()` 已改完模組層設定、磁碟卻沒改，端點仍回 `success:true`，重啟後使用者的 Provider、Base URL、API Key 與 Vision Model 全部消失。兩個函式都必須先快照再套用，`saveConfig()` 拋錯時還原所有被指派的欄位（`updateProviderSettings()` 是七個）並 rethrow；`POST /api/llm/config` 與 `POST /api/llm/model` 必須回 500 JSON 帶真實原因，前端設定視窗保持開啟、模型選單把失敗寫進工作日誌。
+- **背景自動選模的存檔失敗不得影響就緒判定**：`checkOllamaStatus()` 把 `currentModel` 換成 `DEFAULT_MODEL` 後的 `saveConfig()` 必須是 best-effort。讓錯誤往外拋會被外層 `catch (tagsErr)` 接住並跳過 `status.modelReady = true`，已存在的模型會被判為未就緒。
+- **chat 內的模型切換失敗不得中斷整段回覆**：`SWITCH_MODEL` 分支位於 `/api/chat` 的 async handler 內且沒有外層 try/catch，`setCurrentModel()` 拋錯時必須就地接住、把原因放進 `actionSummaries` 回覆使用者，不得讓全域 JSON 出口把整段 chat 變成 500。失敗時不得設定 `hasActionTaken`（它只決定要不要 `saveTasks()`）。
 - **客戶端讀檔與圖片解碼失敗必須可見**：`FileReader` 的 `onerror` 不是 `onload` 的一部分，未接時讀檔失敗（權限、檔案被移走、I/O 錯誤）會完全沒有回饋。任務匯入與 Chalkboard 圖片上傳都必須註冊 `reader.onerror`，把 `reader.error?.message`（無訊息時 `Unknown error`）一起寫進工作日誌的 error 等級；Chalkboard 另需 `img.onerror` 攔截「讀得到位元組但無法解碼」的檔案。失敗時不得送出請求、不得改動畫布，且必須重設 file input 讓使用者能重試同一個檔案。
 - **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。復原結果必須寫回 `tasks.json`（run log 已被消費，不寫回則第二次重啟只剩通用中斷訊息）；健康的任務檔不得在啟動時被重寫。
 - **中斷執行必須留下診斷記錄**：`saveTasks()` 只在執行開始與結束時呼叫，因此執行期間的 `task.logs` / `progress` 必須另外以 append-only JSONL（`%APPDATA%\visual-agent\running-task.jsonl`，每筆 `{ taskId, progress, entry }`）落地，只追加新增的那一行，不得為了 checkpoint 整份重寫 `tasks.json`。`log` / `ui:message` 各追加一筆，`phase:start` 追加 progress-only 記錄。執行開始前與 `finally` 寫檔後都必須清除 sidecar；解析必須逐行寬容（半截的最後一行與不同 `taskId` 的記錄跳過，不丟棄整份）；append / 清除失敗只寫 `debug.log`，不得中斷執行。不得以截斷 `task.logs` 作為成長控制手段。
@@ -324,6 +327,8 @@ $true
 - [x] 移除 / 備份 / 還原 / 掃描型 SOP 不再被標示為「安裝」（2026.11.12 第三十五階段：新增 `getDisplayAction()` 與 `actions.run` / `task.addRunTask`，卡片標題、按鈕、徽章、log 與任務 chip 全部改走顯示動詞，送出的 `action` payload 不變）。
 - [x] Skills 面板分類標題與來源標籤本地化，字典不再焊死啟動語系（2026.11.12 第三十六階段：`categories` 補 15 個 skill 分類、兩個分組標題走 `localizeCategory()`、`sidebar.skillSourceHermes` / `skillHermesBadgeTitle`、搜尋字串納入分類、`settings.visionHelp` 移除 `currentLocale` 三元運算式）。
 - [x] API 錯誤一律回 JSON、寫檔失敗回滾記憶體狀態（2026.11.12 第三十七階段：全域 JSON error middleware 保留 4xx–5xx 原值且不外送 stack、`app.use('/api')` JSON 404 出口、`POST`/`DELETE /api/todo` 寫檔失敗回滾、`fileLog()` best-effort、`POST /api/llm/model` 拒絕非字串 modelName）。
+- [x] LLM 設定寫檔失敗可見且回滾（2026.11.12 第三十八階段：`saveConfig()` 不再吞錯誤、`updateProviderSettings()` 七欄位快照回滾、`setCurrentModel()` 回滾、自動選模存檔 best-effort、`POST /api/llm/config` 與 `/api/llm/model` 回 500 JSON、chat `SWITCH_MODEL` 失敗仍回覆原因、前端模型選單補錯誤記錄與 `settings.saveFailed` / `llm.modelSwitchFailed` 雙語鍵）。
+- [ ] `config.json` 改用 temp-write + rename（目前直接 `writeFileSync`，斷電或磁碟滿會留下半截 JSON，`loadConfig()` 解析失敗後靜默退回預設值，API Key 一樣會消失）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期

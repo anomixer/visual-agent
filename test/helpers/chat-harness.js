@@ -106,6 +106,8 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
     const timers = new Set();
     let replies = [];
     let onChat = null;
+    const modelSwitches = [];
+    let settingsFailure = null;
     let now = Date.parse('2026-10-28T12:00:00Z');
     const deny = (operation) => {
         violations.push(operation);
@@ -181,6 +183,14 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
         getVisionCapableModel: async () => '',
         listModels: async () => ['consent-fixture-text'],
         checkOllamaStatus: async () => ({ available: true, modelReady: true, modelName: 'consent-fixture-text' }),
+        // 真實 llm.js 的寫檔失敗行為由 test/llm-config-save.test.js 覆蓋；這裡只重現「呼叫端會收到錯誤」。
+        setCurrentModel(modelName) {
+            modelSwitches.push(modelName);
+            if (settingsFailure) throw settingsFailure;
+        },
+        updateProviderSettings() {
+            if (settingsFailure) throw settingsFailure;
+        },
         async chatWithLLM(message, history, options, locale) {
             llmCalls.push({ message, history: clone(history), locale, aborted: !!options?.signal?.aborted });
             if (onChat) onChat({ message, locale });
@@ -315,7 +325,7 @@ module.exports = {
     };
     return {
         app: captured.app, sandboxRoot, sourceHashes,
-        fixtures: clone(fixtures), llmCalls, browserCalls, executorCalls, consoleEntries,
+        fixtures: clone(fixtures), llmCalls, browserCalls, executorCalls, consoleEntries, modelSwitches,
         setReplies(next) {
             assert.ok(Array.isArray(next) && next.every((reply) => typeof reply === 'string'));
             replies = next.slice();
@@ -333,6 +343,10 @@ module.exports = {
         failWrites(predicate) {
             assert.ok(predicate === null || typeof predicate === 'function');
             memory.setWriteFailure(predicate);
+        },
+        failSettings(error) {
+            assert.ok(error === null || error instanceof Error);
+            settingsFailure = error;
         },
         advanceTime(milliseconds) {
             assert.ok(Number.isFinite(milliseconds) && milliseconds >= 0);

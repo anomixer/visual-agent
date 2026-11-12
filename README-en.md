@@ -436,6 +436,9 @@ Usually `3210` or `19168` is already occupied by another Visual Agent process. T
 **Q: Adding or deleting a task fails with ENOSPC / EPERM in the work log?**
 That means `%APPDATA%\visual-agent\tasks.json` could not be written: the disk is full (ENOSPC), or the file is marked read-only or locked by another program (EPERM). When the write fails the task is neither added nor deleted, so the UI and the file on disk stay consistent — you will not get a phantom task that disappears after a restart. Free up disk space or clear the read-only flag / lock, then retry. Every API error (including a mistyped endpoint) is reported as JSON with the real cause, never just "Unexpected token '<'".
 
+**Q: Saving AI engine settings shows “Save failed: EISDIR / EPERM / ENOSPC”?**
+That means `%APPDATA%\visual-agent\config.json` could not be written: the disk is full, the file is read-only or locked by another program, or a directory with that name occupies the path. When the settings cannot be persisted they are not applied in memory either — the settings dialog stays open and shows the real cause instead of pretending to save and then losing your provider and API key on restart. Clear the cause and press “Save & Refresh” again. If switching models from the model menu fails, the work log records “Model switch failed” with the reason; if you ask the AI to switch models in chat and the save fails, the AI explains the reason instead of aborting the whole reply.
+
 **Q: How do I report an issue?**
 Open “Help → Diagnostics” in the title bar, copy the diagnostic summary, and include it together with the steps you took and the tail of the debug log.
 

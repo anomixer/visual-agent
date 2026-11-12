@@ -463,10 +463,12 @@ const I18N = {
             textToolTitle: '文字工具',
             save: '儲存並刷新',
             updated: 'AI 引擎設定已更新，正在重新啟動服務...',
+            saveFailed: '儲存失敗：{error}',
         },
         llm: {
             modelSwitched: '模型已切換至: {modelName}',
             modelSwitchedChat: '我現在切換到 **{modelName}** 囉！隨時可以開始對話。',
+            modelSwitchFailed: '模型切換失敗：{error}',
         },
         textTool: {
             title: '文字工具',
@@ -919,10 +921,12 @@ const I18N = {
             textToolTitle: 'Text Tool',
             save: 'Save & Refresh',
             updated: 'AI engine settings updated, restarting services...',
+            saveFailed: 'Save failed: {error}',
         },
         llm: {
             modelSwitched: 'Model switched to: {modelName}',
             modelSwitchedChat: 'I have now switched to **{modelName}**! Ready to start the conversation.',
+            modelSwitchFailed: 'Model switch failed: {error}',
         },
         textTool: {
             title: 'Text Tool',
@@ -5852,6 +5856,8 @@ async function toggleModelMenu() {
                     addUILog(`🧠 ${t('llm.modelSwitched', { modelName: m.name })}`, 'success');
                     appendChatBubble('ai', `🧠 ${t('llm.modelSwitchedChat', { modelName: m.name })}`);
                     checkLLMStatus();
+                } else {
+                    addUILog(`❌ ${t('llm.modelSwitchFailed', { error: res.error || 'Unknown error' })}`, 'error');
                 }
                 menu.remove();
             };
@@ -8805,7 +8811,7 @@ async function saveProviderSettings() {
         // 重新整理頁面以套用新設定
         setTimeout(() => location.reload(), 1000);
     } else {
-        alert('儲存失敗: ' + (data.error || '不明錯誤'));
+        alert(t('settings.saveFailed', { error: data.error || 'Unknown error' }));
     }
 }
 

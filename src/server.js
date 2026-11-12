@@ -3779,7 +3779,12 @@ app.post('/api/llm/model', (req, res) => {
     if (typeof modelName !== 'string' || !modelName.trim()) {
         return res.status(400).json({ success: false, error: 'Missing modelName' });
     }
-    llm.setCurrentModel(modelName);
+    try {
+        llm.setCurrentModel(modelName);
+    } catch (err) {
+        fileLog(`POST /api/llm/model failed: ${err.message}`);
+        return res.status(500).json({ success: false, error: err.message });
+    }
     res.json({ success: true, currentModel: llm.getCurrentModel() });
 });
 // POST /api/execute/:taskId 執行指定任務
@@ -4495,13 +4500,23 @@ ${onDemandGuidance || '(no direct skill/sop match)'}
                 if (command === 'SWITCH_MODEL') {
                     const nameMatch = actionStr.match(/name="(.*?)"/) || actionStr.match(/name=([^\s\]]+)/i);
                     if (nameMatch) {
-                        llm.setCurrentModel(nameMatch[1]);
-                        hasActionTaken = true;
-                        actionSummaries.push(
-                            locale === 'en-US'
-                                ? `Switched model to: ${nameMatch[1]}`
-                                : `已切換模型：${nameMatch[1]}`
-                        );
+                        try {
+                            llm.setCurrentModel(nameMatch[1]);
+                            hasActionTaken = true;
+                            actionSummaries.push(
+                                locale === 'en-US'
+                                    ? `Switched model to: ${nameMatch[1]}`
+                                    : `已切換模型：${nameMatch[1]}`
+                            );
+                        } catch (err) {
+                            // 設定檔寫不進去時仍要把原因回給使用者，不能讓整段 chat 變成 500。
+                            fileLog(`SWITCH_MODEL failed: ${err.message}`);
+                            actionSummaries.push(
+                                locale === 'en-US'
+                                    ? `Could not switch model to ${nameMatch[1]}: ${err.message}`
+                                    : `無法切換模型至 ${nameMatch[1]}：${err.message}`
+                            );
+                        }
                     }
                 }
 
@@ -5446,7 +5461,12 @@ app.post('/api/llm/config', (req, res) => {
     }
 
 
-    llm.updateProviderSettings(provider, baseUrl, apiKey, model, authConfig, visionModel);
+    try {
+        llm.updateProviderSettings(provider, baseUrl, apiKey, model, authConfig, visionModel);
+    } catch (err) {
+        fileLog(`POST /api/llm/config failed: ${err.message}`);
+        return res.status(500).json({ success: false, error: err.message });
+    }
     res.json({ success: true, message: 'Settings saved' });
 });
 function shouldSearchWingetForRecommendations(message = '') {
