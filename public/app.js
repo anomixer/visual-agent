@@ -419,6 +419,8 @@ const I18N = {
         },
         exps: {
             detailsTitle: '經驗詳情',
+            detailSource: '來源',
+            detailUpdatedAt: '更新時間',
             searchPlaceholder: '搜尋經驗、關鍵字...',
             exportButton: '⬇ 匯出',
             exportTooltip: '匯出所有 exps 為 Markdown',
@@ -548,6 +550,7 @@ const I18N = {
             exportSuccessChat: '任務清單已匯出成功。',
             exportCancelled: '已取消匯出任務清單',
             exportFallback: '原生匯出失敗，已改用瀏覽器下載：{error}',
+            exportFailed: '匯出任務清單失敗：{error}',
             importSuccess: '任務清單已匯入',
             importFailed: '匯入失敗：JSON 格式錯誤',
         },
@@ -620,6 +623,13 @@ const I18N = {
             addedSOPToList: '已加入{action} SOP：{name}',
             startingAction: '開始{action}：{title}',
             startingSOPAction: '開始{action} SOP：{name}',
+            detailStatus: '狀態',
+            detailCategory: '分類',
+            detailAction: '動作',
+            detailSopId: 'SOP ID',
+            detailCreatedAt: '建立時間',
+            detailLogs: '執行記錄',
+            detailNoSop: '（無）',
         },
         sidebar: {
             recommendLoading: '推薦清單載入中...',
@@ -827,6 +837,8 @@ const I18N = {
         },
         exps: {
             detailsTitle: 'Experience Details',
+            detailSource: 'Source',
+            detailUpdatedAt: 'Updated',
             searchPlaceholder: 'Search experiences, keywords...',
             exportButton: '⬇ Export',
             exportTooltip: 'Export all exps as Markdown',
@@ -956,6 +968,7 @@ const I18N = {
             exportSuccessChat: 'Task list exported successfully.',
             exportCancelled: 'Task list export cancelled',
             exportFallback: 'Native export failed, fallback to browser download: {error}',
+            exportFailed: 'Task list export failed: {error}',
             importSuccess: 'Task list imported',
             importFailed: 'Import failed: JSON format error',
         },
@@ -1028,6 +1041,13 @@ const I18N = {
             addedSOPToList: 'Added {action} SOP: {name}',
             startingAction: 'Starting {action}: {title}',
             startingSOPAction: 'Starting {action} SOP: {name}',
+            detailStatus: 'Status',
+            detailCategory: 'Category',
+            detailAction: 'Action',
+            detailSopId: 'SOP ID',
+            detailCreatedAt: 'Created',
+            detailLogs: 'Execution log',
+            detailNoSop: '(none)',
         },
         sidebar: {
             recommendLoading: 'Loading recommendations...',
@@ -7730,8 +7750,8 @@ function exportExps() {
         return;
     }
     const md = expsEntries.map(e => {
-        const ts = e.updatedAt ? new Date(e.updatedAt).toLocaleString('zh-TW', { hour12: false }) : '';
-        return `# ${e.title || e.fileName || '未命名'}\n> SOP: ${e.sopId || 'dynamic'} | ${ts}\n\n${e.content || ''}\n\n---`;
+        const ts = e.updatedAt ? new Date(e.updatedAt).toLocaleString(currentLocale === 'en-US' ? 'en-US' : 'zh-TW', { hour12: false }) : '';
+        return `# ${e.title || e.fileName || t('exps.unnamed')}\n> SOP: ${e.sopId || 'dynamic'} | ${ts}\n\n${e.content || ''}\n\n---`;
     }).join('\n\n');
     api('/api/exps/export-file', {
         method: 'POST',
@@ -7770,11 +7790,11 @@ function showExpDetail(entry) {
           <span class="task-detail-value">${escapeHtml(entry.sopId || 'dynamic')}</span>
         </div>
         <div class="task-detail-row">
-          <span class="task-detail-label">來源</span>
+          <span class="task-detail-label">${escapeHtml(t('exps.detailSource'))}</span>
           <span class="task-detail-value">${escapeHtml(entry.fileName || '')}</span>
         </div>
         <div class="task-detail-row">
-          <span class="task-detail-label">更新時間</span>
+          <span class="task-detail-label">${escapeHtml(t('exps.detailUpdatedAt'))}</span>
           <span class="task-detail-value">${escapeHtml(updatedAt)}</span>
         </div>
         <div style="margin-top:12px" class="exp-detail-content">${htmlContent}</div>
@@ -7795,29 +7815,29 @@ function renderTaskModalBody(task) {
     modalTitle.textContent = task.title;
     modalBody.innerHTML = `
         <div class="task-detail-row">
-          <span class="task-detail-label">狀態</span>
+          <span class="task-detail-label">${escapeHtml(t('task.detailStatus'))}</span>
           <span class="task-detail-value task-status" data-status="${escapeHtml(task.status || '')}">${escapeHtml(localizeStatus(task.status))}</span>
         </div>
         <div class="task-detail-row">
-          <span class="task-detail-label">分類</span>
+          <span class="task-detail-label">${escapeHtml(t('task.detailCategory'))}</span>
           <span class="task-detail-value">${escapeHtml(task.category || '—')}</span>
         </div>
         <div class="task-detail-row">
-          <span class="task-detail-label">動作</span>
+          <span class="task-detail-label">${escapeHtml(t('task.detailAction'))}</span>
           <span class="task-detail-value">${escapeHtml(getActionLabel(task.action || 'install'))}</span>
         </div>
         <div class="task-detail-row">
-          <span class="task-detail-label">SOP ID</span>
-          <span class="task-detail-value" style="font-family:var(--font-mono);font-size:11px">${escapeHtml(task.skillId || '（無）')}</span>
+          <span class="task-detail-label">${escapeHtml(t('task.detailSopId'))}</span>
+          <span class="task-detail-value" style="font-family:var(--font-mono);font-size:11px">${escapeHtml(task.skillId || t('task.detailNoSop'))}</span>
         </div>
         <div class="task-detail-row">
-          <span class="task-detail-label">建立時間</span>
-          <span class="task-detail-value">${escapeHtml(task.createdAt ? new Date(task.createdAt).toLocaleString('zh-TW') : '—')}</span>
+          <span class="task-detail-label">${escapeHtml(t('task.detailCreatedAt'))}</span>
+          <span class="task-detail-value">${escapeHtml(task.createdAt ? new Date(task.createdAt).toLocaleString(currentLocale === 'en-US' ? 'en-US' : 'zh-TW') : '—')}</span>
         </div>
         ${task.logs?.length ? `
-          <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;">執行記錄</div>
+          <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;">${escapeHtml(t('task.detailLogs'))}</div>
           <div class="task-log-list">
-            ${task.logs.map(l => `<div class="task-log-item log-entry ${escapeHtml(l.type || 'info')}" style="font-family:var(--font-mono);font-size:10px;padding:2px 6px">${escapeHtml(l.message || l)}</div>`).join('')}
+            ${task.logs.map(l => `<div class="task-log-item log-entry ${escapeHtml(l.level || 'info')}" style="font-family:var(--font-mono);font-size:10px;padding:2px 6px">${escapeHtml(l.message || l)}</div>`).join('')}
           </div>` : ''}
     `;
 }
@@ -7866,7 +7886,7 @@ function cycleTheme() {
 //  EXPORT / IMPORT
 // ════════════════════════════════════════════════════════
 function exportTasks() {
-    api('/api/todo/export-file', { method: 'POST' }).then((data) => {
+    api('/api/todo/export-file', { method: 'POST' }).then(async (data) => {
         if (data.success) {
             addUILog('✅ ' + t('tasks.exportSuccess', { fileName: data.fileName || data.filePath }), 'success');
             appendChatBubble('ai', '✅ ' + t('tasks.exportSuccessChat'));
@@ -7878,8 +7898,13 @@ function exportTasks() {
             return;
         }
 
-        // fallback: 若原生另存失敗，仍嘗試瀏覽器下載
-        const json = JSON.stringify(todoList, null, 2);
+        // fallback: 原生另存失敗時改抓完整匯出 payload；前端 todoList 已不含 logs，直接序列化會遺失執行記錄。
+        const exported = await api('/api/todo/export');
+        if (!Array.isArray(exported?.tasks)) {
+            addUILog(`❌ ${t('tasks.exportFailed', { error: exported?.error || data.error || 'Unknown error' })}`, 'error');
+            return;
+        }
+        const json = JSON.stringify(exported, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

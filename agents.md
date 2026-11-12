@@ -5,6 +5,33 @@
 
 ---
 
+## 📌 2026.11.12 — 第二十九階段：匯出不再遺失執行記錄，詳情視窗補上語系與日誌顏色
+
+> 接續同日第二十八階段；第二十階段把 `logs` 從清單回應移除後，前端 `todoList` 已不含執行記錄。版本維持 `2026.8.7`。
+
+### 瀏覽器 fallback 匯出會遺失全部執行記錄（資料遺失）
+- `exportTasks()` 先呼叫 `/api/todo/export-file`（原生另存新檔）；失敗時 fallback 直接 `JSON.stringify(todoList)`。第二十階段之後 `todoList` 一律沒有 `logs`，因此 fallback 匯出的每一筆任務都少了整段執行歷程，而且格式變成裸陣列、沒有 `exportedAt` / `agentVersion`。
+- 失敗分支只 `console.error`，畫面上沒有任何訊息；使用者按下匯出後完全沒有反應，也無從得知是失敗還是被取消。
+- 修正：fallback 改抓 `GET /api/todo/export`（伺服器端仍保有完整 logs），以 `Array.isArray(payload?.tasks)` 驗證後才下載整份 wrapper；驗證失敗或請求失敗都以新的 `tasks.exportFailed` 寫進工作日志。原生成功與 `cancelled` 分支直接 return，不會多打一次匯出請求。
+
+### 任務詳情的執行記錄全部顯示為灰色
+- `renderTaskModalBody()` 用 `l.type` 組 class，但任務 log 只有 `level`（`info` / `warn` / `error` / `ui` / `success`），`public/style.css` 的 `.log-entry.info/.success/.warn/.error/.ui` 因此永遠不會命中；錯誤與警告跟一般訊息同色。改為 `l.level || 'info'`，與全域日誌面板 `addLogEntry()` 的來源一致。
+
+### 詳情視窗與經驗庫匯出寫死中文
+- 任務詳情的「狀態 / 分類 / 動作 / SOP ID / 建立時間 / 執行記錄 / （無）」、經驗詳情的「來源 / 更新時間」都是硬編字串，切到 en-US 仍顯示中文；建立時間固定用 `zh-TW` 格式。
+- 補上 `task.detail*`（7 鍵）與 `exps.detailSource` / `exps.detailUpdatedAt`，日期依 `currentLocale` 選 `zh-TW` / `en-US`。zh-TW 的 `hour12` 刻意維持原樣，避免改動既有中文顯示。
+- `exportExps()` 的無標題 fallback 與時間戳一併走 `t('exps.unnamed')` 與語系日期。
+
+### 測試與驗收
+- 新增 `test/app-task-detail-export.test.js`（8 項，擷取真實函式 + 真實 I18N）：fallback 保留完整 logs 與 wrapper 且不是裸陣列、fallback 失敗時 0 次下載並留下錯誤訊息、原生成功 / 取消不進 fallback、五種 level 各自對應正確 class、zh-TW / en-US 標籤與日期字串、無 SOP 的在地化替代字與無 logs 時不顯示記錄區塊、經驗詳情標籤、經驗匯出的未命名 fallback 與語系時間戳。日期斷言以各語系 `toLocaleString` 比對，不受執行環境時區影響。
+- 以還原三項修正的副本實測：8 項中有 4 項失敗，確認測試不是空轉；還原後 8/8 通過。
+- `npm test`：24 個 JS 語法、41 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify23`，以 `/api/todo/import` 種入含 5 行 log 的任務）：先確認 `/api/todo` 與前端 `todoList` 皆不含 logs（`hasLogsInList: false`）；讓原生匯出失敗後，實際下載的檔案為物件而非陣列，含 `agentVersion 2026.8.7`、`exportedAt` 與全部 5 行 log，請求順序為 `['/api/todo/export-file','/api/todo/export']`。詳情視窗五種 level 的計算後顏色分別為 error `rgb(244,113,113)`、warn `rgb(220,220,170)`、success `rgb(78,201,176)`、ui `rgb(197,134,192)`、info `rgb(157,157,157)`。zh-TW 顯示「狀態／分類／動作／SOP ID／建立時間／執行記錄／（無）」與 `2026/11/12 上午10:00:00`；en-US 顯示 Status／Category／Action／SOP ID／Created／Execution log／(none) 與 `11/12/2026, 10:00:00 AM`。失敗分支 0 次下載並顯示 `❌ Task list export failed: probe offline`，取消分支 0 次下載並顯示 `ℹ️ Task list export cancelled`；經驗匯出標頭為 `> SOP: probe_sop | 11/12/2026, 10:00:00`；console 無 error / warn。驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔與探測腳本。
+- **尚未完成**：切換語系時「已經開啟」的詳情視窗仍停在舊語言，需關閉重開才會翻譯（任務與經驗 modal 皆然，屬既有行為，本輪未修，因為需要追蹤目前開啟的是哪一個 modal）。驗收時原生另存對話框與瀏覽器下載皆以 stub 攔截，未實際寫出檔案到使用者磁碟。每筆任務的 `logs` 仍無上限，`tasks.json` 會隨執行次數持續成長。
+- 未變更 SOP、LLM 設定、版本號；未執行安裝、提權，刪除僅限自己建立的暫存目錄。
+
+---
+
 ## 📌 2026.11.12 — 第二十八階段：Browser 分頁快照不再重疊、亂序與整份重送
 
 > 接續同日第二十七階段；Browser 分頁每 2 秒抓一次 `fullPage` PNG。版本維持 `2026.8.7`。

@@ -137,6 +137,7 @@ browser ──── public/index.html
 - **SOP 執行**：一般與 elevated PowerShell runner 均以 UTF-8 BOM 暫存 `.ps1` 搭配 `-File` 執行，保留中文、例外與 native exit code。一般路徑 timeout 必須終止 process tree；elevated process-tree 行為仍需獨立實機驗收。
 - **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
 - **任務與聊天資料不可靜默遺失**：`tasks.json` 必須 temp-write + rename；task ID 使用 UUID；running task 不可刪除或整批 import 覆寫。同 session 並行聊天完成時須附加到最新歷史，不得用舊快照覆寫。
+- **匯出必須來自伺服器的完整任務**：清單類回應不含 `logs`，因此前端不得直接序列化 `todoList` 作為匯出內容。原生另存新檔失敗時的瀏覽器 fallback 必須改抓 `GET /api/todo/export`，以 `Array.isArray(payload.tasks)` 驗證後下載整份 `{ exportedAt, agentVersion, tasks }` wrapper（該端點不回 `success` 欄位）。驗證失敗或請求失敗必須在工作日志顯示錯誤，不得只寫 console；原生成功與使用者取消都不得再觸發 fallback。
 - **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。健康的任務檔不得在啟動時被重寫。
 - **Agent Loop 必須有總上限**：每個 `/api/chat` 請求在入口建立單一 `AgentLoopBudget`，首輪 ACTION、自動即時資訊搜尋 / 抽取、迴圈工具與每輪 LLM 呼叫共用最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；待確認的系統變更動作不得佔用工具額度。LLM 與頁面抓取 timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader、搜尋、抽取、`fetch_title` 與瀏覽器 fallback。提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）必須接收 abort，但仍使用各自 timeout，不得宣稱這些分支與一般 chat 共用同一預算；Playwright 已發出的導覽仍可能等到自身 timeout。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
@@ -170,6 +171,8 @@ browser ──── public/index.html
 | GET | `/api/logs` | 全域執行日誌（`?since=` 為上一筆 `seq`，只回更新的項目；緩衝僅留最新 500 筆，游標超出範圍或落在已丟棄區段時回 `reset: true` 與全部日誌） |
 | GET | `/api/browser/session/snapshot` | Browser 分頁快照（`?since=` 為上次收到的 `snapshotHash`；畫面相同時只回 `unchanged: true` 與雜湊，不含 base64） |
 | POST | `/api/todo/import` | 匯入任務清單（回傳最新 `todoList`，同樣不含 `logs`）；有 running task 時拒絕整批取代 |
+| GET | `/api/todo/export` | 完整匯出 payload `{ exportedAt, agentVersion, tasks }`（含各任務 `logs`，**無 `success` 欄位**）；瀏覽器 fallback 匯出必須使用此端點 |
+| POST | `/api/todo/export-file` | 以原生 Windows 另存新檔寫出完整匯出檔；使用者取消時回 `cancelled` |
 
 ---
 
@@ -290,6 +293,7 @@ $true
 - [x] 重啟後不再殘留永久「執行中」的任務（2026.11.12 第二十七階段：`reconcileInterruptedTasks()`、`loadTasks()` 啟動時標為 failed 並補中斷記錄）。
 - [x] 冒煙測試改用隔離暫存 AppData，不再讀寫使用者真實設定（2026.11.12 第二十七階段：`scripts/check.js` 以 `mkdtempSync` 建立 profile，等子行程結束後刪除）。
 - [x] Browser 分頁快照輪詢不重疊、不亂序、畫面未變不重送（2026.11.12 第二十八階段：`ensureBrowserSession()` 共用開啟 promise、`snapshotHash` / `?since=`、前端 `snapshotInFlight` / `snapshotActionsInFlight` / `snapshotSeq`）。
+- [x] 匯出 fallback 保留完整執行記錄，詳情視窗日誌顏色與語系正確（2026.11.12 第二十九階段：`exportTasks()` 改抓 `/api/todo/export` 並驗證 wrapper、`renderTaskModalBody()` 改用 `l.level`、`task.detail*` / `exps.detail*` i18n 鍵與語系日期）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -343,6 +347,7 @@ $true
 - 首次執行文案：`首次執行本程式，正設定環境中，請稍候...`
 - 後續執行文案：`啟動後端伺服器中，請稍候...`
 - 在封裝 EXE 模式下，任務匯出應優先使用原生另存新檔流程，而非瀏覽器下載語意。
+- 原生流程失敗時的瀏覽器 fallback 必須向 `GET /api/todo/export` 取得完整任務（含 `logs`），並保留 `{ exportedAt, agentVersion, tasks }` 結構；不得改用前端清單資料，否則匯出檔會遺失執行記錄。
 
 ## 6.7 2026.03.24 硬體上下文與語系 SOP 拆分
 
@@ -732,6 +737,7 @@ $true
 ### 17.1 雙語動態切換機制 (Bilingual UI Toggling)
 - **零重載翻譯**：介面支援 `zh-TW` 與 `en-US` 雙語動態切換。
 - **UI 元素涵蓋範圍**：工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、Chalkboard 工具、經驗知識庫、以及系統對話視窗，皆需根據 `currentLocale` 即時更新。
+- **詳情視窗與匯出文字不得寫死語系**：任務詳情（狀態 / 分類 / 動作 / SOP ID / 建立時間 / 執行記錄 / 無 SOP 替代字）與經驗詳情（來源 / 更新時間）的標籤必須走 `t()`；日期與經驗庫匯出時間戳須依 `currentLocale` 選擇 `zh-TW` / `en-US` 格式。已知限制：切換語系時已開啟的 modal 不會即時重繪，需關閉重開。
 - **對話分頁動態過濾**：
   - 本機與遠端聊天分頁名稱在切換語系時需動態翻譯（例如：「本機對話 1」 ↔ 「Local Chat 1」）。
   - 對話分頁的過濾與翻譯必須使用非 ASCII 安全的正則表達式 `/^(?:本機對話|Local Chat)(?:\s+\d+)?$/i`，嚴禁使用 `\b`（單字邊界符）以防止在中文等非 ASCII 字元上發生比對失效。
