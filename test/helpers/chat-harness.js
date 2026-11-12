@@ -79,7 +79,7 @@ function createMemoryFs(root, deny) {
     };
 }
 
-function createChatHarness() {
+function createChatHarness({ seedFiles = {} } = {}) {
     const sandboxRoot = path.join(ROOT, 'test', `.chat-harness-${crypto.randomUUID()}`);
     const violations = [];
     const consoleEntries = [];
@@ -98,6 +98,10 @@ function createChatHarness() {
         get: (_target, property) => deny(`${label}.${String(property)}`),
     });
     const memory = createMemoryFs(sandboxRoot, deny);
+    // 相對於 sandboxRoot 的路徑；在 server 模組載入前寫入，才能測到 loadTasks() 這類啟動行為。
+    for (const [relative, content] of Object.entries(seedFiles)) {
+        memory.api.writeFileSync(path.join(sandboxRoot, relative), content, 'utf8');
+    }
     const fixtures = [FIXTURE_SOP_ID, OTHER_SOP_ID].map((id, index) => ({
         id,
         name: `Consent fixture ${index + 1}`,

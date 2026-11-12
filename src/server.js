@@ -46,7 +46,7 @@ const {
     buildNvidiaSnapshotLines,
     formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted, buildTaskExportPayload, selectLogsForClient,
-    appendLogWithSeq,
+    appendLogWithSeq, reconcileInterruptedTasks,
 } = require('./pure');
 // 原生 Windows 檔案對話框（自本檔抽出，見 src/native-dialogs.js）。
 const { pickSaveFilePath } = require('./native-dialogs');
@@ -3455,7 +3455,12 @@ function loadTasks() {
         todoList = [];
     }
 
-
+    const { tasks, interrupted } = reconcileInterruptedTasks(todoList);
+    todoList = tasks;
+    if (interrupted) {
+        console.warn(`[Tasks] ${interrupted} task(s) interrupted by the previous shutdown; marked as failed.`);
+        fileLog(`Reconciled ${interrupted} interrupted task(s) to failed on startup.`);
+    }
 }
 
 

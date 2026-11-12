@@ -146,6 +146,27 @@ eq('logs 游標落在丟棄區段要求重置', pure.selectLogsForClient(trimmed
 eq('logs 游標緊接最舊項目可增量', pure.selectLogsForClient(trimmedFixture, '497'), { logs: trimmedFixture, total: 500 });
 eq('logs 空緩衝回 total 0', pure.selectLogsForClient([], '5'), { logs: [], total: 0, reset: true });
 
+// 重啟後仍標為 running 的任務必然已被中斷：執行狀態只存在記憶體，不可能跨行程存活。
+const interruptedFixture = [
+    { id: 'a', status: 'running', progress: 40, logs: [{ level: 'info', message: 'step' }] },
+    { id: 'b', status: 'pending', logs: [] },
+    { id: 'c', status: 'success', logs: [] },
+];
+const reconciled = pure.reconcileInterruptedTasks(interruptedFixture);
+eq('reconcile 只改 running 任務', reconciled.tasks.map((task) => task.status), ['failed', 'pending', 'success']);
+eq('reconcile 回報中斷數量', reconciled.interrupted, 1);
+eq('reconcile 保留停止時的進度', reconciled.tasks[0].progress, 40);
+eq('reconcile 保留原有 log 並補一筆', reconciled.tasks[0].logs.length, 2);
+eq('reconcile 中斷 log 為 error', reconciled.tasks[0].logs[1].level, 'error');
+check('reconcile 中斷 log 有可解析時間戳', !Number.isNaN(Date.parse(reconciled.tasks[0].logs[1].timestamp)));
+eq('reconcile 不改動傳入的任務', interruptedFixture[0].status, 'running');
+eq('reconcile 不改動傳入的 log', interruptedFixture[0].logs.length, 1);
+eq('reconcile 未中斷的任務原樣保留', reconciled.tasks[1], interruptedFixture[1]);
+eq('reconcile 空清單', pure.reconcileInterruptedTasks([]), { tasks: [], interrupted: 0 });
+eq('reconcile 多筆中斷', pure.reconcileInterruptedTasks([{ status: 'running' }, { status: 'running' }]).interrupted, 2);
+eq('reconcile 無 logs 欄位也能補', pure.reconcileInterruptedTasks([{ status: 'running' }]).tasks[0].logs.length, 1);
+eq('reconcile 非陣列輸入回空', pure.reconcileInterruptedTasks(null), { tasks: [], interrupted: 0 });
+
 // ---- 結果 ----
 console.log(`\n[pure.test] ${pass} passed, ${fail} failed`);
 if (fail) {

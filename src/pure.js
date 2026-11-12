@@ -307,6 +307,27 @@ function buildTaskExportPayload(tasks = [], agentVersion = '', exportedAt = new 
     return { exportedAt, agentVersion, tasks };
 }
 
+// 執行狀態只活在記憶體，重啟後仍標為 running 的任務必然已被中斷；
+// 留著它會永久隱藏刪除鈕、擋住 CLEAR_ALL，並讓同一支 SOP 無法重新加入。
+function reconcileInterruptedTasks(tasks = []) {
+    const list = Array.isArray(tasks) ? tasks : [];
+    let interrupted = 0;
+    const reconciled = list.map((task) => {
+        if (task?.status !== 'running') return task;
+        interrupted += 1;
+        return {
+            ...task,
+            status: 'failed',
+            logs: [...(task.logs || []), {
+                level: 'error',
+                message: 'Task execution interrupted: the server stopped before it finished.',
+                timestamp: new Date().toISOString(),
+            }],
+        };
+    });
+    return { tasks: reconciled, interrupted };
+}
+
 // 全域 log 只保留最近 500 筆；序號單調遞增，客戶端游標才不會因丟棄最舊項目而錯位。
 const LOG_BUFFER_LIMIT = 500;
 
@@ -378,6 +399,7 @@ module.exports = {
     formatExtractedSourcesSummary,
     escapePowerShellSingleQuoted,
     buildTaskExportPayload,
+    reconcileInterruptedTasks,
     appendLogWithSeq,
     LOG_BUFFER_LIMIT,
     selectLogsForClient,
