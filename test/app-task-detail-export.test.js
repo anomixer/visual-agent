@@ -44,7 +44,7 @@ function loadLocalePacks(locale) {
 }
 
 const DECLARATIONS = [
-    'getLocalePack', 'formatI18n', 't', 'escapeHtml', 'localizeStatus', 'getActionLabel',
+    'getLocalePack', 'formatI18n', 't', 'escapeHtml', 'localizeStatus', 'localizeCategory', 'getActionLabel',
     'renderTaskModalBody', 'showExpDetail', 'exportExps', 'exportTasks',
 ].map(extractFunction).join('\n');
 

@@ -140,6 +140,7 @@ browser ──── public/index.html
 - **匯出必須來自伺服器的完整任務**：清單類回應不含 `logs`，因此前端不得直接序列化 `todoList` 作為匯出內容。原生另存新檔失敗時的瀏覽器 fallback 必須改抓 `GET /api/todo/export`，以 `Array.isArray(payload.tasks)` 驗證後下載整份 `{ exportedAt, agentVersion, tasks }` wrapper（該端點不回 `success` 欄位）。驗證失敗或請求失敗必須在工作日志顯示錯誤，不得只寫 console；原生成功與使用者取消都不得再觸發 fallback。
 - **匯入必須先驗證再取代**：`POST /api/todo/import` 整批取代 `todoList` 並立即落地，因此必須在寫入前驗證每個元素（非 null 物件、`id` 為非空字串且不得重複、`logs` 若存在必須是陣列、`status` 若存在必須是 `pending|running|success|failed|skipped`）。任一不合格必須整批拒絕並指出 `tasks[index]` 與原因，既有清單與 `tasks.json` 不得被改動——不良元素一旦落地，清單與詳情端點會在每次輪詢拋錯，且重啟也無法復原。驗證後必須套用與啟動相同的 `reconcileInterruptedTasks()`：本行程沒有任務在跑，匯入的 `running` 一律視為已中斷。
 - **建立任務只探測被選到的 SOP，失敗必須可見**：`POST /api/todo` 只需要 `matchedSOP` 的安裝態，呼叫端帶 `action` 時連這一次都不需要；不得為了建立一筆任務而 annotate 全部 SOP（每支 Check 都是一支子程序）。全量探測只屬於 `GET /api/sops`、`/api/recommend` 與 `/api/chat`。`api()` 把網路與非 JSON 錯誤包成 `{ success:false, error }` 回傳，因此加入／刪除任務的失敗必須寫進工作日誌並附上伺服器原因，不得只有 `if (data.success)` 而靜默返回。
+- **客戶端讀檔與圖片解碼失敗必須可見**：`FileReader` 的 `onerror` 不是 `onload` 的一部分，未接時讀檔失敗（權限、檔案被移走、I/O 錯誤）會完全沒有回饋。任務匯入與 Chalkboard 圖片上傳都必須註冊 `reader.onerror`，把 `reader.error?.message`（無訊息時 `Unknown error`）一起寫進工作日誌的 error 等級；Chalkboard 另需 `img.onerror` 攔截「讀得到位元組但無法解碼」的檔案。失敗時不得送出請求、不得改動畫布，且必須重設 file input 讓使用者能重試同一個檔案。
 - **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。復原結果必須寫回 `tasks.json`（run log 已被消費，不寫回則第二次重啟只剩通用中斷訊息）；健康的任務檔不得在啟動時被重寫。
 - **中斷執行必須留下診斷記錄**：`saveTasks()` 只在執行開始與結束時呼叫，因此執行期間的 `task.logs` / `progress` 必須另外以 append-only JSONL（`%APPDATA%\visual-agent\running-task.jsonl`，每筆 `{ taskId, progress, entry }`）落地，只追加新增的那一行，不得為了 checkpoint 整份重寫 `tasks.json`。`log` / `ui:message` 各追加一筆，`phase:start` 追加 progress-only 記錄。執行開始前與 `finally` 寫檔後都必須清除 sidecar；解析必須逐行寬容（半截的最後一行與不同 `taskId` 的記錄跳過，不丟棄整份）；append / 清除失敗只寫 `debug.log`，不得中斷執行。不得以截斷 `task.logs` 作為成長控制手段。
 - **Agent Loop 必須有總上限**：每個 `/api/chat` 請求在入口建立單一 `AgentLoopBudget`，首輪 ACTION、自動即時資訊搜尋 / 抽取、迴圈工具與每輪 LLM 呼叫共用最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；待確認的系統變更動作不得佔用工具額度。LLM 與頁面抓取 timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader、搜尋、抽取、`fetch_title` 與瀏覽器 fallback。提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）必須接收 abort，但仍使用各自 timeout，不得宣稱這些分支與一般 chat 共用同一預算；Playwright 已發出的導覽仍可能等到自身 timeout。
@@ -315,6 +316,7 @@ $true
 - [x] 不良匯入檔整批拒絕且不破壞既有清單，匯入的 running 任務不再永久卡住（2026.11.12 第三十一階段：`validateImportedTasks()`、import 路由套用 `reconcileInterruptedTasks()`、卡片 ▶ 放行 `dynamicCmd`、`tasks.importFailed` 不再寫死 JSON 格式錯誤）。
 - [x] 建立任務不再探測全部 SOP，加入／刪除失敗會顯示原因（2026.11.12 第三十二階段：移除 `POST /api/todo` 未被讀取的 `annotateSOPRuntimeState()`、`logTaskFailure()` 單一出口與 `task.addFailed` / `task.deleteFailed` 兩語系鍵）。
 - [x] Skill 巢狀 tags／category 與來源分組生效（2026.11.12 第三十三階段：`parseSkillFrontmatter()` 解析 `metadata:` 縮排鍵、`/api/skills` 補 `source`，Skills 側邊欄恢復 18／19 兩群、category 細分與標籤徽章）。
+- [x] 任務分類在渲染層本地化、每支內建 SOP 都有雙語 UI preset，讀檔失敗不再靜默（2026.11.12 第三十四階段：`categories` 字典補齊 10 個實際分類值、4 支 SOP 補 `sopUi`、`renderTaskCard()` / `renderTaskModalBody()` 走 `localizeCategory()`、`queueSopTaskById()` 改用 `getLocalizedItem()`、`FileReader.onerror` ×2 與 `img.onerror`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -760,6 +762,10 @@ $true
 - **零重載翻譯**：介面支援 `zh-TW` 與 `en-US` 雙語動態切換。
 - **UI 元素涵蓋範圍**：工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、Chalkboard 工具、經驗知識庫、以及系統對話視窗，皆需根據 `currentLocale` 即時更新。
 - **詳情視窗與匯出文字不得寫死語系**：任務詳情（狀態 / 分類 / 動作 / SOP ID / 建立時間 / 執行記錄 / 無 SOP 替代字）與經驗詳情（來源 / 更新時間）的標籤必須走 `t()`；日期與經驗庫匯出時間戳須依 `currentLocale` 選擇 `zh-TW` / `en-US` 格式。已知限制：切換語系時已開啟的 modal 不會即時重繪，需關閉重開。
+- **分類值只在渲染層本地化，儲存值不得改寫**：`task.category` 在 `tasks.json`、`/api/todo` 與匯出檔中一律保留建立當下的原值（可能是英文 SOP 分類、硬編「一般」或動態指令的 `SOP`）；任務卡片與詳情視窗顯示時必須經 `localizeCategory()` 翻譯，未知分類原樣顯示，空值在卡片退回 `task.general`、在詳情顯示 `—`。嚴禁為了畫面一致而改寫已儲存的分類或標題。
+- **`categories` 字典必須涵蓋所有實際出現的分類值**：包含 16 支內建 SOP 的 `Category` 欄位、伺服器 fallback（`Maintenance`、`一般`）與動態指令任務（`SOP`），且大小寫變體都要有鍵；新增 SOP 時需同步補字典，否則該分類在另一語系會原樣外露。
+- **每支內建 SOP 在兩個語系都必須有 `sopUi` preset**（`title` / `description` / `category`），否則 zh-TW 側邊欄會直接顯示 SOP 檔內的英文名稱與描述。preset `title` 不得以引號或其他非字母數字字元開頭，因為 `getActionTitle()` 會先剝除 leading 非字母數字字元、再剝除既有動詞並套上 `actions.installTitle` / `uninstallTitle`；英文名稱建議用名詞片語，避免出現 `Install Back Up …` 這類雙動詞。
+- **建立任務的兩個入口都必須本地化**：側邊欄 `queueSopTodo()` 與依 ID 建立 `queueSopTaskById()` 都要先經 `getLocalizedItem()` 再組 payload，不得各自取原始英文 `name` / `description` / `category`。
 - **對話分頁動態過濾**：
   - 本機與遠端聊天分頁名稱在切換語系時需動態翻譯（例如：「本機對話 1」 ↔ 「Local Chat 1」）。
   - 對話分頁的過濾與翻譯必須使用非 ASCII 安全的正則表達式 `/^(?:本機對話|Local Chat)(?:\s+\d+)?$/i`，嚴禁使用 `\b`（單字邊界符）以防止在中文等非 ASCII 字元上發生比對失效。

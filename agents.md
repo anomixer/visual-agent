@@ -5,6 +5,48 @@
 
 ---
 
+## 📌 2026.11.12 — 第三十四階段：任務分類終於會翻譯，讀檔失敗不再靜默
+
+> 接續同日第三十三階段；把「分類本地化」從側邊欄擴到任務卡片與詳情，並補上兩個 `FileReader` 的失敗路徑。版本維持 `2026.8.7`。
+
+### 4 支 SOP 沒有 UI preset，zh-TW 側邊欄直接露出英文
+- `getLocalizedItem()` 靠 `sopUi[item.id]` 覆蓋 title／description／category，但 16 支內建 SOP 只有 12 支有 preset。缺的 4 支是 `sys_backup_user_files`、`sys_restore_user_files`、`install_playwright_chromium`、`install_winhance`——正好是 2026.03.27 之後才加入的 SOP，補 SOP 時沒有同步補字典。
+- 結果：zh-TW 介面下這 4 張卡片顯示 SOP 檔內的 `Name: Backup User Files` 等英文原文與英文描述，與其餘 12 張中文卡片並排。
+- 修正：兩個語系各補 4 組 preset（title／description／category）。zh 標題用「備份文件資料夾」「還原文件資料夾」「安裝 Playwright Chromium」「安裝 WinHance 系統工具」；en 用名詞片語 `Documents Folder Backup` / `Documents Folder Restore`，避免 `getActionTitle()` 套上動詞後變成 `Install Back Up the Documents Folder` 這種雙動詞。
+- 命名限制（已寫進 spec §17.1）：`getActionTitle()` 會先剝除 leading 非字母數字字元（`^[^\p{L}\p{N}]+`）再剝除既有動詞，所以 preset 標題不可以用「」這類引號開頭，否則引號會被吃掉、後面的動詞判斷也會跟著錯位。
+
+### `categories` 字典缺 3 個實際 SOP 分類值與全部伺服器 fallback
+- 逐一比對 16 支 SOP 的 `Category:` 欄位（11 種）與字典後，缺的是 `backup and restore`（2 支）、`browser runtime`（1 支）、`System Utilities`（1 支）——與上面缺 preset 的正好是同 4 支 SOP，因此這 4 支的分類在側邊欄與任務卡片都是英文原值。
+- 另外字典完全沒有伺服器與前端會寫進任務的分類：`RECOMMEND_BASE` 的 `System` / `Cleanup` / `Backup`、SOP fallback `Maintenance`（`src/server.js` 4 處）、手動任務預設 `一般`（`src/server.js:3585`）、遠端 directive 任務 fallback `SOP`（`public/app.js:7527`）。
+- 修正：zh-TW 補 10 鍵、en-US 補 16 鍵（8 個英文原值 + 8 個中文鏡像，含 `'一般': 'General'`）。`SOP` 刻意不加鍵——縮寫在兩個語系都讀得通，`localizeCategory()` 原樣回傳即可。
+
+### 任務卡片與詳情直接印儲存值，兩個語系各露一半
+- `renderTaskCard()` 與 `renderTaskModalBody()` 都是 `escapeHtml(task.category || …)`，完全沒經 `localizeCategory()`。側邊欄加入的任務存的是**已本地化**分類，`queueSopTaskById()` 與伺服器建立的任務存的是**英文原值**，手動任務存硬編「一般」——同一份清單裡三種來源混雜。
+- 實際症狀：zh-TW 介面顯示 `Maintenance`，切到 en-US 反而顯示 `一般`。兩邊都錯，而且錯的方向相反。
+- 修正：兩個渲染點改為 `task.category ? localizeCategory(task.category) : …`（卡片空值退回 `t('task.general')`、詳情退回 `—`）。**儲存值一律不動**：`tasks.json`、`/api/todo`、`/api/todo/export` 仍保留建立當下的原值，既有任務檔與匯出內容不受影響，未知分類也原樣顯示而不是被吞掉。
+- `queueSopTaskById()` 順手補上 `getLocalizedItem(target)`，讓「依 ID 建立任務」與側邊欄 `queueSopTodo()` 走同一條本地化路徑；`executeNow`、重用既有任務與 SOP 找不到的分支都不變。
+
+### `FileReader.onerror` 從未接上，讀檔失敗完全沒有回饋
+- `importTasks()` 與 `handleChalkImageUpload()` 都只設 `reader.onload`。`onerror` 是獨立回呼，不接的話讀檔失敗（權限不足、檔案在選取後被移走、I/O 錯誤）就是**按下按鈕後什麼事都沒發生**——與第三十一／三十二階段修掉的匯入、加入任務靜默失敗同一類，只是這次連伺服器都沒被呼叫。
+- Chalkboard 還多一層：`reader.readAsDataURL()` 成功只代表拿到位元組，`img.src = …` 之後若檔案不是可解碼的圖片（例如副檔名改成 `.png` 的文字檔），`img.onload` 永遠不觸發，畫布沒反應也沒有任何訊息。
+- 修正：兩個 `reader.onerror` 都把 `reader.error?.message`（無訊息時 `Unknown error`）帶進 error 日誌；`handleChalkImageUpload()` 另補 `img.onerror`。新增 3 個語系鍵：`tasks.importReadFailed`、`chalkboard.imageReadFailed`、`chalkboard.imageLoadFailed`。失敗時不送請求、不動畫布，`event.target.value = ''` 既有的重設仍讓使用者能重試同一個檔案。
+
+### 測試與驗收
+- 新增 `test/category-i18n.test.js`（10 項，擷取真實函式與真實 I18N，並唯讀 repo `sops/*/SOP.md`）：16 支 SOP 的分類全部翻得出中文、每支 SOP 在兩個語系都有 preset 且 zh 名稱不等於儲存的英文名、install／uninstall 動作標題可讀（以動作標籤開頭、主詞非空、無雙動詞）、推薦與 fallback 分類覆蓋（`Maintenance`→維護、`一般`→General、`SOP` 原樣）、儲存分類隨語系切換且不被改寫、空值退回 `一般`／`General` 與 `—`、未知分類原樣顯示、`<img src=x onerror=alert(1)>` 跳脫、`queueSopTaskById()` 在 zh／en 各自送出本地化 title 與 category，以及重用／executeNow／SOP 找不到三條分支。
+- 新增 `test/file-read-errors.test.js`（8 項，FakeFileReader + FakeImage）：匯入讀檔失敗會寫出含原因的 error 且永不 POST、無 message 時退回 `Unknown error`、成功／拒絕／JSON 格式錯誤三條既有路徑回歸、Chalkboard 讀檔失敗不動畫布且重設 input、`img.onerror` 回報無法解碼、有效上傳進入放置模式（`tool:'image'`、guide 座標）、無檔案時不建立 reader、en-US 標籤無中文殘留。跨 realm 物件比對一律走 `plain()` JSON round-trip。
+- `test/app-task-detail-export.test.js` 與 `test/task-card-actions.test.js` 的 DECLARATIONS 補上 `localizeCategory`（渲染層新呼叫所需）。
+- 敏感性探測（7 次，皆以 md5 確認還原為探測前位元組 `aa254694b45b667ce001400a6aef616c`）：移除渲染層 `localizeCategory` → 1 項失敗；字典拿掉 `Maintenance` → 1 項失敗；`queueSopTaskById` 改回原始欄位 → 2 項失敗；移除 `importTasks` 的 `reader.onerror` → 1 項失敗；移除 `handleChalkImageUpload` 的 `reader.onerror` → 3 項失敗；移除 `img.onerror` → 2 項失敗；清空 4 組新 preset → 2 項失敗。
+- `npm test`：25 個 JS 語法、50 支測試檔與 server smoke 全綠。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify28`，只讀取、切換語系與上傳圖片，未執行任何 SOP）：zh-TW SOP 側邊欄 16/16 張卡片都是中文標題、11 個分類標頭全中文（資料保護／備份與還原／系統優化／瀏覽器／系統設定 / 語言／工作效率／AI 引擎／瀏覽器執行環境／娛樂／系統工具／系統清理）；以 API 種入 4 筆探測任務（`Maintenance`／`一般`／`backup and restore`／無分類），卡片在 zh 顯示維護／一般／備份與還原／一般、在 en 顯示 Maintenance／General／Backup and Restore／General；詳情視窗 zh「分類：維護」、en「Category: Maintenance」；`GET /api/todo/export` 證實 4 筆儲存分類仍是原值，未被渲染層改寫。
+- 圖片路徑實測：把文字檔偽裝成 `.png` 上傳 → 工作日誌出現 `log-entry error`「❌ 圖片無法載入，請確認檔案是有效的圖片」，切 en-US 再上傳 → 「❌ The image could not be loaded. Make sure the file is a valid image.」；改用 canvas 產生的有效 PNG → `chalkboardState.tool === 'image'`、`pendingImage instanceof HTMLImageElement`、無 error 日誌。console 全程只有 `[log] [Init] hasRun flag: true`。
+- 附帶確認一個**不是缺陷**的行為：第三次上傳同一個壞圖沒有新增日誌列，因為 `addLogEntry()` 刻意抑制「與上一列完全相同的非進度訊息」（進度條訊息則原地更新）。這是既有設計，本輪未改。
+- 驗收後已停止實例、確認 3210 / 19168 不再監聽並刪除暫存設定檔。
+- **尚未完成／已知限制**：`rec_remove_copilot` 的 Install 階段實際上是停用／移除 Copilot，但 `evaluateSOPInstalledState()` 只在有 `steps.uninstall` 時才回 `uninstall`，因此 `recommendedAction` 固定為 `install`，卡片顯示「安裝 Windows Copilot」、按鈕 title「立即安裝」、徽章「⚡ 可安裝」——使用者按下去會移除 Copilot。這是語意誤導，列為下一批（不可直接改成 `uninstall`，否則會走不存在的 `steps.uninstall`）。
+- 沿用前批未解：14 個 Hermes skill 的小寫 category 標頭在 zh-TW 仍是英文；任務卡片標題仍用儲存的英文 SOP 名（刻意不改 stored title，應在渲染層做）；`tokenizeForMatch()` 沒有 CJK 斷詞，中文查詢幾乎比對不到 skill；`task.logs` 與 `tasks.json` 無上限成長；`POST /api/todo` 仍沒有 try/catch。未以真實 SOP 執行驗證（未安裝、未提權）。
+- 未變更 SOP 內容、LLM 設定、版本號；未執行安裝、提權，刪除僅限自己建立的暫存目錄。
+
+---
+
 ## 📌 2026.11.12 — 第三十三階段：Skill 的巢狀 tags／category 與來源分組終於生效
 
 > 接續同日第三十二階段；Skills 側邊欄依 `source` 分成 Visual Agent／Hermes 兩群，群內再依 `category` 細分。版本維持 `2026.8.7`。

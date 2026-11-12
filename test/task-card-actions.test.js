@@ -42,7 +42,7 @@ function loadLocalePacks(locale) {
 }
 
 const DECLARATIONS = [
-    'getLocalePack', 'formatI18n', 't', 'escapeHtml', 'localizeStatus', 'getActionLabel', 'renderTaskCard',
+    'getLocalePack', 'formatI18n', 't', 'escapeHtml', 'localizeStatus', 'localizeCategory', 'getActionLabel', 'renderTaskCard',
 ].map(extractFunction).join('\n');
 
 const BASE_TASK = {

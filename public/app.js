@@ -509,6 +509,8 @@ const I18N = {
             exportSuccess: '黑板圖片已匯出：{fileName}',
             exportCancelled: '已取消匯出黑板圖片',
             exportFallback: '原生匯出圖片失敗，已改用瀏覽器下載：{error}',
+            imageReadFailed: '讀取圖片檔失敗：{error}',
+            imageLoadFailed: '圖片無法載入，請確認檔案是有效的圖片',
             tools: {
                 eraser: '局部板擦',
                 chalkWhite: '白粉筆',
@@ -553,6 +555,7 @@ const I18N = {
             exportFailed: '匯出任務清單失敗：{error}',
             importSuccess: '任務清單已匯入',
             importFailed: '匯入失敗',
+            importReadFailed: '讀取匯入檔失敗：{error}',
         },
         diagnostics: {
             title: '診斷資訊',
@@ -668,6 +671,16 @@ const I18N = {
             'System Cleanup': '系統清理',
             'System Optimization': '系統優化',
             'System Settings / Language': '系統設定 / 語言',
+            'backup and restore': '備份與還原',
+            'Backup and Restore': '備份與還原',
+            'browser runtime': '瀏覽器執行環境',
+            'Browser Runtime': '瀏覽器執行環境',
+            'System Utilities': '系統工具',
+            System: '系統',
+            Cleanup: '清理',
+            Backup: '備份',
+            Maintenance: '維護',
+            General: '一般',
         },
         risks: {
             Low: '低',
@@ -694,6 +707,10 @@ const I18N = {
             sys_lang_ja_jp: { title: '安裝日文語言包與輸入法', category: '系統設定 / 語言' },
             sys_lang_zh_cn: { title: '安裝簡體中文語言包與輸入法', category: '系統設定 / 語言' },
             sys_lang_zh_tw: { title: '安裝繁體中文語言包與輸入法', category: '系統設定 / 語言' },
+            sys_backup_user_files: { title: '備份文件資料夾', description: '把使用者「文件」複製到 Backups 資料夾，不刪除目的地既有檔案', category: '備份與還原' },
+            sys_restore_user_files: { title: '還原文件資料夾', description: '從 Backups 資料夾還原到使用者「文件」，並逐一比對檔案大小', category: '備份與還原' },
+            install_playwright_chromium: { title: '安裝 Playwright Chromium', description: '下載 Browser Use 所需的 Chromium，完成後瀏覽器分頁會自動出現', category: '瀏覽器執行環境' },
+            install_winhance: { title: '安裝 WinHance 系統工具', description: '從官方 GitHub release 下載並靜默安裝 WinHance（需要系統管理員權限）', category: '系統工具' },
         }
     },
     'en-US': {
@@ -929,6 +946,8 @@ const I18N = {
             exportSuccess: 'Chalkboard image exported: {fileName}',
             exportCancelled: 'Chalkboard export cancelled',
             exportFallback: 'Native export failed, fallback to browser download: {error}',
+            imageReadFailed: 'Failed to read the image file: {error}',
+            imageLoadFailed: 'The image could not be loaded. Make sure the file is a valid image.',
             tools: {
                 eraser: 'Eraser',
                 chalkWhite: 'White Chalk',
@@ -973,6 +992,7 @@ const I18N = {
             exportFailed: 'Task list export failed: {error}',
             importSuccess: 'Task list imported',
             importFailed: 'Import failed',
+            importReadFailed: 'Failed to read the import file: {error}',
         },
         diagnostics: {
             title: 'Diagnostics',
@@ -1096,6 +1116,22 @@ const I18N = {
             '系統清理': 'System Cleanup',
             '系統優化': 'System Optimization',
             '系統設定 / 語言': 'System Settings / Language',
+            'backup and restore': 'Backup and Restore',
+            'browser runtime': 'Browser Runtime',
+            'System Utilities': 'System Utilities',
+            System: 'System',
+            Cleanup: 'Cleanup',
+            Backup: 'Backup',
+            Maintenance: 'Maintenance',
+            General: 'General',
+            '備份與還原': 'Backup and Restore',
+            '瀏覽器執行環境': 'Browser Runtime',
+            '系統工具': 'System Utilities',
+            '系統': 'System',
+            '清理': 'Cleanup',
+            '備份': 'Backup',
+            '維護': 'Maintenance',
+            '一般': 'General',
         },
         risks: {
             Low: 'Low',
@@ -1125,6 +1161,10 @@ const I18N = {
             sys_lang_ja_jp: { title: 'Install Japanese Language Pack and Input Method', category: 'System Settings / Language' },
             sys_lang_zh_cn: { title: 'Install Simplified Chinese Language Pack and Input Method', category: 'System Settings / Language' },
             sys_lang_zh_tw: { title: 'Install Traditional Chinese Language Pack and Input Method', category: 'System Settings / Language' },
+            sys_backup_user_files: { title: 'Documents Folder Backup', description: 'Copy the user Documents folder into the Backups folder without deleting existing files there.', category: 'Backup and Restore' },
+            sys_restore_user_files: { title: 'Documents Folder Restore', description: 'Restore Documents from the Backups folder and verify every restored file size.', category: 'Backup and Restore' },
+            install_playwright_chromium: { title: 'Install Playwright Chromium', description: 'Download the Chromium runtime Browser Use needs; the Browser tab appears once it is installed.', category: 'Browser Runtime' },
+            install_winhance: { title: 'Install the WinHance Utility', description: 'Download and silently install WinHance from the official GitHub release (requires administrator rights).', category: 'System Utilities' },
         }
     }
 };
@@ -3745,7 +3785,13 @@ function handleChalkImageUpload(event) {
                 y: chalkboardState.cssHeight / 2
             });
         };
+        img.onerror = () => {
+            addUILog(`❌ ${t('chalkboard.imageLoadFailed')}`, 'error');
+        };
         img.src = String(reader.result);
+    };
+    reader.onerror = () => {
+        addUILog(`❌ ${t('chalkboard.imageReadFailed', { error: reader.error?.message || 'Unknown error' })}`, 'error');
     };
     reader.readAsDataURL(file);
     event.target.value = '';
@@ -5342,12 +5388,13 @@ async function queueSopTaskById(sopId = '', executeNow = false) {
         }
         return { task: existingTask, reused: true };
     }
+    const localized = getLocalizedItem(target);
     const data = await api('/api/todo', {
         method: 'POST',
         body: {
-            title: target.name,
-            description: target.description || '',
-            category: target.category || 'Maintenance',
+            title: localized.name,
+            description: localized.description || '',
+            category: localized.category || 'Maintenance',
             skillId: target.id,
             action,
         }
@@ -6560,7 +6607,7 @@ function renderTaskCard(task) {
           </div>
         </div>
         <div class="task-meta">
-          <span class="task-category">${escapeHtml(task.category || t('task.general'))}</span>
+          <span class="task-category">${escapeHtml(task.category ? localizeCategory(task.category) : t('task.general'))}</span>
           <span class="task-category">${escapeHtml(getActionLabel(task.action || 'install'))}</span>
           <span class="task-status" data-status="${escapeHtml(task.status || '')}">${escapeHtml(localizeStatus(task.status))}</span>
         </div>
@@ -7838,7 +7885,7 @@ function renderTaskModalBody(task) {
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">${escapeHtml(t('task.detailCategory'))}</span>
-          <span class="task-detail-value">${escapeHtml(task.category || '—')}</span>
+          <span class="task-detail-value">${escapeHtml(task.category ? localizeCategory(task.category) : '—')}</span>
         </div>
         <div class="task-detail-row">
           <span class="task-detail-label">${escapeHtml(t('task.detailAction'))}</span>
@@ -7950,6 +7997,9 @@ function importTasks(file) {
             }
             addUILog(`❌ ${t('tasks.importFailed')}${data.error ? `: ${data.error}` : ''}`, 'error');
         } catch (err) { addUILog(`❌ ${t('tasks.importFailed')}${err?.message ? `: ${err.message}` : ''}`, 'error'); }
+    };
+    reader.onerror = () => {
+        addUILog(`❌ ${t('tasks.importReadFailed', { error: reader.error?.message || 'Unknown error' })}`, 'error');
     };
     reader.readAsText(file);
 }
