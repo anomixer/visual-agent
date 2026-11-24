@@ -75,6 +75,32 @@ outgoingService.handlePayload(outgoingSocket, {
 assert.equal(outgoingService.getSession('outgoing-session').status, 'active');
 passed++;
 
+// 對方接受後，發起端要保留自己的 local profile；acceptedBy 是對方的資料，不能覆寫本機身分，
+// 否則 AI 交接文字會把本機 AI 講成對方機器。
+const identityService = createService();
+const identitySocket = createSocket();
+const localProfile = { machineName: 'LOCAL-PC', userName: 'alice', agentName: 'local-ai' };
+identityService.sessions.set('identity', {
+    id: 'identity',
+    direction: 'outgoing',
+    status: 'pending_approval',
+    socket: identitySocket,
+    peer: { ip: '192.0.2.10' },
+    local: { ...localProfile },
+    messages: [],
+});
+identityService.socketToSessionId.set(identitySocket, 'identity');
+identityService.handlePayload(identitySocket, {
+    type: 'hello_ack',
+    profile: { machineName: 'REMOTE-PC', userName: 'bob', agentName: 'remote-ai' },
+    acceptedBy: { machineName: 'REMOTE-PC', userName: 'bob', agentName: 'remote-ai' },
+});
+assert.equal(identityService.getSession('identity').status, 'active');
+assert.deepEqual(identityService.getSession('identity').local, localProfile);
+assert.equal(identityService.getSession('identity').peer.machineName, 'REMOTE-PC');
+assert.deepEqual(identityService.toClientSession(identityService.getSession('identity')).local, localProfile);
+passed++;
+
 outgoingService.sendChalkboardState('outgoing-session', { imageDataUrl: 'first' });
 outgoingService.sendChalkboardState('outgoing-session', { imageDataUrl: 'second' });
 assert.equal(outgoingSocket.frames.at(-1).revision, 2);
@@ -113,6 +139,35 @@ outgoingService.handlePayload(outgoingSocket, {
 });
 assert.equal(outgoingService.getSession('outgoing-session').modelShare.status, 'idle');
 assert.equal(outgoingService.getSession('outgoing-session').modelShare.lastStatus, 'active');
+passed++;
+
+// 同一個 sessionId 再次 hello 不得覆蓋既有 session：否則使用中的對話與歷史會被清空，
+// 舊 socket 的後續封包也會被解讀成新 session 的訊息。
+const duplicateService = createService();
+const duplicateSocket1 = createSocket();
+duplicateService.sessions.set('dup', {
+    id: 'dup',
+    direction: 'incoming',
+    status: 'active',
+    socket: duplicateSocket1,
+    peer: { machineName: 'peer-one' },
+    local: { machineName: 'me' },
+    messages: [{ id: 'm1', text: 'history' }],
+});
+duplicateService.socketToSessionId.set(duplicateSocket1, 'dup');
+const duplicateSocket2 = createSocket();
+duplicateService.handleHello(duplicateSocket2, {
+    sessionId: 'dup',
+    profile: { machineName: 'peer-two' },
+});
+const survivingSession = duplicateService.getSession('dup');
+assert.equal(survivingSession.status, 'active');
+assert.equal(survivingSession.socket, duplicateSocket1);
+assert.equal(survivingSession.messages.length, 1);
+assert.equal(survivingSession.peer.machineName, 'peer-one');
+assert.equal(duplicateSocket2.frames.at(-1).type, 'hello_reject');
+assert.equal(duplicateSocket2.ended, true);
+assert.equal(duplicateService.socketToSessionId.has(duplicateSocket2), false);
 passed++;
 
 const floodService = createService();

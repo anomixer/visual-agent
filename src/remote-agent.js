@@ -146,7 +146,6 @@ class RemoteAgentService {
             if (session.direction !== 'outgoing' || session.status !== 'pending_approval') return;
             this.clearPendingTimeout(session);
             session.peer = { ...(session.peer || {}), ...(payload.profile || {}) };
-            session.local = { ...(session.local || {}), ...(payload.acceptedBy || {}) };
             session.capabilities = {
                 ...(session.capabilities || {}),
                 modelShareEnabled: Boolean(payload.capabilities?.modelShareEnabled),
@@ -306,6 +305,14 @@ class RemoteAgentService {
             return;
         }
         const sessionId = payload.sessionId || createId('session');
+        if (this.sessions.has(sessionId)) {
+            this.sendRaw(socket, {
+                type: 'hello_reject',
+                reason: 'Session ID is already in use. Use a new session ID for this connection.',
+            });
+            socket.end();
+            return;
+        }
         const host = normalizeIp(socket.remoteAddress);
         const bannedUntil = this.banList.get(host) || 0;
         if (bannedUntil > Date.now()) {

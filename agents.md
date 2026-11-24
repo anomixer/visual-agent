@@ -5,6 +5,44 @@
 
 ---
 
+## 📌 2026.11.24 — 第四十階段：接受連線不再覆寫本機身分，重複 sessionId 不再吃掉既有對話
+
+> 接續 11.12 第三十九階段；本輪回頭稽核從未逐行看過的遠端協定層（`src/remote-agent.js`），以假 socket 與真實 loopback TCP 各驗一次。版本維持 `2026.8.7`。
+
+### 症狀一：對方接受後，發起端的本機 profile 變成對方
+- `connect()` 建立 outgoing session 時，把本機 profile 放進 `session.local`（`server.js` 以 `getRemoteProfile()` 傳入）。
+- 對方按下接受後回傳 `hello_ack`，其中 `profile` 與 `acceptedBy` **都是對方自己的 profile**；`handlePayload()` 卻同時把 `acceptedBy` 合併進 `session.local`。
+- 結果：發起端的 `session.local` 與 `session.peer` 都變成對方資料。前端目前不讀 `session.local`，但 `server.js` 的 `buildPeerAiContinuationText()` 會用它組「本機 AI → 對方」的交接文字，實際送出的是「對方名字 給 對方名字 的協作交接」（探針中為 `ALPHA-PC 給 ALPHA-PC`），遠端 AI 被誤導成把工作交回自己。
+
+### 症狀二：重複 sessionId 的 hello 直接蓋掉既有 session
+- `handleHello()` 只檢查 `MAX_SESSIONS` 與封鎖名單，沒檢查 `sessions` 內是否已有同 id；`this.sessions.set(sessionId, session)` 會**直接覆蓋**。
+- 探針：既有 active session（1 筆歷史、socket1），另一個 socket 送同 id 的 hello 後，session 變成 `pending_approval`、歷史歸零、socket 換成 socket2；而 `socketToSessionId` 仍把 socket1 映射到同一個 id，舊 socket 之後的封包會被當成新 session 的訊息處理。
+- 正常 `connect()` 每次都產生新 id，因此只有 peer 重試或非本程式用戶端才會踩到；但一旦踩到，使用中的對話與歷史就直接消失。
+
+### 重現
+- 假 socket 探針：outgoing session 的 `local = {LOCAL-PC, alice, local-ai}`，餵入 `hello_ack`（`profile` 與 `acceptedBy` 皆 `REMOTE-PC / bob / remote-ai`）後，`local` 變成 `REMOTE-PC`。
+- 真實 loopback TCP 探針（兩個 `RemoteAgentService`，port 19301／19302）：beta 發起、alpha 接受後，beta 的 `local` 是 `ALPHA-PC` 而不是 `BETA-PC`；再以相同 sessionId 送出 hello，alpha 原本 active 的 session 變成 `pending_approval`、歷史歸零。
+
+### 修正
+- `hello_ack` 分支移除 `session.local = { ...session.local, ...payload.acceptedBy }`，只更新 `peer`；本機身分完全以 `connect()` / `respondToSession()` 設定的為準。
+- `handleHello()` 取得 `sessionId` 後立即檢查 `sessions.has(sessionId)`，命中就回 `hello_reject`（`Session ID is already in use. Use a new session ID for this connection.`）並 `socket.end()`，不建立 session、不動既有資料。
+
+### 測試與驗收
+- `test/remote-agent.test.js` 由 10 項增至 12 項：outgoing 身分保留（`local` 逐欄不變、`peer` 正確更新、`toClientSession().local` 同樣正確）與重複 sessionId 拒絕（原 session 仍 active、socket／歷史／peer 不變、新 socket 收到 `hello_reject` 並結束、WeakMap 未登記）。
+- 兩個突變探針都被抓到：把 `acceptedBy` 合併回 `local` → 身分測試失敗（`REMOTE-PC` vs `LOCAL-PC`）；移除重複 id 檢查 → 重複測試失敗（`pending_approval` vs `active`）。
+- 真實 loopback TCP 探針：接受後 beta 的 `local` 為 `BETA-PC`、`peer` 為 `ALPHA-PC`；重送相同 sessionId 得到 `hello_reject`，alpha 原 session 維持 active、peer 仍是 `BETA-PC`、beta 仍 active，全程 `onError` 0 筆。探針刪除後 19301／19302 僅剩 `TIME_WAIT`，3210／19168 未被佔用。
+- `npm test`：25 個 JS 語法、56 支測試檔與 server smoke 全綠。
+- 最終 `src/remote-agent.js` md5 `c198d9aa50557d092acca5ac668537f2`、`test/remote-agent.test.js` md5 `bc20fd00876a798506f43767ccc6f21d`。
+
+### 尚未完成
+- 未做雙機實機驗收（需兩台 Windows）：上述以同一 process 的兩個真實 socket 服務互連，尚未涵蓋防火牆、IPv6、斷線重連與既有 Chalkboard revision 行為。
+- `MAX_SESSIONS`（32）把 `disconnected` / `rejected` 的 session 一併計入，且 pending 逾時後只標為 disconnected、不從 Map 移除；理論上同網段可送出 32 個 hello 佔滿名額，讓合法連線被拒，需使用者手動刪除才恢復。屬可用性風險，修法涉及保留策略，本輪未動。
+- 收到 `disconnect` 封包時只標記狀態、不主動結束 socket；一般情況下對方會自行關閉，暫未處理。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.11.12 — 第三十九階段：設定檔改為原子置換，寫到一半不再毀掉 API Key
 
 > 接續同日第三十八階段；上一輪把「寫不進去卻說已儲存」修好後，留下的缺口是 `config.json` 仍直接覆寫。版本維持 `2026.8.7`。

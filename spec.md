@@ -330,6 +330,7 @@ $true
 - [x] API 錯誤一律回 JSON、寫檔失敗回滾記憶體狀態（2026.11.12 第三十七階段：全域 JSON error middleware 保留 4xx–5xx 原值且不外送 stack、`app.use('/api')` JSON 404 出口、`POST`/`DELETE /api/todo` 寫檔失敗回滾、`fileLog()` best-effort、`POST /api/llm/model` 拒絕非字串 modelName）。
 - [x] LLM 設定寫檔失敗可見且回滾（2026.11.12 第三十八階段：`saveConfig()` 不再吞錯誤、`updateProviderSettings()` 七欄位快照回滾、`setCurrentModel()` 回滾、自動選模存檔 best-effort、`POST /api/llm/config` 與 `/api/llm/model` 回 500 JSON、chat `SWITCH_MODEL` 失敗仍回覆原因、前端模型選單補錯誤記錄與 `settings.saveFailed` / `llm.modelSwitchFailed` 雙語鍵）。
 - [x] `config.json` 改用 temp-write + rename（2026.11.12 第三十九階段：同目錄 `config.json.<pid>.tmp` → `fsyncSync` → `renameSync`，失敗只清自己 pid 的暫存檔並 rethrow；真實 `SIGKILL` 探針證實修正前 `config.json` 被截斷成 0、修正後逐位元組不變）。
+- [x] 遠端 session 身分不被對方覆寫、重複 `sessionId` 不再覆蓋既有連線（2026.11.24 第四十階段：`hello_ack` 只合併 `peer`，`handleHello()` 對已存在的 `sessionId` 回 `hello_reject`；`test/remote-agent.test.js` 補 2 項回歸）。
 - [ ] `remote-profile.json` 仍直接覆寫（損毀時退回預設名稱且下次儲存自我修復，不遺失不可回復的密鑰，優先度低）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
@@ -466,6 +467,8 @@ $true
 ### 7.2 身份與連線授權
 - 連線建立前，需透過 Popup 要求使用者同意或拒絕 (Connection rejected by remote user)。
 - 自動獲取本機 Machine Name, Username, Local IP 進行身份廣播與 Prompt 注入。
+- `hello_ack` 只代表對方接受連線，只能更新 `peer`（對方）身分；`acceptedBy` 屬於對方的資料，不得合併進本機 `local`，否則 AI 交接文字會把本機 AI 講成對方機器。
+- 已存在的 `sessionId` 再次送出 `hello` 必須回 `hello_reject` 並結束該 socket，不得覆蓋既有 session；否則使用中的對話與歷史會被清空，舊 socket 的後續封包也會被解讀成新 session。
 
 ### 7.3 會話管理與代理 (Session & Model Proxy)
 - **多對話 (Multi-session)**：支援本機與遠端對話歷史分頁，以及獨立的 Pending (Thinking) 列。
