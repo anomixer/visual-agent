@@ -10,10 +10,16 @@ const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 const MAX_PENDING_WRITE_BYTES = 16 * 1024 * 1024;
 const MAX_SESSION_MESSAGES = 120;
 const MAX_SESSIONS = 32;
+const MAX_TERMINAL_SESSIONS = 32;
 const MAX_SESSION_ID_LENGTH = 128;
+const CONNECT_TIMEOUT_MS = 10 * 1000;
 
 function createId(prefix = 'id') {
     return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function isTerminalSessionStatus(status) {
+    return status === 'disconnected' || status === 'rejected';
 }
 
 function normalizeIp(value = '') {
@@ -73,6 +79,7 @@ function peerLabel(session, fallback = 'Remote peer') {
 class RemoteAgentService {
     constructor(options = {}) {
         this.port = Number(options.port) || DEFAULT_PORT;
+        this.connectTimeoutMs = Number(options.connectTimeoutMs) || CONNECT_TIMEOUT_MS;
         this.onStateChanged = typeof options.onStateChanged === 'function' ? options.onStateChanged : () => {};
         this.onMessage = typeof options.onMessage === 'function' ? options.onMessage : () => {};
         this.onError = typeof options.onError === 'function' ? options.onError : () => {};
@@ -176,6 +183,7 @@ class RemoteAgentService {
             this.clearPendingTimeout(session);
             this.emitSystemMessage(session, 'system', payload.reason || 'Peer cancelled the connection invitation.');
             this.markDisconnected(session, 'remote_cancelled');
+            if (session.socket && !session.socket.destroyed) session.socket.end();
             return;
         }
 
@@ -184,6 +192,7 @@ class RemoteAgentService {
             this.clearPendingTimeout(session);
             this.emitSystemMessage(session, 'system', payload.reason || 'Connection invitation timed out.');
             this.markDisconnected(session, 'timed_out');
+            if (session.socket && !session.socket.destroyed) session.socket.end();
             return;
         }
 
@@ -315,7 +324,8 @@ class RemoteAgentService {
             }
         }
         this.pruneRejectHistory();
-        if (this.sessions.size >= MAX_SESSIONS) {
+        this.pruneTerminalSessions();
+        if (this.liveSessionCount() >= MAX_SESSIONS) {
             this.sendRaw(socket, { type: 'hello_reject', reason: 'Too many remote sessions. Disconnect an existing session first.' });
             socket.end();
             return;
@@ -373,7 +383,27 @@ class RemoteAgentService {
     connect(host, localProfile = {}, port = DEFAULT_PORT) {
         return new Promise((resolve, reject) => {
             const sessionId = createId('session');
-            const socket = net.createConnection({ host, port }, () => {
+            const socket = net.createConnection({ host, port });
+            let settled = false;
+            const connectTimer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                socket.destroy();
+                reject(new Error(`Connection to ${host}:${port} timed out after ${Math.round(this.connectTimeoutMs / 1000)} seconds.`));
+            }, this.connectTimeoutMs);
+            const failConnect = (error) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(connectTimer);
+                socket.destroy();
+                reject(error);
+            };
+            socket.once('error', failConnect);
+            socket.once('connect', () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(connectTimer);
+                socket.removeListener('error', failConnect);
                 const session = {
                     id: sessionId,
                     direction: 'outgoing',
@@ -409,10 +439,6 @@ class RemoteAgentService {
                 this.emitSystemMessage(session, 'system', `Connecting to ${host}:${port}. Waiting for response...`);
                 this.onStateChanged();
                 resolve(this.toClientSession(session));
-            });
-
-            socket.once('error', (error) => {
-                reject(error);
             });
         });
     }
@@ -657,6 +683,23 @@ class RemoteAgentService {
         if (session) {
             session.pendingExpiresAt = '';
         }
+    }
+
+    liveSessionCount() {
+        let count = 0;
+        for (const session of this.sessions.values()) {
+            if (!isTerminalSessionStatus(session.status)) count += 1;
+        }
+        return count;
+    }
+
+    pruneTerminalSessions() {
+        const terminals = [...this.sessions.values()].filter((session) => isTerminalSessionStatus(session.status));
+        if (terminals.length <= MAX_TERMINAL_SESSIONS) return;
+        terminals
+            .sort((a, b) => String(a.lastEventAt || a.createdAt || '').localeCompare(String(b.lastEventAt || b.createdAt || '')))
+            .slice(0, terminals.length - MAX_TERMINAL_SESSIONS)
+            .forEach((session) => this.sessions.delete(session.id));
     }
 
     pruneRejectHistory() {

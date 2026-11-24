@@ -396,6 +396,8 @@ const I18N = {
             reject: '拒絕',
             requestAccepted: '您已接受對話。請開始聊天或支援',
             profileSaved: '遠端身份設定已儲存',
+            profileSaveFailed: '遠端身份儲存失敗：{error}',
+            respondFailed: '回應連線邀請失敗：{error}',
             connectSuccess: '已送出連線請求，等待對方允許',
             connectFailed: '遠端連線失敗：{error}',
             invitationTimeout: '連線邀請已逾時。',
@@ -854,6 +856,8 @@ const I18N = {
             reject: 'Reject',
             requestAccepted: 'You accepted the conversation. Start chatting or supporting now.',
             profileSaved: 'Remote identity saved',
+            profileSaveFailed: 'Failed to save remote identity: {error}',
+            respondFailed: 'Failed to respond to the connection request: {error}',
             connectSuccess: 'Connection request sent. Waiting for approval.',
             connectFailed: 'Remote connection failed: {error}',
             invitationTimeout: 'Connection invitation timed out.',
@@ -7365,6 +7369,8 @@ async function saveRemoteProfile() {
         syncRemoteProfileDirty(false);
         addUILog(t('remote.profileSaved'), 'success');
         await loadRemoteProfileAndState();
+    } else {
+        addUILog(t('remote.profileSaveFailed', { error: data.error || 'unknown' }), 'error');
     }
 }
 
@@ -7397,9 +7403,16 @@ async function respondRemoteRequest(accept) {
         method: 'POST',
         body: { accept }
     });
+    if (!data.success) {
+        // 邀請可能已逾時或被對方取消；強制取回完整狀態，仍有效的邀請會重新彈出，失效的則收掉視窗。
+        addUILog(t('remote.respondFailed', { error: data.error || 'unknown' }), 'error');
+        lastRemoteStateTick = 0;
+        await loadRemoteProfileAndState();
+        return;
+    }
     remoteRequestOverlay?.classList.remove('visible');
     pendingRemoteRequestId = '';
-    if (data.success && accept) {
+    if (accept) {
         selectedRemoteSessionId = data.session?.id || selectedRemoteSessionId;
         switchChatMode('remote');
         appendChatBubble('system', t('remote.requestAccepted'), [], { container: remoteChatMessages, forceSystem: true });

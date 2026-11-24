@@ -184,7 +184,15 @@ function saveRemoteProfile(profile = {}) {
         ...buildDefaultRemoteProfile(),
         ...profile,
     };
-    fs.writeFileSync(REMOTE_PROFILE_FILE, JSON.stringify(merged, null, 2), 'utf8');
+    // 與 config.json 相同：寫入中途失敗不可留下半截 JSON，否則下次啟動只剩預設名稱。
+    const tempFile = `${REMOTE_PROFILE_FILE}.${process.pid}.tmp`;
+    try {
+        fs.writeFileSync(tempFile, JSON.stringify(merged, null, 2), 'utf8');
+        fs.renameSync(tempFile, REMOTE_PROFILE_FILE);
+    } catch (error) {
+        try { fs.unlinkSync(tempFile); } catch {}
+        throw error;
+    }
     return merged;
 }
 

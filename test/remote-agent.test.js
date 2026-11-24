@@ -25,6 +25,10 @@ function createService() {
     return new RemoteAgentService({ onError: () => {} });
 }
 
+function clearAllPendingTimers(service) {
+    service.sessions.forEach((session) => service.clearPendingTimeout(session));
+}
+
 const incomingService = createService();
 const incomingSocket = createSocket();
 incomingService.handleHello(incomingSocket, {
@@ -190,6 +194,7 @@ const maxLengthId = 's'.repeat(128);
 const maxIdSocket = createSocket();
 invalidIdService.handleHello(maxIdSocket, { sessionId: maxLengthId });
 assert.equal(invalidIdService.getSession(maxLengthId)?.status, 'pending_approval');
+invalidIdService.clearPendingTimeout(invalidIdService.getSession(maxLengthId));
 passed++;
 
 // 對方宣告 disconnect 後本機也必須結束 socket，否則半開的連線會一直佔著直到對方行程被回收。
@@ -230,4 +235,122 @@ assert.equal(boundedService.getSession('bounded').messages.length, 120);
 assert.equal(boundedService.getSession('bounded').messages[0].text, '10');
 passed++;
 
-console.log(`\n[remote-agent.test] ${passed} passed`);
+// 配額原本把 disconnected / rejected 也一併計入，使用者拒絕或逾時 32 次後合法連線永遠被拒，
+// 只能重啟程式；配額應只計算仍在等待或連線中的 session。
+const terminalQuotaService = createService();
+for (let index = 0; index < 32; index++) {
+    const socket = createSocket();
+    terminalQuotaService.handleHello(socket, { sessionId: `terminal-${index}` });
+    terminalQuotaService.handlePayload(socket, { type: 'hello_cancel' });
+}
+assert.equal(terminalQuotaService.sessions.size, 32);
+assert.ok([...terminalQuotaService.sessions.values()].every((session) => session.status === 'disconnected'));
+const afterTerminalsSocket = createSocket();
+terminalQuotaService.handleHello(afterTerminalsSocket, { sessionId: 'after-terminals' });
+assert.equal(terminalQuotaService.getSession('after-terminals').status, 'pending_approval');
+clearAllPendingTimers(terminalQuotaService);
+passed++;
+
+// 進行中的 session 仍受限：32 個 pending / active 時，第 33 個 hello 必須被拒。
+const liveQuotaService = createService();
+for (let index = 0; index < 32; index++) {
+    liveQuotaService.handleHello(createSocket(), { sessionId: `live-${index}` });
+}
+const liveOverflowSocket = createSocket();
+liveQuotaService.handleHello(liveOverflowSocket, { sessionId: 'live-overflow' });
+assert.equal(liveOverflowSocket.frames.at(-1).type, 'hello_reject');
+assert.equal(liveOverflowSocket.ended, true);
+assert.equal(liveQuotaService.getSession('live-overflow'), null);
+assert.equal(liveQuotaService.sessions.size, 32);
+clearAllPendingTimers(liveQuotaService);
+passed++;
+
+// 已結束的 session 需要保留給使用者回顧，但也不能無上限累積；超過上限時淘汰最舊的。
+const pruneService = createService();
+for (let index = 0; index < 33; index++) {
+    const socket = createSocket();
+    pruneService.handleHello(socket, { sessionId: `old-${index}` });
+    pruneService.handlePayload(socket, { type: 'hello_cancel' });
+}
+assert.equal(pruneService.sessions.size, 33);
+const afterPruneSocket = createSocket();
+pruneService.handleHello(afterPruneSocket, { sessionId: 'after-prune' });
+assert.equal(pruneService.getSession('old-0'), null);
+assert.ok(pruneService.getSession('old-1'));
+assert.equal(pruneService.getSession('after-prune').status, 'pending_approval');
+assert.equal(pruneService.sessions.size, 33);
+clearAllPendingTimers(pruneService);
+passed++;
+
+// 對方取消或逾時時同樣要結束 socket，不能只把狀態改成 disconnected。
+const cancelService = createService();
+const cancelSocket = createSocket();
+cancelService.handleHello(cancelSocket, { sessionId: 'cancel-me' });
+cancelService.handlePayload(cancelSocket, { type: 'hello_cancel' });
+assert.equal(cancelService.getSession('cancel-me').status, 'disconnected');
+assert.equal(cancelSocket.ended, true);
+const peerTimeoutService = createService();
+const peerTimeoutSocket = createSocket();
+peerTimeoutService.handleHello(peerTimeoutSocket, { sessionId: 'timeout-me' });
+peerTimeoutService.handlePayload(peerTimeoutSocket, { type: 'hello_timeout' });
+assert.equal(peerTimeoutService.getSession('timeout-me').status, 'disconnected');
+assert.equal(peerTimeoutSocket.ended, true);
+passed++;
+
+(async () => {
+    const net = require('node:net');
+    const originalCreateConnection = net.createConnection;
+    // 若逾時機制被移除，connect() 會永遠不 settle；用保護計時器讓測試失敗而不是整支卡住。
+    const withTestGuard = (promise, ms = 5000) => new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`test guard: connect() did not settle within ${ms} ms`)), ms);
+        promise.then(
+            (value) => { clearTimeout(timer); resolve(value); },
+            (error) => { clearTimeout(timer); reject(error); },
+        );
+    });
+
+    // 連不上時原本要等 OS SYN 重試（約 21 秒）才失敗；connect() 必須有自己的逾時。
+    const silentSocket = createSocket();
+    net.createConnection = () => silentSocket;
+    try {
+        const timeoutService = new RemoteAgentService({ onError: () => {}, connectTimeoutMs: 30 });
+        const startedAt = Date.now();
+        let connectError = null;
+        try {
+            await withTestGuard(timeoutService.connect('192.0.2.1', { machineName: 'ME' }));
+        } catch (error) {
+            connectError = error;
+        }
+        assert.ok(connectError && /timed out/.test(connectError.message));
+        assert.equal(silentSocket.destroyed, true);
+        assert.ok(Date.now() - startedAt < 5000);
+        assert.equal(timeoutService.sessions.size, 0);
+    } finally {
+        net.createConnection = originalCreateConnection;
+    }
+    passed++;
+
+    // 正常連線仍必須建立 session 並送出 hello。
+    const connectedSocket = createSocket();
+    connectedSocket.setEncoding = () => {};
+    net.createConnection = () => {
+        setTimeout(() => connectedSocket.emit('connect'), 0);
+        return connectedSocket;
+    };
+    try {
+        const connectedService = new RemoteAgentService({ onError: () => {}, connectTimeoutMs: 2000 });
+        const session = await connectedService.connect('192.0.2.2', { machineName: 'ME' });
+        assert.equal(session.status, 'pending_approval');
+        assert.equal(connectedSocket.frames[0].type, 'hello');
+        assert.equal(connectedService.sessions.size, 1);
+        clearAllPendingTimers(connectedService);
+    } finally {
+        net.createConnection = originalCreateConnection;
+    }
+    passed++;
+
+    console.log(`\n[remote-agent.test] ${passed} passed`);
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

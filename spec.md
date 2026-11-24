@@ -332,7 +332,9 @@ $true
 - [x] `config.json` 改用 temp-write + rename（2026.11.12 第三十九階段：同目錄 `config.json.<pid>.tmp` → `fsyncSync` → `renameSync`，失敗只清自己 pid 的暫存檔並 rethrow；真實 `SIGKILL` 探針證實修正前 `config.json` 被截斷成 0、修正後逐位元組不變）。
 - [x] 遠端 session 身分不被對方覆寫、重複 `sessionId` 不再覆蓋既有連線（2026.11.24 第四十階段：`hello_ack` 只合併 `peer`，`handleHello()` 對已存在的 `sessionId` 回 `hello_reject`；`test/remote-agent.test.js` 補 2 項回歸）。
 - [x] 對方提供的 `sessionId` 先驗證型別與長度、`disconnect` 會關閉 socket（2026.11.25 第四十一階段：非字串／超過 128 字元／含控制字元一律 `hello_reject`，空字串由本機產生 id；`remote_disconnect` 後 `socket.end()`；`test/remote-agent.test.js` 再補 2 項回歸）。
-- [ ] `remote-profile.json` 仍直接覆寫（損毀時退回預設名稱且下次儲存自我修復，不遺失不可回復的密鑰，優先度低）。
+- [x] `remote-profile.json` 改用 temp-write + rename（2026.11.25 第四十二階段：同目錄 `remote-profile.json.<pid>.tmp` → `renameSync`，失敗只清自己的暫存檔並 rethrow；`loadRemoteProfile()` 的首次寫入 fallback 不變）。
+- [x] 遠端 session 名額只計未結束的連線、terminal session 有上限、`connect()` 有逾時、`hello_cancel` / `hello_timeout` 會關閉 socket（2026.11.25 第四十二階段：`liveSessionCount()`、`MAX_TERMINAL_SESSIONS` + `pruneTerminalSessions()`、`connectTimeoutMs`、`test/remote-agent.test.js` 再補 6 項）。
+- [x] 遠端身份儲存與連線邀請回應失敗會顯示原因，不再靜默（2026.11.25 第四十二階段：`remote.profileSaveFailed` / `remote.respondFailed` 雙語鍵、回應失敗時重置 `lastRemoteStateTick` 取回完整狀態、`test/remote-profile-ui-errors.test.js`）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -477,6 +479,13 @@ $true
 - **多對話 (Multi-session)**：支援本機與遠端對話歷史分頁，以及獨立的 Pending (Thinking) 列。
 - **Model Sharing**：A 端同意接受 B 端分享之模型後，A 端 UI 將改用 B 端 API (利用 Session Token 驗證)。
 - **@mention 機制**：透過 `@` 啟動對象名單，點名遠端 AI 即可讓遠端模型介入回答。
+
+### 7.4 連線生命週期與資源上限 (Connection Lifecycle & Limits)
+- **名額只算未結束的連線**：`MAX_SESSIONS`（32）只計 `pending_approval` / `active` 的 session。已 `disconnected` 或被 `rejected` 的 session 不得占用名額，否則對方反覆重試就能把合法連線擠掉。
+- **terminal session 需有獨立上限**：`disconnected` / `rejected` 的 session 另由 `MAX_TERMINAL_SESSIONS`（32）封頂，每次 `handleHello()` 先以 `lastEventAt` 最舊者淘汰（`pruneTerminalSessions()`），確保 `sessions` Map 不會無限成長，同時保留最近斷線的紀錄供 UI 顯示。
+- **`disconnect`、`hello_cancel`、`hello_timeout` 都必須結束 socket**：只改 session 狀態、不關閉連線會讓半開的 TCP 一直存活（自製用戶端或卡住的 peer 不會自己 FIN）。關閉後 `close` 事件因狀態已非 `active` 不會重複標記。
+- **發起端必須有連線逾時**：`connect()` 預設 10 秒（建構子 `connectTimeoutMs` 可注入）未完成 `connect` 即 destroy socket 並 reject，避免 UI 卡在「連線中」且測試無法結束。
+- **失敗必須回報且不得假裝成功**：`POST /api/remote/profile` 與 `POST /api/remote/session/:id/respond` 失敗時，前端要寫出錯誤日誌（`remote.profileSaveFailed` / `remote.respondFailed`）。回應邀請失敗後必須把 `lastRemoteStateTick` 歸零再抓一次完整狀態：仍有效的邀請會重新彈出，已逾時的邀請由 `renderRemotePopup()` 收起視窗。不得在失敗時直接關閉邀請視窗。
 
 ## 8. 2026.04.10 已修復問題 (Runtime Fixes)
 
@@ -760,7 +769,7 @@ $true
 
 ### 16.2 遠端驗收基準 (Remote Validation Checklist)
 
-在驗證遠端協作變更時，必須執行並通過以下三種典型情境流程：
+在驗證遠端協作變更時，必須執行並通過以下五種典型情境流程：
 
 1. **`SUGGEST` 流程**：
    - **預期結果**：遠端訊息能正確渲染出真實按鈕，按鈕在 polling 時不會閃爍；點擊後能建立或沿用任務，且 UI 執行日誌顯示 `Suggestion clicked`。
@@ -768,6 +777,10 @@ $true
    - **預期結果**：`[ACTION:INSTALL_SOP sop_id="..."]` 能在本機被執行，UI 執行日誌會先顯示 `Remote AI directive received`，接著顯示 `Started SOP task` 或 `Reused SOP task`（若失敗則顯示明確錯誤）。
 3. **Double Agent Mode 流程**：
    - **預期結果**：本地 AI 先行回覆，UI 執行日誌顯示 `Double Agent Mode: Local AI answers first, Remote AI follow-up queued`，隨後遠端 AI 的回覆在背景排程完成後出現，整體流程不阻塞。
+4. **連線生命週期流程**（raw TCP 用戶端，同一 process 內即可）：
+   - **預期結果**：`disconnect` / `hello_cancel` / `hello_timeout` 後本機在數十毫秒內收到 FIN、session 狀態為 terminal 且 socket `destroyed: true`；非字串或超長 `sessionId` 收到 `hello_reject` 且不留在 `sessions`；連到不可達位址的 `connect()` 在 10 秒內以 `timed out` 失敗；terminal session 累積超過 32 筆時最舊者被淘汰、`liveSessionCount()` 不受影響。
+5. **失敗回饋流程**：
+   - **預期結果**：`remote-profile.json` 或邀請回應寫入失敗時，工作日誌出現對應語系的錯誤訊息；邀請回應失敗且邀請仍有效時視窗維持開啟、`pendingRemoteRequestId` 不被清空；邀請已失效時視窗收起。兩者都不會在畫面上留下「已儲存 / 已接受」的假象。
 
 ### 16.3 其他診斷機制
 

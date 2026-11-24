@@ -5,6 +5,62 @@
 
 ---
 
+## 📌 2026.11.25 — 第四十二階段：遠端名額只算活著的連線，連線與邀請失敗不再靜默
+
+> 接續同日第四十一階段；第四十一階段留下「`MAX_SESSIONS` 把 terminal session 也算進去、逾時後不移除」與「`connect()` 沒有逾時」，本輪一併處理，並把 `remote-profile.json` 與兩個前端失敗路徑補齊。版本維持 `2026.8.7`。
+
+### 症狀一：名額被已結束的 session 佔住，而且 `Map` 會無限成長
+- `handleHello()` 只檢查 `this.sessions.size >= MAX_SESSIONS`（32）。`disconnected` / `rejected` 的 session 一直留在 `Map` 裡，pending 逾時也只把狀態改成 `disconnected`。
+- 同網段送 32 個 `hello` 再全部丟棄，就能把名額佔滿；之後合法連線一律收到 `hello_reject`，除非使用者手動刪除，否則無法恢復。
+- 反過來若只把 terminal session 排除在名額外、又不做上限，`Map` 就會隨每次重試持續成長，`/api/remote/state` 與 `toClientSession()` 的序列化成本跟著上升。
+
+### 症狀二：`connect()` 沒有逾時，UI 與測試都可能永遠等下去
+- `connect()` 只依賴 socket 的 `connect` / `error` 事件。連到不可達位址時，Windows 的 SYN 重試要約 21 秒才失敗，期間前端停在「連線中」。
+- 測試裡更嚴重：一旦逾時機制被移除，`connect()` 永遠不 settle，`test/remote-agent.test.js` 整支卡住（探針實測 > 2 分鐘後被手動中止）。
+
+### 症狀三：`hello_cancel` / `hello_timeout` 只改狀態，不關 socket
+- 第四十一階段只處理了 `disconnect`。對方送 `hello_cancel`（或本機 pending 逾時送 `hello_timeout`）後，只有 session 被標記，socket 是否關閉仍看對方有沒有自己 FIN；自製用戶端可以把半開連線一直留著。
+
+### 症狀四：`remote-profile.json` 直接覆寫
+- `saveRemoteProfile()` 直接 `fs.writeFileSync(REMOTE_PROFILE_FILE, …)`；這個呼叫會先把既有檔案截斷成 0。寫到一半被砍或斷電就只剩半截 JSON，`loadRemoteProfile()` 的 `JSON.parse` 失敗後退回預設名稱，使用者改過的機器名稱／使用者名稱消失。`config.json` 已在第三十九階段改成 temp-write + rename，這支一直沒跟進。
+
+### 症狀五：儲存身份與回應邀請失敗完全沒有回饋
+- `saveRemoteProfile()` 只有 `if (data.success) {…}`，失敗時不寫日誌、不提示，按了「儲存名稱」看起來沒反應。
+- `respondRemoteRequest()` 更嚴重：無論成功失敗都先關掉邀請視窗；失敗時也不重抓狀態，`lastRemoteStateTick` 還是舊值，之後每 2 秒的輪詢都帶 `since` 命中 `unchanged` 短路，**仍有效的邀請不會再彈出**——使用者等於永久錯過這次連線。
+
+### 重現
+- 假 socket 探針：連續建立 32 個 terminal session 後，第 33 個 `hello` 被拒；`getSession('after-terminals')` 對 terminal 期間建立的合法 session 回 `null`。
+- 真實 loopback TCP 探針（兩個 `RemoteAgentService` 互連）：建立 terminal session 超過 32 筆後，最舊的一筆仍在 `sessions` 裡。
+- `connect('192.0.2.1')` 無逾時實測要等 OS 重試；加上 `withTestGuard` 後移除逾時會讓測試在 5 秒內以 guard 失敗，而不是整支卡死。
+- 前端探針：回應邀請回 `{success:false}` 後，overlay 被移除、`pendingRemoteRequestId` 被清空、沒有任何日誌。
+
+### 修正
+- `src/remote-agent.js`：
+  - 新增 `isTerminalSessionStatus()`、`liveSessionCount()`：只有 `pending_approval` / `active` 計入 `MAX_SESSIONS`。
+  - 新增 `MAX_TERMINAL_SESSIONS`（32）與 `pruneTerminalSessions()`：terminal session 以 `lastEventAt` 最舊者優先淘汰，`handleHello()` 每次先 `pruneRejectHistory()` + `pruneTerminalSessions()` 再檢查名額。
+  - `hello_cancel` / `hello_timeout` 分支在標記狀態後 `socket.end()`，與 `disconnect`、`hello_reject` 行為一致。
+  - `connect()` 加入 `connectTimeoutMs`（建構子可注入，預設 10 秒）：計時器到就 `socket.destroy()` 並以 `Connection to host:port timed out after N seconds.` reject；`connect` 事件會清除計時器。
+- `src/server.js`：`saveRemoteProfile()` 改為同目錄 `remote-profile.json.<pid>.tmp` → `renameSync`，失敗時只刪自己 pid 的暫存檔再 rethrow；`loadRemoteProfile()` 的首次 fallback 寫入不動。
+- `public/app.js`：新增 `remote.profileSaveFailed` / `remote.respondFailed` 兩個語系鍵；`saveRemoteProfile()` 與 `respondRemoteRequest()` 失敗時寫 error 日誌；回應失敗後把 `lastRemoteStateTick` 歸零、重抓完整狀態再 return，**不關邀請視窗**——仍有效的邀請會由 `renderRemotePopup()` 重新彈出，已逾時的則由它收起。
+
+### 測試與驗收
+- `test/remote-agent.test.js` 由 14 項增至 **20 項**：terminal session 不佔名額與 terminal 上限（`old-0` 被淘汰、`old-1` 保留、size 33）、`hello_cancel` / `hello_timeout` 會 `end()` socket、`connect()` 逾時（5 秒 `withTestGuard` 內以 `timed out` 失敗）與正常連線仍建立 session。測試結束會清掉所有 pending 計時器，不再讓 `setTimeout` 拖住行程。
+- 新增 `test/remote-profile-atomic.test.js`（4 項，真實 HTTP + 隔離 harness）：成功儲存後目錄沒有 `.tmp`；暫存寫入失敗時原檔逐位元組不變、暫存檔被清掉；rename 失敗（以精確路徑注入）同樣保留原檔；`failWrites(null)` 後立即恢復正常。
+- 新增 `test/remote-profile-ui-errors.test.js`（6 項，擷取真實 `saveRemoteProfile` / `respondRemoteRequest` 與真實 I18N）：儲存失敗寫 error 且不假裝同步；儲存成功仍同步並 reload；回應被拒時寫 error、**保留 `pendingRemoteRequestId` 與 overlay**、以 tick 0 重抓；接受後關閉視窗並切到遠端聊天；拒絕時關閉但不切換；en-US 標籤無中文殘留。
+- 8 個突變探針全部被測到，分別由 2 / 1 / 1 / 1 / 1 / 1 / 3 / 2 項測試攔下：`remote-profile.json` 改回直接覆寫、失敗不清暫存檔、名額把 terminal 也算進去（測試在 `getSession('after-terminals') === null` 崩潰）、移除 `pruneTerminalSessions()`（`old-0` 仍在）、移除 `connect()` 逾時（guard 失敗）、`hello_cancel` / `hello_timeout` 不關 socket、回應失敗仍靜默關窗、儲存失敗不寫日誌。探針後 `src/remote-agent.js` 還原為 `f088023f7dbacd80833dcb6ed7a57b31`；之後補上連線失敗時 `clearTimeout()` + `socket.destroy()`（避免 10 秒計時器拖住行程），最終為 `7eecf604ec051d3df1b35017811a78ed`。`src/server.js` `76eab3a05186667b6ac8f359aca46db5`、`public/app.js` `c3344fb83400f82cb29702e78553a8b3` 全程不變。
+- `npm test`：25 個 JS 語法、**58 支測試檔**與 server smoke 全綠。
+- 最終 md5：`test/remote-agent.test.js` `a429c693740c6073093661d3903fb833`、`test/remote-profile-atomic.test.js` `2ebdd6d8e8146f6f2b28ccf818525af7`、`test/remote-profile-ui-errors.test.js` `34234a9155491eead565a1f03af9fc86`。
+
+### 尚未完成
+- 未做雙機實機驗收；上述皆為同一 process 內的假 socket 或 loopback TCP 互連，尚未涵蓋防火牆、IPv6、斷線重連與既有 Chalkboard revision 行為。
+- `handlePayload()` 的訊框累積仍是「每次 data 事件對整條未完成字串重算 `Buffer.byteLength()` 並 `split('\n')`」，一個不換行的大 frame 會隨事件數放大 CPU（典型 64 KiB chunk 下約 2 GB 掃描 / 16 MiB frame）。未改寫成 byte buffer 逐段掃描，先記錄為已知限制。
+- 遠端 AI 回覆逾時仍不會取消已在途的 LLM 請求（既有問題）。
+- `SIGKILL` 後留下的 `config.json.<pid>.tmp` / `remote-profile.json.<pid>.tmp` 沒有啟動時清理機制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.11.25 — 第四十一階段：對方給的 sessionId 不再製造無法同意的連線，遠端斷線真的會關 socket
 
 > 接續 11.24 第四十階段；同一個檔案往下讀，`handleHello()` 把對方送來的 `sessionId` 直接當 Map key，`disconnect` 封包只改狀態不關連線。版本維持 `2026.8.7`。
