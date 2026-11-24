@@ -10,6 +10,7 @@ const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 const MAX_PENDING_WRITE_BYTES = 16 * 1024 * 1024;
 const MAX_SESSION_MESSAGES = 120;
 const MAX_SESSIONS = 32;
+const MAX_SESSION_ID_LENGTH = 128;
 
 function createId(prefix = 'id') {
     return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -294,10 +295,25 @@ class RemoteAgentService {
         if (payload.type === 'disconnect') {
             this.emitSystemMessage(session, 'system', payload.reason || 'Remote peer disconnected.');
             this.markDisconnected(session, 'remote_disconnect');
+            if (session.socket && !session.socket.destroyed) session.socket.end();
         }
     }
 
     handleHello(socket, payload) {
+        const providedSessionId = payload.sessionId;
+        if (providedSessionId !== undefined && providedSessionId !== null && providedSessionId !== '') {
+            const invalidId = typeof providedSessionId !== 'string'
+                || providedSessionId.length > MAX_SESSION_ID_LENGTH
+                || /[\u0000-\u001f\u007f]/.test(providedSessionId);
+            if (invalidId) {
+                this.sendRaw(socket, {
+                    type: 'hello_reject',
+                    reason: 'Session ID must be a string of at most 128 characters without control characters.',
+                });
+                socket.end();
+                return;
+            }
+        }
         this.pruneRejectHistory();
         if (this.sessions.size >= MAX_SESSIONS) {
             this.sendRaw(socket, { type: 'hello_reject', reason: 'Too many remote sessions. Disconnect an existing session first.' });

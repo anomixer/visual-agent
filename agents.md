@@ -5,6 +5,44 @@
 
 ---
 
+## 📌 2026.11.25 — 第四十一階段：對方給的 sessionId 不再製造無法同意的連線，遠端斷線真的會關 socket
+
+> 接續 11.24 第四十階段；同一個檔案往下讀，`handleHello()` 把對方送來的 `sessionId` 直接當 Map key，`disconnect` 封包只改狀態不關連線。版本維持 `2026.8.7`。
+
+### 症狀一：非字串 sessionId 產生「永遠同意不了、也刪不掉」的 session
+- `handleHello()` 只做 `const sessionId = payload.sessionId || createId('session')`，沒有型別或長度檢查；`sessions` 是 `Map`，鍵就是對方送來的原始值。
+- 路由一律以字串取用：前端 `renderRemotePopup()` 取 `pendingApprovals[0].id` 後呼叫 `/api/remote/session/${id}/respond`，Express 的 `req.params.sessionId` 永遠是字串，`sessions.get('12345')` 對上 `Map` 裡的數字 `12345` 是不同鍵（`Map` 用 SameValueZero 比對）。
+- 實測（真實 TCP，raw client 直接連 `RemoteAgentService` 19311）：送 `sessionId: 12345` 與 `{evil:true}` 都沒有任何回應，`sessions` 卻各建了一筆，`getState()` 的 id 分別是 `12345` 與 `{"evil":true}`；`getSession('12345')` 回 `null`。UI 因此會出現一張 **按接受必定 400 `Session not found`、關掉後下次輪詢又彈回來** 的同意視窗，直到 60 秒逾時；逾時只標 disconnected、不從 `Map` 移除，名額（`MAX_SESSIONS` 32）仍被佔住。
+- 長度完全沒有上限：16 MiB 的 frame 上限允許一個十幾 MB 的 id，`/api/remote/state` 每次版本變更都要把這個字串序列化重送，前端再解析一次。
+
+### 症狀二：收到 disconnect 只標記，不結束 socket
+- `handlePayload()` 的 `disconnect` 分支只 `emitSystemMessage()` + `markDisconnected()`；socket 是否關閉完全看對方有沒有自己送 FIN。
+- 對方若送完 `disconnect` 卻保持連線（自製用戶端、卡住的 peer），本機這條 TCP 連線就一直開著；之後的封包都因 `status !== 'active'` 被忽略，但連線本身不會被回收。
+
+### 修正
+- `handleHello()` 增加 `MAX_SESSION_ID_LENGTH = 128` 與前置驗證：`sessionId` 若存在（非 `undefined` / `null` / 空字串），必須是字串、長度 ≤ 128、且不含控制字元（`\u0000-\u001f\u007f`）；不合格就回 `hello_reject`（`Session ID must be a string of at most 128 characters without control characters.`）並 `socket.end()`，不建立 session。空字串沿用原本「視為未提供、產生新 id」的行為。
+- `disconnect` 分支在 `markDisconnected()` 後補上 `session.socket.end()`，與 `hello_reject` / 本機 `disconnectSession()` 的行為一致；關閉後 `close` 事件因狀態已是 disconnected 不會重複標記。
+
+### 測試與驗收
+- `test/remote-agent.test.js` 由 12 項增至 14 項：數字 id、物件 id、129 字元 id 各自收到 `hello_reject` 且 `sessions.size` 不變，128 字元 id 可正常建立並用字串定址；對方 `disconnect` 後本機狀態為 disconnected、socket 被 `end()`，且同連線後續的 `chat_message` 不會進歷史（不因斷線殘留訊息）。
+- 兩個突變探針都被抓到：移除 `handleHello()` 的驗證 → id 測試拋 `Cannot read properties of undefined (reading 'type')`（沒有任何 `hello_reject`）；移除 `disconnect` 分支的 `socket.end()` → 斷線測試得到 `undefined` 而非 `true`。探針後 `src/remote-agent.js` 已還原為位元組相同（md5 `46a711a9ee887937f98f15c288ab3896`）。
+- 真實 loopback 驗證（raw `net` client → 真實 `RemoteAgentService`，port 19312／19313）：
+  - 數字、物件、129 字元 id 皆回同一則 `hello_reject` 並收到 FIN；三名非法連線都沒有留下 session。
+  - 128 字元內的一般字串可建立並維持 `pending_approval`，接受後正常。
+  - 對方送出 `disconnect` 後 **4 ms** 收到 FIN（`649ms client end`），本機狀態 `disconnected`、server 端 socket `destroyed: true`；全程 `onError` 0 筆。
+- `npm test`：25 個 JS 語法、56 支測試檔與 server smoke 全綠。
+- 最終 `src/remote-agent.js` md5 `46a711a9ee887937f98f15c288ab3896`、`test/remote-agent.test.js` md5 `4eb2241a2a0402187f43109aacfa0d93`。
+
+### 尚未完成
+- 未做雙機實機驗收；上述為同一 process 內的 raw TCP 用戶端與真實服務互連。
+- `MAX_SESSIONS`（32）仍把 `disconnected` / `rejected` 的 session 一併計入，pending 逾時後也不從 `Map` 移除；同網段可送 32 個 hello 佔滿名額讓合法連線被拒，需手動刪除才恢復。屬保留策略問題，本輪未動。
+- `handlePayload()` 的訊框累積仍是「每次 data 事件對整條未完成字串重算 `Buffer.byteLength()` 並 `split('\n')`」，一個不換行的大 frame 會隨事件數放大 CPU（典型 64 KiB chunk 下約 2 GB 掃描 / 16 MiB frame）。未改寫成 byte buffer 逐段掃描，先記錄為已知限制。
+- 收到 `hello_cancel` / `hello_timeout` 時同樣只標記狀態不關 socket（正常 peer 會自行 FIN），本輪只處理 `disconnect`。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝、提權或刪除。
+
+---
+
 ## 📌 2026.11.24 — 第四十階段：接受連線不再覆寫本機身分，重複 sessionId 不再吃掉既有對話
 
 > 接續 11.12 第三十九階段；本輪回頭稽核從未逐行看過的遠端協定層（`src/remote-agent.js`），以假 socket 與真實 loopback TCP 各驗一次。版本維持 `2026.8.7`。

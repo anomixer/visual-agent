@@ -170,6 +170,40 @@ assert.equal(duplicateSocket2.ended, true);
 assert.equal(duplicateService.socketToSessionId.has(duplicateSocket2), false);
 passed++;
 
+// 對方提供的 sessionId 會直接當成 Map key。非字串（JSON number / object）建立的 session
+// 無法用路由傳來的字串 id 定址，UI 同意視窗永遠得到 400、也無法刪除，只能等重啟。
+const invalidIdService = createService();
+const numericIdSocket = createSocket();
+invalidIdService.handleHello(numericIdSocket, { sessionId: 12345, profile: { machineName: 'numeric-peer' } });
+assert.equal(numericIdSocket.frames.at(-1).type, 'hello_reject');
+assert.equal(numericIdSocket.ended, true);
+assert.equal(invalidIdService.sessions.size, 0);
+const objectIdSocket = createSocket();
+invalidIdService.handleHello(objectIdSocket, { sessionId: { evil: true } });
+assert.equal(objectIdSocket.frames.at(-1).type, 'hello_reject');
+assert.equal(invalidIdService.sessions.size, 0);
+const longIdSocket = createSocket();
+invalidIdService.handleHello(longIdSocket, { sessionId: 's'.repeat(129) });
+assert.equal(longIdSocket.frames.at(-1).type, 'hello_reject');
+assert.equal(invalidIdService.sessions.size, 0);
+const maxLengthId = 's'.repeat(128);
+const maxIdSocket = createSocket();
+invalidIdService.handleHello(maxIdSocket, { sessionId: maxLengthId });
+assert.equal(invalidIdService.getSession(maxLengthId)?.status, 'pending_approval');
+passed++;
+
+// 對方宣告 disconnect 後本機也必須結束 socket，否則半開的連線會一直佔著直到對方行程被回收。
+const disconnectService = createService();
+const disconnectSocket = createSocket();
+disconnectService.handleHello(disconnectSocket, { sessionId: 'bye', profile: { machineName: 'bye-peer' } });
+disconnectService.respondToSession('bye', true, { machineName: 'me' });
+disconnectService.handlePayload(disconnectSocket, { type: 'disconnect', reason: 'done' });
+assert.equal(disconnectService.getSession('bye').status, 'disconnected');
+assert.equal(disconnectSocket.ended, true);
+disconnectService.handlePayload(disconnectSocket, { id: 'late-message', type: 'chat_message', text: 'late' });
+assert.equal(disconnectService.getSession('bye').messages.some((item) => item.id === 'late-message'), false);
+passed++;
+
 const floodService = createService();
 const floodSocket = createSocket();
 floodSocket.setEncoding = () => {};
