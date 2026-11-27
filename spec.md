@@ -145,6 +145,7 @@ browser ──── public/index.html
 - **建立任務只探測被選到的 SOP，失敗必須可見**：`POST /api/todo` 只需要 `matchedSOP` 的安裝態，呼叫端帶 `action` 時連這一次都不需要；不得為了建立一筆任務而 annotate 全部 SOP（每支 Check 都是一支子程序）。全量探測只屬於 `GET /api/sops`、`/api/recommend` 與 `/api/chat`。`api()` 把網路與非 JSON 錯誤包成 `{ success:false, error }` 回傳，因此加入／刪除任務的失敗必須寫進工作日誌並附上伺服器原因，不得只有 `if (data.success)` 而靜默返回。
 - **所有 API 錯誤必須是 JSON，且不得外送 stack**：`/api/*` 的任何失敗（路由 handler 拋錯、body-parser 解析失敗、router 解碼失敗、未匹配端點）都必須回 `{ success:false, error }`，不得落到 Express 預設的 HTML 錯誤頁或 HTML 404。前端 `api()` 的 `res.json()` 遇到 HTML 只會得到「Unexpected token '<'」，真正原因（ENOSPC / EPERM）完全看不到。全域 error middleware 必須掛在所有路由之後，保留 `err.status` / `err.statusCode` 的 4xx–5xx 原值（JSON 語法錯誤是 400，不得一律蓋成 500），`res.headersSent` 時交回 `next(err)`；完整 stack 只寫進本機 `debug.log`。未匹配的 `/api/*` 由專屬 JSON 404 出口處理，訊息需帶 method 與完整路徑；非 API 路徑與靜態檔案不受影響。
 - **持久化失敗必須回滾記憶體狀態**：`POST /api/todo` 與 `DELETE /api/todo/:id` 在 `saveTasks()` 拋錯時，必須把剛 push 的任務收回 / 把剛 filter 掉的任務還原，再回 500 JSON 並附最新 `publicTodoList()`。不得留下「畫面看得到、重啟後消失」的幽靈任務，也不得留下「畫面已刪除、重啟後又出現」的未落地移除。
+- **執行開始寫檔失敗必須回滾並可立即重試**：`POST /api/execute/:taskId` 在設定 `running`、清空 logs 後，若第一次 `saveTasks()` 拋錯，必須還原任務原本的 `status`、`progress`、`logs` 與 `completedAt`，並把 `runningSOP` 還原為先前值，再 rethrow 讓全域 JSON 出口回 500。不得留下本行程沒有 executor、卻永遠顯示 running 的任務；儲存恢復後同一任務必須能立即重試。
 - **診斷日誌必須是 best-effort**：`appendDebugLog()` 本身可能因磁碟滿或檔案被鎖住而拋錯，因此 `fileLog()` 必須包 try/catch。錯誤處理路徑自己拋錯會蓋掉真正的錯誤，讓全域 JSON 出口失效。
 - **模型名稱必須是字串**：`POST /api/llm/model` 的 `modelName` 非字串或去除空白後為空時必須回 400，不得賦值給 `currentModel` 或寫入 config。
 - **LLM 設定寫檔失敗不得宣稱已儲存**：`saveConfig()` 不得吞掉寫檔錯誤，否則 `updateProviderSettings()` / `setCurrentModel()` 已改完模組層設定、磁碟卻沒改，端點仍回 `success:true`，重啟後使用者的 Provider、Base URL、API Key 與 Vision Model 全部消失。兩個函式都必須先快照再套用，`saveConfig()` 拋錯時還原所有被指派的欄位（`updateProviderSettings()` 是七個）並 rethrow；`POST /api/llm/config` 與 `POST /api/llm/model` 必須回 500 JSON 帶真實原因，前端設定視窗保持開啟、模型選單把失敗寫進工作日誌。
@@ -485,6 +486,7 @@ $true
 - 對方提供的 `sessionId` 必須是 1–128 字元的字串且不含控制字元；非字串（JSON number / object）不得直接當成 session key，否則會產生路由字串無法定址、UI 也無法同意或刪除的 session。空字串視為未提供，由本機產生 id。
 - 收到對方的 `disconnect` 時，本機在標記 `disconnected` 後必須結束該 socket，不得只改狀態而讓半開連線一直存活。
 - **遠端訊息欄位必須在協定邊界正規化**：`chat_message` / `screen_share` / `system_message` / `chalkboard_state` 的 `id`、`senderType`、`senderLabel`、`text`、`imageDataUrl`、`caption`、`target`、`locale`、`createdAt` 只接受字串；缺漏或錯誤型別回退為空字串或既定預設，`width` / `height` / `revision` 以 `Number()` 正規化。存入 session 與傳給 `onMessage` 的必須是正規化後的值。本機送出端沿用同一不變式；前端渲染仍須對壞資料容錯，不得假設協定永遠合法。
+- **遠端訊息歷史必須有位元組預算**：`appendSessionMessage()` 對 incoming / outgoing 訊息累加所有頂層字串欄位的 UTF-8 位元組，並在超過 120 筆或 32 MiB 時從最舊訊息淘汰；詳見 §7.4。畫面分享的 base64 歷史不得只靠訊息筆數限制而無上限留在記憶體。
 
 ### 7.3 會話管理與代理 (Session & Model Proxy)
 - **多對話 (Multi-session)**：支援本機與遠端對話歷史分頁，以及獨立的 Pending (Thinking) 列。
@@ -499,6 +501,7 @@ $true
 - **失敗必須回報且不得假裝成功**：`POST /api/remote/profile` 與 `POST /api/remote/session/:id/respond` 失敗時，前端要寫出錯誤日誌（`remote.profileSaveFailed` / `remote.respondFailed`）。回應邀請失敗後必須把 `lastRemoteStateTick` 歸零再抓一次完整狀態：仍有效的邀請會重新彈出，已逾時的邀請由 `renderRemotePopup()` 收起視窗。不得在失敗時直接關閉邀請視窗。
 - **JSON Lines 必須保留 raw Buffer 並增量掃描**：socket 不得用 `setEncoding('utf8')` 提前解碼；每個 `data` 事件只掃描新進位元組的 LF（`0x0a`），未完成訊框以可擴充 Buffer 累積，完整訊框才轉為 UTF-8 字串並 `JSON.parse()`。不得對整條未完成訊框反覆 `Buffer.byteLength()` 或 `split()`；跨封包 split 的 UTF-8 字元必須能正確重組。
 - **16 MiB 上限是逐訊框且不含換行**：單一訊框（LF 前）最多 16 MiB；超過即回報 `Remote frame exceeded the 16 MiB limit.`、釋放緩衝並 destroy socket。一個 `data` 事件含多筆小訊框時不得因 aggregate 超過 16 MiB 而拒絕。剛好 16 MiB 必須接受，多 1 byte 必須拒絕；CRLF 的 CR 屬訊框內容但可由 `trim()` 去除。壞 JSON 只回報 `Remote payload parse failed`，不得中斷後續訊框。訊框完成或 socket close 時要縮回／釋放多餘緩衝容量。
+- **session 訊息歷史同時受數量與位元組上限約束**：每個 session 最多保留 120 則訊息，且所有保留訊息頂層字串欄位的 UTF-8 位元組總和不得超過 32 MiB（`MAX_SESSION_MESSAGE_BYTES`）。 incoming 與 outgoing 都必須經過同一個 `appendSessionMessage()`；新增後超出任一上限時，從最舊訊息開始淘汰，直到兩項限制都滿足。`messageBytes` 必須隨新增與淘汰精確增減，不能只限制單張圖片或只依賴 120 筆數量上限。
 - **連線生命週期必須貫穿硬體探測**：remote AI 的 190 秒逾時或 session 斷線會 abort 共用探測中屬於該請求的訂閱；若仍有 UI 或其他訂閱者，底層探測必須繼續。取消後不得再啟動硬體 fallback 或把取消記成一般外掛錯誤。
 
 ## 8. 2026.04.10 已修復問題 (Runtime Fixes)

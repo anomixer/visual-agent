@@ -3843,12 +3843,28 @@ app.post('/api/execute/:taskId', async (req, res) => {
 
 
     // Start execution
+    const previousTaskState = {
+        status: task.status,
+        progress: task.progress,
+        logs: task.logs,
+        completedAt: task.completedAt,
+    };
+    const previousRunningSOP = runningSOP;
     task.status = 'running';
     task.progress = 10;
     task.logs = [];
     runningSOP = task.id;
     clearRunLog();
-    saveTasks();
+    try {
+        saveTasks();
+    } catch (err) {
+        task.status = previousTaskState.status;
+        task.progress = previousTaskState.progress;
+        task.logs = previousTaskState.logs;
+        task.completedAt = previousTaskState.completedAt;
+        runningSOP = previousRunningSOP;
+        throw err;
+    }
     const dryRun = req.body.dryRun ?? false;
     const executor = new SOPExecutor({ dryRun });
     executor.on('log', (event) => {

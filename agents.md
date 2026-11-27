@@ -5,6 +5,49 @@
 
 ---
 
+## 2026.11.27 — 第五十階段：任務啟動存檔失敗可重試，遠端訊息歷史加入位元組預算
+
+> 接續同日第四十九階段；本輪處理背景稽核確認的兩項高風險缺陷。版本維持 `2026.8.7`。
+
+### 症狀一：任務第一次存檔失敗後永久卡在 running
+- `POST /api/execute/:taskId` 先把任務改成 `running`、清空 `logs` 並設定 `runningSOP`，再呼叫第一次 `saveTasks()`。
+- 若磁碟滿、檔案被鎖住或 rename 失敗，API 雖由全域錯誤出口回 500 JSON，但記憶體中的任務仍是 `running`、舊 logs 已消失、`runningSOP` 也仍被佔用。
+- 此時 executor 尚未啟動，任務不會自己結束；使用者無法重試、刪除或整批匯入，只能重啟程式。
+
+### 修正一：啟動狀態完整回滾
+- 在修改任務前快照 `status`、`progress`、`logs` 與 `completedAt`，另外保存原本的 `runningSOP`。
+- 第一次 `saveTasks()` 拋錯時逐欄還原並 rethrow；原本的 logs 陣列因為是被替換而非就地清空，仍可完整恢復。
+- 儲存恢復後同一任務可立即重試，不需要先重啟或手動編輯 `tasks.json`。
+
+### 症狀二：遠端圖片歷史只有筆數上限
+- `RemoteAgentService` 原本只限制每個 session 120 則訊息；四張 8 MiB 的畫面分享會全部留在記憶體，連續傳圖仍可持續成長。
+- 16 MiB 的逐訊框上限只限制單一封包，不能限制整個 session 的歷史累積。
+
+### 修正二：120 筆與 32 MiB 雙重限制
+- 新增 `MAX_SESSION_MESSAGE_BYTES`（32 MiB）與 `remoteMessageStringBytes()`，計算訊息所有頂層字串欄位的 UTF-8 位元組。
+- incoming 與 outgoing session 都新增 `messageBytes`，所有訊息統一經過 `appendSessionMessage()`；新增後只要超出 120 筆或 32 MiB，就從最舊訊息開始淘汰，直到兩項限制都滿足。
+- 淘汰時同步減去被移除訊息的位元組數，避免長期漂移；`toClientSession()` 沿用同一個 120 筆常數。
+
+### 測試與驗收
+- `test/todo-save-failure.test.js` 由 9 項增為 10 項：以真實 HTTP + 隔離 harness 注入第一次任務存檔失敗，確認回 500 JSON、`runningSOP` 釋放、狀態／進度／logs／完成時間全部還原；恢復寫入後同一任務可立即執行至 success。
+- 新增 `test/remote-message-budget.test.js`（3 項）：incoming 與 outgoing 圖片歷史都會在位元組超限時淘汰最舊訊息，且 `getState()` 只回傳保留項目；130 則文字訊息仍受 120 筆限制，並以含繁體中文與 emoji 的訊息確認 UTF-8 位元組帳目精確。
+- 既有 `test/remote-agent.test.js` 20 項維持通過；三個相關測試檔合計 14 項 Node 測試全綠（remote-agent 另有自身的 20 項檢查）。
+- 2 個突變探針都被攔下：移除任務啟動回滾會使 `runningSOP` 仍卡在該任務；移除遠端位元組淘汰條件會使 incoming／outgoing 圖片歷史測試失敗。探針後 production 檔案均還原。
+- `npm test`：27 個 JS 語法、**67 支測試檔**與 server smoke 全綠。
+- 未做雙機或瀏覽器實機驗收；本輪使用真實 HTTP harness、真實 `RemoteAgentService` 與 fake socket，未執行 PowerShell、外掛、安裝或提權。
+
+### 尚未完成
+- 遠端 AI 佇列仍無深度上限，enqueue 時也未檢查 request deadline。
+- 本機遠端聊天的 Stop 尚未完整取消其 local-AI 工作。
+- 任務匯入仍未驗證所有會被消費的欄位型別，尤其是 `title`。
+- `tokenizeForMatch()` 仍無 CJK 斷詞；modal async race 與診斷視窗語系即時重繪仍待處理。
+- Browser 輪詢即使畫面未變仍會實際截圖，只省下 base64 重送。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權、未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.27 — 第四十九階段：已開啟的任務與經驗詳情隨語系立即重繪
 
 > 接續同日第四十八階段；本輪修正第二十九階段留下的已知限制：切換語系時，已開啟的任務或經驗詳情仍停在舊語言，必須關閉重開。版本維持 `2026.8.7`。

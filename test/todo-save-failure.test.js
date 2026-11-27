@@ -3,9 +3,15 @@
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const path = require('node:path');
-const { once } = require('node:events');
+const { once, EventEmitter } = require('node:events');
 const { test } = require('node:test');
 const { createChatHarness } = require('./helpers/chat-harness');
+
+class SuccessfulExecutor extends EventEmitter {
+    async execute() {
+        return { status: 'success' };
+    }
+}
 
 function request(port, method, route, { token, body } = {}) {
     const payload = body === undefined ? '' : (typeof body === 'string' ? body : JSON.stringify(body));
@@ -34,8 +40,8 @@ function request(port, method, route, { token, body } = {}) {
     });
 }
 
-async function startHarness(t) {
-    const harness = createChatHarness();
+async function startHarness(t, options = {}) {
+    const harness = createChatHarness(options);
     const server = harness.app.listen(0, '127.0.0.1');
     t.after(async () => {
         try {
@@ -217,4 +223,55 @@ test('a non-string model name is rejected instead of being persisted', async (t)
         assert.equal(res.body.success, false);
         assert.equal(res.body.error, 'Missing modelName');
     }
+});
+
+async function waitForTaskStatus(port, token, taskId, expected) {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        const res = await request(port, 'GET', `/api/task/${taskId}/status`, { token });
+        assert.equal(res.body?.success, true);
+        if (res.body.task?.status === expected) return res.body.task;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.fail(`task ${taskId} did not reach ${expected}`);
+}
+
+test('a failed execution start rolls back the running state and allows an immediate retry', async (t) => {
+    const { harness, port, token } = await startHarness(t, { executor: SuccessfulExecutor });
+    harness.setReplies(['Synthetic experience summary.']);
+    const task = {
+        ...TASK,
+        id: 'execute-save-failure-fixture',
+        skillId: harness.fixtures[0].id,
+        completedAt: '2026-11-12T00:00:00.000Z',
+        logs: [{ level: 'info', message: 'before execution', timestamp: '2026-11-12T00:00:00.000Z' }],
+    };
+    harness.setTasks([task]);
+    failTaskWrites(harness);
+
+    const failed = await request(port, 'POST', `/api/execute/${task.id}`, {
+        token,
+        body: { dryRun: true },
+    });
+    assertJsonFailure(failed, 'POST /api/execute/:taskId');
+
+    const stateAfterFailure = harness.getState();
+    assert.equal(stateAfterFailure.runningSOP, null, 'a failed start must release the global running lock');
+    assert.equal(stateAfterFailure.todoList[0].status, 'pending', 'the task must return to its previous status');
+    assert.equal(stateAfterFailure.todoList[0].progress, 0, 'the task must restore its previous progress');
+    assert.equal(stateAfterFailure.todoList[0].completedAt, task.completedAt, 'the task must restore its previous completion time');
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(stateAfterFailure.todoList[0].logs)),
+        task.logs,
+        'the task must restore its previous logs',
+    );
+
+    harness.failWrites(null);
+    const retried = await request(port, 'POST', `/api/execute/${task.id}`, {
+        token,
+        body: { dryRun: true },
+    });
+    assert.equal(retried.body?.success, true, 'the same task must be executable after storage recovers');
+    const completed = await waitForTaskStatus(port, token, task.id, 'success');
+    assert.equal(completed.progress, 100);
+    assert.equal(harness.getState().runningSOP, null);
 });

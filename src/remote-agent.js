@@ -9,6 +9,7 @@ const REJECT_BAN_COUNT = 3;
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 const MAX_PENDING_WRITE_BYTES = 16 * 1024 * 1024;
 const MAX_SESSION_MESSAGES = 120;
+const MAX_SESSION_MESSAGE_BYTES = 32 * 1024 * 1024;
 const MAX_SESSIONS = 32;
 const MAX_TERMINAL_SESSIONS = 32;
 const MAX_SESSION_ID_LENGTH = 128;
@@ -31,6 +32,14 @@ function normalizeIp(value = '') {
 
 function normalizeRemoteString(value) {
     return typeof value === 'string' ? value : '';
+}
+
+function remoteMessageStringBytes(message) {
+    let bytes = 0;
+    for (const value of Object.values(message)) {
+        if (typeof value === 'string') bytes += Buffer.byteLength(value, 'utf8');
+    }
+    return bytes;
 }
 
 function getLocalIPv4List() {
@@ -430,6 +439,7 @@ class RemoteAgentService {
             modelShare: buildIdleModelShare(),
             aiStatus: buildIdleAiStatus(),
             messages: [],
+            messageBytes: 0,
         };
         this.sessions.set(sessionId, session);
         this.socketToSessionId.set(socket, sessionId);
@@ -478,6 +488,7 @@ class RemoteAgentService {
                     modelShare: buildIdleModelShare(),
                     aiStatus: buildIdleAiStatus(),
                     messages: [],
+                    messageBytes: 0,
                 };
                 this.sessions.set(sessionId, session);
                 this.socketToSessionId.set(socket, sessionId);
@@ -793,8 +804,13 @@ class RemoteAgentService {
 
     appendSessionMessage(session, message) {
         session.messages.push(message);
-        if (session.messages.length > MAX_SESSION_MESSAGES) {
-            session.messages.splice(0, session.messages.length - MAX_SESSION_MESSAGES);
+        session.messageBytes += remoteMessageStringBytes(message);
+        while (
+            session.messages.length > MAX_SESSION_MESSAGES
+            || session.messageBytes > MAX_SESSION_MESSAGE_BYTES
+        ) {
+            const removed = session.messages.shift();
+            session.messageBytes -= remoteMessageStringBytes(removed);
         }
     }
 
@@ -862,13 +878,14 @@ class RemoteAgentService {
             capabilities: session.capabilities || { modelShareEnabled: false },
             modelShare: session.modelShare || { status: 'idle' },
             aiStatus: session.aiStatus || buildIdleAiStatus(),
-            messages: session.messages.slice(-120),
+            messages: session.messages.slice(-MAX_SESSION_MESSAGES),
         };
     }
 }
 
 module.exports = {
     DEFAULT_REMOTE_PORT: DEFAULT_PORT,
+    MAX_SESSION_MESSAGE_BYTES,
     RemoteAgentService,
     getLocalIPv4List,
 };
