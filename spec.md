@@ -335,6 +335,7 @@ $true
 - [x] `remote-profile.json` 改用 temp-write + rename（2026.11.25 第四十二階段：同目錄 `remote-profile.json.<pid>.tmp` → `renameSync`，失敗只清自己的暫存檔並 rethrow；`loadRemoteProfile()` 的首次寫入 fallback 不變）。
 - [x] 遠端 session 名額只計未結束的連線、terminal session 有上限、`connect()` 有逾時、`hello_cancel` / `hello_timeout` 會關閉 socket（2026.11.25 第四十二階段：`liveSessionCount()`、`MAX_TERMINAL_SESSIONS` + `pruneTerminalSessions()`、`connectTimeoutMs`、`test/remote-agent.test.js` 再補 6 項）。
 - [x] 遠端身份儲存與連線邀請回應失敗會顯示原因，不再靜默（2026.11.25 第四十二階段：`remote.profileSaveFailed` / `remote.respondFailed` 雙語鍵、回應失敗時重置 `lastRemoteStateTick` 取回完整狀態、`test/remote-profile-ui-errors.test.js`）。
+- [x] 遠端 JSON Lines 收訊改為增量位元組掃描，限制改為逐訊框 16 MiB（2026.11.27 第四十三階段：保留 raw Buffer、只掃描新進位元組、每個訊框解碼一次、換行不計入上限、大訊框完成後釋放多餘容量；`test/remote-frame.test.js` 8 項回歸）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -486,6 +487,8 @@ $true
 - **`disconnect`、`hello_cancel`、`hello_timeout` 都必須結束 socket**：只改 session 狀態、不關閉連線會讓半開的 TCP 一直存活（自製用戶端或卡住的 peer 不會自己 FIN）。關閉後 `close` 事件因狀態已非 `active` 不會重複標記。
 - **發起端必須有連線逾時**：`connect()` 預設 10 秒（建構子 `connectTimeoutMs` 可注入）未完成 `connect` 即 destroy socket 並 reject，避免 UI 卡在「連線中」且測試無法結束。
 - **失敗必須回報且不得假裝成功**：`POST /api/remote/profile` 與 `POST /api/remote/session/:id/respond` 失敗時，前端要寫出錯誤日誌（`remote.profileSaveFailed` / `remote.respondFailed`）。回應邀請失敗後必須把 `lastRemoteStateTick` 歸零再抓一次完整狀態：仍有效的邀請會重新彈出，已逾時的邀請由 `renderRemotePopup()` 收起視窗。不得在失敗時直接關閉邀請視窗。
+- **JSON Lines 必須保留 raw Buffer 並增量掃描**：socket 不得用 `setEncoding('utf8')` 提前解碼；每個 `data` 事件只掃描新進位元組的 LF（`0x0a`），未完成訊框以可擴充 Buffer 累積，完整訊框才轉為 UTF-8 字串並 `JSON.parse()`。不得對整條未完成訊框反覆 `Buffer.byteLength()` 或 `split()`；跨封包 split 的 UTF-8 字元必須能正確重組。
+- **16 MiB 上限是逐訊框且不含換行**：單一訊框（LF 前）最多 16 MiB；超過即回報 `Remote frame exceeded the 16 MiB limit.`、釋放緩衝並 destroy socket。一個 `data` 事件含多筆小訊框時不得因 aggregate 超過 16 MiB 而拒絕。剛好 16 MiB 必須接受，多 1 byte 必須拒絕；CRLF 的 CR 屬訊框內容但可由 `trim()` 去除。壞 JSON 只回報 `Remote payload parse failed`，不得中斷後續訊框。訊框完成或 socket close 時要縮回／釋放多餘緩衝容量。
 
 ## 8. 2026.04.10 已修復問題 (Runtime Fixes)
 
@@ -769,7 +772,7 @@ $true
 
 ### 16.2 遠端驗收基準 (Remote Validation Checklist)
 
-在驗證遠端協作變更時，必須執行並通過以下五種典型情境流程：
+在驗證遠端協作變更時，必須執行並通過以下六種典型情境流程：
 
 1. **`SUGGEST` 流程**：
    - **預期結果**：遠端訊息能正確渲染出真實按鈕，按鈕在 polling 時不會閃爍；點擊後能建立或沿用任務，且 UI 執行日誌顯示 `Suggestion clicked`。
@@ -781,6 +784,8 @@ $true
    - **預期結果**：`disconnect` / `hello_cancel` / `hello_timeout` 後本機在數十毫秒內收到 FIN、session 狀態為 terminal 且 socket `destroyed: true`；非字串或超長 `sessionId` 收到 `hello_reject` 且不留在 `sessions`；連到不可達位址的 `connect()` 在 10 秒內以 `timed out` 失敗；terminal session 累積超過 32 筆時最舊者被淘汰、`liveSessionCount()` 不受影響。
 5. **失敗回饋流程**：
    - **預期結果**：`remote-profile.json` 或邀請回應寫入失敗時，工作日誌出現對應語系的錯誤訊息；邀請回應失敗且邀請仍有效時視窗維持開啟、`pendingRemoteRequestId` 不被清空；邀請已失效時視窗收起。兩者都不會在畫面上留下「已儲存 / 已接受」的假象。
+6. **訊框分段流程**（raw TCP 用戶端，同一 process 內即可）：
+   - **預期結果**：CRLF、空行與跨封包 split 的 UTF-8 emoji 正確重組；壞 JSON 後仍能解析下一筆；單次 `data` 含 17 筆各約 1 MiB 的訊框全部接受；剛好 16 MiB 的訊框接受、多 1 byte 即 destroy；16 MiB 未完成訊框以 256 個 64 KiB chunk 送入時沒有全量 `Buffer.byteLength()` 重算。
 
 ### 16.3 其他診斷機制
 

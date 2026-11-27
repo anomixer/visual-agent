@@ -5,6 +5,45 @@
 
 ---
 
+## 📌 2026.11.27 — 第四十三階段：遠端訊框改成增量位元組掃描，16 MiB 上限改為逐訊框
+
+> 接續 2026.11.25 第四十二階段；本輪處理日誌保留的遠端訊框累積限制。版本維持 `2026.8.7`。
+
+### 症狀一：未完成訊框每次 data 事件都被整條重算與重切
+- `handleSocketData()` 原本把 chunk 追加到字串，先對整條未完成訊框呼叫 `Buffer.byteLength()`，再 `split('\n')`；一封 16 MiB、無換行的訊框若分成 256 個 64 KiB chunk，就會做 256 次全量測量與 256 次全量切分。
+- 實測舊實作在單一 16 MiB 未完成訊框上耗時 **1,322.8 ms**、`Buffer.byteLength()` **256 次**；累積掃描量約 2 GiB。同網段的 peer 只要慢慢送大訊框，就能放大本機 CPU。
+
+### 症狀二：提前解碼與 aggregate 限制造成協定邊界錯誤
+- `attachSocketHandlers()` 使用 `setEncoding('utf8')`，但 `handleSocketData()` 又把每個已解碼 chunk 追加成字串；實作改走 raw Buffer 後若仍逐 chunk 解碼，跨 TCP 封包的 emoji 會變成替換字元。
+- 舊限制在 split 之前檢查整個 data event，所以一次包含 17 筆各約 1 MiB 的合法小訊框會因 aggregate 超過 16 MiB 被整批拒絕。
+- 舊限制把 LF 也算進 16 MiB，導致剛好 16 MiB 的訊框在補上換行後被拒。
+
+### 修正
+- `src/remote-agent.js`：
+  - `attachSocketHandlers()` 不再 `setEncoding()`，改保留 raw Buffer；socket close 時釋放訊框緩衝。
+  - 以可擴充 Buffer 累積未完成訊框，容量採幾何成長；每個 `data` 事件只掃描新進位元組的 LF（`0x0a`），完整訊框才轉 UTF-8 字串並 `JSON.parse()`，不再對未完訊框反覆測量或 split。
+  - 16 MiB 上限改為**逐訊框**且不含 LF：剛好 16 MiB 接受，多 1 byte 即回報、釋放緩衝並 destroy；單一 data event 可含多筆小訊框。
+  - 壞 JSON 仍只回報 `Remote payload parse failed`，不中斷後續訊框。
+  - 訊框完成後若只剩很短尾段，或已無尾段，會縮回／釋放多餘容量，避免每條連線長期保留 16 MiB Buffer。
+
+### 測試與驗收
+- 新增 `test/remote-frame.test.js`（8 項，真實 `RemoteAgentService`）：CRLF／空行／跨 raw byte chunk 的 emoji、未完尾段與字串 chunk、17 筆小訊框 aggregate 超限仍全收、剛好 16 MiB 與多 1 byte、128 次增量寫入沒有全量 `Buffer.byteLength()`、壞 JSON 後續解析、大緩衝縮減且保留尾段、socket 不提前解碼。
+- 7 個突變探針全部被攔下，分別由 **2 / 1 / 1 / 1 / 1 / 1 / 1** 項測試抓到：改回 aggregate 限制、逐 chunk 解碼 UTF-8、把 LF 計入上限、移除緩衝縮減、恢復 `setEncoding('utf8')`、每次重算未完訊框、上限改成 `>=`。探針後 `src/remote-agent.js` 還原為位元組相同。
+- 同一 16 MiB／256 chunk 基準探針：**1,322.8 ms → 30.65 ms**、`Buffer.byteLength()` **256 → 0**、`destroyed:false`、無 error。
+- 真實 loopback TCP：將 emoji 切成三個時間分隔的寫入，收到 `繁體中文 🙂`；插入壞 JSON 後仍解析下一則，client 保持連線。
+- `npm test`：25 個 JS 語法、**59 支測試檔**與 server smoke 全綠。
+- 最終 md5：`src/remote-agent.js` `e5dad96a44aee1127260f3d469d34ca2`、`test/remote-frame.test.js` `9a45291dd18a6498077d32271adc5d97`。
+
+### 尚未完成
+- 未做雙機實機驗收；本輪為假 socket、真實 loopback TCP 與完整自動化測試，尚未涵蓋防火牆、IPv6、斷線重連與雙機 Chalkboard revision。
+- 遠端 AI 回覆逾時仍不會取消已在途的 LLM 請求（既有問題）。
+- `SIGKILL` 後留下的 `config.json.<pid>.tmp` / `remote-profile.json.<pid>.tmp` 沒有啟動時清理機制。
+- `task.logs` 保留政策未觸碰，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權，未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.25 — 第四十二階段：遠端名額只算活著的連線，連線與邀請失敗不再靜默
 
 > 接續同日第四十一階段；第四十一階段留下「`MAX_SESSIONS` 把 terminal session 也算進去、逾時後不移除」與「`connect()` 沒有逾時」，本輪一併處理，並把 `remote-profile.json` 與兩個前端失敗路徑補齊。版本維持 `2026.8.7`。

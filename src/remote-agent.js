@@ -98,8 +98,7 @@ class RemoteAgentService {
     }
 
     attachSocketHandlers(socket) {
-        socket.setEncoding('utf8');
-        socket._remoteAgentBuffer = '';
+        this.resetRemoteFrameBuffer(socket);
         socket.on('data', (chunk) => this.handleSocketData(socket, chunk));
         socket.on('error', (error) => {
             const session = this.getSessionBySocket(socket);
@@ -110,6 +109,7 @@ class RemoteAgentService {
             this.onError(error);
         });
         socket.on('close', () => {
+            this.resetRemoteFrameBuffer(socket);
             const session = this.getSessionBySocket(socket);
             if (session && session.status !== 'rejected' && session.status !== 'disconnected') {
                 this.markDisconnected(session, 'socket_closed');
@@ -117,26 +117,79 @@ class RemoteAgentService {
         });
     }
 
-    handleSocketData(socket, chunk) {
-        socket._remoteAgentBuffer += chunk;
-        if (Buffer.byteLength(socket._remoteAgentBuffer, 'utf8') > MAX_FRAME_BYTES) {
-            socket._remoteAgentBuffer = '';
-            this.onError(new Error('Remote frame exceeded the 16 MiB limit.'));
-            socket.destroy();
+    resetRemoteFrameBuffer(socket) {
+        socket._remoteAgentBuffer = Buffer.alloc(0);
+        socket._remoteAgentBufferLength = 0;
+    }
+
+    appendRemoteFrameBytes(socket, segment) {
+        const length = socket._remoteAgentBufferLength;
+        const required = length + segment.length;
+        if (required > MAX_FRAME_BYTES) return false;
+        let buffer = socket._remoteAgentBuffer;
+        if (buffer.length < required) {
+            const capacity = Math.min(MAX_FRAME_BYTES, Math.max(required, buffer.length ? buffer.length * 2 : 4096));
+            const grown = Buffer.allocUnsafe(capacity);
+            if (length) buffer.copy(grown, 0, 0, length);
+            socket._remoteAgentBuffer = grown;
+            buffer = grown;
+        }
+        segment.copy(buffer, length);
+        socket._remoteAgentBufferLength = required;
+        return true;
+    }
+
+    rejectRemoteFrame(socket) {
+        this.resetRemoteFrameBuffer(socket);
+        this.onError(new Error('Remote frame exceeded the 16 MiB limit.'));
+        socket.destroy();
+    }
+
+    shrinkRemoteFrameBuffer(socket) {
+        const length = socket._remoteAgentBufferLength;
+        if (length === 0) {
+            this.resetRemoteFrameBuffer(socket);
             return;
         }
-        const parts = socket._remoteAgentBuffer.split('\n');
-        socket._remoteAgentBuffer = parts.pop();
-        parts.forEach((line) => {
-            const trimmed = line.trim();
-            if (!trimmed) return;
-            try {
-                const payload = JSON.parse(trimmed);
-                this.handlePayload(socket, payload);
-            } catch (error) {
-                this.onError(new Error(`Remote payload parse failed: ${error.message}`));
+        const buffer = socket._remoteAgentBuffer;
+        if (buffer.length <= Math.max(4096, length * 2)) return;
+        const capacity = Math.min(MAX_FRAME_BYTES, Math.max(4096, length * 2));
+        const shrunk = Buffer.allocUnsafe(capacity);
+        buffer.copy(shrunk, 0, 0, length);
+        socket._remoteAgentBuffer = shrunk;
+    }
+
+    processRemoteFrame(socket) {
+        const frame = socket._remoteAgentBuffer.subarray(0, socket._remoteAgentBufferLength);
+        socket._remoteAgentBufferLength = 0;
+        const trimmed = frame.toString('utf8').trim();
+        if (!trimmed) return;
+        try {
+            const payload = JSON.parse(trimmed);
+            this.handlePayload(socket, payload);
+        } catch (error) {
+            this.onError(new Error(`Remote payload parse failed: ${error.message}`));
+        }
+    }
+
+    handleSocketData(socket, chunk) {
+        if (!Buffer.isBuffer(socket._remoteAgentBuffer)) this.resetRemoteFrameBuffer(socket);
+        const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8');
+        let start = 0;
+        for (let index = 0; index < data.length; index += 1) {
+            if (data[index] !== 0x0a) continue;
+            if (!this.appendRemoteFrameBytes(socket, data.subarray(start, index))) {
+                this.rejectRemoteFrame(socket);
+                return;
             }
-        });
+            this.processRemoteFrame(socket);
+            start = index + 1;
+        }
+        if (!this.appendRemoteFrameBytes(socket, data.subarray(start))) {
+            this.rejectRemoteFrame(socket);
+            return;
+        }
+        this.shrinkRemoteFrameBuffer(socket);
     }
 
     handlePayload(socket, payload) {
