@@ -73,8 +73,10 @@ const app = express();
 const PORT = 3210;
 const APP_VERSION = pkg.version || 'dev';
 const REMOTE_AI_REPLY_TIMEOUT_MS = 190000;
+const REMOTE_AI_REPLY_MAX_QUEUE = 4;
 const remoteAiReplyQueue = createRemoteAiQueue({
     timeoutMs: REMOTE_AI_REPLY_TIMEOUT_MS,
+    maxPending: REMOTE_AI_REPLY_MAX_QUEUE,
     timeoutMessage: 'Remote AI reply timed out before completion.',
 });
 const localApiSecurity = createLocalApiSecurity();
@@ -309,6 +311,7 @@ function handleRemoteAiReplyFailure(sessionId, error) {
         );
     } catch {}
     try {
+        if (remoteAiReplyQueue.isBusy(sessionId)) return;
         const profile = getRemoteProfile();
         remoteAgent.sendAiStatus(sessionId, { status: 'idle', senderLabel: profile.agentName });
     } catch {}

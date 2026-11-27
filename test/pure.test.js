@@ -167,32 +167,66 @@ eq('reconcile 多筆中斷', pure.reconcileInterruptedTasks([{ status: 'running'
 eq('reconcile 無 logs 欄位也能補', pure.reconcileInterruptedTasks([{ status: 'running' }]).tasks[0].logs.length, 1);
 eq('reconcile 非陣列輸入回空', pure.reconcileInterruptedTasks(null), { tasks: [], interrupted: 0 });
 
-// 匯入檔是使用者提供的任意 JSON，整份取代 todoList 後會落地；
+// 匯入檔是使用者提供的任意 JSON，整份取代 todoList 後會直接落地；
 // 不良元素會讓清單回應在每次輪詢都拋錯，且重啟也救不回來，因此必須整批拒絕。
-const importFixture = [{ id: 'a', status: 'pending', logs: [] }, { id: 'b', status: 'success', logs: [] }];
+const importFixture = [
+    { id: 'a', title: 'A', status: 'pending', logs: [] },
+    { id: 'b', title: 'B', status: 'success', logs: [] },
+];
 eq('validate 合法清單原樣通過', pure.validateImportedTasks(importFixture), { tasks: importFixture });
 eq('validate 空陣列合法', pure.validateImportedTasks([]), { tasks: [] });
 check('validate 非陣列回 Invalid format', /Invalid format/.test(pure.validateImportedTasks({}).error));
 check('validate 非陣列 undefined 回 Invalid format', /Invalid format/.test(pure.validateImportedTasks(undefined).error));
-check('validate null 元素被拒', /tasks\[1\]/.test(pure.validateImportedTasks([{ id: 'a' }, null]).error));
+check('validate null 元素被拒', /tasks\[1\]/.test(pure.validateImportedTasks([{ id: 'a', title: 'A' }, null]).error));
 check('validate 字串元素被拒', /expected an object/.test(pure.validateImportedTasks(['oops']).error));
 check('validate 陣列元素被拒', /expected an object/.test(pure.validateImportedTasks([[]]).error));
 check('validate 缺 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ title: 'no id' }]).error));
-check('validate 空白 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ id: '   ' }]).error));
-check('validate 非字串 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ id: 7 }]).error));
-check('validate 重複 id 被拒', /Duplicate task id: a/.test(pure.validateImportedTasks([{ id: 'a' }, { id: 'a' }]).error));
-check('validate logs 非陣列被拒', /logs must be an array/.test(pure.validateImportedTasks([{ id: 'a', logs: 'broken' }]).error));
+check('validate 空白 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ id: '   ', title: 'A' }]).error));
+check('validate 非字串 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ id: 7, title: 'A' }]).error));
+check('validate 重複 id 被拒', /Duplicate task id: a/.test(pure.validateImportedTasks([{ id: 'a', title: 'A' }, { id: 'a', title: 'B' }]).error));
+check('validate 缺 title 被拒', /title must be a non-empty string/.test(pure.validateImportedTasks([{ id: 'a' }]).error));
+check('validate 空白 title 被拒', /title must be a non-empty string/.test(pure.validateImportedTasks([{ id: 'a', title: '   ' }]).error));
+for (const [label, title] of [['null', null], ['number', 42], ['boolean', true], ['object', { nested: true }], ['array', []]]) {
+    check(`validate ${label} title 被拒`, /title must be a non-empty string/.test(pure.validateImportedTasks([{ id: 'a', title }]).error));
+}
+for (const field of ['description', 'skillId', 'category', 'dynamicCmd']) {
+    check(`validate 非字串 ${field} 被拒`, new RegExp(`${field} must be a string or null`).test(
+        pure.validateImportedTasks([{ id: 'a', title: 'A', [field]: { nested: true } }]).error
+    ));
+}
+check('validate 未知 action 被拒', /action must be install or uninstall/.test(
+    pure.validateImportedTasks([{ id: 'a', title: 'A', action: 'remove' }]).error
+));
+for (const [label, progress] of [['string', '50'], ['null', null], ['negative', -1], ['too large', 101], ['infinite', Infinity], ['NaN', NaN]]) {
+    check(`validate ${label} progress 被拒`, /progress must be a number between 0 and 100/.test(
+        pure.validateImportedTasks([{ id: 'a', title: 'A', progress }]).error
+    ));
+}
+for (const field of ['createdAt', 'completedAt']) {
+    check(`validate 非字串 ${field} 被拒`, new RegExp(`${field} must be an ISO date string or null`).test(
+        pure.validateImportedTasks([{ id: 'a', title: 'A', [field]: 42 }]).error
+    ));
+    check(`validate 無效 ${field} 被拒`, new RegExp(`${field} must be an ISO date string or null`).test(
+        pure.validateImportedTasks([{ id: 'a', title: 'A', [field]: 'not-a-date' }]).error
+    ));
+}
+check('validate logs 非陣列被拒', /logs must be an array/.test(pure.validateImportedTasks([{ id: 'a', title: 'A', logs: 'broken' }]).error));
 for (const [label, entry] of [['null', null], ['undefined', undefined], ['number', 42], ['boolean', true], ['array', []]]) {
     check(`validate logs 內的 ${label} 條目被拒並指出索引`,
-        new RegExp(`tasks\\[0\\]: logs\\[1\\] must be an object or string`).test(pure.validateImportedTasks([{ id: 'a', logs: [{ level: 'info' }, entry] }]).error));
+        new RegExp(`tasks\\[0\\]: logs\\[1\\] must be an object or string`).test(pure.validateImportedTasks([{ id: 'a', title: 'A', logs: [{ level: 'info' }, entry] }]).error));
 }
 eq('validate 舊版字串 log 與物件 log 都合法',
-    pure.validateImportedTasks([{ id: 'a', logs: ['legacy line', { level: 'warn', message: 'kept' }] }]).tasks[0].logs.length,
+    pure.validateImportedTasks([{ id: 'a', title: 'A', logs: ['legacy line', { level: 'warn', message: 'kept' }] }]).tasks[0].logs.length,
     2);
-check('validate 未知 status 被拒', /unknown status/.test(pure.validateImportedTasks([{ id: 'a', status: 'paused' }]).error));
-eq('validate 缺 logs 與 status 仍合法', pure.validateImportedTasks([{ id: 'a' }]), { tasks: [{ id: 'a' }] });
+check('validate 未知 status 被拒', /unknown status/.test(pure.validateImportedTasks([{ id: 'a', title: 'A', status: 'paused' }]).error));
+eq('validate 缺 logs、status 與其他選填欄位仍合法',
+    pure.validateImportedTasks([{ id: 'a', title: 'A' }]),
+    { tasks: [{ id: 'a', title: 'A' }] });
+eq('validate 可空選填欄位維持相容',
+    pure.validateImportedTasks([{ id: 'a', title: 'A', description: null, skillId: null, category: null, dynamicCmd: null, createdAt: null, completedAt: null }]).tasks.length,
+    1);
 eq('validate 五種已知 status 都合法',
-    pure.validateImportedTasks(['pending', 'running', 'success', 'failed', 'skipped'].map((status, i) => ({ id: `t${i}`, status }))).tasks.length,
+    pure.validateImportedTasks(['pending', 'running', 'success', 'failed', 'skipped'].map((status, i) => ({ id: `t${i}`, title: `Task ${i}`, status }))).tasks.length,
     5);
 eq('validate 不改動傳入的清單', importFixture.length, 2);
 

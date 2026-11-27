@@ -206,6 +206,54 @@ test('messages for other targets do not start remote AI work', async () => {
     }
 });
 
+test('caps a flooded session and keeps thinking status until queued work drains', async () => {
+    const harness = createChatHarness();
+    try {
+        harness.setRemoteSession(remoteSession());
+        let resolveFirst = null;
+        harness.setChatHook(() => {
+            if (harness.llmCalls.length === 1) {
+                return new Promise((resolve) => { resolveFirst = resolve; });
+            }
+            return undefined;
+        });
+        harness.setReplies(['first answer', 'second answer', 'third answer', 'fourth answer']);
+
+        const pending = [1, 2, 3, 4, 5].map((index) => harness.emitRemoteMessage(
+            'remote-ai-session',
+            remoteMessage(`question ${index}`),
+        ));
+        await waitFor(() => harness.llmCalls.length === 1, 'the first LLM call');
+        await tick();
+
+        const earlyMessages = harness.getRemoteMessages();
+        assert.equal(earlyMessages.filter((entry) => entry.method === 'sendSystemMessage').length, 1);
+        assert.match(
+            earlyMessages.find((entry) => entry.method === 'sendSystemMessage').payload.text,
+            /queue is full/i,
+        );
+        assert.equal(
+            earlyMessages.some((entry) => entry.method === 'sendAiStatus' && entry.payload.status === 'idle'),
+            false,
+            'a rejected overflow must not mark an active queue idle',
+        );
+
+        resolveFirst('first answer');
+        await withGuard(Promise.all(pending), 'all accepted remote replies to drain');
+        const messages = harness.getRemoteMessages();
+        assert.equal(harness.llmCalls.length, 4, 'only the accepted queue entries run');
+        assert.equal(messages.filter((entry) => entry.method === 'sendChatMessage').length, 4);
+        assert.equal(messages.filter((entry) => entry.method === 'sendSystemMessage').length, 1);
+        assert.deepEqual(
+            messages.filter((entry) => entry.method === 'sendAiStatus').at(-1).payload.status,
+            'idle',
+        );
+        harness.assertSafe();
+    } finally {
+        harness.dispose();
+    }
+});
+
 (async () => {
     try {
         for (const { run } of tests) await run();

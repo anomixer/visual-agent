@@ -347,10 +347,36 @@ function validateImportedTasks(tasks) {
         if (typeof task.id !== 'string' || !task.id.trim()) {
             return { error: `Invalid task at ${label}: missing a task id` };
         }
+        if (typeof task.title !== 'string' || !task.title.trim()) {
+            return { error: `Invalid task at ${label}: title must be a non-empty string` };
+        }
         if (seen.has(task.id)) {
             return { error: `Duplicate task id: ${task.id}` };
         }
         seen.add(task.id);
+        for (const field of ['description', 'skillId', 'category', 'dynamicCmd']) {
+            if (task[field] !== undefined && task[field] !== null && typeof task[field] !== 'string') {
+                return { error: `Invalid task at ${label}: ${field} must be a string or null` };
+            }
+        }
+        if (task.action !== undefined && !['install', 'uninstall'].includes(task.action)) {
+            return { error: `Invalid task at ${label}: action must be install or uninstall` };
+        }
+        if (task.progress !== undefined && (
+            typeof task.progress !== 'number'
+            || !Number.isFinite(task.progress)
+            || task.progress < 0
+            || task.progress > 100
+        )) {
+            return { error: `Invalid task at ${label}: progress must be a number between 0 and 100` };
+        }
+        for (const field of ['createdAt', 'completedAt']) {
+            if (task[field] !== undefined && task[field] !== null && (
+                typeof task[field] !== 'string' || Number.isNaN(Date.parse(task[field]))
+            )) {
+                return { error: `Invalid task at ${label}: ${field} must be an ISO date string or null` };
+            }
+        }
         if (task.logs !== undefined) {
             if (!Array.isArray(task.logs)) {
                 return { error: `Invalid task at ${label}: logs must be an array` };

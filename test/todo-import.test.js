@@ -62,6 +62,8 @@ const IMPORTED_TASK = {
     logs: [],
     createdAt: '2026-10-29T00:00:00.000Z',
 };
+const TASK_WITHOUT_TITLE = { ...IMPORTED_TASK };
+delete TASK_WITHOUT_TITLE.title;
 
 test('import replaces the task list and returns it to the caller', async (t) => {
     const { harness, port, token } = await startHarness(t);
@@ -125,6 +127,14 @@ const MALFORMED_IMPORTS = [
     ['a string element', ['oops'], /expected an object/],
     ['an array element', [[]], /expected an object/],
     ['a task without an id', [{ title: 'no id' }], /missing a task id/],
+    ['a task without a title', [TASK_WITHOUT_TITLE], /title must be a non-empty string/],
+    ['a null title', [{ ...IMPORTED_TASK, title: null }], /title must be a non-empty string/],
+    ['an object title', [{ ...IMPORTED_TASK, title: { nested: true } }], /title must be a non-empty string/],
+    ['an object dynamic command', [{ ...IMPORTED_TASK, dynamicCmd: { nested: true } }], /dynamicCmd must be a string or null/],
+    ['an unknown action', [{ ...IMPORTED_TASK, action: 'remove' }], /action must be install or uninstall/],
+    ['a string progress', [{ ...IMPORTED_TASK, progress: '50' }], /progress must be a number between 0 and 100/],
+    ['an invalid creation date', [{ ...IMPORTED_TASK, createdAt: 'not-a-date' }], /createdAt must be an ISO date string or null/],
+    ['an object category', [{ ...IMPORTED_TASK, category: { nested: true } }], /category must be a string or null/],
     ['duplicate task ids', [IMPORTED_TASK, { ...IMPORTED_TASK }], /Duplicate task id/],
     ['logs that are not an array', [{ ...IMPORTED_TASK, logs: 'broken' }], /logs must be an array/],
     ['a null log entry', [{ ...IMPORTED_TASK, logs: [null] }], /logs\[0\] must be an object or string/],

@@ -93,7 +93,7 @@ test('aborts the active task when its reply times out', async () => {
     assert.match(receivedSignal.reason.message, /probe timeout/);
 });
 
-test('continues with queued work after a timeout and ignores the late result', async () => {
+test('continues with new work after a timeout and ignores the late result', async () => {
     const queue = createRemoteAiQueue({ timeoutMs: 20, timeoutMessage: 'probe timeout' });
     const lateGate = deferred();
     let lateSignal = null;
@@ -101,9 +101,9 @@ test('continues with queued work after a timeout and ignores the late result', a
         lateSignal = signal;
         return lateGate.promise;
     });
-    const second = queue.enqueue('session-a', () => 'next reply');
 
     await assert.rejects(first, /probe timeout/);
+    const second = queue.enqueue('session-a', () => 'next reply');
     assert.equal(await second, 'next reply');
     assert.equal(lateSignal.aborted, true);
     lateGate.resolve('stale reply');
@@ -197,6 +197,71 @@ test('a rejected task does not poison the session queue', async () => {
     const second = queue.enqueue('session-a', () => 'recovered');
     await assert.rejects(first, /boom/);
     assert.equal(await second, 'recovered');
+});
+
+test('caps pending work per session and rejects overflow without running it', async () => {
+    const queue = createRemoteAiQueue({ timeoutMs: 1000, maxPending: 2 });
+    const gate = deferred();
+    const started = [];
+    const first = queue.enqueue('session-a', async () => {
+        started.push('first');
+        await gate.promise;
+        return 'first';
+    });
+    const second = queue.enqueue('session-a', () => {
+        started.push('second');
+        return 'second';
+    });
+    const third = queue.enqueue('session-a', () => {
+        started.push('third');
+        return 'third';
+    });
+
+    try {
+        const outcome = await Promise.race([
+            third.then(() => 'resolved', (error) => error.message),
+            new Promise((resolve) => setTimeout(() => resolve('still pending'), 25)),
+        ]);
+        assert.match(outcome, /queue is full/i);
+        assert.deepEqual(started, ['first']);
+    } finally {
+        gate.resolve();
+        await Promise.allSettled([first, second, third]);
+    }
+    assert.deepEqual(started, ['first', 'second']);
+});
+
+test('reports busy until active and queued work settles', async () => {
+    const queue = createRemoteAiQueue({ timeoutMs: 1000, maxPending: 2 });
+    const gate = deferred();
+    const first = queue.enqueue('session-a', () => gate.promise);
+    const second = queue.enqueue('session-a', () => 'second');
+
+    assert.equal(queue.isBusy('session-a'), true);
+    gate.resolve('first');
+    assert.equal(await first, 'first');
+    assert.equal(await second, 'second');
+    assert.equal(queue.isBusy('session-a'), false);
+});
+
+test('includes queue waiting time in the reply deadline', async () => {
+    const queue = createRemoteAiQueue({ timeoutMs: 30, timeoutMessage: 'probe timeout' });
+    const gate = deferred();
+    let secondRan = false;
+    const first = queue.enqueue('session-a', () => gate.promise);
+    const second = queue.enqueue('session-a', () => {
+        secondRan = true;
+        return 'late reply';
+    });
+
+    try {
+        await assert.rejects(first, /probe timeout/);
+        await assert.rejects(second, /probe timeout/);
+        assert.equal(secondRan, false, 'work that expired while queued must never start');
+    } finally {
+        gate.resolve('late first reply');
+        await Promise.allSettled([first, second]);
+    }
 });
 
 (async () => {

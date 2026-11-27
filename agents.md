@@ -5,6 +5,48 @@
 
 ---
 
+## 2026.11.28 — 第五十一階段：遠端 AI 佇列有界且計入等待時間，任務匯入驗證所有消費欄位
+
+> 接續同日第五十階段；本輪處理背景稽核確認的兩項資源與資料邊界缺陷。版本維持 `2026.8.7`。
+
+### 症狀一：遠端 AI 佇列可無限成長，等待期間也不消耗回覆期限
+- 第四十四階段的取消與逾時保護仍以「每項工作開始執行後重新計時」為主，同 session 的 pending 陣列沒有深度上限；peer 持續送訊息就能讓排隊工作、promise、closure 與硬體／LLM 上下文持續累積。
+- 舊逾時計時器雖存在，但語意是每項工作最多占用 190 秒；排在繁忙 session 後面的工作可以無限期等待，開始執行時又取得完整 190 秒，與使用者看到的回覆時限不一致。
+
+### 修正一：4 項容量與 enqueue-time deadline
+- `src/remote-ai-queue.js` 新增 `DEFAULT_MAX_PENDING = 4`，容量包含正在執行者；第 5 項立即以 `REMOTE_AI_QUEUE_FULL` 拒絕，不進入 pending、不啟動 task，並附上拒絕處理者避免未處理拒絕。
+- 每項工作在 enqueue 時建立 `deadline = Date.now() + timeoutMs`，計時器也從入列時開始；`startNext()` 發現工作已過期就直接以 `REMOTE_AI_TIMEOUT` 拒絕，不得重新取得完整 190 秒。
+- 新增 `isBusy(sessionId)`，只要仍有 active 或 pending 工作就回 true；`handleRemoteAiReplyFailure()` 在 overflow 或其他失敗時不得於佇列仍有 accepted 工作時提前送出 `idle`。
+- 同 session 串行、跨 session 並行、斷線取消、晚回抑制與「不保留會產生未處理拒絕的內部 tail」的既有行為維持不變。
+
+### 症狀二：匯入只驗證部分欄位，壞 title／dynamicCmd 仍可落地
+- `validateImportedTasks()` 原本只檢查物件、`id`、`logs` 與 `status`；缺少或非字串的 `title`、物件型 `dynamicCmd`、未知 `action`、字串或負數 `progress`、壞日期與物件型 `category` 都能通過並寫入 `tasks.json`。
+- 這些欄位後續會被任務比對、動態指令執行、詳情渲染與完成訊息直接消費，錯誤型別會造成靜默失敗或執行期拋錯。
+
+### 修正二：在寫入前驗證完整任務契約
+- `src/pure.js` 要求 `title` 為非空字串；`description`、`skillId`、`category`、`dynamicCmd` 若存在只能是字串或 null。
+- `action` 若存在只能是 `install`／`uninstall`；`progress` 若存在必須是 0–100 的有限數值；`createdAt`／`completedAt` 若存在必須是可解析日期字串或 null。
+- 既有 `id` 唯一性、`logs` 逐項型別與五種 `status` 驗證保留；未知額外欄位仍允許，驗證成功回傳原陣列且不改動輸入。任一失敗仍整批拒絕，既有清單與 `tasks.json` 不變。
+
+### 測試與驗收
+- 修正前重現：`node test/pure.test.js` 為 96 passed / 22 failed；`node --test test/todo-import.test.js` 為 15 passed / 8 failed，確認多種壞欄位原本會被接受並持久化。
+- `test/remote-ai-queue.test.js` 11 項全綠，新增容量上限、overflow 不啟動、`isBusy()` 到佇列排空、等待時間計入 deadline、過期排隊不執行與逾時後可繼續接收工作。
+- `test/remote-ai-cancel.test.js` 7 項全綠，新增真實 server harness 的洪水情境：容量被限制、overflow 送出一則可見錯誤、accepted 工作未排空前不送 idle、只執行被接受的工作、排空後才回 idle。
+- `test/pure.test.js` 由 95 項增為 118 項，涵蓋必要 title、optional 字串、action、progress、日期與合法 null／省略相容性；`test/todo-import.test.js` 由 15 項增為 23 項，八種壞匯入都以真實 HTTP 驗證整批拒絕、磁碟位元組不變、既有清單保留且後續端點仍正常。
+- 8 個突變探針全數被攔下：移除容量檢查、重置入列 deadline、移除 `isBusy()` idle 守門、移除 title 驗證、放寬 optional 字串、放寬 action、放寬 progress、放寬日期，皆使對應回歸失敗；探針後檔案均還原。
+- `npm test`：27 個 JS 語法、**67 支測試檔**與 server smoke 全綠。
+- 未做雙機或瀏覽器實機驗收；本輪使用真實 HTTP harness、真實 `RemoteAgentService`、fake socket 與純函式測試，未執行 PowerShell、外掛、安裝或提權。
+
+### 尚未完成
+- 本機遠端聊天的 Stop 尚未完整取消其 local-AI 工作。
+- `tokenizeForMatch()` 仍無 CJK 斷詞；modal async race 與診斷視窗語系即時重繪仍待處理。
+- Browser 輪詢即使畫面未變仍會實際截圖，只省下 base64 重送。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權、未觸碰使用者真實設定檔。
+
+---
+
 ## 2026.11.27 — 第五十階段：任務啟動存檔失敗可重試，遠端訊息歷史加入位元組預算
 
 > 接續同日第四十九階段；本輪處理背景稽核確認的兩項高風險缺陷。版本維持 `2026.8.7`。
@@ -37,9 +79,7 @@
 - 未做雙機或瀏覽器實機驗收；本輪使用真實 HTTP harness、真實 `RemoteAgentService` 與 fake socket，未執行 PowerShell、外掛、安裝或提權。
 
 ### 尚未完成
-- 遠端 AI 佇列仍無深度上限，enqueue 時也未檢查 request deadline。
 - 本機遠端聊天的 Stop 尚未完整取消其 local-AI 工作。
-- 任務匯入仍未驗證所有會被消費的欄位型別，尤其是 `title`。
 - `tokenizeForMatch()` 仍無 CJK 斷詞；modal async race 與診斷視窗語系即時重繪仍待處理。
 - Browser 輪詢即使畫面未變仍會實際截圖，只省下 base64 重送。
 - `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
