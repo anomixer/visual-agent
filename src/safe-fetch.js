@@ -53,10 +53,10 @@ function parsePublicHttpUrl(input = '') {
     return url;
 }
 
-async function resolvePublicAddress(url, lookup = dns.promises.lookup) {
+async function resolvePublicAddress(url, lookup = dns.promises.lookup, signal) {
     const hostname = url.hostname.replace(/^\[|\]$/g, '');
     if (net.isIP(hostname)) return { address: hostname, family: net.isIP(hostname) };
-    const addresses = await lookup(hostname, { all: true, verbatim: true });
+    const addresses = await lookup(hostname, { all: true, verbatim: true, signal });
     if (!Array.isArray(addresses) || addresses.length === 0) throw new Error('DNS lookup returned no addresses');
     if (addresses.some((item) => isDisallowedIp(item.address))) {
         throw new Error('Hostname resolves to a private or non-routable network address');
@@ -89,69 +89,101 @@ async function safeFetchText(input, options = {}) {
     const lookup = options.lookup || dns.promises.lookup;
     const deadline = Date.now() + timeoutMs;
     let currentUrl = parsePublicHttpUrl(input);
-
-    for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
-        const resolved = await resolvePublicAddress(currentUrl, lookup);
-        const remainingMs = deadline - Date.now();
-        if (remainingMs <= 0) throw new Error('Request timed out');
-        const transport = currentUrl.protocol === 'https:' ? https : http;
-        const result = await new Promise((resolve, reject) => {
-            const request = transport.request(currentUrl, {
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'visual-agent/safe-fetch',
-                    'Accept-Encoding': 'identity',
-                    ...(options.headers || {}),
-                },
-                servername: currentUrl.hostname,
-                lookup: (hostname, lookupOptions, callback) => callback(null, resolved.address, resolved.family),
-            }, async (response) => {
-                try {
-                    const status = Number(response.statusCode) || 0;
-                    const location = response.headers.location;
-                    if ([301, 302, 303, 307, 308].includes(status) && location) {
-                        response.resume();
-                        resolve({ redirect: new URL(location, currentUrl).toString() });
-                        return;
-                    }
-                    const contentLength = Number(response.headers['content-length']) || 0;
-                    if (contentLength > maxBytes) {
-                        response.resume();
-                        reject(new Error(`Response exceeded the ${maxBytes}-byte limit`));
-                        return;
-                    }
-                    const text = await readResponse(response, maxBytes);
-                    resolve({
-                        ok: status >= 200 && status < 300,
-                        status,
-                        url: currentUrl.toString(),
-                        headers: response.headers,
-                        text,
-                    });
-                } catch (error) {
-                    reject(error);
-                }
-            });
-            const timer = setTimeout(() => request.destroy(new Error('Request timed out')), remainingMs);
-            request.on('error', (error) => {
-                clearTimeout(timer);
-                reject(error);
-            });
-            request.on('close', () => clearTimeout(timer));
-            if (options.signal) {
-                const abort = () => request.destroy(new Error('Request aborted'));
-                if (options.signal.aborted) abort();
-                else options.signal.addEventListener('abort', abort, { once: true });
-                request.on('close', () => options.signal.removeEventListener('abort', abort));
+    const controller = new AbortController();
+    let timeoutTimer = null;
+    let removeExternalAbort = null;
+    const interrupted = new Promise((_, reject) => {
+        if (options.signal) {
+            const abort = () => {
+                controller.abort();
+                reject(new Error('Request aborted'));
+            };
+            if (options.signal.aborted) abort();
+            else {
+                options.signal.addEventListener('abort', abort, { once: true });
+                removeExternalAbort = () => options.signal.removeEventListener('abort', abort);
             }
-            request.end();
-        });
+        }
+        timeoutTimer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Request timed out'));
+        }, timeoutMs);
+    });
 
-        if (!result.redirect) return result;
-        if (redirectCount === maxRedirects) throw new Error('Too many redirects');
-        currentUrl = parsePublicHttpUrl(result.redirect);
+    const operation = (async () => {
+        for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
+            if (controller.signal.aborted) throw new Error('Request aborted');
+            const resolved = await resolvePublicAddress(currentUrl, lookup, controller.signal);
+            if (controller.signal.aborted) throw new Error('Request aborted');
+            const remainingMs = deadline - Date.now();
+            if (remainingMs <= 0) throw new Error('Request timed out');
+            const transport = currentUrl.protocol === 'https:' ? https : http;
+            const result = await new Promise((resolve, reject) => {
+                const request = transport.request(currentUrl, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'visual-agent/safe-fetch',
+                        'Accept-Encoding': 'identity',
+                        ...(options.headers || {}),
+                    },
+                    servername: currentUrl.hostname,
+                    lookup: (hostname, lookupOptions, callback) => {
+                        if (lookupOptions?.all) callback(null, [{ address: resolved.address, family: resolved.family }]);
+                        else callback(null, resolved.address, resolved.family);
+                    },
+                }, async (response) => {
+                    try {
+                        const status = Number(response.statusCode) || 0;
+                        const location = response.headers.location;
+                        if ([301, 302, 303, 307, 308].includes(status) && location) {
+                            response.resume();
+                            resolve({ redirect: new URL(location, currentUrl).toString() });
+                            return;
+                        }
+                        const contentLength = Number(response.headers['content-length']) || 0;
+                        if (contentLength > maxBytes) {
+                            response.resume();
+                            reject(new Error(`Response exceeded the ${maxBytes}-byte limit`));
+                            return;
+                        }
+                        const text = await readResponse(response, maxBytes);
+                        resolve({
+                            ok: status >= 200 && status < 300,
+                            status,
+                            url: currentUrl.toString(),
+                            headers: response.headers,
+                            text,
+                        });
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+                const timer = setTimeout(() => request.destroy(new Error('Request timed out')), remainingMs);
+                request.on('error', (error) => {
+                    clearTimeout(timer);
+                    reject(error);
+                });
+                request.on('close', () => clearTimeout(timer));
+                const abort = () => request.destroy(new Error('Request aborted'));
+                if (controller.signal.aborted) abort();
+                else controller.signal.addEventListener('abort', abort, { once: true });
+                request.on('close', () => controller.signal.removeEventListener('abort', abort));
+                request.end();
+            });
+
+            if (!result.redirect) return result;
+            if (redirectCount === maxRedirects) throw new Error('Too many redirects');
+            currentUrl = parsePublicHttpUrl(result.redirect);
+        }
+        throw new Error('Too many redirects');
+    })();
+
+    try {
+        return await Promise.race([operation, interrupted]);
+    } finally {
+        clearTimeout(timeoutTimer);
+        removeExternalAbort?.();
     }
-    throw new Error('Too many redirects');
 }
 
 module.exports = { isDisallowedIp, parsePublicHttpUrl, safeFetchText };

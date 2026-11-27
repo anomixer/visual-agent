@@ -297,6 +297,24 @@ assert.equal(peerTimeoutService.getSession('timeout-me').status, 'disconnected')
 assert.equal(peerTimeoutSocket.ended, true);
 passed++;
 
+// 刪除尚未同意的邀請也必須清掉 60 秒 pending timer；只讓 callback 提早 return 仍會保留 closure 與 event-loop handle。
+const forgetService = createService();
+const forgetSocket = createSocket();
+forgetService.handleHello(forgetSocket, { sessionId: 'forget-me', profile: { machineName: 'pending-peer' } });
+const forgottenSession = forgetService.getSession('forget-me');
+try {
+    assert.ok(forgottenSession.pendingTimer);
+    assert.ok(forgottenSession.pendingExpiresAt);
+    assert.deepEqual(forgetService.forgetSession('forget-me'), { success: true });
+    assert.equal(forgetService.getSession('forget-me'), null);
+    assert.equal(forgottenSession.pendingTimer, null);
+    assert.equal(forgottenSession.pendingExpiresAt, '');
+    assert.equal(forgetSocket.destroyed, true);
+    passed++;
+} finally {
+    forgetService.clearPendingTimeout(forgottenSession);
+}
+
 (async () => {
     const net = require('node:net');
     const originalCreateConnection = net.createConnection;

@@ -697,6 +697,7 @@ class RemoteAgentService {
         if (session.socket && !session.socket.destroyed) {
             session.socket.destroy();
         }
+        this.clearPendingTimeout(session);
         this.sessions.delete(sessionId);
         this.onStateChanged();
         return { success: true };

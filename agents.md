@@ -5,6 +5,39 @@
 
 ---
 
+## 2026.11.28 — 第五十五階段：DNS 取消貫穿全程，Browser Stop 回收晚建資源，邀請刪除清除計時器
+
+> 接續同日第五十四階段；本輪處理三個非同步／資源生命週期缺口。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `safeFetchText()` 原本先 await DNS，才安裝 HTTP timeout／abort；注入永不結束的 lookup 後，25 ms timeout 無法讓呼叫端結束，外部 abort 也無法中斷。取消發生在 DNS resolve 前時，晚到的結果還可能繼續建立 HTTP request。
+- Node 可能以 `{ all:true }` 呼叫自訂 `lookup`；pinned lookup 原本一律回傳 scalar address，正常 TLS 連線因此得到 `ERR_INVALID_IP_ADDRESS: Invalid IP address: undefined`。
+- Browser Stop 只等待既有的 `browserSessionPending`，但 launch／`newContext()`／`newPage()` 各自 await 後沒有世代檢查；在任一階段按 Stop，晚建立的 session 仍回 success，browser／context／page 可能殘留。Stop 清理期間到達的新 start 也可能加入已作廢的 launch，或被舊 Stop 關掉。
+- `forgetSession()` 刪除 pending invitation 時沒有清除 `pendingTimer`；session 已移除，timer 仍保留 callback 與 event-loop handle，直到原本的邀請逾時。
+
+### 修正
+- `src/safe-fetch.js` 在 DNS 前建立 request-scoped controller、總 timeout 與 external-abort listener，並以 `Promise.race()` 保證即使注入的 lookup 忽略 signal，呼叫端仍會準時結束。DNS 前、DNS 後與剩餘 deadline 都有取消守門；HTTP、redirect 與 body 共用同一 controller，`finally` 清除 timer／listener。pinned lookup 遵守 Node 的 `{ all:true }` 契約，分別回傳 address array 或 scalar。
+- `src/server.js` 以 `browserSessionGeneration` 作廢進行中的開啟流程；launch、context、page 建立後都檢查世代，資源在確認有效前不寫入共用 session。`ensureBrowserSession()` 先等待 Stop 清理，`closeBrowserSession()` 合併重複 Stop、遞增世代、等待 pending creation，再關閉實際持有的資源。被作廢的 start 會自行關閉晚建立的資源，較新的 replacement start 不會被舊 Stop 關掉。
+- `src/remote-agent.js` 的 `forgetSession()` 在刪除 session 前呼叫既有 `clearPendingTimeout()`，同步清除 timer 與 `pendingExpiresAt`，再 destroy socket。
+
+### 測試與驗收
+- `test/safe-fetch.test.js` 新增五項：hanging DNS 的總 timeout、外部 abort、晚到 DNS 不得建立 HTTP request、lookup 收到 signal、正常 fake HTTP 與 `{ all:true }` pinned lookup；focused suite 9／9 全綠。修正前 hanging DNS 兩項由 test guard 攔下，正常 fake HTTP 重現 `ERR_INVALID_IP_ADDRESS`。
+- `test/browser-snapshot.test.js` 由 3 項增為 7 項：launch／context／page 三階段 Stop 都關閉晚建資源，Stop 期間的新 start 等待清理並存活，restart 建立新 browser；focused suite 7／7 全綠。
+- `test/remote-agent.test.js` 由 20 項增為 21 項：刪除 pending invitation 後 timer、expiry 與 socket 都已清理；focused suite 21／21 全綠。
+- 7 個突變探針全數被攔下：移除 DNS 後取消守門、DNS 不傳 signal、無視 `{ all:true }`、Stop 不推進 Browser 世代、新 start 不等待 Stop、作廢 launch 不關閉、`forgetSession()` 保留 pending timer。探針後 production 檔案均還原為位元組相同；SHA256：`src/safe-fetch.js` `16434f1e2bff460e2e4ac280543d941de9fa0da75e331c142d86eb61acc55ed4`、`src/server.js` `a865449452c776467bcb45b7cbc045fcf520d5e7b3dbc3ba963c98ed92e57406`、`src/remote-agent.js` `94423ee31c4c7e17f2dd2133f4e64644d5677f9be30858812e12a17434ecfc4a`。
+- `npm test`：27 個 JS 語法、**69 支測試檔**與 server smoke 全綠。
+- 未啟動真實 Chromium、未執行 PowerShell／外掛／安裝／提權；本輪以 fake Playwright、假 HTTP／DNS 與真實 HTTP harness 驗證，未做雙機或實機 UAC 驗收。
+
+### 尚未完成
+- Browser 輪詢即使畫面未變仍會實際截圖，只省下 base64 重送。
+- Playwright 已發出的導覽與自訂 DNS lookup 的內部工作不一定能立即停止；本輪保證呼叫端結束、晚回不啟動後續 HTTP 與晚建 Browser 資源被回收。
+- 診斷視窗本身的語系即時重繪仍未處理；Clear Chat in-flight 回應作廢與 Chalkboard draft 非同步渲染仍是後續稽核候選。
+- peer 已接受工作後的取消／撤銷仍需要協定支援與雙機驗收。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+
+---
+
 ## 2026.11.28 — 第五十四階段：共用詳情視窗拒絕晚回，中文意圖可檢索英文 Skill/SOP
 
 > 接續同日第五十三階段；本輪處理共用 modal 的非同步競態，以及中文請求難以命中英文 Skill/SOP 文件的檢索缺口。版本維持 `2026.8.7`。

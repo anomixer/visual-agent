@@ -48,12 +48,25 @@ async function waitUntil(predicate, timeoutMs = 3000) {
 }
 
 // 只實作 server 真正呼叫到的 Playwright 表面；不啟動任何真實瀏覽器。
-function createFakePlaywright({ gateLaunch = false } = {}) {
-    const stats = { launches: 0, contexts: 0, pages: 0, screenshots: 0, navigations: 0 };
+function createFakePlaywright({ gateLaunch = false, gateContext = false, gatePage = false } = {}) {
+    const stats = {
+        launches: 0, contexts: 0, pages: 0, screenshots: 0, navigations: 0,
+        browserCloses: 0, contextCloses: 0, pageCloses: 0,
+    };
     let png = Buffer.from(PNG_V1);
-    let gated = gateLaunch;
-    let release = null;
-    const gate = new Promise((resolve) => { release = resolve; });
+    const gates = {
+        launch: { enabled: gateLaunch, release: null, promise: null },
+        context: { enabled: gateContext, release: null, promise: null },
+        page: { enabled: gatePage, release: null, promise: null },
+    };
+    for (const gate of Object.values(gates)) {
+        gate.promise = new Promise((resolve) => { gate.release = resolve; });
+    }
+    const waitForGate = (name) => gates[name].enabled ? gates[name].promise : Promise.resolve();
+    const releaseGate = (name) => {
+        gates[name].enabled = false;
+        gates[name].release();
+    };
 
     const makePage = () => ({
         isClosed: () => false,
@@ -64,24 +77,34 @@ function createFakePlaywright({ gateLaunch = false } = {}) {
         goBack: async () => null,
         goForward: async () => null,
         reload: async () => null,
-        close: async () => {},
+        close: async () => { stats.pageCloses += 1; },
     });
     const browser = {
         newContext: async () => {
             stats.contexts += 1;
-            return { newPage: async () => { stats.pages += 1; return makePage(); }, close: async () => {} };
+            await waitForGate('context');
+            return {
+                newPage: async () => {
+                    stats.pages += 1;
+                    await waitForGate('page');
+                    return makePage();
+                },
+                close: async () => { stats.contextCloses += 1; },
+            };
         },
-        close: async () => {},
+        close: async () => { stats.browserCloses += 1; },
     };
 
     return {
         stats,
         setPng: (next) => { png = Buffer.from(next); },
-        releaseLaunch: () => { gated = false; release(); },
+        releaseLaunch: () => releaseGate('launch'),
+        releaseContext: () => releaseGate('context'),
+        releasePage: () => releaseGate('page'),
         chromium: {
             launch: async () => {
                 stats.launches += 1;
-                if (gated) await gate;
+                await waitForGate('launch');
                 return browser;
             },
         },
@@ -130,6 +153,55 @@ test('concurrent session starts share one launch, context and page', async (t) =
     assert.equal(fake.stats.launches, 1, 'overlapping starts must not launch twice');
     assert.equal(fake.stats.contexts, 1, 'overlapping starts must not leak a context');
     assert.equal(fake.stats.pages, 1);
+});
+
+for (const stage of ['launch', 'context', 'page']) {
+    test(`stop during a pending browser ${stage} closes late-created resources`, async (t) => {
+        const gateKey = `gate${stage[0].toUpperCase()}${stage.slice(1)}`;
+        const fake = createFakePlaywright({ [gateKey]: true });
+        const { port, token } = await startHarness(t, fake);
+
+        const starting = request(port, 'POST', '/api/browser/session/start', { token, body: {} });
+        assert.ok(await waitUntil(() => stage === 'launch' ? fake.stats.launches >= 1
+            : stage === 'context' ? fake.stats.contexts >= 1
+                : fake.stats.pages >= 1), `start should reach the gated ${stage}`);
+        const stopping = request(port, 'POST', '/api/browser/session/stop', { token, body: {} });
+        await delay(30);
+        if (stage === 'launch') fake.releaseLaunch();
+        else if (stage === 'context') fake.releaseContext();
+        else fake.releasePage();
+
+        const [startResult, stopResult] = await Promise.all([starting, stopping]);
+        assert.equal(stopResult.body.success, true);
+        assert.equal(startResult.body.success, false, 'a start invalidated by Stop must not publish a session');
+        assert.equal(fake.stats.browserCloses, 1, 'the late browser must be closed');
+        assert.equal(fake.stats.contextCloses, stage === 'launch' ? 0 : 1);
+        assert.equal(fake.stats.pageCloses, stage === 'page' ? 1 : 0);
+
+        const restarted = await request(port, 'POST', '/api/browser/session/start', { token, body: {} });
+        assert.equal(restarted.body.success, true, 'a fresh start must work after Stop finishes');
+        assert.equal(fake.stats.launches, 2, 'restart must create a new browser rather than reuse late state');
+    });
+}
+
+test('a start requested while Stop is pending waits for cleanup and survives', async (t) => {
+    const fake = createFakePlaywright({ gateLaunch: true });
+    const { port, token } = await startHarness(t, fake);
+
+    const first = request(port, 'POST', '/api/browser/session/start', { token, body: {} });
+    assert.ok(await waitUntil(() => fake.stats.launches >= 1));
+    const stopping = request(port, 'POST', '/api/browser/session/stop', { token, body: {} });
+    const second = request(port, 'POST', '/api/browser/session/start', { token, body: {} });
+    await delay(30);
+    assert.equal(fake.stats.launches, 1, 'a new start must not join the invalidated launch');
+    fake.releaseLaunch();
+
+    const [firstResult, stopResult, secondResult] = await Promise.all([first, stopping, second]);
+    assert.equal(firstResult.body.success, false);
+    assert.equal(stopResult.body.success, true);
+    assert.equal(secondResult.body.success, true);
+    assert.equal(fake.stats.launches, 2);
+    assert.equal(fake.stats.browserCloses, 1, 'Stop must not close the replacement session');
 });
 
 test('snapshot poll skips the image when the hash matches and resends when it changes', async (t) => {

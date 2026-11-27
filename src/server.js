@@ -1527,17 +1527,24 @@ function hasPlaywrightBrowserBinary() {
 }
 
 let browserSessionPending = null;
+let browserSessionClosePending = null;
+let browserSessionGeneration = 0;
 
 // 快照輪詢、UI 導覽與 AI 的 Browser Use 可能同時要求 session；各自 newContext 會洩漏前一組 page。
 async function ensureBrowserSession() {
+    if (browserSessionClosePending) await browserSessionClosePending;
     if (browserSession.page && !browserSession.page.isClosed()) return browserSession.page;
     if (!browserSessionPending) {
-        browserSessionPending = openBrowserSession().finally(() => { browserSessionPending = null; });
+        const pending = openBrowserSession(browserSessionGeneration);
+        const tracked = pending.finally(() => {
+            if (browserSessionPending === tracked) browserSessionPending = null;
+        });
+        browserSessionPending = tracked;
     }
     return browserSessionPending;
 }
 
-async function openBrowserSession() {
+async function openBrowserSession(generation) {
     if (!isPlaywrightAvailable()) {
         throw new Error('Playwright not installed. Run npm.cmd install to enable Browser tab.');
     }
@@ -1551,32 +1558,65 @@ async function openBrowserSession() {
         err.sopId = 'install_playwright_chromium';
         throw err;
     }
-    if (!browserSession.browser) {
-        browserSession.browser = await playwright.chromium.launch({
-            executablePath: browserExe,
-            headless: true,
-            args: ['--disable-blink-features=AutomationControlled'],
+    const throwIfStopped = () => {
+        if (generation !== browserSessionGeneration) throw new Error('Browser session was stopped');
+    };
+    let browser = browserSession.browser;
+    let ownsBrowser = false;
+    let context = null;
+    let page = null;
+    try {
+        if (!browser) {
+            browser = await playwright.chromium.launch({
+                executablePath: browserExe,
+                headless: true,
+                args: ['--disable-blink-features=AutomationControlled'],
+            });
+            ownsBrowser = true;
+        }
+        throwIfStopped();
+        context = await browser.newContext({
+            viewport: { width: 1366, height: 900 },
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         });
+        throwIfStopped();
+        page = await context.newPage();
+        throwIfStopped();
+        browserSession.browser = browser;
+        browserSession.context = context;
+        browserSession.page = page;
+        browserSession.startedAt = new Date().toISOString();
+        return page;
+    } catch (error) {
+        try { await page?.close(); } catch {}
+        try { await context?.close(); } catch {}
+        if (ownsBrowser) {
+            try { await browser?.close(); } catch {}
+        }
+        throw error;
     }
-    browserSession.context = await browserSession.browser.newContext({
-        viewport: { width: 1366, height: 900 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    });
-    browserSession.page = await browserSession.context.newPage();
-    browserSession.startedAt = new Date().toISOString();
-    return browserSession.page;
 }
 
-async function closeBrowserSession() {
-    try { await browserSession.page?.close(); } catch {}
-    try { await browserSession.context?.close(); } catch {}
-    try { await browserSession.browser?.close(); } catch {}
-    browserSession.page = null;
-    browserSession.context = null;
-    browserSession.browser = null;
-    browserSession.startedAt = '';
-    browserSession.lastTitle = '';
-    browserSession.lastUrl = '';
+function closeBrowserSession() {
+    if (browserSessionClosePending) return browserSessionClosePending;
+    browserSessionGeneration += 1;
+    const pending = browserSessionPending;
+    const closing = (async () => {
+        try { await pending; } catch {}
+        try { await browserSession.page?.close(); } catch {}
+        try { await browserSession.context?.close(); } catch {}
+        try { await browserSession.browser?.close(); } catch {}
+        browserSession.page = null;
+        browserSession.context = null;
+        browserSession.browser = null;
+        browserSession.startedAt = '';
+        browserSession.lastTitle = '';
+        browserSession.lastUrl = '';
+    })().finally(() => {
+        if (browserSessionClosePending === closing) browserSessionClosePending = null;
+    });
+    browserSessionClosePending = closing;
+    return closing;
 }
 
 function normalizeNavigateUrl(input = '') {

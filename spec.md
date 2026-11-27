@@ -134,7 +134,7 @@ browser ──── public/index.html
 - **Consent 由後端強制**：系統變更類 ACTION 必須先從執行佇列移除並存入 `AgentConsentStore`，前端只能取得不含完整指令的 `pendingActions` 摘要；`description` 必須顯示完整 ACTION 與提案當下解析出的 SOP 操作（install / uninstall）。確認時只送 `approvedActionId`、session 與 history，後端必須忽略可竄改的 `message`；approval 綁完整 ACTION、SOP 操作與 local chat session、5 分鐘過期且只能使用一次。無效、跨 session、過期或重放必須回 403。批准後直接執行 store 內保存的 ACTION，不得再當成 LLM 回覆解析。Agent Loop 的每一輪都必須套用同一 consent 攔截。
 - **AI / 遠端 / Exp 內容必須淨化**：Markdown 與動態 HTML 必須經共同安全出口；DOMPurify 缺件或失敗時必須 fail-closed 為 escaped text，不得直接 `innerHTML` 未淨化內容。危險 URI、script 與 event handler 必須移除。
 - **圖片 data URL 不可只信 MIME**：只接受 PNG / JPEG base64，檢查 magic bytes 並限制 16 MiB；SVG、偽裝內容與一般外部 URL 不得作為受信任的本機圖片附件。
-- **Server-side fetch 防 SSRF**：外部文字抓取須使用 `safe-fetch.js`，只允許公開 HTTP(S) 位址，拒絕 URL credentials 與 private / loopback / link-local / non-routable IP；DNS 結果須固定到實際連線，redirect 逐次重驗，並限制時間、次數與回應大小。
+- **Server-side fetch 防 SSRF 且取消須涵蓋 DNS**：外部文字抓取須使用 `safe-fetch.js`，只允許公開 HTTP(S) 位址，拒絕 URL credentials 與 private / loopback / link-local / non-routable IP；DNS 結果須固定到實際連線，redirect 逐次重驗，並限制時間、次數與回應大小。request-scoped timeout／abort 必須在 DNS 前生效，並以 race 保證忽略 signal 的 lookup 也無法讓呼叫端無限等待；DNS 前、DNS 後與每個 redirect 前都須檢查取消，晚到 DNS 結果不得建立 HTTP request。pinned lookup 必須遵守 Node `{ all:true }` 契約，lookup 也須收到 request signal；結束時清除 timer 與 external-abort listener。
 - **外部下載須校驗**：`build.bat` 下載的每個可執行二進位（Node MSI、rustup-init.exe）安裝前必須比對 SHA256，不符即拒裝。
 - **SOP 執行**：一般與 elevated PowerShell runner 均以 UTF-8 BOM 暫存 `.ps1` 搭配 `-File` 執行，保留中文、例外與 native exit code。一般路徑 timeout 必須終止 process tree；elevated process-tree 行為仍需獨立實機驗收。
 - **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
@@ -162,6 +162,7 @@ browser ──── public/index.html
 - **硬體探測必須可取消且保留共用語意**：`getSystemHealth({ signal })` 讓每個可取消呼叫端各自拒絕，不得因一個遠端請求取消而中斷共用的 UI 探測或其他訂閱者；沒有不可取消呼叫端且最後一個可取消訂閱者離開時，才 abort 內部 controller 並移除 Map 項目。未帶 signal 的呼叫端仍取得原始共用 promise／結果物件。內建 `hardware-info.js` 與 `temperature-monitor.js` 必須把 signal 傳給 `execFile()`，並在 await 前後檢查，取消後不得再跑 fallback 或記成一般外掛失敗。自訂外掛若忽略第二參 `{ signal }`，不得宣稱其內部工作可被強制停止。硬體狀態回覆必須沿用已取得的 health context，不得為同一回答重複探測。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
 - **Browser 分頁快照不得重疊、亂序或整份重送**：`ensureBrowserSession()` 必須共用同一個進行中的開啟 promise，不得讓並行呼叫各自 `newContext()` 而洩漏前一組 page。`GET /api/browser/session/snapshot` 一律回 `snapshotHash`；帶 `?since=<上次收到的雜湊>` 且截圖位元組相同時只回 `unchanged: true` 與雜湊，不重送 base64。前端輪詢必須有 in-flight 守衛，使用者導覽 / 上一頁 / 重新載入期間以計數器暫停輪詢，且只有使用者操作可推進序號，晚到的舊快照不得覆蓋較新的導覽結果。伺服器每次輪詢仍會實際截圖，不得宣稱省下截圖成本。
+- **Browser Stop 必須作廢並回收晚建資源**：Stop 必須先遞增 session generation、等待 pending creation，再清理實際持有的 page／context／browser；launch、`newContext()`、`newPage()` 每個 await 後都須檢查 generation。資源在全部檢查通過前不得寫入共用 session；被作廢的 start 必須自行關閉其晚建立資源並回失敗。Stop 期間的新 start 必須等待清理後另開 session，不得加入已作廢的 launch，也不得被舊 Stop 關掉；重複 Stop 共用同一個清理 promise。
 - **OAuth cache 不得混用憑證**：token cache key 必須包含 token URL、client ID、client secret、scope、audience。
 - **桌面發佈設定不得漂移**：Tauri bundle version 必須等於 `package.json.version`；CSP 不得為 `null`。現階段因既有 inline script/style 保留 `unsafe-inline`，但 script 僅限 self，並禁止 object / frame / 外部表單送出。`pkg.assets` 必須包含 `sops/**/*`、`skills/**/*`、`plugins/**/*`、`public/**/*`。
 - **API Key**：供設定視窗回填與儲存，故 `GET /api/llm/config` 回傳完整值；LAN 暴露面由 loopback 綁定阻絕，本機瀏覽器跨來源讀取由 Origin 檢查與 token 阻絕。不得以 mask 回傳導致設定視窗把真 key 覆寫成遮罩值。
@@ -326,6 +327,7 @@ $true
 - [x] 重啟後不再殘留永久「執行中」的任務（2026.11.12 第二十七階段：`reconcileInterruptedTasks()`、`loadTasks()` 啟動時標為 failed 並補中斷記錄）。
 - [x] 冒煙測試改用隔離暫存 AppData，不再讀寫使用者真實設定（2026.11.12 第二十七階段：`scripts/check.js` 以 `mkdtempSync` 建立 profile，等子行程結束後刪除）。
 - [x] Browser 分頁快照輪詢不重疊、不亂序、畫面未變不重送（2026.11.12 第二十八階段：`ensureBrowserSession()` 共用開啟 promise、`snapshotHash` / `?since=`、前端 `snapshotInFlight` / `snapshotActionsInFlight` / `snapshotSeq`）。
+- [x] DNS timeout／abort 涵蓋解析前，Browser Stop 回收晚建資源，刪除邀請清除 pending timer（2026.11.28 第五十五階段：`safeFetchText()` 以 request-scoped race 涵蓋 DNS 與 `{ all:true }` pinned lookup；Browser session generation 與 Stop／start 序列化；`forgetSession()` 清除邀請計時器；三組回歸與 7 個突變探針全數通過）。
 - [x] 匯出 fallback 保留完整執行記錄，詳情視窗日誌顏色與語系正確（2026.11.12 第二十九階段：`exportTasks()` 改抓 `/api/todo/export` 並驗證 wrapper、`renderTaskModalBody()` 改用 `l.level`、`task.detail*` / `exps.detail*` i18n 鍵與語系日期）。
 - [x] 中斷執行的日誌與進度會落地，復原結果可跨多次重啟保留（2026.11.12 第三十階段：`src/task-run-log.js` append-only JSONL、`appendRunLogRecord()` / `recoverInterruptedRunLog()` / `clearRunLog()`、`loadTasks()` 在有中斷任務時 `saveTasks()`）。
 - [x] 動態指令任務可正常執行（2026.11.12 第三十階段：`/api/execute/:taskId` 的虛擬 SOP 改為 `steps` + 字串 commands + `uiMessage`，與 `sop-parser` 結構一致）。
@@ -498,6 +500,7 @@ $true
 - **名額只算未結束的連線**：`MAX_SESSIONS`（32）只計 `pending_approval` / `active` 的 session。已 `disconnected` 或被 `rejected` 的 session 不得占用名額，否則對方反覆重試就能把合法連線擠掉。
 - **terminal session 需有獨立上限**：`disconnected` / `rejected` 的 session 另由 `MAX_TERMINAL_SESSIONS`（32）封頂，每次 `handleHello()` 先以 `lastEventAt` 最舊者淘汰（`pruneTerminalSessions()`），確保 `sessions` Map 不會無限成長，同時保留最近斷線的紀錄供 UI 顯示。
 - **`disconnect`、`hello_cancel`、`hello_timeout` 都必須結束 socket**：只改 session 狀態、不關閉連線會讓半開的 TCP 一直存活（自製用戶端或卡住的 peer 不會自己 FIN）。關閉後 `close` 事件因狀態已非 `active` 不會重複標記。
+- **刪除 session 必須清除邀請計時器**：`forgetSession()` 刪除 pending invitation 時，必須先以 `clearPendingTimeout()` 清除 `pendingTimer` 與 `pendingExpiresAt`，再 destroy socket 並刪除 session；不得留下已無法觸達、仍持有 callback 與 event-loop handle 的逾時 timer。
 - **發起端必須有連線逾時**：`connect()` 預設 10 秒（建構子 `connectTimeoutMs` 可注入）未完成 `connect` 即 destroy socket 並 reject，避免 UI 卡在「連線中」且測試無法結束。
 - **失敗必須回報且不得假裝成功**：`POST /api/remote/profile` 與 `POST /api/remote/session/:id/respond` 失敗時，前端要寫出錯誤日誌（`remote.profileSaveFailed` / `remote.respondFailed`）。回應邀請失敗後必須把 `lastRemoteStateTick` 歸零再抓一次完整狀態：仍有效的邀請會重新彈出，已逾時的邀請由 `renderRemotePopup()` 收起視窗。不得在失敗時直接關閉邀請視窗。
 - **JSON Lines 必須保留 raw Buffer 並增量掃描**：socket 不得用 `setEncoding('utf8')` 提前解碼；每個 `data` 事件只掃描新進位元組的 LF（`0x0a`），未完成訊框以可擴充 Buffer 累積，完整訊框才轉為 UTF-8 字串並 `JSON.parse()`。不得對整條未完成訊框反覆 `Buffer.byteLength()` 或 `split()`；跨封包 split 的 UTF-8 字元必須能正確重組。
@@ -600,6 +603,7 @@ $true
 - 若 Chromium 尚未就緒，UI 將隱藏 Browser 分頁。
 - 安裝條件與完成偵測不再僅檢查資料夾，必須精確驗證實際的 `chrome-headless-shell.exe` 或 `chrome.exe` 執行檔是否存在，並由 `/api/meta` 回報 `browserExecutable`。
 - 一旦安裝完成，無需重啟程式，Browser 分頁即會自動顯示。
+- Stop 會作廢正在開啟的 session 世代，並等待 launch／context／page 建立完成後關閉晚建資源；清理期間的新 start 必須等待並建立新 session，不可與舊 Stop 互相污染。
 
 ### 8.14 Planner -> Builder -> Learn 工作流
 - **Planner (規劃)**: AI 在處理任何複雜需求前，會優先返回規劃（Planner）回應，向使用者總結意圖並提出後續執行的步驟。
