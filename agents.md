@@ -5,6 +5,39 @@
 
 ---
 
+## 2026.11.28 — 第五十三階段：Double Agent 改為本地先回，遠端補充共用 Stop 訊號
+
+> 接續同日第五十二階段；本輪處理遠端聊天 Double Agent 流程過早啟動遠端 AI、未共享前端取消訊號與失敗被靜默吞掉的缺口。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- 原本 `sendChat()` 在 local-AI HTTP 請求完成前就以 fire-and-forget 方式送出 `mode:'user', target:'remote-ai'`，違反「本地 AI 先答、遠端 AI 隨後補充」的既定分工。
+- 後續請求雖然使用同一個 text 與 locale，卻沒有共享 local-AI 的 `AbortController.signal`；在 local answer 或 state refresh 期間按 Stop，仍可能把後續訊息送給 peer。
+- follow-up 的 `.catch()` 只在 HTTP 拋錯時處理失敗，但 `api()` 會把一般網路錯誤與非 2xx JSON 回應轉成 `{ success:false, error }`；API refusal 因此看起來像成功。
+- follow-up 又未檢查 request signal，Stopped 後晚到的失敗仍可能出現在工作日誌與聊天室。
+
+### 修正：local-first 序列與單一 request lifecycle
+- `public/app.js` 在請求開始時 snapshot remote session ID、locale、chat mode 與 local session；local-AI 等待期間切換分頁或語系，不會把後續訊息送到不同 session 或使用不同語系。
+- Double Agent 的 local-AI 仍先送出；只有它成功回傳、遠端 profile／state refresh 完成且 shared signal 未中止時，才啟動 `mode:'user', target:'remote-ai'` follow-up。local-AI 失敗或取消都不會啟動遠端補充。
+- local-AI 與 follow-up 共用 `requestAbortController.signal`；refresh 後以 `signal.throwIfAborted()` 守門，因此 Stop 涵蓋 local answer、state refresh 與 follow-up HTTP in-flight 三個時機。
+- follow-up 同時檢查 `result.success === false` 與拋出的例外；真正失敗會寫入工作日誌並顯示 system bubble，取消則只走既有使用者取消訊息，不顯示晚到失敗或重複訊息。
+- 明確指定單一 AI 的 remote 路徑沿用 snapshot 與既有 signal 行為；正常 Double Agent 回覆內容、peer continuation 與本機聊天流程不變。
+
+### 測試與驗收
+- `test/chat-ui-consent.test.js` 由 9 項擴充為 17 項，新增八項 Double Agent 回歸：成功後才 follow-up、local answer 期間 Stop、follow-up in-flight Stop、可見失敗、API refusal、state refresh 期間 Stop、單一 Remote AI 行為、local 失敗不 follow-up。focused suite 17／17 全綠。
+- 5 個突變探針全數被攔下：提前啟動 follow-up（7 項失敗）、不共用 signal（2）、移除 refresh 後取消守門（1）、取消後仍顯示晚到失敗（1）、靜默吞掉 API refusal（1）；探針後 production 與測試檔案均還原為位元組相同。
+- 隔離瀏覽器以 static-only server、fake API 與真實 `sendChat()`／DOM 驗收七個情境，涵蓋 local-first 順序、session／locale snapshot、三個 Stop 時機、API refusal、local 失敗與單一 target；主控台最終 0 error／0 warn。
+- `npm test`：27 個 JS 語法、**68 支測試檔**與 server smoke 全綠。
+- 協定沒有撤銷已送出訊息的方法；Stop 只能阻止尚未送出或仍在 HTTP in-flight 的 follow-up，不能撤回 peer 已接受並開始處理的工作。未做雙機實機驗收，未執行 PowerShell、外掛、安裝或提權。
+
+### 尚未完成
+- 遠端 peer 已接受工作後的取消／撤銷仍需要協定支援與雙機驗收，目前不得宣稱 Stop 能撤回這類工作。
+- `tokenizeForMatch()` 仍無 CJK 斷詞；modal async race 與診斷視窗語系即時重繪仍待處理。
+- Browser 輪詢即使畫面未變仍會實際截圖，只省下 base64 重送。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+
+---
+
 ## 2026.11.28 — 第五十二階段：遠端聊天 Stop 會取消本機 AI，晚回不再傳給對方
 
 > 接續同日第五十一階段；本輪處理遠端聊天要求本機 AI 回覆時，前端 Stop 只中斷瀏覽器請求、伺服器仍繼續工作的取消缺口。版本維持 `2026.8.7`。

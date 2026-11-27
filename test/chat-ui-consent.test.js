@@ -164,11 +164,53 @@ function persisted(h, id = 'origin') {
 
 function assertIdle(h) {
     assert.equal(h.isModePending('local'), false);
+    assert.equal(h.isModePending('remote'), false);
     assert.equal(h.getActiveAbortController('local'), null);
+    assert.equal(h.getActiveAbortController('remote'), null);
     assert.equal(h.chatAbortController, null);
     assert.equal(h.btnSend.classList.contains('stop'), false);
     assert.equal(h.btnSend.querySelector('.icon-send').classList.contains('hidden'), false);
     assert.equal(h.btnSend.querySelector('.icon-stop').classList.contains('hidden'), true);
+}
+
+function remoteHarness(respond) {
+    const h = harness(async (route, options) => {
+        assert.match(route, /^\/api\/remote\/session\/[^/]+\/message$/);
+        return respond(route, options);
+    });
+    Object.assign(h, {
+        activeChatMode: 'remote',
+        selectedRemoteSessionId: 'session-a',
+        remoteProfile: { userName: 'Local User', agentName: 'Local AI', machineName: 'LOCAL-PC' },
+        remoteSendMode: { value: 'user' },
+        remotePendingRoles: { local: false, remote: false },
+        escapeHtml: (value) => String(value ?? ''),
+        resolveRemoteTargets: () => ['local-ai', 'remote-ai'],
+        setRemotePendingRoles: (roles) => { h.remotePendingRoles = roles; },
+        updatePendingStatusRow: noop,
+        addUILog: (text, level) => h.uiLogs.push({ text, level }),
+        loadRemoteProfileAndState: async () => { h.stateLoads += 1; },
+        getActiveRemoteSession: () => ({ id: h.selectedRemoteSessionId, status: 'active', aiStatus: {} }),
+    });
+    h.uiLogs = [];
+    h.stateLoads = 0;
+    return h;
+}
+
+function messageRequests(h) {
+    return h.requests.filter((request) => request.route.endsWith('/message'));
+}
+
+function remoteBubbleHtml(h) {
+    return h.remoteChatMessages.children.map((child) => child.innerHTML).join('\n');
+}
+
+function flushAsync() {
+    return new Promise((resolve) => setImmediate(resolve));
+}
+
+function abortError() {
+    return Object.assign(new Error('Cancelled'), { name: 'AbortError' });
 }
 
 test('pending actions stay on their messages and re-render when switching local tabs', () => {
@@ -396,5 +438,173 @@ test('Stop during post-confirmation task refresh leaves the task queued without 
     await confirming;
     assert.deepEqual(executed, []);
     assert.match(session(h).messages.at(-1).text, /Stopped before execution.*remains queued/);
+    assertIdle(h);
+});
+
+test('Double Agent sends the remote follow-up only after local AI succeeds with the same request snapshot', async () => {
+    const localReply = deferred();
+    const followUp = deferred();
+    const h = remoteHarness((_route, { body }) => body.target === 'remote-ai' ? followUp.promise : localReply.promise);
+    h.chatInput.value = 'Please compare both answers';
+    const sending = h.sendChat();
+    const initialTargets = messageRequests(h).map((request) => request.body.mode === 'local-ai' ? 'local-ai' : 'remote-ai');
+
+    h.selectedRemoteSessionId = 'session-b';
+    h.currentLocale = 'zh-TW';
+    localReply.resolve({ success: true });
+    await flushAsync();
+    followUp.resolve({ success: true });
+    await sending;
+
+    assert.deepEqual(initialTargets, ['local-ai'], 'Remote AI must not start before the local answer');
+    const requests = messageRequests(h);
+    assert.deepEqual(requests.map((request) => request.body.mode === 'local-ai' ? 'local-ai' : 'remote-ai'), ['local-ai', 'remote-ai']);
+    assert.match(requests[0].route, /\/session-a\/message$/);
+    assert.match(requests[1].route, /\/session-a\/message$/);
+    assert.equal(requests[1].body.text, 'Please compare both answers');
+    assert.equal(requests[1].body.locale, 'en-US');
+    assert.strictEqual(requests[1].signal, requests[0].signal);
+    assert.equal(h.stateLoads, 1);
+    assertIdle(h);
+});
+
+test('Stop during the local answer prevents the remote follow-up and suppresses its late failure', async () => {
+    const localReply = deferred();
+    const followUp = deferred();
+    const h = remoteHarness((_route, { body, signal }) => {
+        if (body.target === 'remote-ai') return followUp.promise;
+        signal?.addEventListener('abort', () => localReply.reject(abortError()), { once: true });
+        return localReply.promise;
+    });
+    h.chatInput.value = 'Please compare both answers';
+    const sending = h.sendChat();
+    await h.sendChat();
+    await sending;
+    if (messageRequests(h).some((request) => request.body.target === 'remote-ai')) {
+        followUp.reject(new Error('late follow-up failure'));
+        await flushAsync();
+    }
+
+    assert.deepEqual(messageRequests(h).map((request) => request.body.mode === 'local-ai' ? 'local-ai' : 'remote-ai'), ['local-ai']);
+    assert.equal(h.uiLogs.filter((entry) => entry.level === 'error').length, 0);
+    assert.doesNotMatch(remoteBubbleHtml(h), /Remote AI follow-up failed/);
+    assert.equal((remoteBubbleHtml(h).match(/Cancelled by user/g) || []).length, 1);
+    assertIdle(h);
+});
+
+test('Stop while the remote follow-up request is in flight aborts it without a duplicate failure', async () => {
+    const followUp = deferred();
+    const h = remoteHarness((_route, { body, signal }) => {
+        if (body.target !== 'remote-ai') return Promise.resolve({ success: true });
+        signal?.addEventListener('abort', () => followUp.reject(abortError()), { once: true });
+        return followUp.promise;
+    });
+    h.chatInput.value = 'Please compare both answers';
+    const sending = h.sendChat();
+    await flushAsync();
+
+    const requests = messageRequests(h);
+    assert.deepEqual(requests.map((request) => request.body.mode === 'local-ai' ? 'local-ai' : 'remote-ai'), ['local-ai', 'remote-ai']);
+    const controller = h.getActiveAbortController('remote');
+    assert.ok(controller, 'Stop must remain available until the follow-up request settles');
+    assert.strictEqual(requests[1].signal, controller.signal);
+    await h.sendChat();
+    await sending;
+
+    assert.equal(controller.signal.aborted, true);
+    assert.equal(h.uiLogs.filter((entry) => entry.level === 'error').length, 0);
+    assert.doesNotMatch(remoteBubbleHtml(h), /Remote AI follow-up failed/);
+    assert.equal((remoteBubbleHtml(h).match(/Cancelled by user/g) || []).length, 1);
+    assertIdle(h);
+});
+
+test('a genuine remote follow-up failure remains visible without replacing the local success', async () => {
+    const h = remoteHarness((_route, { body }) => body.target === 'remote-ai'
+        ? Promise.reject(new Error('follow-up unavailable'))
+        : Promise.resolve({ success: true }));
+    h.chatInput.value = 'Please compare both answers';
+    await h.sendChat();
+    await flushAsync();
+
+    assert.deepEqual(messageRequests(h).map((request) => request.body.mode === 'local-ai' ? 'local-ai' : 'remote-ai'), ['local-ai', 'remote-ai']);
+    assert.equal(h.uiLogs.filter((entry) => entry.level === 'error').length, 1);
+    assert.match(h.uiLogs.find((entry) => entry.level === 'error').text, /Remote AI follow-up failed: follow-up unavailable/);
+    assert.match(remoteBubbleHtml(h), /Remote AI follow-up failed: follow-up unavailable/);
+    assert.doesNotMatch(remoteBubbleHtml(h), /Cancelled by user|Sorry, that request failed/);
+    assertIdle(h);
+});
+
+test('a remote follow-up API refusal is reported instead of silently looking successful', async () => {
+    const h = remoteHarness((_route, { body }) => body.target === 'remote-ai'
+        ? { success: false, error: 'follow-up refused' }
+        : { success: true });
+    h.chatInput.value = 'Please compare both answers';
+    await h.sendChat();
+    await flushAsync();
+
+    assert.equal(h.uiLogs.filter((entry) => entry.level === 'error').length, 1);
+    assert.match(h.uiLogs.find((entry) => entry.level === 'error').text, /Remote AI follow-up failed: follow-up refused/);
+    assert.match(remoteBubbleHtml(h), /Remote AI follow-up failed: follow-up refused/);
+    assert.doesNotMatch(remoteBubbleHtml(h), /Cancelled by user|Sorry, that request failed/);
+    assertIdle(h);
+});
+
+test('Stop while refreshing remote state after the local answer prevents the follow-up', async () => {
+    const refresh = deferred();
+    const h = remoteHarness(() => ({ success: true }));
+    h.loadRemoteProfileAndState = () => refresh.promise;
+    h.chatInput.value = 'Please compare both answers';
+    const sending = h.sendChat();
+    await flushAsync();
+
+    assert.deepEqual(messageRequests(h).map((request) => request.body.mode === 'local-ai' ? 'local-ai' : 'remote-ai'), ['local-ai']);
+    const controller = h.getActiveAbortController('remote');
+    assert.ok(controller);
+    await h.sendChat();
+    refresh.resolve();
+    await sending;
+
+    assert.equal(controller.signal.aborted, true);
+    assert.deepEqual(messageRequests(h).map((request) => request.body.mode === 'local-ai' ? 'local-ai' : 'remote-ai'), ['local-ai']);
+    assert.equal(h.uiLogs.filter((entry) => entry.level === 'error').length, 0);
+    assert.equal((remoteBubbleHtml(h).match(/Cancelled by user/g) || []).length, 1);
+    assertIdle(h);
+});
+
+test('single-target Remote AI requests keep their existing signal and Stop behavior', async () => {
+    const reply = deferred();
+    const h = remoteHarness((_route, { signal }) => {
+        signal?.addEventListener('abort', () => reply.reject(abortError()), { once: true });
+        return reply.promise;
+    });
+    h.resolveRemoteTargets = () => ['remote-ai'];
+    h.chatInput.value = '@Remote AI please answer';
+    const sending = h.sendChat();
+
+    const requests = messageRequests(h);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].body.mode, 'user');
+    assert.equal(requests[0].body.target, 'remote-ai');
+    assert.strictEqual(requests[0].signal, h.getActiveAbortController('remote').signal);
+    await h.sendChat();
+    await sending;
+
+    assert.equal((remoteBubbleHtml(h).match(/Cancelled by user/g) || []).length, 1);
+    assert.doesNotMatch(remoteBubbleHtml(h), /Remote AI follow-up failed/);
+    assertIdle(h);
+});
+
+test('a failed local answer does not start the remote follow-up', async () => {
+    const followUp = deferred();
+    const h = remoteHarness((_route, { body }) => body.target === 'remote-ai'
+        ? followUp.promise
+        : Promise.resolve({ success: false, error: 'local unavailable' }));
+    h.chatInput.value = 'Please compare both answers';
+    await h.sendChat();
+    await flushAsync();
+
+    assert.deepEqual(messageRequests(h).map((request) => request.body.mode === 'local-ai' ? 'local-ai' : 'remote-ai'), ['local-ai']);
+    assert.match(remoteBubbleHtml(h), /Sorry, that request failed.*local unavailable/);
+    assert.equal(h.uiLogs.filter((entry) => entry.level === 'error').length, 0);
     assertIdle(h);
 });

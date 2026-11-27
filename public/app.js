@@ -6814,7 +6814,10 @@ async function sendChat() {
                 : msg));
     }
     const currentMode = activeChatMode;
+    const currentRemoteSessionId = currentMode === 'remote' ? selectedRemoteSessionId : '';
+    const currentRequestLocale = currentLocale;
     const currentLocalSession = currentMode === 'local' ? getActiveLocalChatSession() : null;
+    let remoteFollowUp = null;
     const thinkId = appendThinking(currentMode === 'remote' ? remoteChatMessages : chatMessages);
     const agentRunId = currentMode === 'local'
         ? `agent-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
@@ -6850,34 +6853,46 @@ async function sendChat() {
                     addUILog(currentLocale === 'en-US'
                         ? '🤝 Double Agent Mode: Local AI answers first, Remote AI follow-up queued'
                         : '🤝 Double Agent Mode：本地 AI 先回，遠端 AI 補充已排入佇列', 'info');
-                    api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
-                        method: 'POST',
-                        body: {
-                            text: msg,
-                            mode: 'user',
-                            target: 'remote-ai',
-                            locale: currentLocale,
-                        }
-                    }).catch((error) => {
+                    const reportFollowUpFailure = (message) => {
                         addUILog(currentLocale === 'en-US'
-                            ? `❌ Remote AI follow-up failed: ${error.message || 'unknown error'}`
-                            : `❌ 遠端 AI 補充失敗：${error.message || '未知錯誤'}`, 'error');
-                        appendChatBubble('system', `Remote AI follow-up failed: ${error.message}`, [], {
+                            ? `❌ Remote AI follow-up failed: ${message}`
+                            : `❌ 遠端 AI 補充失敗：${message}`, 'error');
+                        appendChatBubble('system', `Remote AI follow-up failed: ${message}`, [], {
                             container: remoteChatMessages,
                             forceSystem: true,
                         });
-                    });
+                    };
+                    remoteFollowUp = async () => {
+                        try {
+                            const result = await api(`/api/remote/session/${currentRemoteSessionId}/message`, {
+                                method: 'POST',
+                                body: {
+                                    text: msg,
+                                    mode: 'user',
+                                    target: 'remote-ai',
+                                    locale: currentRequestLocale,
+                                },
+                                signal: requestAbortController.signal,
+                            });
+                            if (result?.success === false) {
+                                reportFollowUpFailure(result.error || 'unknown error');
+                            }
+                        } catch (error) {
+                            if (requestAbortController.signal.aborted || error.name === 'AbortError') throw error;
+                            reportFollowUpFailure(error.message || 'unknown error');
+                        }
+                    };
                     appendChatBubble('system', currentLocale === 'en-US' ? 'Local AI is replying first. Remote AI will follow up when ready.' : '先由本地 AI 回覆，遠端 AI 準備好後再補充。', [], {
                         container: remoteChatMessages,
                         forceSystem: true,
                     });
-                    return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
+                    return api(`/api/remote/session/${currentRemoteSessionId}/message`, {
                         method: 'POST',
                         body: {
                             text: msg,
                             mode: 'local-ai',
                             target: 'remote-user',
-                            locale: currentLocale,
+                            locale: currentRequestLocale,
                             skipUserEcho: true,
                         },
                         signal: requestAbortController.signal
@@ -6890,13 +6905,13 @@ async function sendChat() {
                         ? '🤖 Routing message to Local AI'
                         : '🤖 訊息交由本地 AI 處理', 'info');
                     const localAiTarget = 'remote-user';
-                    return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
+                    return api(`/api/remote/session/${currentRemoteSessionId}/message`, {
                         method: 'POST',
                         body: {
                             text: msg,
                             mode: 'local-ai',
                             target: localAiTarget,
-                            locale: currentLocale,
+                            locale: currentRequestLocale,
                         },
                         signal: requestAbortController.signal
                     });
@@ -6907,13 +6922,13 @@ async function sendChat() {
                     addUILog(currentLocale === 'en-US'
                         ? `🌐 Routing message to ${targets.includes('remote-ai') ? 'Remote AI' : 'Remote User'}`
                         : `🌐 訊息轉送至${targets.includes('remote-ai') ? '遠端 AI' : '遠端使用者'}`, 'info');
-                    return api(`/api/remote/session/${selectedRemoteSessionId}/message`, {
+                    return api(`/api/remote/session/${currentRemoteSessionId}/message`, {
                         method: 'POST',
                         body: {
                             text: msg,
                             mode: remoteSendMode?.value || 'user',
                             target: targets.includes('remote-ai') ? 'remote-ai' : 'remote-user',
-                            locale: currentLocale,
+                            locale: currentRequestLocale,
                         },
                         signal: requestAbortController.signal
                     });
@@ -6939,8 +6954,13 @@ async function sendChat() {
         if (data.success) {
             setThinkingIdForMode(currentMode, '');
             if (currentMode === 'remote') {
-
                 await loadRemoteProfileAndState();
+                requestAbortController.signal.throwIfAborted();
+                if (remoteFollowUp) {
+                    setRemotePendingRoles({ local: false, remote: true });
+                    updatePendingStatusRow();
+                    await remoteFollowUp();
+                }
             } else {
                 $$('.suggestions-container').forEach(el => el.remove());
                 if (currentLocalSession && Array.isArray(data.history)) {
@@ -6990,7 +7010,7 @@ async function sendChat() {
 
         removeThinking(thinkId);
         setThinkingIdForMode(currentMode, '');
-        if (err.name === 'AbortError') {
+        if (requestAbortController.signal.aborted || err.name === 'AbortError') {
             appendChatBubble(currentMode === 'remote' ? 'system' : 'ai', currentLocale === 'en-US' ? 'Cancelled by user' : '使用者中斷', [], {
                 container: currentMode === 'remote' ? remoteChatMessages : chatMessages,
                 localChatSessionId: currentLocalSession?.id,

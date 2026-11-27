@@ -641,9 +641,12 @@ $true
 - 遠端連線後，雙方仍可透過遠端聊天室直接呼叫本地 AI 與遠端 AI 分工。
 
 ### 10.4 Double Agent Mode 分工
-- 遠端聊天室未指定對象時，流程預設為：本地 AI 先產生輔助筆記，再交由遠端 AI 彙整並回覆人類。
+- 遠端聊天室未指定對象時，流程預設為：本地 AI 先成功產生輔助筆記，再交由遠端 AI 彙整並回覆人類。本地 AI 失敗或取消時不得啟動遠端補充。
 - 若使用者明確指定 `@本地 AI` 或 `@遠端 AI`，則只呼叫指定 AI。
 - AI 對 AI 訊息應視為隊友筆記，遠端 AI 負責產出最終回覆，不應互相爭辯或重複搶答。
+- 前端必須以單一 request lifecycle 串接 local answer、remote profile／state refresh 與 `mode:'user', target:'remote-ai'` follow-up；follow-up 只有在前者都成功且 shared `AbortSignal` 未中止時才可送出。
+- request 開始時固定 remote session ID 與 locale，避免等待期間切換 session 或語系造成誤送。follow-up 的網路錯誤與 `{ success:false }` API refusal 都必須可見；取消後不得再顯示晚到失敗。
+- Stop 可阻止尚未送出或仍在 HTTP in-flight 的 follow-up。目前協定沒有撤回機制，不得宣稱能取消 peer 已接受並開始處理的工作。
 
 ## 11. 2026.05.13 遠端協作與工具列規格
 
