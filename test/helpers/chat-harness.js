@@ -144,6 +144,13 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
         pid: 424242, platform: 'win32', version: 'v20.0.0-test',
         execPath: path.join(sandboxRoot, 'node.exe'),
         cwd: () => sandboxRoot,
+        kill(pid, signal) {
+            if (signal !== 0) return deny(`process.kill signal ${signal}`);
+            if (pid === 424242) return true;
+            const error = new Error(`No such process: ${pid}`);
+            error.code = 'ESRCH';
+            throw error;
+        },
         on: () => fakeProcess,
         exit: () => deny('process.exit'),
     };
@@ -283,7 +290,7 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
     });
     const realFiles = new Set([
         SERVER,
-        ...['pure.js', 'local-api-security.js', 'native-dialogs.js', 'task-run-log.js', 'remote-ai-queue.js', 'agent/actions.js', 'agent/consent.js',
+        ...['pure.js', 'local-api-security.js', 'native-dialogs.js', 'task-run-log.js', 'remote-ai-queue.js', 'atomic-temp.js', 'agent/actions.js', 'agent/consent.js',
             'agent/loop-budget.js', 'agent/prompts.js', 'agent/sop-templates.js'].map((file) => path.join(ROOT, 'src', file)),
     ]);
     const injected = new Map([

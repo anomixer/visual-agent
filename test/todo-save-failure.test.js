@@ -123,6 +123,23 @@ test('a failed delete keeps the task and reports JSON', async (t) => {
         'a delete that could not be persisted must be rolled back');
 });
 
+test('a failed task rename removes the temp file it already wrote', async (t) => {
+    const { harness, port, token } = await startHarness(t);
+    harness.setTasks([TASK]);
+    const target = tasksFilePath(harness);
+    const temp = siblingFilePath(harness, 'tasks.json.424242.tmp');
+    harness.failWrites((file) => (file === target
+        ? Object.assign(new Error('ENOSPC: no space left on device, rename'), { code: 'ENOSPC' })
+        : null));
+
+    const failed = await request(port, 'POST', '/api/todo', {
+        token,
+        body: { title: 'Cannot be persisted', description: 'synthetic', action: 'install', category: 'Test' },
+    });
+    assertJsonFailure(failed, 'POST /api/todo (rename)');
+    assert.equal(harness.getFiles()[temp], undefined, 'the fully written temp file must be cleaned up');
+});
+
 test('task writes recover once the disk is writable again', async (t) => {
     const { harness, port, token } = await startHarness(t);
     harness.setTasks([TASK]);

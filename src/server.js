@@ -55,6 +55,7 @@ const { pickSaveFilePath } = require('./native-dialogs');
 const { RUN_LOG_FILE_NAME, serializeRunLogRecord, parseRunLog } = require('./task-run-log');
 // 遠端 AI 回覆的逐 session 佇列、逾時與斷線取消（見 src/remote-ai-queue.js）。
 const { createRemoteAiQueue } = require('./remote-ai-queue');
+const { cleanupStaleAtomicTempFiles } = require('./atomic-temp');
 // APPDATA debug.log 的輪替寫入與尾端讀取（見 src/debug-log.js）。
 const debugLogStore = require('./debug-log');
 // ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
@@ -151,6 +152,8 @@ if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
 if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
 if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
 if (!fs.existsSync(EXPS_DIR)) fs.mkdirSync(EXPS_DIR, { recursive: true });
+cleanupStaleAtomicTempFiles(visualAgentDir, 'remote-profile.json');
+cleanupStaleAtomicTempFiles(visualAgentDir, 'tasks.json');
 
 function buildDefaultRemoteProfile() {
     const machineName = process.env.COMPUTERNAME || os.hostname() || 'AI-PC';
@@ -3511,8 +3514,13 @@ function clearRunLog() {
 
 function saveTasks() {
     const tempFile = `${TASKS_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify({ todoList, exportedAt: new Date().toISOString() }, null, 2), 'utf-8');
-    fs.renameSync(tempFile, TASKS_FILE);
+    try {
+        fs.writeFileSync(tempFile, JSON.stringify({ todoList, exportedAt: new Date().toISOString() }, null, 2), 'utf-8');
+        fs.renameSync(tempFile, TASKS_FILE);
+    } catch (error) {
+        try { fs.unlinkSync(tempFile); } catch {}
+        throw error;
+    }
 }
 
 

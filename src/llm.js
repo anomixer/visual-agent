@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { OAuthTokenCache } = require('./oauth-token-cache');
+const { cleanupStaleAtomicTempFiles } = require('./atomic-temp');
 const {
     normalizeHistoryMessages,
     resolveChatUrl,
@@ -76,6 +77,7 @@ if (!fs.existsSync(APP_DATA_DIR)) {
     fs.mkdirSync(APP_DATA_DIR, { recursive: true });
 }
 const CONFIG_PATH = path.join(APP_DATA_DIR, 'config.json');
+cleanupStaleAtomicTempFiles(APP_DATA_DIR, 'config.json');
 
 /**
  * 載入預存設定

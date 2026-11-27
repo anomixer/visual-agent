@@ -5,6 +5,46 @@
 
 ---
 
+## 📌 2026.11.27 — 第四十六階段：強制結束留下的原子暫存檔在下次啟動保守清理
+
+> 接續同日第四十五階段；本輪處理原子寫入在 `SIGKILL` 後留下的 `config.json.<pid>.tmp`、`tasks.json.<pid>.tmp` 與 `remote-profile.json.<pid>.tmp`。版本維持 `2026.8.7`。
+
+### 症狀
+- 原子寫入會先建立 `<目標>.<pid>.tmp`，再 rename 覆蓋目標；正常成功或可預期失敗都會清掉自己的暫存檔，但 `SIGKILL`、斷電或工作管理員強制結束不會執行 cleanup。
+- 這些半截暫存檔不影響下一次存檔，卻會隨每次異常結束累積，且先前沒有啟動時清理機制。
+- 不能直接用 `*.tmp` 或 mtime 刪除：PID 可能已被其他行程重用，其他行程也可能正在寫入自己的暫存檔；寬泛規則會把可恢復資料一起刪掉。
+
+### 重現
+- 隔離探針在載入前種入三個已死亡 PID 的暫存檔，修正前 `require('src/llm.js')` 與 `require('src/server.js')` 後仍全部存在：`config stale remains: true`、`remote stale remains: true`、`tasks stale remains: true`。
+- 同一探針在修正後三項皆為 `false`；目前 fixture PID 的暫存檔仍保留。
+
+### 修正
+- 新增 `src/atomic-temp.js`，集中實作 `cleanupStaleAtomicTempFiles(directory, baseName)`：
+  - 只接受 `<base>.<正整數PID>.tmp` 的完整檔名，且 `Dirent.isFile()` 必須為真；目錄與符號連結不處理。
+  - 跳過目前 PID；其餘 PID 以 `process.kill(pid, 0)` 確認。只有明確 `ESRCH` 才視為死亡，`EPERM`、探測拋錯或任何未知結果都保留。
+  - PID 重用時若對應行程仍活著就保留，不做激進清理。
+  - 目錄讀取或單檔刪除失敗都安靜略過，不影響啟動。
+- `src/llm.js` 在建立 AppData 與定義 `CONFIG_PATH` 後、`loadConfig()` 前清理 `config.json` 暫存檔。
+- `src/server.js` 在建立 AppData 子目錄後清理 `remote-profile.json` 與 `tasks.json` 暫存檔。
+- `saveTasks()` 補上與 `saveConfig()` / `saveRemoteProfile()` 一致的失敗清理：write 或 rename 拋錯時只嘗試刪掉自己 PID 的暫存檔，再 rethrow 原錯誤。
+- `test/helpers/chat-harness.js` 將真實 `atomic-temp.js` 列入 allowlist，並提供只接受 signal 0 的假 `process.kill`；fixture PID `424242` 視為活著，其餘 PID 回 `ESRCH`，不碰真實 process table。
+
+### 測試與驗收
+- 新增 `test/atomic-temp.test.js`（4 項）：只刪精確且已死亡的暫存檔、保留 live/current PID、存活狀態未知時保守保留、忽略不存在目錄與非檔案項目。
+- 新增 `test/atomic-temp-startup.test.js`（2 項）：真實 `llm.js` 以獨立子行程取得確實已結束的 PID，驗證舊暫存檔被移除而目前 PID 暫存檔保留；真實 server harness 驗證 remote-profile / tasks 舊暫存檔被移除而 fixture current PID 暫存檔保留。
+- `test/todo-save-failure.test.js` 由 8 項增為 9 項：tasks rename 失敗時，已完整寫出的 `tasks.json.424242.tmp` 必須被清掉，回應仍是帶 ENOSPC 的 JSON 且記憶體回滾。
+- 6 個突變探針全數被攔下：清理器 no-op、刪除 live PID、移除 current PID 守衛、llm 啟動不清理、server 啟動不清理、`saveTasks()` 失敗不清自身暫存檔。探針後 production 檔案皆還原為位元組相同。
+- `npm test`：27 個 JS 語法、**65 支測試檔**與 server smoke 全綠。
+
+### 尚未完成
+- 真實斷電、磁碟全滿與 Windows 檔案鎖定仍以隔離檔案系統／harness 模擬；本輪未實測不斷電下的 `fsync` 硬體保固。
+- 若舊 PID 已被其他活著的行程重用，暫存檔會刻意保留；這是避免誤刪資料的保守取捨。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權、未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.27 — 第四十五階段：硬體探測可取消，逾時與斷線不再留下 PowerShell／nvidia-smi
 
 > 接續 2026.11.27 第四十四階段；本輪把遠端 AI 佇列的取消訊號延伸到硬體探測與內建外掛，並移除硬體狀態回覆的重複探測。版本維持 `2026.8.7`。

@@ -147,7 +147,8 @@ browser ──── public/index.html
 - **診斷日誌必須是 best-effort**：`appendDebugLog()` 本身可能因磁碟滿或檔案被鎖住而拋錯，因此 `fileLog()` 必須包 try/catch。錯誤處理路徑自己拋錯會蓋掉真正的錯誤，讓全域 JSON 出口失效。
 - **模型名稱必須是字串**：`POST /api/llm/model` 的 `modelName` 非字串或去除空白後為空時必須回 400，不得賦值給 `currentModel` 或寫入 config。
 - **LLM 設定寫檔失敗不得宣稱已儲存**：`saveConfig()` 不得吞掉寫檔錯誤，否則 `updateProviderSettings()` / `setCurrentModel()` 已改完模組層設定、磁碟卻沒改，端點仍回 `success:true`，重啟後使用者的 Provider、Base URL、API Key 與 Vision Model 全部消失。兩個函式都必須先快照再套用，`saveConfig()` 拋錯時還原所有被指派的欄位（`updateProviderSettings()` 是七個）並 rethrow；`POST /api/llm/config` 與 `POST /api/llm/model` 必須回 500 JSON 帶真實原因，前端設定視窗保持開啟、模型選單把失敗寫進工作日誌。
-- **設定檔必須原子置換**：`config.json` 與 `tasks.json` 一樣必須 temp-write + rename，不得直接 `writeFileSync` 覆寫。原地覆寫會先把既有檔案截斷成 0，寫到一半失敗（行程被砍、磁碟滿、斷電）就留下半截 JSON，`loadConfig()` 解析失敗後靜默退回預設值，API Key 沒有備份可還原。暫存檔必須與目標同目錄（rename 不跨磁碟區）並帶 pid（避免兩個行程互相覆寫），rename 前必須 `fsync`，否則斷電後可能「檔名已換、資料未落地」。失敗時只能清掉自己 pid 的暫存檔，不得刪除其他 pid 可能仍在使用的檔案。
+- **設定檔必須原子置換**：`config.json`、`tasks.json` 與 `remote-profile.json` 都必須 temp-write + rename，不得直接 `writeFileSync` 覆寫。原地覆寫會先把既有檔案截斷成 0，寫到一半失敗（行程被砍、磁碟滿、斷電）就留下半截 JSON，`loadConfig()` 解析失敗後靜默退回預設值，API Key 沒有備份可還原。暫存檔必須與目標同目錄（rename 不跨磁碟區）並帶 pid（避免兩個行程互相覆寫）；`config.json` 在 rename 前必須 `fsync`，否則斷電後可能「檔名已換、資料未落地」。三者寫入／rename 失敗時都只能清掉自己 pid 的暫存檔，不得刪除其他 pid 可能仍在使用的檔案。
+- **原子暫存檔必須在啟動時保守清理**：`config.json.<pid>.tmp`、`tasks.json.<pid>.tmp` 與 `remote-profile.json.<pid>.tmp` 在正常清理沒機會執行的強制結束後可能殘留。啟動時只能刪除「檔名完全符合 `<base>.<正整數PID>.tmp`、`Dirent.isFile()` 為真、不是目前行程、且 `process.kill(pid, 0)` 確認回報 `ESRCH`」的檔案；PID 仍活著、無法確認存活（例如 `EPERM`）、目錄或符號連結都必須保留。不得用 mtime、檔名模糊前綴或全目錄 `*.tmp` 刪除，因為 PID 重用與其他行程正在寫入都可能造成資料遺失。
 - **背景自動選模的存檔失敗不得影響就緒判定**：`checkOllamaStatus()` 把 `currentModel` 換成 `DEFAULT_MODEL` 後的 `saveConfig()` 必須是 best-effort。讓錯誤往外拋會被外層 `catch (tagsErr)` 接住並跳過 `status.modelReady = true`，已存在的模型會被判為未就緒。
 - **chat 內的模型切換失敗不得中斷整段回覆**：`SWITCH_MODEL` 分支位於 `/api/chat` 的 async handler 內且沒有外層 try/catch，`setCurrentModel()` 拋錯時必須就地接住、把原因放進 `actionSummaries` 回覆使用者，不得讓全域 JSON 出口把整段 chat 變成 500。失敗時不得設定 `hasActionTaken`（它只決定要不要 `saveTasks()`）。
 - **客戶端讀檔與圖片解碼失敗必須可見**：`FileReader` 的 `onerror` 不是 `onload` 的一部分，未接時讀檔失敗（權限、檔案被移走、I/O 錯誤）會完全沒有回饋。任務匯入與 Chalkboard 圖片上傳都必須註冊 `reader.onerror`，把 `reader.error?.message`（無訊息時 `Unknown error`）一起寫進工作日誌的 error 等級；Chalkboard 另需 `img.onerror` 攔截「讀得到位元組但無法解碼」的檔案。失敗時不得送出請求、不得改動畫布，且必須重設 file input 讓使用者能重試同一個檔案。
@@ -341,6 +342,7 @@ $true
 - [x] 遠端身份儲存與連線邀請回應失敗會顯示原因，不再靜默（2026.11.25 第四十二階段：`remote.profileSaveFailed` / `remote.respondFailed` 雙語鍵、回應失敗時重置 `lastRemoteStateTick` 取回完整狀態、`test/remote-profile-ui-errors.test.js`）。
 - [x] 遠端 JSON Lines 收訊改為增量位元組掃描，限制改為逐訊框 16 MiB（2026.11.27 第四十三階段：保留 raw Buffer、只掃描新進位元組、每個訊框解碼一次、換行不計入上限、大訊框完成後釋放多餘容量；`test/remote-frame.test.js` 8 項回歸）。
 - [x] 硬體探測可取消且硬體狀態回覆不再重複探測（2026.11.27 第四十五階段：`getSystemHealth({ signal })` 訂閱者隔離、內建外掛將 signal 傳給 `execFile()`、remote queue 與 `/api/chat` 接上取消、`buildLocalHardwareStatusReply()` 沿用既有 context；新增 2 支測試檔並補 6 個突變探針）。
+- [x] 原子寫入殘留暫存檔在啟動時保守清理（2026.11.27 第四十六階段：新增 `src/atomic-temp.js`，只刪精確命名且 PID 已確認不存在的 `config.json` / `tasks.json` / `remote-profile.json` 暫存檔，保留 live/current PID、未知狀態、目錄與符號連結；`saveTasks()` 失敗也清掉自身暫存檔；新增 2 支測試檔並擴充任務失敗回歸，6 個突變探針全數被攔下）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
