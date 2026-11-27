@@ -11,13 +11,20 @@
 
 const { execFile } = require('child_process');
 
-function runPowerShell(script, timeout = 10000) {
+function throwIfAborted(signal) {
+    if (signal?.aborted) {
+        throw signal.reason || Object.assign(new Error('Hardware probe aborted.'), { name: 'AbortError' });
+    }
+}
+
+function runPowerShell(script, timeout = 10000, signal) {
     return new Promise((resolve) => {
+        throwIfAborted(signal);
         const encoded = Buffer.from(String(script || ''), 'utf16le').toString('base64');
         execFile(
             'powershell.exe',
             ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-            { timeout, windowsHide: true },
+            { timeout, windowsHide: true, signal },
             (error, stdout) => resolve({ error, stdout: String(stdout || '') })
         );
     });
@@ -27,7 +34,8 @@ function runPowerShell(script, timeout = 10000) {
  * Core hardware monitoring plugin.
  * @param {Object} health Shared system health object.
  */
-module.exports = async function(health) {
+module.exports = async function(health, { signal } = {}) {
+    throwIfAborted(signal);
     // 1) CPU, disk, and GPU name via WMI. Fast and stable baseline probe.
     const psBasic = `
         $ErrorActionPreference = 'Stop'
@@ -65,7 +73,11 @@ module.exports = async function(health) {
     `;
 
     const basicData = await new Promise((resolve) => {
-        runPowerShell(psBasic, 10000).then(({ error, stdout }) => {
+        runPowerShell(psBasic, 10000, signal).then(({ error, stdout }) => {
+            if (signal?.aborted || error?.name === 'AbortError') {
+                resolve(null);
+                return;
+            }
             if (!error && stdout) {
                 try {
                     resolve(JSON.parse(stdout));
@@ -79,6 +91,7 @@ module.exports = async function(health) {
             resolve(null);
         });
     });
+    throwIfAborted(signal);
 
     if (basicData) {
         health.cpu.load = basicData.cpuLoad ?? health.cpu.load;
@@ -132,10 +145,11 @@ module.exports = async function(health) {
     }
 
     // GPU load fallback: skip when an earlier plugin (nvidia-smi) already supplied load.
+    throwIfAborted(signal);
     if (!health.gpu.details?.vendor && (health.gpu.load === 0 || health.gpu.load === undefined)) {
         await new Promise((resolve) => {
-            runPowerShell(psGpuLoad, 5000).then(({ error, stdout }) => {
-                if (!error && stdout) {
+            runPowerShell(psGpuLoad, 5000, signal).then(({ error, stdout }) => {
+                if (!signal?.aborted && !error && stdout) {
                     const v = parseInt(String(stdout).trim(), 10);
                     if (Number.isFinite(v) && v >= 0) {
                         health.gpu.load = v;
@@ -144,5 +158,6 @@ module.exports = async function(health) {
                 resolve();
             });
         });
+        throwIfAborted(signal);
     }
 };

@@ -49,10 +49,10 @@
 | **工作清單** | ✅ | 任務 CRUD，進度條，狀態標籤，具備 Tab 分頁與 Badge 提醒 |
 | **AI 對話** | ✅ | 本地 LLM，支援 Markdown 渲染、語音朗讀 (TTS) 與清除紀錄 |
 | **AI 整合** | ✅ | 支援多種 Provider，自動參數配對，支援 Ollama Native API |
-| **遠端 AI 回覆佇列** | ✅ | 逐 session 串行、跨 session 並行、190 秒逾時、LLM abort、斷線取消與晚回抑制 |
+| **遠端 AI 回覆佇列** | ✅ | 逐 session 串行、跨 session 並行、190 秒逾時、LLM／硬體探測 abort、斷線取消與晚回抑制 |
 | **多輪對話** | ✅ | 支援記憶 6 則對話，自動注入 SOP 目錄、任務進度與硬體簡報情境 |
 | **效能優化** | ✅ | 背景任務並行化與模型狀態快取，減少非必要的聊天前置等待 |
-| **硬體健康監控** | ✅ | 圓圈式監控，支援 CPU/GPU/RAM/Disk 偵測與顯卡溫度 |
+| **硬體健康監控** | ✅ | 圓圈式監控，支援 CPU/GPU/RAM/Disk 偵測、顯卡溫度、重疊探測共用與可取消內建探測 |
 | **監控插件系統** | ✅ | 支援 `plugins/*.js` 動態擴充監控項目，自動同步至 AppData |
 | **AI Provider 設定** | ✅ | 支援 20+ 種雲端與地端 Provider，自動帶入 Base URL，儲存於 AppData |
 | **互動安全機制** | ✅ | 系統變更 ACTION 由後端保管並回傳一次性 approval，綁完整動作與 session；支援對話中斷 |
@@ -123,7 +123,7 @@ browser ──── public/index.html
              sops/<slug>/SOP.md        (SOP 腳本庫)
              %APPDATA%\visual-agent\  (tasks.json, running-task.jsonl, sops/<slug>/SOP.md, plugins/)
 ```
-- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\visual-agent\plugins\` 目錄，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。
+- **監控插件系統**：`src/system.js` 負責動態載入 `plugins/*.js` 中的監控腳本。這些腳本會自動同步到 `%APPDATA%\visual-agent\plugins\` 目錄，並透過 PowerShell 或其他 API 介面獲取系統硬體資訊，實現可擴充的監控功能。外掛可接收選用的第二參 `{ signal }`；內建外掛會把它傳給子程序並在 await 前後檢查，忽略 signal 的自訂外掛無法被強制中止。
 - **漸進拆分原則**：純函式、安全邊界與可獨立測試的預算邏輯優先抽模組；`server.js` 的 Agent 執行主迴圈與 `app.js` 的互動流程需先補行為測試，再採 strangler 式拆分，不全面重寫。
 
 ### 2.5 安全與正確性邊界（invariants）
@@ -154,7 +154,8 @@ browser ──── public/index.html
 - **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。復原結果必須寫回 `tasks.json`（run log 已被消費，不寫回則第二次重啟只剩通用中斷訊息）；健康的任務檔不得在啟動時被重寫。
 - **中斷執行必須留下診斷記錄**：`saveTasks()` 只在執行開始與結束時呼叫，因此執行期間的 `task.logs` / `progress` 必須另外以 append-only JSONL（`%APPDATA%\visual-agent\running-task.jsonl`，每筆 `{ taskId, progress, entry }`）落地，只追加新增的那一行，不得為了 checkpoint 整份重寫 `tasks.json`。`log` / `ui:message` 各追加一筆，`phase:start` 追加 progress-only 記錄。執行開始前與 `finally` 寫檔後都必須清除 sidecar；解析必須逐行寬容（半截的最後一行與不同 `taskId` 的記錄跳過，不丟棄整份）；append / 清除失敗只寫 `debug.log`，不得中斷執行。不得以截斷 `task.logs` 作為成長控制手段。
 - **Agent Loop 必須有總上限**：每個 `/api/chat` 請求在入口建立單一 `AgentLoopBudget`，首輪 ACTION、自動即時資訊搜尋 / 抽取、迴圈工具與每輪 LLM 呼叫共用最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；待確認的系統變更動作不得佔用工具額度。LLM 與頁面抓取 timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader、搜尋、抽取、`fetch_title` 與瀏覽器 fallback。提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）必須接收 abort，但仍使用各自 timeout，不得宣稱這些分支與一般 chat 共用同一預算；Playwright 已發出的導覽仍可能等到自身 timeout。
-- **Remote AI 回覆必須可取消且不得留下未處理拒絕**：`src/remote-ai-queue.js` 必須做到同 session 串行、不同 session 並行，每項正在執行的工作各有 `AbortController`；190 秒逾時先 abort 再拒絕呼叫端，並把 signal 傳給 `llm.chatWithLLM()`。session 變為非 active 時必須取消 active 工作，已排隊與取消世代尚未排空時新加入的工作不得啟動。工作開始、非同步步驟後與送出前都必須檢查 signal / session 狀態，晚回結果不得寄給已斷線 session 或覆蓋逾時結果。內部 queue tail 必須始終 fulfill，呼叫端 result 仍須拒絕可見錯誤；立即拒絕的 promise 也要有拒絕處理者。只有最新 tail 可清理 Map，較早工作完成不得刪掉仍有排隊工作的 session。仍 active 的失敗必須送出可見錯誤並恢復 idle；斷線取消應靜默忽略。逾時只放棄當前回覆，不取消後面合法的排隊工作；硬體探測本身沒有取消介面，不得宣稱所有非同步成本都會立刻停止。
+- **Remote AI 回覆必須可取消且不得留下未處理拒絕**：`src/remote-ai-queue.js` 必須做到同 session 串行、不同 session 並行，每項正在執行的工作各有 `AbortController`；190 秒逾時先 abort 再拒絕呼叫端，並把 signal 傳給 `llm.chatWithLLM()` 與 `getSystemHealth()`。session 變為非 active 時必須取消 active 工作，已排隊與取消世代尚未排空時新加入的工作不得啟動。工作開始、非同步步驟後與送出前都必須檢查 signal / session 狀態，晚回結果不得寄給已斷線 session 或覆蓋逾時結果。內部 queue tail 必須始終 fulfill，呼叫端 result 仍須拒絕可見錯誤；立即拒絕的 promise 也要有拒絕處理者。只有最新 tail 可清理 Map，較早工作完成不得刪掉仍有排隊工作的 session。仍 active 的失敗必須送出可見錯誤並恢復 idle；斷線取消應靜默忽略。逾時只放棄當前回覆，不取消後面合法的排隊工作。
+- **硬體探測必須可取消且保留共用語意**：`getSystemHealth({ signal })` 讓每個可取消呼叫端各自拒絕，不得因一個遠端請求取消而中斷共用的 UI 探測或其他訂閱者；沒有不可取消呼叫端且最後一個可取消訂閱者離開時，才 abort 內部 controller 並移除 Map 項目。未帶 signal 的呼叫端仍取得原始共用 promise／結果物件。內建 `hardware-info.js` 與 `temperature-monitor.js` 必須把 signal 傳給 `execFile()`，並在 await 前後檢查，取消後不得再跑 fallback 或記成一般外掛失敗。自訂外掛若忽略第二參 `{ signal }`，不得宣稱其內部工作可被強制停止。硬體狀態回覆必須沿用已取得的 health context，不得為同一回答重複探測。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
 - **Browser 分頁快照不得重疊、亂序或整份重送**：`ensureBrowserSession()` 必須共用同一個進行中的開啟 promise，不得讓並行呼叫各自 `newContext()` 而洩漏前一組 page。`GET /api/browser/session/snapshot` 一律回 `snapshotHash`；帶 `?since=<上次收到的雜湊>` 且截圖位元組相同時只回 `unchanged: true` 與雜湊，不重送 base64。前端輪詢必須有 in-flight 守衛，使用者導覽 / 上一頁 / 重新載入期間以計數器暫停輪詢，且只有使用者操作可推進序號，晚到的舊快照不得覆蓋較新的導覽結果。伺服器每次輪詢仍會實際截圖，不得宣稱省下截圖成本。
 - **OAuth cache 不得混用憑證**：token cache key 必須包含 token URL、client ID、client secret、scope、audience。
@@ -339,6 +340,7 @@ $true
 - [x] 遠端 session 名額只計未結束的連線、terminal session 有上限、`connect()` 有逾時、`hello_cancel` / `hello_timeout` 會關閉 socket（2026.11.25 第四十二階段：`liveSessionCount()`、`MAX_TERMINAL_SESSIONS` + `pruneTerminalSessions()`、`connectTimeoutMs`、`test/remote-agent.test.js` 再補 6 項）。
 - [x] 遠端身份儲存與連線邀請回應失敗會顯示原因，不再靜默（2026.11.25 第四十二階段：`remote.profileSaveFailed` / `remote.respondFailed` 雙語鍵、回應失敗時重置 `lastRemoteStateTick` 取回完整狀態、`test/remote-profile-ui-errors.test.js`）。
 - [x] 遠端 JSON Lines 收訊改為增量位元組掃描，限制改為逐訊框 16 MiB（2026.11.27 第四十三階段：保留 raw Buffer、只掃描新進位元組、每個訊框解碼一次、換行不計入上限、大訊框完成後釋放多餘容量；`test/remote-frame.test.js` 8 項回歸）。
+- [x] 硬體探測可取消且硬體狀態回覆不再重複探測（2026.11.27 第四十五階段：`getSystemHealth({ signal })` 訂閱者隔離、內建外掛將 signal 傳給 `execFile()`、remote queue 與 `/api/chat` 接上取消、`buildLocalHardwareStatusReply()` 沿用既有 context；新增 2 支測試檔並補 6 個突變探針）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
@@ -492,6 +494,7 @@ $true
 - **失敗必須回報且不得假裝成功**：`POST /api/remote/profile` 與 `POST /api/remote/session/:id/respond` 失敗時，前端要寫出錯誤日誌（`remote.profileSaveFailed` / `remote.respondFailed`）。回應邀請失敗後必須把 `lastRemoteStateTick` 歸零再抓一次完整狀態：仍有效的邀請會重新彈出，已逾時的邀請由 `renderRemotePopup()` 收起視窗。不得在失敗時直接關閉邀請視窗。
 - **JSON Lines 必須保留 raw Buffer 並增量掃描**：socket 不得用 `setEncoding('utf8')` 提前解碼；每個 `data` 事件只掃描新進位元組的 LF（`0x0a`），未完成訊框以可擴充 Buffer 累積，完整訊框才轉為 UTF-8 字串並 `JSON.parse()`。不得對整條未完成訊框反覆 `Buffer.byteLength()` 或 `split()`；跨封包 split 的 UTF-8 字元必須能正確重組。
 - **16 MiB 上限是逐訊框且不含換行**：單一訊框（LF 前）最多 16 MiB；超過即回報 `Remote frame exceeded the 16 MiB limit.`、釋放緩衝並 destroy socket。一個 `data` 事件含多筆小訊框時不得因 aggregate 超過 16 MiB 而拒絕。剛好 16 MiB 必須接受，多 1 byte 必須拒絕；CRLF 的 CR 屬訊框內容但可由 `trim()` 去除。壞 JSON 只回報 `Remote payload parse failed`，不得中斷後續訊框。訊框完成或 socket close 時要縮回／釋放多餘緩衝容量。
+- **連線生命週期必須貫穿硬體探測**：remote AI 的 190 秒逾時或 session 斷線會 abort 共用探測中屬於該請求的訂閱；若仍有 UI 或其他訂閱者，底層探測必須繼續。取消後不得再啟動硬體 fallback 或把取消記成一般外掛錯誤。
 
 ## 8. 2026.04.10 已修復問題 (Runtime Fixes)
 
@@ -676,7 +679,8 @@ $true
 ### 13.2 AI Timeout 與 Queue
 - LLM chat request 必須有明確 timeout，目前規格為 3 分鐘。
 - Remote AI per-session queue 不得因單一回覆長時間卡住而永久阻塞；目前外層上限為 190 秒，逾時必須取消在途 LLM、釋放 queue 並產生可見錯誤訊息。
-- Remote queue 必須將 `AbortSignal` 轉發給 LLM；斷線或 session 變為非 active 時，active 與 queued 工作都不得繼續，晚回結果也不得送出。內部 tail 不得產生未處理拒絕；完整取消契約見 §2.5。
+- Remote queue 必須將 `AbortSignal` 轉發給 LLM 與硬體探測；斷線或 session 變為非 active 時，active 與 queued 工作都不得繼續，晚回結果也不得送出。內部 tail 不得產生未處理拒絕；完整取消契約見 §2.5。
+- 硬體狀態問題會先取得一次可取消的本機 health context；Remote AI 與 local-AI remote chat 都必須沿用該 context 組回覆，不得再呼叫一次 `getSystemHealth()`。
 
 ### 13.3 Remote Chat 視覺區分
 - Remote User、Remote AI、remote system message 的 bubble 底色必須與本機聊天不同。

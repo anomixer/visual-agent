@@ -12,6 +12,12 @@ const path = require('path');
 let lastUnavailableLogAt = 0;
 const UNAVAILABLE_LOG_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 
+function throwIfAborted(signal) {
+    if (signal?.aborted) {
+        throw signal.reason || Object.assign(new Error('Temperature probe aborted.'), { name: 'AbortError' });
+    }
+}
+
 function resolveNvidiaSmiCandidates() {
     const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
     const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
@@ -22,15 +28,16 @@ function resolveNvidiaSmiCandidates() {
     ];
 }
 
-function runNvidiaSmiOnce(executablePath) {
+function runNvidiaSmiOnce(executablePath, signal) {
     return new Promise((resolve) => {
+        throwIfAborted(signal);
         execFile(
             executablePath,
             [
                 '--query-gpu=name,driver_version,temperature.gpu,utilization.gpu,memory.total,memory.used,memory.free,power.draw,power.limit',
                 '--format=csv,noheader,nounits'
             ],
-            { timeout: 8000, windowsHide: true },
+            { timeout: 8000, windowsHide: true, signal },
             (error, stdout) => resolve({ error, stdout: String(stdout || ''), executablePath })
         );
     });
@@ -40,12 +47,14 @@ function runNvidiaSmiOnce(executablePath) {
  * NVIDIA GPU temperature monitor plugin.
  * @param {Object} health Shared system health object.
  */
-module.exports = async function(health) {
+module.exports = async function(health, { signal } = {}) {
+    throwIfAborted(signal);
     const candidates = resolveNvidiaSmiCandidates();
     let lastError = null;
 
     for (const executablePath of candidates) {
-        const result = await runNvidiaSmiOnce(executablePath);
+        const result = await runNvidiaSmiOnce(executablePath, signal);
+        throwIfAborted(signal);
         if (!result.error && result.stdout) {
             const firstLine = result.stdout.trim().split(/\r?\n/)[0];
             const parts = firstLine.split(',').map(s => s.trim());
@@ -84,6 +93,7 @@ module.exports = async function(health) {
         lastError = result.error;
     }
 
+    throwIfAborted(signal);
     if (lastError) {
         if (String(lastError.code || '').toUpperCase() === 'ENOENT') {
             // No NVIDIA stack on this machine is an expected state. Stay silent.

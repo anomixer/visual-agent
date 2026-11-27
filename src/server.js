@@ -340,10 +340,10 @@ const remoteAgent = new RemoteAgentService({
                     role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
                     content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
                 }));
-            const localHardwareContext = await getSystemHealth();
+            const localHardwareContext = await getSystemHealth({ signal });
             ensureActive();
             const aiReply = isLocalHardwareStatusQuestion(message.text || '')
-                ? await buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW')
+                ? await buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW', localHardwareContext)
                 : await llm.chatWithLLM(
                     message.text || '',
                     history,
@@ -804,9 +804,8 @@ function getCachedOrDefaultSopState(sop = {}) {
     };
 }
 
-async function buildLocalHardwareStatusReply(locale = 'zh-TW') {
+async function buildLocalHardwareStatusReply(locale = 'zh-TW', health) {
     const profile = getRemoteProfile();
-    const health = await getSystemHealth();
     const ramTotal = Math.round(os.totalmem() / 1024 / 1024 / 1024);
     const ramFree = Math.round(os.freemem() / 1024 / 1024 / 1024);
     const diskLines = buildDiskLinesFromHealth(health, locale);
@@ -3164,7 +3163,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                 }));
             const localHardwareContext = await getSystemHealth();
             outboundText = isLocalHardwareStatusQuestion(text)
-                ? await buildLocalHardwareStatusReply(locale)
+                ? await buildLocalHardwareStatusReply(locale, localHardwareContext)
                 : await llm.chatWithLLM(
                 text,
                 history,
@@ -4197,9 +4196,10 @@ app.post('/api/chat', async (req, res) => {
     let systemHealth = null;
     try {
         if (isLocalHardwareStatusQuestion(message)) {
-            systemHealth = await getSystemHealth();
+            systemHealth = await getSystemHealth({ signal: chatAbortController.signal });
         }
     } catch {
+        if (chatAbortController.signal.aborted) return;
         systemHealth = null;
     }
 

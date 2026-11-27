@@ -5,6 +5,52 @@
 
 ---
 
+## 📌 2026.11.27 — 第四十五階段：硬體探測可取消，逾時與斷線不再留下 PowerShell／nvidia-smi
+
+> 接續 2026.11.27 第四十四階段；本輪把遠端 AI 佇列的取消訊號延伸到硬體探測與內建外掛，並移除硬體狀態回覆的重複探測。版本維持 `2026.8.7`。
+
+### 症狀一：遠端 AI 已取消，硬體探測仍繼續跑
+- 第四十四階段讓 remote queue 取消 LLM，但 `getSystemHealth()` 不接收 signal，內建 `hardware-info.js` / `temperature-monitor.js` 的 `execFile()` 也沒有取消介面。
+- 對方斷線或 190 秒逾時後，正在執行的 PowerShell / `nvidia-smi` 仍會等到自身 timeout；後續工作雖被佇列擋下，已耗用的本機資源無法及早停止。
+- 一般 `/api/chat` 已有 request abort controller，但硬體狀態問題在進入 LLM 前探測時沒有接入，因此按 Stop 也必須等探測結束。
+
+### 症狀二：硬體狀態問題重複探測兩次
+- Remote AI 與 remote chat 的 local-AI 路徑都先取得 `localHardwareContext`，若問題是硬體狀態，又呼叫 `buildLocalHardwareStatusReply()`；該函式內部再次 `await getSystemHealth()`。
+- 同一次回答因此掃描兩輪外掛。既有共用 promise 只能吸收重疊呼叫，第一次探測完成後第二次會重新執行，並非真正的重用。
+
+### 修正
+- `src/system.js`：
+  - `getSystemHealth({ signal })` 支援可取消訂閱者；未帶 signal 的 UI 呼叫仍取得原始共用 promise 與結果物件。
+  - 同 key 的重疊探測仍共用一次執行；每個可取消呼叫端有獨立 wrapper，自己的 signal abort 時立即拒絕，不影響其他訂閱者或 UI。
+  - 只有「沒有不可取消呼叫端，且所有可取消訂閱者都已離開」時才 abort 內部 controller；取消最後訂閱者會移除 Map 項目，讓下一次呼叫開始新探測。
+  - 內部 promise 附上拒絕處理者，避免最後訂閱者取消後產生未處理拒絕；清理 Map 時比對 entry 身分，較舊探測完成不會刪掉新探測。
+  - 外掛改以 `plugin(health, { signal })` 呼叫；探測開始、每個外掛前後與結束前都檢查取消。`AbortError` 不記成一般外掛失敗。
+- `plugins/hardware-info.js` / `plugins/temperature-monitor.js`：
+  - 接收選用第二參 `{ signal }`，將它傳給 `execFile()`。
+  - 在 await 前後檢查取消；中止後不再嘗試其他 `nvidia-smi.exe` 路徑、不再跑 GPU fallback，也不把取消記成硬體失敗。
+- `src/server.js`：
+  - Remote AI 工作把 queue signal 傳給 `getSystemHealth()`；`/api/chat` 把既有 `chatAbortController.signal` 傳入。
+  - `buildLocalHardwareStatusReply(locale, health)` 改為只組文字，不再自行探測；兩條呼叫端皆沿用已取得的 context，一次回答只探測一次。
+  - `/api/system/health` 仍是不可取消的 UI 端點，行為不變。
+
+### 測試與驗收
+- `test/system-plugins.test.js` 擴充為 30 項：訊號轉發、pre-aborted、外掛之間取消、取消不記一般錯誤、UI 共用探測不被遠端取消、多訂閱者互不影響、最後訂閱者取消無未處理拒絕、取消後 Map 啟用新探測。
+- 新增 `test/hardware-plugin-cancel.test.js`（3 項）：以 VM 載入真實外掛並注入假 `execFile`，驗證 NVIDIA 與 PowerShell 都收到 signal，取消後不再嘗試其他路徑或 GPU fallback；不執行真實子程序。
+- 新增 `test/hardware-probe-integration.test.js`（3 項）：真實 HTTP + 隔離 harness，驗證 remote local-AI 硬體回覆只探測一次、`/api/chat` 接收 request signal、Stop 會取消 server 端探測且不進入 LLM。
+- `test/remote-ai-cancel.test.js` 由 4 項增為 6 項：硬體問題只探測一次、斷線取消 in-flight 硬體探測且不送晚回。
+- 6 個突變探針全部被攔下：外掛不收 signal、最後訂閱者不 abort、remote 不傳 signal、chat 不傳 signal、硬體回覆重複探測、內建外掛丟掉 subprocess signal。探針後三個 production 檔案皆還原為位元組相同。
+- 自訂外掛若忽略選用的 `{ signal }`，本輪無法強制中止其內部工作；文件不得宣稱所有外掛都能立即停止。
+
+### 尚未完成
+- 未做雙機實機驗收；本輪以共用協調器、真實外掛搭配假 `execFile`、真實 HTTP 隔離 harness 與既有 LLM abort 測試互補。
+- 自訂外掛未實作取消時，仍可能等到自身結束；這不是內建外掛的失敗。
+- `SIGKILL` 後留下的 `config.json.<pid>.tmp` / `remote-profile.json.<pid>.tmp` 沒有啟動時清理機制。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權、未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.27 — 第四十四階段：遠端 AI 逾時與斷線會取消在途 LLM，佇列不再留下未處理拒絕
 
 > 接續 2026.11.27 第四十三階段；本輪處理日誌保留的遠端 AI 回覆取消問題。版本維持 `2026.8.7`。

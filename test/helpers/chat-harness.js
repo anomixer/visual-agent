@@ -101,11 +101,13 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
     const violations = [];
     const consoleEntries = [];
     const llmCalls = [];
+    const healthCalls = [];
     const browserCalls = [];
     const executorCalls = [];
     const timers = new Set();
     let replies = [];
     let onChat = null;
+    let onHealth = null;
     const modelSwitches = [];
     let settingsFailure = null;
     let now = Date.parse('2026-10-28T12:00:00Z');
@@ -295,10 +297,14 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
         [path.join(ROOT, 'src/sop-parser.js'), { loadAllSOPs: () => clone(fixtures) }],
         [path.join(ROOT, 'src/sop-executor.js'), { SOPExecutor: executor || InertExecutor }],
         [path.join(ROOT, 'src/llm.js'), fakeLlm],
-        [path.join(ROOT, 'src/system.js'), { getSystemHealth: async () => ({
-            cpu: { model: 'Fixture CPU', load: 0 }, gpu: { name: 'Fixture GPU', load: 0 },
-            ram: { total: 16 * 1024 ** 3, usage: 50 }, disk: { drives: [], volumes: [] },
-        }) }],
+        [path.join(ROOT, 'src/system.js'), { getSystemHealth: async (options = {}) => {
+            healthCalls.push({ hasSignal: !!options.signal, aborted: !!options.signal?.aborted });
+            if (onHealth) await onHealth(options);
+            return {
+                cpu: { model: 'Fixture CPU', load: 0 }, gpu: { name: 'Fixture GPU', load: 0 },
+                ram: { total: 16 * 1024 ** 3, usage: 50 }, disk: { drives: [], volumes: [] },
+            };
+        } }],
         [path.join(ROOT, 'src/remote-agent.js'), {
             DEFAULT_REMOTE_PORT: 19168, RemoteAgentService: FakeRemoteService,
             getLocalIPv4List: () => ['127.0.0.1'],
@@ -371,7 +377,7 @@ module.exports = {
     };
     return {
         app: captured.app, sandboxRoot, sourceHashes,
-        fixtures: clone(fixtures), llmCalls, browserCalls, executorCalls, consoleEntries, modelSwitches,
+        fixtures: clone(fixtures), llmCalls, healthCalls, browserCalls, executorCalls, consoleEntries, modelSwitches,
         setReplies(next) {
             assert.ok(Array.isArray(next) && next.every((reply) => typeof reply === 'string'));
             replies = next.slice();
@@ -379,6 +385,10 @@ module.exports = {
         setChatHook(hook) {
             assert.ok(hook === null || typeof hook === 'function');
             onChat = hook;
+        },
+        setHealthHook(hook) {
+            assert.ok(hook === null || typeof hook === 'function');
+            onHealth = hook;
         },
         setTasks(tasks, runningId = tasks.find((task) => task.status === 'running')?.id || null) {
             captured.setTasks(tasks, runningId);

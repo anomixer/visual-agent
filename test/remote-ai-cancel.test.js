@@ -71,6 +71,7 @@ test('forwards the queue signal and sends a successful reply', async () => {
         await harness.emitRemoteMessage('remote-ai-session', remoteMessage());
 
         assert.equal(harness.llmCalls.length, 1);
+        assert.deepEqual(harness.healthCalls, [{ hasSignal: true, aborted: false }]);
         const messages = harness.getRemoteMessages();
         assert.deepEqual(messages.map((entry) => [entry.method, entry.payload.status || entry.payload.text]), [
             ['sendAiStatus', 'thinking'],
@@ -139,6 +140,50 @@ test('LLM failures still produce a visible remote error and idle status', async 
         ]);
         assert.match(messages[1].payload.text, /Remote AI failed to reply: probe LLM failure/);
         assert.equal(messages[2].payload.status, 'idle');
+        harness.assertSafe();
+    } finally {
+        harness.dispose();
+    }
+});
+
+test('hardware status questions reuse one cancellable probe', async () => {
+    const harness = createChatHarness();
+    try {
+        harness.setRemoteSession(remoteSession());
+        await harness.emitRemoteMessage('remote-ai-session', remoteMessage('硬碟剩多少空間？'));
+
+        assert.deepEqual(harness.healthCalls, [{ hasSignal: true, aborted: false }]);
+        assert.equal(harness.llmCalls.length, 0, 'hardware status is answered locally');
+        const replies = harness.getRemoteMessages().filter((entry) => entry.method === 'sendChatMessage');
+        assert.equal(replies.length, 1);
+        assert.match(replies[0].payload.text, /CONSENT-FIXTURE-PC/);
+        harness.assertSafe();
+    } finally {
+        harness.dispose();
+    }
+});
+
+test('disconnect aborts an in-flight hardware probe before the LLM starts', async () => {
+    const harness = createChatHarness();
+    try {
+        harness.setRemoteSession(remoteSession());
+        let healthSignal = null;
+        harness.setHealthHook(({ signal }) => {
+            healthSignal = signal;
+            if (!signal) return new Promise((resolve) => setTimeout(resolve, 10));
+            return new Promise((resolve, reject) => {
+                signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            });
+        });
+
+        const reply = harness.emitRemoteMessage('remote-ai-session', remoteMessage('Please answer this remote question.'));
+        await waitFor(() => harness.healthCalls.length === 1, 'remote hardware probe start');
+        harness.disconnectRemoteSession('remote-ai-session', 'peer disconnected');
+        await withGuard(reply, 'remote reply cancelled during hardware probing');
+
+        assert.equal(healthSignal?.aborted, true);
+        assert.equal(harness.llmCalls.length, 0);
+        assert.equal(harness.getRemoteMessages().some((entry) => entry.method === 'sendChatMessage'), false);
         harness.assertSafe();
     } finally {
         harness.dispose();
