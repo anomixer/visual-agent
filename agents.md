@@ -5,6 +5,38 @@
 
 ---
 
+## 2026.11.28 — 第五十七階段：遠端狀態輪詢以請求序號拒絕晚回覆寫
+
+> 接續同日第五十六階段；本輪處理 `/api/remote/state` 重疊輪詢時，舊回應覆寫新 session、倒退游標或觸發過期副作用的競態。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `loadRemoteProfileAndState()` 原本沒有請求身分守門，兩次重疊請求都使用相同的 `lastRemoteStateTick`。較新回應先套用後，較早的完整回應仍可覆寫 `remoteState`／`remoteProfile`、清除目前選取的 session，並把游標倒退。
+- 較早的 `unchanged` 回應也會寫回舊 tick，讓後續輪詢再次要求完整狀態；舊的 active snapshot 則可能把已斷線 session 復活，並觸發 Chalkboard 分頁或同步。
+- 不能只用 tick 大小排序：`remoteStateTick` 是 server process-local，後端重啟後從 1 重新開始，較低 tick 可能是合法的新狀態。
+- 修正前以真實前端函式加入六項回歸，focused run 為 1 passed／5 failed，分別重現游標倒退、斷線 session 復活、舊 `unchanged` 倒退、重啟後的新 tick 被舊程序覆蓋，以及較新請求失敗後仍套用較早成功。
+
+### 修正：latest-started request wins
+- `public/app.js` 新增單調遞增的 `remoteStateRequestSeq`；`loadRemoteProfileAndState()` 在發出請求前取得自己的序號，await 後先比對最新序號，再更新游標、profile／sessions 或執行任何副作用。
+- 守門位於 `!data.success` 與 `unchanged` 分支之前，因此最新的失敗也會阻止較早成功晚回；`unchanged` 仍只更新游標、不重繪。
+- 保留重疊請求而不是改成 in-flight lock；只有最新啟動者可套用結果，循序 full／`unchanged` 與後端重啟後較低 tick 都維持原語意。
+- 晚回守門涵蓋斷線通知、profile 輸入、session 控制列、邀請 popup、工作分頁切換與 Chalkboard 同步，不只是最終的 `remoteState` 指派。
+
+### 測試與驗收
+- 新增 `test/app-remote-state-order.test.js`（6 項）：舊完整回應不覆蓋新 session／選取、舊 active 不復活斷線 session 或觸發 Chalkboard、舊 `unchanged` 不倒退游標、後端重啟後較低 tick 可接受、較新失敗阻止較早成功、循序 full／`unchanged` 仍正確更新游標且不重繪；focused suite 6／6 全綠。
+- 3 個突變探針全數被攔下：移除序號守門（1 passed／5 failed）、把游標更新移到守門前（1／5）、改用 tick 比較而非請求序號（4／2）。探針後 `public/app.js` 還原為位元組相同；SHA256 `68606442f1cd483853c873a3d5a78a3597c163b4981be1131e185c4234c3d0d3`。
+- 隔離瀏覽器搭配 static-only 頁面與延遲 fake API，以真實 `loadRemoteProfileAndState()` 驗收六個情境：舊完整回應不覆蓋新 session／profile／選取、舊 active 不復活斷線 session 或觸發 Chalkboard、舊 `unchanged` 不倒退游標、後端重啟後較低 tick 被接受、較新失敗阻止較早成功且重試使用正確游標、循序 full／`unchanged` 只重繪一次。六項斷言全數通過，驗收後已關閉測試頁並停止臨時伺服器。
+- 該 static-only 驗收的主控台只有缺少 `localhost:3210` 後端造成的既有 `ERR_CONNECTION_REFUSED`／`Failed to fetch` 與伺服器停止後的連線錯誤；六個情境本身未出現 JavaScript error／warn。
+- `spec.md` 將請求序號列為非同步不變式，README 中英文同步說明晚回抑制與後端重啟語意。
+- `npm test`：27 個 JS 語法、**70 支測試檔**與 server smoke 全綠。
+- 未做雙機實機驗收；本輪以真實前端函式、隔離瀏覽器、延遲 fake API 與既有後端 HTTP 契約測試互補，未執行 PowerShell、外掛、安裝或提權。
+
+### 尚未完成
+- 診斷視窗本身的語系即時重繪、Browser 靜止畫面仍實際截圖仍待後續稽核。
+- peer 已接受工作的撤銷仍需要協定支援與雙機驗收；已開始的 Chalkboard draft 非同步渲染仍只部分可取消。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+
+---
+
 ## 2026.11.28 — 第五十六階段：Clear Chat 作廢在途回覆，確認與任務刷新不再晚回
 
 > 接續同日第五十五階段；本輪處理本機聊天清除後仍被舊請求覆寫的競態。版本維持 `2026.8.7`。
@@ -33,7 +65,7 @@
 ### 尚未完成
 - Clear Chat 只作廢前端結果處理，不能撤回 backend 已接受的聊天工作；peer 已接受工作的撤銷仍需要協定支援與雙機驗收。
 - 已開始的 Chalkboard draft 非同步渲染仍只部分可取消；本輪沒有將其改寫成可取消 request lifecycle。
-- 診斷視窗本身的語系即時重繪、Browser 靜止畫面仍實際截圖，以及遠端狀態輪詢的 sequence guard 仍待後續稽核。
+- 診斷視窗本身的語系即時重繪、Browser 靜止畫面仍實際截圖仍待後續稽核；遠端狀態輪詢的 sequence guard 已於第五十七階段完成。
 - `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
 
 ---

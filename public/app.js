@@ -51,6 +51,7 @@ let remoteProfile = null;
 let remoteProfileDirty = false;
 let remoteState = { sessions: [], pendingApprovals: [], localIps: [], port: 19168 };
 let lastRemoteStateTick = 0;
+let remoteStateRequestSeq = 0;
 let selectedRemoteSessionId = localStorage.getItem('selected_remote_session_id') || '';
 
 let remoteStateInterval = null;
@@ -2617,9 +2618,11 @@ function renderRemoteSessionControls() {
 }
 
 async function loadRemoteProfileAndState() {
+    const requestSeq = ++remoteStateRequestSeq;
     const previousSessions = new Map((remoteState.sessions || []).map((session) => [session.id, session]));
     const since = lastRemoteStateTick ? `?since=${lastRemoteStateTick}` : '';
     const data = await api(`/api/remote/state${since}`);
+    if (requestSeq !== remoteStateRequestSeq) return;
     if (!data.success) return;
     lastRemoteStateTick = data.tick;
     // 版本號未變時後端只回版本號；整份 session 與訊息（含截圖）都不必重新套用。
