@@ -25,6 +25,7 @@ let pollingInterval = null;
 let chatAbortController = null;
 let localChatAbortController = null;
 let remoteChatAbortController = null;
+let localChatRequestContext = null;
 let localThinkingId = '';
 let remoteThinkingId = '';
 let isSidebarCollapsed = false;
@@ -6828,6 +6829,14 @@ async function sendChat() {
 
     // 初始化中斷控制
     const requestAbortController = new AbortController();
+    const requestContext = currentMode === 'local' ? {
+        controller: requestAbortController,
+        sessionId: currentLocalSession?.id || '',
+        thinkingId: thinkId,
+        stopPolling: stopAgentStatusPolling,
+        invalidated: false,
+    } : null;
+    if (requestContext) localChatRequestContext = requestContext;
     setThinkingIdForMode(currentMode, thinkId);
     setActiveAbortController(requestAbortController, currentMode);
     if (currentMode === 'remote') {
@@ -6949,6 +6958,7 @@ async function sendChat() {
                 signal: requestAbortController.signal
             });
 
+        if (requestContext?.invalidated) return;
         removeThinking(thinkId);
 
         if (data.success) {
@@ -6989,6 +6999,7 @@ async function sendChat() {
                 }
                 if (data.task) {
                     await loadTodo();
+                    if (requestContext?.invalidated) return;
                     openTab('todolist');
                     if (todoList.length > 0) expandLog();
                 }
@@ -7007,7 +7018,7 @@ async function sendChat() {
             });
         }
     } catch (err) {
-
+        if (requestContext?.invalidated) return;
         removeThinking(thinkId);
         setThinkingIdForMode(currentMode, '');
         if (requestAbortController.signal.aborted || err.name === 'AbortError') {
@@ -7031,7 +7042,12 @@ async function sendChat() {
         if (currentMode === 'remote') {
             setRemotePendingRoles({ local: false, remote: false });
         }
-        setActiveAbortController(null, currentMode);
+        if (getActiveAbortController(currentMode) === requestAbortController) {
+            setActiveAbortController(null, currentMode);
+        }
+        if (requestContext && localChatRequestContext === requestContext) {
+            localChatRequestContext = null;
+        }
         updateSendButtonState();
     }
 }
@@ -7060,6 +7076,8 @@ function appendAgentActionConsent(pendingActions = [], container = chatMessages,
             if (!session) return;
             button.disabled = true;
             const controller = new AbortController();
+            const requestContext = { controller, sessionId: session.id, invalidated: false };
+            localChatRequestContext = requestContext;
             setActiveAbortController(controller, 'local');
             updateSendButtonState();
             try {
@@ -7073,6 +7091,7 @@ function appendAgentActionConsent(pendingActions = [], container = chatMessages,
                     },
                     signal: controller.signal,
                 });
+                if (requestContext.invalidated) return;
                 pending.status = data.success ? 'confirmed' : 'failed';
                 if (data.success && Array.isArray(data.history)) session.history = data.history;
                 appendChatBubble('system', data.success ? (data.reply || detail) : (data.error || 'Action confirmation failed'), [], {
@@ -7082,6 +7101,7 @@ function appendAgentActionConsent(pendingActions = [], container = chatMessages,
                 });
                 if (data.task) {
                     await loadTodo();
+                    if (requestContext.invalidated) return;
                     openTab('todolist');
                 }
                 if (data.sopChanged) refreshSidebarDataSoon();
@@ -7095,14 +7115,18 @@ function appendAgentActionConsent(pendingActions = [], container = chatMessages,
                     }
                 }
             } catch (error) {
+                if (requestContext.invalidated) return;
                 pending.status = 'failed';
                 appendChatBubble('system', error.name === 'AbortError'
                     ? (currentLocale === 'en-US' ? 'Confirmation interrupted. Check the task list before requesting it again.' : '確認流程已中斷；再次提出動作前，請先檢查工作清單。')
                     : error.message, [], { localChatSessionId: session.id, forceSystem: true });
             } finally {
-                touchLocalChatSession(session.id);
+                if (!requestContext.invalidated) {
+                    touchLocalChatSession(session.id);
+                    if (selectedLocalChatSessionId === session.id) renderLocalChatMessages();
+                }
                 if (getActiveAbortController('local') === controller) setActiveAbortController(null, 'local');
-                if (selectedLocalChatSessionId === session.id) renderLocalChatMessages();
+                if (localChatRequestContext === requestContext) localChatRequestContext = null;
                 updateSendButtonState();
             }
         });
@@ -7364,6 +7388,21 @@ function clearChatMessages() {
     if (confirm(confirmMsg)) {
         const session = getActiveLocalChatSession();
         if (session) {
+            const requestContext = localChatRequestContext;
+            if (requestContext?.sessionId === session.id && getActiveAbortController('local') === requestContext.controller) {
+                requestContext.invalidated = true;
+                requestContext.stopPolling?.();
+                if (requestContext.thinkingId) {
+                    removeThinking(requestContext.thinkingId);
+                    if (getThinkingIdForMode('local') === requestContext.thinkingId) {
+                        setThinkingIdForMode('local', '');
+                    }
+                }
+                requestContext.controller.abort();
+                localChatRequestContext = null;
+                setActiveAbortController(null, 'local');
+                updateSendButtonState();
+            }
             session.messages = [];
             session.history = [];
             touchLocalChatSession(session.id);

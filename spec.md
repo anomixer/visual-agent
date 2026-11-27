@@ -139,6 +139,7 @@ browser ──── public/index.html
 - **SOP 執行**：一般與 elevated PowerShell runner 均以 UTF-8 BOM 暫存 `.ps1` 搭配 `-File` 執行，保留中文、例外與 native exit code。一般路徑 timeout 必須終止 process tree；elevated process-tree 行為仍需獨立實機驗收。
 - **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
 - **任務與聊天資料不可靜默遺失**：`tasks.json` 必須 temp-write + rename；task ID 使用 UUID；running task 不可刪除或整批 import 覆寫。同 session 並行聊天完成時須附加到最新歷史，不得用舊快照覆寫。
+- **清除聊天必須作廢擁有者分頁的在途請求**：清除 local chat 時，只有 request context 的 `sessionId` 等於被清除 session 且 controller 仍是目前 active controller，才可將其標記 `invalidated`、停止 agent-status polling、移除 thinking、abort transport 並立即釋放 local pending 鎖。一般聊天與 consent 在每個會寫入 session 或觸發任務 UI／執行的 await 後，以及 catch 分支，都必須先檢查 `invalidated`；晚到成功、API refusal、abort 與網路錯誤都不得重新填入已清除的 messages／history、顯示錯誤或改動 pending approval。清除另一個分頁不得取消發起分頁的請求。舊請求的 `finally` 只能清除自己的 controller／context，不得解除較新 replacement request 的忙碌狀態。此前端作廢不能撤回後端已接受的工作，也不會取消在 Clear Chat 前已經開始的 Chalkboard draft 非同步渲染。
 - **匯出必須來自伺服器的完整任務**：清單類回應不含 `logs`，因此前端不得直接序列化 `todoList` 作為匯出內容。原生另存新檔失敗時的瀏覽器 fallback 必須改抓 `GET /api/todo/export`，以 `Array.isArray(payload.tasks)` 驗證後下載整份 `{ exportedAt, agentVersion, tasks }` wrapper（該端點不回 `success` 欄位）。驗證失敗或請求失敗必須在工作日志顯示錯誤，不得只寫 console；原生成功與使用者取消都不得再觸發 fallback。
 - **匯入必須先驗證再取代**：`POST /api/todo/import` 整批取代 `todoList` 並立即落地，因此必須在寫入前驗證每個元素（非 null 且非陣列的物件、`id` 為非空字串且不得重複、`title` 為非空字串、`description`／`skillId`／`category`／`dynamicCmd` 若存在則只能是字串或 null、`action` 若存在只能是 `install`／`uninstall`、`progress` 若存在必須是 0–100 的有限數值、`createdAt`／`completedAt` 若存在只能是可解析日期字串或 null、`logs` 若存在必須是陣列且每項只能是字串或非 null 物件、`status` 若存在必須是 `pending|running|success|failed|skipped`）。任一不合格必須整批拒絕並指出 `tasks[index]`（log 條目另指出 `logs[j]`）與原因，既有清單與 `tasks.json` 不得被改動——不良元素一旦落地，清單與詳情端點會在每次輪詢拋錯，且重啟也無法復原。驗證後必須套用與啟動相同的 `reconcileInterruptedTasks()`：本行程沒有任務在跑，匯入的 `running` 一律視為已中斷。
 - **任務詳情必須容忍既有壞資料**：`loadTasks()` 不會在啟動時重新驗證整個持久化結構，因此已存在的 `tasks.json` 仍可能含 `null` log 條目或非陣列 `logs`。`renderTaskModalBody()` 不得對此拋錯：非陣列視為無記錄，nullish 條目略過，舊版字串條目以 `info` 顯示，物件條目沿用 `level` / `message`。此為渲染層容錯，不得放寬匯入邊界驗證。
@@ -1084,6 +1085,7 @@ $true
 - `pendingActions` 必須保存在訊息的 `messages[]` 並隨 session 持久化；切換分頁、重繪後仍須還原按鈕與狀態（已確認 / 失敗 / 過期）。
 - 確認流程與一般送出共用 local pending 鎖；請求 settle 前重複或平行確認不得產生第二次請求。
 - Stop 只 abort 現有請求，pending 鎖保留至請求 settle；確認 API 成功後若在 `loadTodo()` 期間被 abort，不得呼叫 `executeTask`，並須明確告知任務仍保留在工作清單。
+- Clear Chat 不同於 Stop：它必須立即作廢並 abort **擁有者分頁**的一般聊天或 consent 請求、停止 polling／thinking 並釋放 local pending 鎖，讓同一分頁可立即開始 replacement request。晚到回應不得重新加入訊息、顯示取消／錯誤、改寫 approval 狀態，或在 `loadTodo()` 後切分頁、展開日誌或執行任務。清除其他分頁不得影響此請求；舊請求結束也不得清除 replacement 的 controller／context。後端已接受的工作與已開始的 Chalkboard draft 不在可撤回範圍。
 
 ### 27.4 Agent Loop 請求級預算
 - `/api/chat` 必須在處理 request 的入口建立唯一 `AgentLoopBudget`；首輪 ACTION、自動即時資訊搜尋 / 抽取、Agent Loop 工具與每輪 LLM 呼叫都共用同一 8 turns / 12 tools / 180 秒上限。

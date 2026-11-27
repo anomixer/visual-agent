@@ -5,6 +5,39 @@
 
 ---
 
+## 2026.11.28 — 第五十六階段：Clear Chat 作廢在途回覆，確認與任務刷新不再晚回
+
+> 接續同日第五十五階段；本輪處理本機聊天清除後仍被舊請求覆寫的競態。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `clearChatMessages()` 原本只清空目前 session 的 `messages` 與 `history`，沒有 abort 或作廢進行中的 local-AI／確認請求。provider 即使忽略 abort，晚到的 success、API refusal、AbortError 或網路錯誤仍會重新寫入已清除的對話。
+- `sendChat()` 與確認按鈕在收到 `data.task` 後都會 `await loadTodo()`，先前沒有 await 後的身份守門；清除期間晚到的 todo refresh 仍會切到任務分頁、展開日誌，甚至啟動剛建立的任務。
+- 共用 busy lock 以 mode controller 為準，舊請求的 `finally` 若直接清空 controller，會把清除後已啟動的 replacement request 一併解鎖；若 Clear Chat 不清 lock，使用者又必須等忽略 abort 的舊 transport 結束才能再送訊息。
+- 修正前以真實前端函式加入七項回歸，focused run 為 24 項中 18 passed／6 failed，明確重現未 abort 的舊 controller、確認仍 busy、清除後晚回填歷史，以及 `openedTabs: ['todolist']`。
+
+### 修正：request identity 與立即釋放
+- `public/app.js` 新增單一 `localChatRequestContext`，記錄 controller、發起 session ID、thinking ID、polling cleanup 與 `invalidated`。本機 busy lock 保證同一時間只有一個本機請求，因此不需要 request Map。
+- `sendChat()` 與確認按鈕在 await 後、todo refresh 後及 catch 分支檢查作廢旗標；即使 provider 無視 transport abort，晚回也不寫歷史、不顯示失敗、不修改 approval，也不觸發任務副作用。
+- Clear Chat 只有同時匹配發起 session ID 與 active controller 才作廢請求：停止該請求自己的 agent-status polling、移除 thinking、abort transport，並立即釋放 local pending lock。清除另一個分頁不會取消發起分頁的工作。
+- 新請求可在舊 transport 尚未 settle 時立即啟動；一般與確認流程的 `finally` 都比對 controller／context identity，舊清理不會清掉 replacement 的狀態。polling cleanup 是逐請求 closure，也只停止自己的 timer。
+- 遠端 Clear Chat 仍沿用既有 `disconnectRemoteSession()`；本輪不改變遠端語意，也不宣稱能撤回伺服器已接受的工作或取消已開始的 Chalkboard draft 非同步渲染。
+
+### 測試與驗收
+- `test/chat-ui-consent.test.js` 由 17 項增為 24 項，新增七項：晚到 success 被抑制且 replacement 存活、晚到 refusal／abort／network error 被抑制、清除其他分頁隔離、確認 success／refusal／error 被抑制、一般與確認 todo refresh 期間清除都不再切頁／展開／執行；focused suite 24／24 全綠。
+- 9 個突變探針全數被攔下：Clear 不作廢、一般聊天收晚 success、一般聊天顯示晚錯、確認收晚 success、確認顯示晚錯、舊 cleanup 清 replacement、Clear 取消其他 session、一般 todo refresh 仍切頁、確認 todo refresh 仍切頁。探針後 `public/app.js` 還原為位元組相同；SHA256 `602a6654b39a0a543b3b123e63163e9ce803eeda67c263513b2ccfd380dba363`。
+- 隔離瀏覽器搭配 static-only 頁面與 fake API，以真實 `sendChat()`／確認按鈕／`clearChatMessages()` 驗收 12 個情境：四種一般回覆結果、replacement、跨分頁、四種確認結果，以及兩種 todo refresh 競態。所有斷言通過；清除後 session 保持空白、舊請求不再產生任務副作用、replacement 不受影響。
+- 瀏覽器 console 共 198 筆 error／warn，皆來自 static-only 啟動時缺少 backend 與靜態伺服器停止後的 `ERR_CONNECTION_REFUSED`；12 個情境相關的 JavaScript error／warn 為 0 筆。驗收後已關閉測試分頁並停止靜態伺服器。
+- `npm test`：27 個 JS 語法、**69 支測試檔**與 server smoke 全綠。
+- 未執行 PowerShell／外掛／安裝／提權，未讀寫使用者真實 APPDATA；未做雙機、UAC、Vision 或乾淨 Windows EXE 實機驗收。
+
+### 尚未完成
+- Clear Chat 只作廢前端結果處理，不能撤回 backend 已接受的聊天工作；peer 已接受工作的撤銷仍需要協定支援與雙機驗收。
+- 已開始的 Chalkboard draft 非同步渲染仍只部分可取消；本輪沒有將其改寫成可取消 request lifecycle。
+- 診斷視窗本身的語系即時重繪、Browser 靜止畫面仍實際截圖，以及遠端狀態輪詢的 sequence guard 仍待後續稽核。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+
+---
+
 ## 2026.11.28 — 第五十五階段：DNS 取消貫穿全程，Browser Stop 回收晚建資源，邀請刪除清除計時器
 
 > 接續同日第五十四階段；本輪處理三個非同步／資源生命週期缺口。版本維持 `2026.8.7`。
@@ -31,7 +64,7 @@
 ### 尚未完成
 - Browser 輪詢即使畫面未變仍會實際截圖，只省下 base64 重送。
 - Playwright 已發出的導覽與自訂 DNS lookup 的內部工作不一定能立即停止；本輪保證呼叫端結束、晚回不啟動後續 HTTP 與晚建 Browser 資源被回收。
-- 診斷視窗本身的語系即時重繪仍未處理；Clear Chat in-flight 回應作廢與 Chalkboard draft 非同步渲染仍是後續稽核候選。
+- 診斷視窗本身的語系即時重繪仍未處理；Chalkboard draft 非同步渲染仍是後續稽核候選。
 - peer 已接受工作後的取消／撤銷仍需要協定支援與雙機驗收。
 - `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
 - UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
