@@ -94,6 +94,7 @@ function harness(locale = 'zh-TW') {
         updateChatModelBadgeDisplay: () => calls.push('modelBadge'),
         renderLocalSessionControls: () => calls.push('sessionControls'),
         renderLocalChatMessages: () => calls.push('messages'),
+        refreshActiveDetailModal: () => calls.push('detailModal'),
     });
     for (const declaration of declarations) declaration.runInContext(context, { timeout: 1000 });
     return { context, byId, bySelector, calls, element };
@@ -136,7 +137,7 @@ test('zh-TW locale applies every surface through the split helpers', () => {
     assert.equal(view.element('statusTasks').textContent, 'footer.tasks');
     assert.equal(view.context.document.title, 'Visual Agent - 系統管家');
 
-    for (const expected of ['switch:local', 'llm', 'sidebar', 'todo', 'exps', 'badges', 'modelBadge', 'sessionControls', 'messages']) {
+    for (const expected of ['switch:local', 'llm', 'sidebar', 'todo', 'exps', 'badges', 'modelBadge', 'sessionControls', 'messages', 'detailModal']) {
         assert.ok(view.calls.includes(expected), `Missing ${expected}`);
     }
 });

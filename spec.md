@@ -812,7 +812,7 @@ $true
 ### 17.1 雙語動態切換機制 (Bilingual UI Toggling)
 - **零重載翻譯**：介面支援 `zh-TW` 與 `en-US` 雙語動態切換。
 - **UI 元素涵蓋範圍**：工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、Chalkboard 工具、經驗知識庫、以及系統對話視窗，皆需根據 `currentLocale` 即時更新。
-- **詳情視窗與匯出文字不得寫死語系**：任務詳情（狀態 / 分類 / 動作 / SOP ID / 建立時間 / 執行記錄 / 無 SOP 替代字）與經驗詳情（來源 / 更新時間）的標籤必須走 `t()`；日期與經驗庫匯出時間戳須依 `currentLocale` 選擇 `zh-TW` / `en-US` 格式。已知限制：切換語系時已開啟的 modal 不會即時重繪，需關閉重開。
+- **詳情視窗與匯出文字不得寫死語系**：任務詳情（狀態 / 分類 / 動作 / SOP ID / 建立時間 / 執行記錄 / 無 SOP 替代字）與經驗詳情（來源 / 更新時間）的標籤必須走 `t()`；日期與經驗庫匯出時間戳須依 `currentLocale` 選擇 `zh-TW` / `en-US` 格式。切換語系時，已開啟的任務或經驗詳情必須立即以新語系重繪，不需關閉重開；關閉詳情或開啟診斷視窗時必須清除該詳情狀態，避免後續語系切換把舊內容蓋回共用 modal。
 - **分類值只在渲染層本地化，儲存值不得改寫**：`task.category` 在 `tasks.json`、`/api/todo` 與匯出檔中一律保留建立當下的原值（可能是英文 SOP 分類、硬編「一般」或動態指令的 `SOP`）；任務卡片與詳情視窗顯示時必須經 `localizeCategory()` 翻譯，未知分類原樣顯示，空值在卡片退回 `task.general`、在詳情顯示 `—`。嚴禁為了畫面一致而改寫已儲存的分類或標題。
 - **`categories` 字典必須涵蓋所有實際出現的分類值**：包含 16 支內建 SOP 的 `Category` 欄位、伺服器 fallback（`Maintenance`、`一般`）、動態指令任務（`SOP`），以及 **37 支內建 skill 的 15 個分類**（`Skills` 預設值 ＋ 14 個 Hermes 小寫值：ai、communication、creative、data、development、devops、iot、knowledge、media、meta、platform、productivity、research、security），且大小寫變體都要有鍵；新增 SOP／skill 時需同步補字典，否則該分類在另一語系會原樣外露。列舉分類時必須用真實 `parseSkillFrontmatter()`，不得只 grep frontmatter 的 `^category:` —— 18 支原生 skill 沒有 category 欄位，其值來自 parser 的 `|| 'Skills'` 預設。
 - **Skills 面板的分組標題、來源標題與徽章 tooltip 都必須本地化**：`renderSkillList()` 的兩個 `createSidebarSectionHeader()` 都要吃 `localizeCategory(cat)`，不得直接印 `skill.category`；Hermes 來源標題走 `sidebar.skillSourceHermes`、徽章 tooltip 走 `sidebar.skillHermesBadgeTitle`，不得寫死英文。Skill 搜尋字串必須包含 `localizeCategory(skill.category)`，讓中文介面能直接搜分類名；`skillPlaceholder` 需如實列出可搜尋的欄位。skill 分類不進 `tasks.json`，因此不需 zh→en 反向映射。

@@ -5,6 +5,36 @@
 
 ---
 
+## 📌 2026.11.27 — 第四十九階段：已開啟的任務與經驗詳情隨語系立即重繪
+
+> 接續同日第四十八階段；本輪修正第二十九階段留下的已知限制：切換語系時，已開啟的任務或經驗詳情仍停在舊語言，必須關閉重開。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `renderTaskModalBody()` 與 `showExpDetail()` 只在開啟時依 `currentLocale` 組文字；`updateLocaleUI()` 雖會重繪側邊欄、任務卡片與經驗庫，卻沒有重繪共用 `modalOverlay` 內已開啟的詳情。
+- 以真實前端函式在 VM 重現：zh-TW 開啟任務詳情後切到 en-US，內容仍含「狀態／分類」且不含 `Status` / `Category`；經驗詳情的「來源／更新時間」也有相同問題。
+- 共用 modal 同時承載診斷資訊，因此不能只加一條無條件重繪：關閉後的舊詳情或已開啟的診斷視窗都不能被先前的 detail 狀態蓋回。
+
+### 修正
+- `public/app.js` 新增 `activeDetailModal`，只記錄目前可見的任務或經驗詳情；`showTaskModal()` 保存實際渲染的完整任務，`showExpDetail()` 保存經驗項目。
+- `updateLocaleUI()` 末尾呼叫 `refreshActiveDetailModal()`；任務詳情重新執行 `renderTaskModalBody()`，經驗詳情重新執行 `showExpDetail()`，立即採用新語系的標籤與日期格式。
+- 新增 `closeSharedModal()`，關閉按鈕、 backdrop 點擊與 Escape 都先清除 `activeDetailModal` 再隱藏 overlay，避免幽靈狀態。
+- `openDiagnosticsModal()` 先清除 detail 狀態再顯示診斷內容，後續語系切換不會把舊任務或經驗內容蓋回診斷視窗。
+
+### 測試與驗收
+- `test/app-task-detail-export.test.js` 由 9 項增為 12 項：任務與經驗詳情在語系切換後立即更新、隱藏或已關閉的詳情不重繪、開啟診斷視窗後不被舊 detail 覆寫；萃取器同步支援 `async function`。
+- `test/app-i18n.test.js` 補上 `refreshActiveDetailModal` 的接線與呼叫順序斷言。
+- 4 個突變探針全數被攔下：移除 `updateLocaleUI()` 重繪、讓 detail 重繪變成 no-op、診斷視窗不清除舊 detail、關閉不清除 detail；探針後 `public/app.js` 還原為位元組相同（SHA256 `fc425534a00803ab4f7c757d0aee1b88fb571d9c12ac0076cf70e0c850749016`）。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify49-j0NCYh`）：真實 `showTaskModal()` 開啟任務詳情後切 en-US，標籤變為 Status／Category／Action／Created／Execution log 且無中文殘留；真實 `showExpDetail()` 切換後來源與更新時間立即翻譯；開啟診斷視窗後再切語系，經驗內容沒有被蓋回。console 只有既有 init log，無應用程式 error / warn。
+- 首次完整測試因瀏覽器驗收實例仍佔用 19168 而中止；停止該隔離實例後重跑 `npm test`，27 個 JS 語法、**66 支測試檔**與 server smoke 全綠。
+
+### 尚未完成
+- 診斷視窗本身仍沿用開啟時的語系，尚未納入即時重繪；本輪只確保它不會被任務／經驗詳情蓋回。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- 未做雙機實機驗收；UAC 提權 process tree、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權、未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.27 — 第四十八階段：遠端訊息欄位在協定邊界正規化，壞 caption 不再擊潰聊天
 
 > 接續同日第四十七階段；本輪處理遠端 peer 送進非字串 `caption` / `text` 等欄位時，訊息可寫入 session 並讓真實前端渲染拋出 `TypeError` 的缺陷。版本維持 `2026.8.7`。

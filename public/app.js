@@ -171,6 +171,7 @@ const modalOverlay = $('#modalOverlay');
 const modalTitle = $('#modalTitle');
 const modalBody = $('#modalBody');
 const btnCloseModal = $('#btnCloseModal');
+let activeDetailModal = null;
 const chalkboardCanvas = $('#chalkboardCanvas');
 const chalkboardSurface = $('#chalkboardSurface');
 const chalkPlacementGuide = $('#chalkPlacementGuide');
@@ -6562,6 +6563,7 @@ function updateLocaleUI() {
     updateChatModelBadgeDisplay(window.__lastLLMStatus || null);
     renderLocalSessionControls();
     renderLocalChatMessages();
+    refreshActiveDetailModal();
 }
 
 async function setLocale(locale) {
@@ -7693,6 +7695,7 @@ async function copyDiagnosticsSummary(data = {}) {
 
 async function openDiagnosticsModal() {
     if (!modalOverlay || !modalTitle || !modalBody) return;
+    activeDetailModal = null;
     modalTitle.textContent = t('diagnostics.title');
     modalBody.innerHTML = `<p>${escapeHtml(t('diagnostics.loading'))}</p>`;
     modalOverlay.classList.add('visible');
@@ -7936,6 +7939,7 @@ function showExpDetail(entry) {
         </div>
         <div style="margin-top:12px" class="exp-detail-content">${htmlContent}</div>
     `;
+    activeDetailModal = { type: 'exp', entry };
     modalOverlay.classList.add('visible');
 }
 
@@ -7983,8 +7987,24 @@ function renderTaskModalBody(task) {
 async function showTaskModal(task) {
     // 清單輪詢已省略 logs，開啟詳情時再抓完整任務補上執行記錄。
     const detail = task.logs?.length ? null : await fetchTaskDetail(task.id);
-    renderTaskModalBody(detail || task);
+    const fullTask = detail || task;
+    activeDetailModal = { type: 'task', task: fullTask };
+    renderTaskModalBody(fullTask);
     modalOverlay.classList.add('visible');
+}
+
+function refreshActiveDetailModal() {
+    if (!activeDetailModal || !modalOverlay.classList.contains('visible')) return;
+    if (activeDetailModal.type === 'task') {
+        renderTaskModalBody(activeDetailModal.task);
+    } else if (activeDetailModal.type === 'exp') {
+        showExpDetail(activeDetailModal.entry);
+    }
+}
+
+function closeSharedModal() {
+    activeDetailModal = null;
+    modalOverlay.classList.remove('visible');
 }
 
 // ════════════════════════════════════════════════════════
@@ -8456,13 +8476,13 @@ function setupEventListeners() {
     });
 
     // Modal close
-    btnCloseModal?.addEventListener('click', () => modalOverlay.classList.remove('visible'));
-    modalOverlay?.addEventListener('click', (e) => { if (e.target === modalOverlay) modalOverlay.classList.remove('visible'); });
+    btnCloseModal?.addEventListener('click', closeSharedModal);
+    modalOverlay?.addEventListener('click', (e) => { if (e.target === modalOverlay) closeSharedModal(); });
 
     // Keyboard
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-            modalOverlay.classList.remove('visible');
+            closeSharedModal();
             closeTextToolModal(false);
         }
     });

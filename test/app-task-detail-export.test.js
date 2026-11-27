@@ -10,7 +10,7 @@ const sourcePath = path.join(__dirname, '..', 'public', 'app.js');
 const source = fs.readFileSync(sourcePath, 'utf8');
 
 function extractFunction(name) {
-    const pattern = new RegExp(`^function ${name}\\([^)]*\\) \\{[^]*?^\\}\\r?$`, 'gm');
+    const pattern = new RegExp(`^(?:async )?function ${name}\\([^)]*\\) \\{[^]*?^\\}\\r?$`, 'gm');
     const match = [...source.matchAll(pattern)];
     assert.equal(match.length, 1, `Expected one actual declaration of ${name}`);
     return match[0];
@@ -43,10 +43,15 @@ function loadLocalePacks(locale) {
     return vm.runInNewContext(`${chunks.join('\n')}\nI18N;`, { currentLocale: locale }, { filename: sourcePath });
 }
 
+const activeDetailModalMatch = source.match(/^let activeDetailModal = null;\r?$/m);
+assert.ok(activeDetailModalMatch, 'Expected the active detail modal state declaration');
+
 const DECLARATIONS = [
+    activeDetailModalMatch[0],
     'getLocalePack', 'formatI18n', 't', 'escapeHtml', 'localizeStatus', 'localizeCategory', 'getDisplayAction', 'getActionLabel',
-    'renderTaskModalBody', 'showExpDetail', 'exportExps', 'exportTasks',
-].map(extractFunction).join('\n');
+    'renderTaskModalBody', 'showExpDetail', 'showTaskModal', 'refreshActiveDetailModal', 'closeSharedModal',
+    'openDiagnosticsModal', 'exportExps', 'exportTasks',
+].map((name) => name.startsWith('let ') ? name : extractFunction(name)).join('\n');
 
 const CREATED_AT = '2026-11-12T02:03:04.000Z';
 const TASK_LOGS = [
@@ -80,7 +85,17 @@ function createContext({ locale = 'zh-TW', responses = {}, expsEntries = [] } = 
         expsEntries,
         modalTitle: { textContent: '' },
         modalBody: { innerHTML: '' },
-        modalOverlay: { classes: [], classList: { add(name) { context.modalOverlay.classes.push(name); } } },
+        modalOverlay: {
+            classes: [],
+            classList: {
+                add(name) { if (!context.modalOverlay.classes.includes(name)) context.modalOverlay.classes.push(name); },
+                remove(name) {
+                    const index = context.modalOverlay.classes.indexOf(name);
+                    if (index >= 0) context.modalOverlay.classes.splice(index, 1);
+                },
+                contains(name) { return context.modalOverlay.classes.includes(name); },
+            },
+        },
         renderMarkdown: (text) => `<p>${text}</p>`,
         addUILog(message, level) { logs.push({ message, level }); },
         appendChatBubble(role, message) { bubbles.push({ role, message }); },
@@ -214,6 +229,75 @@ test('task detail labels and created date follow the active locale', () => {
     assert.ok(html.includes(new Date(CREATED_AT).toLocaleString('en-US')));
     assert.ok(!html.includes(new Date(CREATED_AT).toLocaleString('zh-TW')));
     assert.ok(html.includes('Uninstall'), 'the action label must stay localized');
+});
+
+test('open task and experience details refresh immediately when the locale changes', async () => {
+    const taskView = createContext({ locale: 'zh-TW' });
+    await taskView.context.showTaskModal(FULL_TASK);
+    assert.ok(taskView.context.modalOverlay.classList.contains('visible'));
+    assert.match(taskView.context.modalBody.innerHTML, /狀態/);
+
+    taskView.context.currentLocale = 'en-US';
+    taskView.context.refreshActiveDetailModal();
+    const taskHtml = taskView.context.modalBody.innerHTML;
+    for (const label of ['Status', 'Category', 'Action', 'SOP ID', 'Created', 'Execution log']) {
+        assert.ok(taskHtml.includes(label), `en-US task detail missing ${label}`);
+    }
+    for (const label of ['狀態', '分類', '動作', '建立時間', '執行記錄']) {
+        assert.ok(!taskHtml.includes(label), `en-US task detail still contains ${label}`);
+    }
+
+    const entry = {
+        title: 'Synthetic experience', fileName: 'exp-20261112.md', sopId: 'synthetic_sop',
+        updatedAt: CREATED_AT, content: 'body text',
+    };
+    const expView = createContext({ locale: 'zh-TW' });
+    expView.context.showExpDetail(entry);
+    assert.match(expView.context.modalBody.innerHTML, /來源/);
+
+    expView.context.currentLocale = 'en-US';
+    expView.context.refreshActiveDetailModal();
+    const expHtml = expView.context.modalBody.innerHTML;
+    assert.ok(expHtml.includes('Source'));
+    assert.ok(expHtml.includes('Updated'));
+    assert.ok(!expHtml.includes('來源'));
+    assert.ok(!expHtml.includes('更新時間'));
+});
+
+test('hidden or closed detail modals are not refreshed', async () => {
+    const { context } = createContext({ locale: 'zh-TW' });
+    await context.showTaskModal(FULL_TASK);
+    context.modalOverlay.classList.remove('visible');
+    const hiddenHtml = context.modalBody.innerHTML;
+
+    context.currentLocale = 'en-US';
+    context.refreshActiveDetailModal();
+    assert.equal(context.modalBody.innerHTML, hiddenHtml, 'a hidden modal must not be re-rendered');
+
+    context.closeSharedModal();
+    assert.equal(context.modalOverlay.classList.contains('visible'), false);
+    context.modalOverlay.classList.add('visible');
+    context.refreshActiveDetailModal();
+    assert.equal(context.modalBody.innerHTML, hiddenHtml, 'closing must clear the active detail state');
+    context.modalOverlay.classList.remove('visible');
+});
+
+test('opening diagnostics discards the active detail modal state', async () => {
+    const { context } = createContext({
+        locale: 'zh-TW',
+        responses: { '/api/diagnostics': { success: false, error: 'offline' } },
+    });
+    context.showExpDetail({
+        title: 'Synthetic experience', fileName: 'exp-20261112.md', sopId: 'synthetic_sop',
+        updatedAt: CREATED_AT, content: 'body text',
+    });
+    await context.openDiagnosticsModal();
+    const diagnosticsHtml = context.modalBody.innerHTML;
+    assert.match(diagnosticsHtml, /offline/);
+
+    context.currentLocale = 'en-US';
+    context.refreshActiveDetailModal();
+    assert.equal(context.modalBody.innerHTML, diagnosticsHtml, 'diagnostics must not be overwritten by a stale detail modal');
 });
 
 test('a task without a SOP shows the localized placeholder', () => {
