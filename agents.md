@@ -5,6 +5,37 @@
 
 ---
 
+## 📌 2026.11.27 — 第四十八階段：遠端訊息欄位在協定邊界正規化，壞 caption 不再擊潰聊天
+
+> 接續同日第四十七階段；本輪處理遠端 peer 送進非字串 `caption` / `text` 等欄位時，訊息可寫入 session 並讓真實前端渲染拋出 `TypeError` 的缺陷。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `handlePayload()` 對 `chat_message` / `screen_share` / `system_message` / `chalkboard_state` 直接使用 `payload.caption || ''`、`payload.text || ''` 等寫法；物件、數字與布林值都會穿過邊界進入 session。
+- 真實 `RemoteAgentService` 探針送入 `screen_share.caption = { nested: true }` 後，session 保存原物件；以真實 `renderRemoteMessages()` 渲染時於 `(suggestionControl.displayText || chalkControl.displayText || remoteText).replace` 拋出 `TypeError: ... replace is not a function`。
+- `onMessage` 收到的是未正規化原始 payload，下游若讀 `payload.locale` 等欄位也會拿到錯誤型別；本機送出端另有相同的 `||` 預設模式，並非只影響惡意 peer。
+
+### 修正
+- `src/remote-agent.js` 新增 `normalizeRemoteString()`，所有遠端訊息字串欄位只接受字串，否則回空字串；`id` / `senderType` / `target` / `createdAt` 維持既有預設值，`width` / `height` / `revision` 沿用 `Number()` 正規化。
+- 輸入訊息先組成正規化 `message` 再存入 session，`onMessage` 改收 `{ ...payload, ...message }`，確保 LLM、AI 狀態與其他下游不會繞過邊界取得壞欄位。
+- `sendChatMessage()`、`sendScreenShare()`、`sendSystemMessage()`、`sendChalkboardState()` 與 `sendAiStatus()` 沿用同一字串不變式；有效字串、預設值與送出格式不變。
+- `public/app.js` 的 `renderRemoteMessages()` 對 `caption` / `text` 加字串守衛；screen share 的壞 caption 回退到既有在地化預設文字，其他壞文字以空字串渲染。渲染層容錯不放寬協定驗證。
+
+### 測試與驗收
+- 新增 `test/remote-message-types.test.js`（4 項）：惡意輸入逐欄正規化且回呼也取得正規化值、完整合法輸入逐欄不變、本機輸出端維持同一不變式、真實前端函式可渲染壞 caption／數字 caption／壞 system text。
+- 新測試在修正前 4 項中 3 項失敗，重現輸入 `id` 保留物件、輸出 `senderLabel` 保留數字與前端 `replace is not a function`；修正後 4/4 通過。
+- 4 個突變探針全數被攔下：移除輸入正規化、移除輸出正規化、回呼改回原始 payload、移除前端字串守衛，皆使新回歸恰好 1 項失敗；探針後 production 檔案逐位元組還原。
+- 既有 `remote-agent.test.js` 20 項、`remote-frame.test.js` 8 項與新 4 項全數通過。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify48.QRtDqJ`）：以真實頁面種入壞物件 caption、數字 caption、壞 system text 與有效 caption，前兩者顯示「已傳送畫面」、有效 caption 原樣顯示，聊天未拋錯；console 只有既有 init log，無應用程式 error / warn。
+- `npm test`：27 個 JS 語法、**66 支測試檔**與 server smoke 全綠。
+
+### 尚未完成
+- 未做雙機實機驗收；本輪以真實服務物件、真實前端函式與隔離瀏覽器頁面互補，尚未覆蓋防火牆、IPv6、真實斷線重連與雙機 Chalkboard revision。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權、未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.27 — 第四十七階段：匯入任務逐筆驗證執行記錄，詳情不再被壞 log 條目擊潰
 
 > 接續同日第四十六階段；本輪處理 `logs: [null]` 可成功匯入並持久化，開啟任務詳情時於 `l.level` 拋出 `TypeError` 的缺陷。版本維持 `2026.8.7`。

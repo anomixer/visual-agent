@@ -2393,8 +2393,8 @@ function renderRemoteMessages() {
             return;
         }
         const remoteText = message.type === 'screen_share'
-            ? (message.caption || (currentLocale === 'en-US' ? 'Screen image sent' : '已傳送畫面'))
-            : message.text;
+            ? (typeof message.caption === 'string' && message.caption ? message.caption : (currentLocale === 'en-US' ? 'Screen image sent' : '已傳送畫面'))
+            : (typeof message.text === 'string' ? message.text : '');
         const chalkControl = message.type === 'chat_message' ? extractChalkboardControlFromReply(remoteText || '') : { displayText: remoteText, draft: null };
         const suggestionControl = message.type === 'chat_message'
             ? extractSuggestionsFromReply(chalkControl.displayText || remoteText || '')

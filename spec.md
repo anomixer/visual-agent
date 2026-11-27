@@ -484,6 +484,7 @@ $true
 - 已存在的 `sessionId` 再次送出 `hello` 必須回 `hello_reject` 並結束該 socket，不得覆蓋既有 session；否則使用中的對話與歷史會被清空，舊 socket 的後續封包也會被解讀成新 session。
 - 對方提供的 `sessionId` 必須是 1–128 字元的字串且不含控制字元；非字串（JSON number / object）不得直接當成 session key，否則會產生路由字串無法定址、UI 也無法同意或刪除的 session。空字串視為未提供，由本機產生 id。
 - 收到對方的 `disconnect` 時，本機在標記 `disconnected` 後必須結束該 socket，不得只改狀態而讓半開連線一直存活。
+- **遠端訊息欄位必須在協定邊界正規化**：`chat_message` / `screen_share` / `system_message` / `chalkboard_state` 的 `id`、`senderType`、`senderLabel`、`text`、`imageDataUrl`、`caption`、`target`、`locale`、`createdAt` 只接受字串；缺漏或錯誤型別回退為空字串或既定預設，`width` / `height` / `revision` 以 `Number()` 正規化。存入 session 與傳給 `onMessage` 的必須是正規化後的值。本機送出端沿用同一不變式；前端渲染仍須對壞資料容錯，不得假設協定永遠合法。
 
 ### 7.3 會話管理與代理 (Session & Model Proxy)
 - **多對話 (Multi-session)**：支援本機與遠端對話歷史分頁，以及獨立的 Pending (Thinking) 列。

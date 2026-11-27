@@ -29,6 +29,10 @@ function normalizeIp(value = '') {
     return text === '::1' ? '127.0.0.1' : text;
 }
 
+function normalizeRemoteString(value) {
+    return typeof value === 'string' ? value : '';
+}
+
 function getLocalIPv4List() {
     const interfaces = os.networkInterfaces();
     const results = [];
@@ -323,21 +327,21 @@ class RemoteAgentService {
 
         if (payload.type === 'chat_message' || payload.type === 'screen_share' || payload.type === 'system_message' || payload.type === 'chalkboard_state') {
             const message = {
-                id: payload.id || createId('msg'),
+                id: normalizeRemoteString(payload.id) || createId('msg'),
                 type: payload.type,
                 direction: 'incoming',
-                senderType: payload.senderType || 'user',
-                senderLabel: payload.senderLabel || '',
-                text: payload.text || '',
-                imageDataUrl: payload.imageDataUrl || '',
-                caption: payload.caption || '',
+                senderType: normalizeRemoteString(payload.senderType) || 'user',
+                senderLabel: normalizeRemoteString(payload.senderLabel),
+                text: normalizeRemoteString(payload.text),
+                imageDataUrl: normalizeRemoteString(payload.imageDataUrl),
+                caption: normalizeRemoteString(payload.caption),
                 width: Number(payload.width) || 0,
                 height: Number(payload.height) || 0,
                 hasContent: payload.hasContent !== false,
                 revision: Number(payload.revision) || 0,
-                target: payload.target || 'remote-user',
-                locale: payload.locale || '',
-                createdAt: payload.createdAt || new Date().toISOString(),
+                target: normalizeRemoteString(payload.target) || 'remote-user',
+                locale: normalizeRemoteString(payload.locale),
+                createdAt: normalizeRemoteString(payload.createdAt) || new Date().toISOString(),
             };
             session.lastEventAt = new Date().toISOString();
             if (payload.type === 'chat_message' && message.senderType === 'ai') {
@@ -349,7 +353,7 @@ class RemoteAgentService {
                 };
             }
             this.appendSessionMessage(session, message);
-            this.onMessage(session, message, payload);
+            this.onMessage(session, message, { ...payload, ...message });
             this.onStateChanged();
             return;
         }
@@ -535,13 +539,13 @@ class RemoteAgentService {
             id: createId('msg'),
             type: 'chat_message',
             direction: 'outgoing',
-            senderType: payload.senderType || 'user',
-            senderLabel: payload.senderLabel || '',
-            text: payload.text || '',
+            senderType: normalizeRemoteString(payload.senderType) || 'user',
+            senderLabel: normalizeRemoteString(payload.senderLabel),
+            text: normalizeRemoteString(payload.text),
             imageDataUrl: '',
             caption: '',
-            target: payload.target || 'remote-user',
-            locale: payload.locale || '',
+            target: normalizeRemoteString(payload.target) || 'remote-user',
+            locale: normalizeRemoteString(payload.locale),
             createdAt,
         };
         if (message.senderType === 'ai') {
@@ -565,12 +569,12 @@ class RemoteAgentService {
             id: createId('msg'),
             type: 'screen_share',
             direction: 'outgoing',
-            senderType: payload.senderType || 'user',
-            senderLabel: payload.senderLabel || '',
+            senderType: normalizeRemoteString(payload.senderType) || 'user',
+            senderLabel: normalizeRemoteString(payload.senderLabel),
             text: '',
-            imageDataUrl: payload.imageDataUrl || '',
-            caption: payload.caption || '',
-            target: payload.target || 'remote-user',
+            imageDataUrl: normalizeRemoteString(payload.imageDataUrl),
+            caption: normalizeRemoteString(payload.caption),
+            target: normalizeRemoteString(payload.target) || 'remote-user',
             createdAt: new Date().toISOString(),
         };
         this.appendSessionMessage(session, message);
@@ -582,7 +586,8 @@ class RemoteAgentService {
 
     sendSystemMessage(sessionId, text = '', options = {}) {
         const session = this.requireActiveSession(sessionId);
-        const localText = options.localText || text;
+        const normalizedText = normalizeRemoteString(text);
+        const localText = normalizeRemoteString(options.localText) || normalizedText;
         const message = {
             id: createId('msg'),
             type: 'system_message',
@@ -599,7 +604,7 @@ class RemoteAgentService {
         session.lastEventAt = message.createdAt;
         this.sendRaw(session.socket, {
             ...message,
-            text,
+            text: normalizedText,
         });
         this.onStateChanged();
         return message;
@@ -612,11 +617,11 @@ class RemoteAgentService {
             id: createId('chalk'),
             type: 'chalkboard_state',
             direction: 'outgoing',
-            senderType: payload.senderType || 'user',
-            senderLabel: payload.senderLabel || '',
+            senderType: normalizeRemoteString(payload.senderType) || 'user',
+            senderLabel: normalizeRemoteString(payload.senderLabel),
             text: '',
-            imageDataUrl: payload.imageDataUrl || '',
-            caption: payload.caption || '',
+            imageDataUrl: normalizeRemoteString(payload.imageDataUrl),
+            caption: normalizeRemoteString(payload.caption),
             width: Number(payload.width) || 0,
             height: Number(payload.height) || 0,
             hasContent: payload.hasContent !== false,
@@ -635,16 +640,17 @@ class RemoteAgentService {
         const session = this.requireActiveSession(sessionId);
         const status = payload.status === 'thinking' ? 'thinking' : 'idle';
         const createdAt = new Date().toISOString();
+        const senderLabel = normalizeRemoteString(payload.senderLabel) || normalizeRemoteString(session.local?.agentName) || 'Local AI';
         session.aiStatus = {
             ...(session.aiStatus || buildIdleAiStatus()),
             localAi: status,
-            localAiLabel: payload.senderLabel || session.local?.agentName || 'Local AI',
+            localAiLabel: senderLabel,
             updatedAt: createdAt,
         };
         this.sendRaw(session.socket, {
             type: 'ai_status',
             status,
-            senderLabel: payload.senderLabel || session.local?.agentName || 'Local AI',
+            senderLabel,
             createdAt,
         });
         this.onStateChanged();
