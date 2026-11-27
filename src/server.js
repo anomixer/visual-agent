@@ -3127,8 +3127,19 @@ app.post('/api/remote/session/:sessionId/respond', (req, res) => {
 });
 
 app.post('/api/remote/session/:sessionId/message', async (req, res) => {
+    const messageAbortController = new AbortController();
+    const ensureMessageActive = () => {
+        if (messageAbortController.signal.aborted) {
+            throw messageAbortController.signal.reason || new Error('Remote message request was cancelled.');
+        }
+    };
+    req.once('aborted', () => messageAbortController.abort());
+    res.once('close', () => {
+        if (!res.writableEnded) messageAbortController.abort();
+    });
     let localAiThinkingSessionId = '';
     try {
+        ensureMessageActive();
         const sessionId = req.params.sessionId;
         const text = String(req.body?.text || '').trim();
         const mode = String(req.body?.mode || 'user').trim();
@@ -3143,6 +3154,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
         let senderLabel = getRemoteProfile().userName;
         let outboundText = text;
         if (mode === 'local-ai') {
+            ensureMessageActive();
             const profile = getRemoteProfile();
             localAiThinkingSessionId = sessionId;
             if (!skipUserEcho) {
@@ -3167,13 +3179,15 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                     role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
                     content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
                 }));
-            const localHardwareContext = await getSystemHealth();
+            const localHardwareContext = await getSystemHealth({ signal: messageAbortController.signal });
+            ensureMessageActive();
             outboundText = isLocalHardwareStatusQuestion(text)
                 ? await buildLocalHardwareStatusReply(locale, localHardwareContext)
                 : await llm.chatWithLLM(
                 text,
                 history,
                 {
+                    signal: messageAbortController.signal,
                     systemContext: [
                         buildLocalAgentContext(currentSession),
                         `IMPORTANT - ALL hardware info below is from LOCAL machine (${profile.machineName}), NOT from the remote peer. Always prefix free-space / hardware answers with the machine name.`,
@@ -3192,6 +3206,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                 },
                 locale
             );
+            ensureMessageActive();
             senderType = 'ai';
             senderLabel = profile.agentName;
             remoteAgent.sendAiStatus(sessionId, {
@@ -3201,6 +3216,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
             localAiThinkingSessionId = '';
         }
 
+        ensureMessageActive();
         const message = remoteAgent.sendChatMessage(sessionId, {
             senderType,
             senderLabel,
@@ -3231,6 +3247,7 @@ app.post('/api/remote/session/:sessionId/message', async (req, res) => {
                 // ignore
             }
         }
+        if (messageAbortController.signal.aborted) return;
         res.status(400).json({ success: false, error: error.message });
     }
 });

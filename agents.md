@@ -5,6 +5,39 @@
 
 ---
 
+## 2026.11.28 — 第五十二階段：遠端聊天 Stop 會取消本機 AI，晚回不再傳給對方
+
+> 接續同日第五十一階段；本輪處理遠端聊天要求本機 AI 回覆時，前端 Stop 只中斷瀏覽器請求、伺服器仍繼續工作的取消缺口。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `public/app.js` 的 remote chat Stop 已會 abort 對應 HTTP 請求，`api()` 也會把 `AbortError` 交回呼叫端；但 `POST /api/remote/session/:sessionId/message` 的 async handler 沒有監聽 request abort 或 premature response close。
+- Express 在 request body 已讀取後，不會因客戶端斷線就自動停止 handler；`getSystemHealth()` 與 `llm.chatWithLLM()` 因此仍繼續執行，晚到的結果還可能送出 AI 回覆、`idle` 與 peer-AI continuation。
+- 新增真實 loopback HTTP 回歸後，修正前 3 項全數失敗：正常請求沒有 server-side signal、硬體探測中途取消不會傳到 server、LLM 中途取消也不會傳到 server。
+
+### 修正：request-scoped 訊號與晚回守門
+- `src/server.js` 在遠端訊息路由建立唯一 `AbortController`，同時監聽 `req.once('aborted')` 與 `res.once('close')`；只有 response 尚未正常結束就關閉時才中止，正常成功回應不會誤觸發。
+- `mode === 'local-ai'` 在產生 user echo、`thinking` 狀態與其他副作用前先檢查取消；硬體探測和 LLM 共用同一個 request signal，並在硬體 await 後、LLM await 後與送出 remote message 前再次檢查。
+- provider 即使忽略 signal 而晚 resolve，也會被送出前的守門攔下，不再送出 AI 回覆或後續 peer-AI continuation。
+- catch 分支仍把已開始的 local-AI 狀態恢復為 `idle`；若 request 已取消則不再嘗試向斷線客戶端回 HTTP 錯誤，也不會把取消變成可見的 remote failure。
+- 正常回覆、硬體 context 重用、訊息格式、history 與 peer continuation 行為不變；前端本輪未修改。
+
+### 測試與驗收
+- 新增 `test/remote-local-ai-cancel.test.js`（3 項，真實 Express + ephemeral loopback HTTP + token + fake remote session）：正常 local-AI 工作共用訊號且仍可邀請 peer continuation、硬體探測中取消不進入 LLM 且晚回不送出、LLM 無視 abort 晚到時仍抑制回覆與 continuation。
+- `test/hardware-probe-integration.test.js` 更新既有正常路徑期望，確認硬體探測現在收到未中止的 request signal；其餘斷言不變。
+- 三個相關測試檔合計 7 項全綠；5 個突變探針全數被攔下：移除 request abort/close 監聽、移除硬體 signal、移除 LLM signal、移除晚回守門、取消後不恢復 `idle`。探針後 production 與測試檔案均還原為位元組相同；server SHA256 為 `8dd63d359ca9df69c6ad1de0f20e771c7833b1ff27e2494dd92071e8ad034e72`。
+- `npm test`：27 個 JS 語法、**68 支測試檔**與 server smoke 全綠。
+- 未做雙機或瀏覽器實機驗收；本輪修正後端 HTTP 取消鏈，使用真實 loopback HTTP、隔離 harness 與 fake LLM／remote service，未執行 PowerShell、外掛、安裝或提權。
+
+### 尚未完成
+- Double Agent Mode 另有 fire-and-forget 的 `mode:'user', target:'remote-ai'` 後續請求，尚未共享前端 abort signal；本輪只涵蓋遠端聊天內由 HTTP 請求執行的 local-AI 工作。
+- `tokenizeForMatch()` 仍無 CJK 斷詞；modal async race 與診斷視窗語系即時重繪仍待處理。
+- Browser 輪詢即使畫面未變仍會實際截圖，只省下 base64 重送。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權、未觸碰使用者真實設定檔。
+
+---
+
 ## 2026.11.28 — 第五十一階段：遠端 AI 佇列有界且計入等待時間，任務匯入驗證所有消費欄位
 
 > 接續同日第五十階段；本輪處理背景稽核確認的兩項資源與資料邊界缺陷。版本維持 `2026.8.7`。

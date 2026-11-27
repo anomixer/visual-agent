@@ -689,6 +689,9 @@ $true
 - Remote AI per-session queue 不得因單一回覆長時間卡住而永久阻塞；目前外層上限為 190 秒，逾時必須取消在途 LLM、釋放 queue 並產生可見錯誤訊息。
 - Remote queue 必須將 `AbortSignal` 轉發給 LLM 與硬體探測；斷線或 session 變為非 active 時，active 與 queued 工作都不得繼續，晚回結果也不得送出。內部 tail 不得產生未處理拒絕；完整取消契約見 §2.5。
 - 硬體狀態問題會先取得一次可取消的本機 health context；Remote AI 與 local-AI remote chat 都必須沿用該 context 組回覆，不得再呼叫一次 `getSystemHealth()`。
+- 遠端聊天要求本機 AI 回覆時，前端 Stop 必須同時取消伺服器端工作：HTTP request abort 或 response 在完成前關閉都要中止同一個 request-scoped `AbortSignal`，並把該訊號傳給硬體探測與 LLM。
+- 本機 AI 在硬體探測後、LLM 完成後與送出 remote message 前都必須檢查取消；provider 即使忽略訊號而晚到，也不得送出 AI 回覆或後續 peer-AI continuation。取消時 AI 狀態仍須恢復 `idle`，但不得再嘗試向已斷線客戶端回 HTTP 錯誤。
+- 本契約只涵蓋遠端聊天內由本機 HTTP 請求執行的 local-AI 工作；獨立 Remote AI queue 的取消契約仍以 §2.5 為準。
 
 ### 13.3 Remote Chat 視覺區分
 - Remote User、Remote AI、remote system message 的 bubble 底色必須與本機聊天不同。

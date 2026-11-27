@@ -80,7 +80,7 @@ test('local AI remote hardware replies reuse the already collected health contex
 
     assert.equal(response.status, 200, response.raw);
     assert.equal(payload.success, true);
-    assert.deepEqual(harness.healthCalls, [{ hasSignal: false, aborted: false }]);
+    assert.deepEqual(harness.healthCalls, [{ hasSignal: true, aborted: false }]);
     assert.equal(harness.llmCalls.length, 0, 'hardware status is answered locally');
     const replies = harness.getRemoteMessages().filter((entry) => entry.method === 'sendChatMessage' && entry.payload.senderType === 'ai');
     assert.equal(replies.length, 1);
