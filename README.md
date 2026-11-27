@@ -53,6 +53,7 @@ English: [README-en.md](./README-en.md)
 | Chalkboard | 中央 Chalkboard支援粉筆塗寫、局部板擦、圖形、圖片放置、文字框與 PNG 匯出 |
 | 硬體監控 | 顯示 CPU、GPU、RAM、Disk 與 NVIDIA GPU 溫度；重疊探測共用，內建探測可隨聊天停止或遠端斷線取消 |
 | 插件系統 | 可用 `.js` 擴充系統監控能力；外掛可接收選用的 `{ signal }` 並自行中止內部工作 |
+| 診斷資訊 | 顯示版本、連接埠、AI、Browser、資料狀態與 debug log 尾端；已開啟視窗切換語系時，成功、載入中或失敗內容都會立即更新，不重新請求，複製摘要仍可使用 |
 | 自動初始化 | 首次執行可自動安裝 Ollama 與預設模型 |
 | Tauri 打包 | 可打包成獨立 Windows EXE，Node 後端以 sidecar 方式隨附 |
 

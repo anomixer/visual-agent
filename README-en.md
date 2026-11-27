@@ -53,6 +53,7 @@ It becomes: create a task -> show a suggested action button -> you confirm -> el
 | Chalkboard | The center board supports chalk drawing, local erasing, shapes, image placement, text boxes, and PNG export |
 | Hardware monitoring | Displays CPU, GPU, RAM, Disk, and NVIDIA GPU temperature; overlapping probes are shared and built-in probes can be cancelled |
 | Plugin system | Extend system monitoring with `.js` files; plugins can accept an optional `{ signal }` and cancel their own internal work |
+| Diagnostics | Shows version, ports, AI, Browser, data state, and the debug-log tail; an open window immediately redraws success, loading, or failure content when the UI language changes, without refetching, and its summary copy button remains usable |
 | Auto initialization | First run can automatically install Ollama and the default model |
 | Tauri packaging | Can be packaged into a standalone Windows EXE with the Node backend bundled as a sidecar |
 

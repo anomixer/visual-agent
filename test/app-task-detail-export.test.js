@@ -50,7 +50,7 @@ const DECLARATIONS = [
     activeDetailModalMatch[0],
     'getLocalePack', 'formatI18n', 't', 'escapeHtml', 'localizeStatus', 'localizeCategory', 'getDisplayAction', 'getActionLabel',
     'renderTaskModalBody', 'fetchTaskDetail', 'showExpDetail', 'showTaskModal', 'refreshActiveDetailModal', 'closeSharedModal',
-    'openDiagnosticsModal', 'exportExps', 'exportTasks',
+    'renderDiagnosticsModal', 'openDiagnosticsModal', 'exportExps', 'exportTasks',
 ].map((name) => name.startsWith('let ') ? name : extractFunction(name)).join('\n');
 
 const CREATED_AT = '2026-11-12T02:03:04.000Z';
@@ -67,6 +67,16 @@ const LISTED_TASK = {
     category: 'Test', status: 'failed', progress: 100, createdAt: CREATED_AT, completedAt: null,
 };
 const FULL_TASK = { ...LISTED_TASK, skillId: 'synthetic_sop', logs: TASK_LOGS };
+const DIAGNOSTICS_PAYLOAD = {
+    success: true,
+    app: { version: '2026.8.7', pid: 4242, node: 'v24.22.1', platform: 'win32' },
+    ports: { http: {}, remote: {} },
+    llm: { provider: 'Ollama', modelName: 'synthetic-model', available: true, modelReady: true },
+    browser: { playwrightModuleAvailable: true, browserAvailable: false },
+    paths: { appData: 'C:\\synthetic\\visual-agent', debugLog: 'C:\\synthetic\\debug.log' },
+    data: { taskCount: 0, pendingTaskCount: 0, runningTaskCount: 0, sopCount: 1, skillCount: 2 },
+    debugLog: { lines: [] },
+};
 const EXPORT_PAYLOAD = {
     exportedAt: '2026-11-12T03:00:00.000Z',
     agentVersion: '2026.8.7',
@@ -78,6 +88,8 @@ function createContext({ locale = 'zh-TW', responses = {}, expsEntries = [] } = 
     const downloads = [];
     const logs = [];
     const bubbles = [];
+    const listeners = [];
+    const copies = [];
     const context = {
         I18N: loadLocalePacks(locale),
         currentLocale: locale,
@@ -98,7 +110,7 @@ function createContext({ locale = 'zh-TW', responses = {}, expsEntries = [] } = 
         },
         renderMarkdown: (text) => `<p>${text}</p>`,
         renderDiagnosticRows: (rows) => rows.map(([label, value]) => `<div>${label}: ${value}</div>`).join(''),
-        copyDiagnosticsSummary() {},
+        copyDiagnosticsSummary(data) { copies.push(data); },
         addUILog(message, level) { logs.push({ message, level }); },
         appendChatBubble(role, message) { bubbles.push({ role, message }); },
         api: async (endpoint, options) => {
@@ -116,13 +128,15 @@ function createContext({ locale = 'zh-TW', responses = {}, expsEntries = [] } = 
         },
         document: {
             createElement: () => ({ href: '', download: '', click() {} }),
-            getElementById: () => null,
+            getElementById: (id) => id === 'btnCopyDiagnostics' ? {
+                addEventListener(type, listener) { listeners.push({ id, type, listener }); },
+            } : null,
         },
     };
     vm.createContext(context);
     vm.runInContext(DECLARATIONS, context, { filename: sourcePath });
     context.getActiveDetailModal = () => vm.runInContext('activeDetailModal', context);
-    return { context, calls, downloads, logs, bubbles };
+    return { context, calls, downloads, logs, bubbles, listeners, copies };
 }
 
 function flush() {
@@ -278,6 +292,72 @@ test('open task and experience details refresh immediately when the locale chang
     assert.ok(expHtml.includes('Updated'));
     assert.ok(!expHtml.includes('來源'));
     assert.ok(!expHtml.includes('更新時間'));
+});
+
+test('diagnostics redraw from the retained response when the locale changes', async () => {
+    const { context, calls, listeners, copies } = createContext({
+        locale: 'zh-TW',
+        responses: { '/api/diagnostics': DIAGNOSTICS_PAYLOAD },
+    });
+
+    await context.openDiagnosticsModal();
+    assert.equal(context.modalTitle.textContent, '診斷資訊');
+    assert.match(context.modalBody.innerHTML, /應用程式/);
+    assert.match(context.modalBody.innerHTML, /未監聽/);
+
+    context.currentLocale = 'en-US';
+    context.refreshActiveDetailModal();
+    const html = context.modalBody.innerHTML;
+    assert.equal(calls.length, 1, 'a locale redraw must not fetch diagnostics again');
+    assert.equal(context.modalTitle.textContent, 'Diagnostics');
+    for (const label of ['Application', 'Version', 'Ports', 'AI Engine', 'Browser Use', 'Data State']) {
+        assert.ok(html.includes(label), `en-US diagnostics missing ${label}`);
+    }
+    for (const label of ['診斷資訊', '應用程式', '版本', '連接埠', 'AI 引擎', '資料狀態', '未監聽']) {
+        assert.ok(!html.includes(label), `en-US diagnostics still contains ${label}`);
+    }
+    assert.match(html, /not listening/);
+    assert.match(html, /\(0 pending, 0 running\)/);
+    assert.ok(html.includes('(empty)'), 'the empty debug-log placeholder must be localized');
+    assert.ok(!html.includes('（空白）'), 'en-US diagnostics must not retain the Chinese empty placeholder');
+
+    assert.equal(listeners.length, 2, 'each render must reconnect the copy button');
+    listeners.at(-1).listener();
+    assert.equal(copies.at(-1), DIAGNOSTICS_PAYLOAD, 'the copy action must retain the original diagnostics data');
+});
+
+test('diagnostics loading and failure states follow a locale change without refetching', async () => {
+    const response = deferred();
+    const loading = createContext({
+        locale: 'zh-TW',
+        responses: { '/api/diagnostics': () => response.promise },
+    });
+    const opening = loading.context.openDiagnosticsModal();
+    assert.match(loading.context.modalBody.innerHTML, /正在收集診斷資訊/);
+
+    loading.context.currentLocale = 'en-US';
+    loading.context.refreshActiveDetailModal();
+    assert.equal(loading.context.modalTitle.textContent, 'Diagnostics');
+    assert.match(loading.context.modalBody.innerHTML, /Collecting diagnostics/);
+    assert.equal(loading.calls.length, 1);
+
+    response.resolve(DIAGNOSTICS_PAYLOAD);
+    await opening;
+    assert.match(loading.context.modalBody.innerHTML, /Application/);
+
+    const failed = createContext({
+        locale: 'zh-TW',
+        responses: { '/api/diagnostics': { success: false, error: 'offline' } },
+    });
+    await failed.context.openDiagnosticsModal();
+    assert.match(failed.context.modalBody.innerHTML, /診斷資訊讀取失敗/);
+
+    failed.context.currentLocale = 'en-US';
+    failed.context.refreshActiveDetailModal();
+    assert.equal(failed.context.modalTitle.textContent, 'Diagnostics');
+    assert.match(failed.context.modalBody.innerHTML, /Failed to load diagnostics: offline/);
+    assert.ok(!failed.context.modalBody.innerHTML.includes('診斷資訊讀取失敗'));
+    assert.equal(failed.calls.length, 1, 'a failed response must also be retained across redraws');
 });
 
 test('hidden or closed detail modals are not refreshed', async () => {
@@ -440,7 +520,9 @@ test('opening diagnostics discards the active detail modal state', async () => {
 
     context.currentLocale = 'en-US';
     context.refreshActiveDetailModal();
-    assert.equal(context.modalBody.innerHTML, diagnosticsHtml, 'diagnostics must not be overwritten by a stale detail modal');
+    assert.match(context.modalBody.innerHTML, /Failed to load diagnostics: offline/);
+    assert.ok(!context.modalBody.innerHTML.includes('診斷資訊讀取失敗'), 'diagnostics must redraw without reviving the stale detail modal');
+    assert.notEqual(context.modalBody.innerHTML, diagnosticsHtml, 'the diagnostics locale change must take effect immediately');
 });
 
 test('a task without a SOP shows the localized placeholder', () => {

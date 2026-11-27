@@ -602,6 +602,10 @@ const I18N = {
             missing: '缺失',
             ok: '正常',
             warning: '需處理',
+            notListening: '未監聽',
+            pending: '待處理',
+            running: '執行中',
+            empty: '（空白）',
         },
         todo: {
             emptyTitle: '目前沒有執行中的任務',
@@ -1062,6 +1066,10 @@ const I18N = {
             missing: 'Missing',
             ok: 'OK',
             warning: 'Needs attention',
+            notListening: 'not listening',
+            pending: 'pending',
+            running: 'running',
+            empty: '(empty)',
         },
         todo: {
             emptyTitle: 'No running tasks at the moment',
@@ -7730,8 +7738,8 @@ function buildDiagnosticsSummary(data = {}) {
         `Visual Agent ${data.app?.version || 'dev'} (${data.generatedAt || ''})`,
         `${t('diagnostics.pid')}: ${data.app?.pid || ''}`,
         `${t('diagnostics.node')}: ${data.app?.node || ''}`,
-        `${t('diagnostics.httpPort')}: ${data.ports?.http?.owner || (currentLocale === 'en-US' ? 'not listening' : '未監聽')}`,
-        `${t('diagnostics.remotePort')}: ${data.ports?.remote?.owner || (currentLocale === 'en-US' ? 'not listening' : '未監聽')}`,
+        `${t('diagnostics.httpPort')}: ${data.ports?.http?.owner || (t('diagnostics.notListening'))}`,
+        `${t('diagnostics.remotePort')}: ${data.ports?.remote?.owner || (t('diagnostics.notListening'))}`,
         `${t('diagnostics.llm')}: ${data.llm?.provider || ''} / ${data.llm?.modelName || data.llm?.model || ''} / ${t('diagnostics.available')}=${Boolean(data.llm?.available)} / ${t('diagnostics.modelReady')}=${Boolean(data.llm?.modelReady)}`,
         `${t('diagnostics.browser')}: ${t('diagnostics.playwrightModule')}=${Boolean(data.browser?.playwrightModuleAvailable)} / ${t('diagnostics.chromiumRuntime')}=${Boolean(data.browser?.browserAvailable)} / ${t('diagnostics.executable')}=${data.browser?.browserExecutable || ''}`,
         `${t('diagnostics.appData')}: ${data.paths?.appData || ''}`,
@@ -7755,82 +7763,100 @@ async function copyDiagnosticsSummary(data = {}) {
     }
 }
 
+function renderDiagnosticsModal(request) {
+    if (!modalTitle || !modalBody) return;
+    modalTitle.textContent = t('diagnostics.title');
+    if (request.status === 'failed') {
+        modalBody.innerHTML = `<p class="diag-warn">${escapeHtml(t('diagnostics.failed', { error: request.error }))}</p>`;
+        return;
+    }
+    if (request.status !== 'ready') {
+        modalBody.innerHTML = `<p>${escapeHtml(t('diagnostics.loading'))}</p>`;
+        return;
+    }
+    const data = request.data;
+    const browserOk = Boolean(data.browser?.playwrightModuleAvailable && data.browser?.browserAvailable);
+    const llmOk = Boolean(data.llm?.available && data.llm?.modelReady);
+    const portOk = Boolean(data.ports?.http?.ownedByCurrentProcess && data.ports?.remote?.ownedByCurrentProcess);
+    const debugLines = Array.isArray(data.debugLog?.lines) ? data.debugLog.lines : [];
+    modalBody.innerHTML = `
+        <div class="diagnostics-actions">
+            <button class="btn-secondary" id="btnCopyDiagnostics">${escapeHtml(t('diagnostics.copy'))}</button>
+        </div>
+        <div class="diagnostics-section">
+            <h4>${escapeHtml(t('diagnostics.app'))}</h4>
+            ${renderDiagnosticRows([
+                [t('diagnostics.version'), data.app?.version || 'dev', 'ok'],
+                [t('diagnostics.pid'), data.app?.pid || '', 'ok'],
+                [t('diagnostics.node'), data.app?.node || '', 'ok'],
+                [t('diagnostics.platform'), data.app?.platform || '', 'ok'],
+                [t('diagnostics.executable'), data.app?.executable || '', 'ok'],
+            ])}
+        </div>
+        <div class="diagnostics-section">
+            <h4>${escapeHtml(t('diagnostics.ports'))}</h4>
+            ${renderDiagnosticRows([
+                [t('diagnostics.httpPort'), data.ports?.http?.owner || t('diagnostics.notListening'), portOk ? 'ok' : 'warn'],
+                [t('diagnostics.remotePort'), data.ports?.remote?.owner || t('diagnostics.notListening'), portOk ? 'ok' : 'warn'],
+            ])}
+        </div>
+        <div class="diagnostics-section">
+            <h4>${escapeHtml(t('diagnostics.llm'))}</h4>
+            ${renderDiagnosticRows([
+                [t('diagnostics.provider'), data.llm?.provider || '', 'ok'],
+                [t('diagnostics.baseUrl'), data.llm?.baseUrl || '', 'ok'],
+                [t('diagnostics.model'), data.llm?.modelName || data.llm?.model || '', llmOk ? 'ok' : 'warn'],
+                [t('diagnostics.available'), Boolean(data.llm?.available), llmOk ? 'ok' : 'warn'],
+                [t('diagnostics.modelReady'), Boolean(data.llm?.modelReady), llmOk ? 'ok' : 'warn'],
+                [t('diagnostics.error'), data.llm?.error || '', data.llm?.error ? 'warn' : 'ok'],
+            ])}
+        </div>
+        <div class="diagnostics-section">
+            <h4>${escapeHtml(t('diagnostics.browser'))}</h4>
+            ${renderDiagnosticRows([
+                [t('diagnostics.playwrightModule'), Boolean(data.browser?.playwrightModuleAvailable), data.browser?.playwrightModuleAvailable ? 'ok' : 'warn'],
+                [t('diagnostics.chromiumRuntime'), Boolean(data.browser?.browserAvailable), browserOk ? 'ok' : 'warn'],
+                [t('diagnostics.executable'), data.browser?.browserExecutable || '', browserOk ? 'ok' : 'warn'],
+                [t('diagnostics.searchPaths'), data.browser?.searchPaths || [], 'ok'],
+                [t('diagnostics.installSop'), data.browser?.installSopId || '', 'ok'],
+            ])}
+        </div>
+        <div class="diagnostics-section">
+            <h4>${escapeHtml(t('diagnostics.data'))}</h4>
+            ${renderDiagnosticRows([
+                [t('diagnostics.appData'), data.paths?.appData || '', 'ok'],
+                [t('diagnostics.tasks'), `${data.data?.taskCount || 0} (${data.data?.pendingTaskCount || 0} ${t('diagnostics.pending')}, ${data.data?.runningTaskCount || 0} ${t('diagnostics.running')})`, 'ok'],
+                [t('diagnostics.sops'), data.data?.sopCount || 0, 'ok'],
+                [t('diagnostics.skills'), data.data?.skillCount || 0, 'ok'],
+                [t('diagnostics.debugLog'), data.paths?.debugLog || '', 'ok'],
+            ])}
+        </div>
+        <div class="diagnostics-section">
+            <h4>${escapeHtml(t('diagnostics.debugLog'))}</h4>
+            <pre class="diag-log">${escapeHtml(debugLines.join('\n') || t('diagnostics.empty'))}</pre>
+        </div>
+    `;
+    document.getElementById('btnCopyDiagnostics')?.addEventListener('click', () => copyDiagnosticsSummary(data));
+}
+
 async function openDiagnosticsModal() {
     if (!modalOverlay || !modalTitle || !modalBody) return;
-    const request = { type: 'diagnostics' };
+    const request = { type: 'diagnostics', status: 'loading' };
     activeDetailModal = request;
-    modalTitle.textContent = t('diagnostics.title');
-    modalBody.innerHTML = `<p>${escapeHtml(t('diagnostics.loading'))}</p>`;
+    renderDiagnosticsModal(request);
     modalOverlay.classList.add('visible');
     try {
         const data = await api('/api/diagnostics');
         if (activeDetailModal !== request) return;
         if (!data.success) throw new Error(data.error || 'unknown error');
-        const browserOk = Boolean(data.browser?.playwrightModuleAvailable && data.browser?.browserAvailable);
-        const llmOk = Boolean(data.llm?.available && data.llm?.modelReady);
-        const portOk = Boolean(data.ports?.http?.ownedByCurrentProcess && data.ports?.remote?.ownedByCurrentProcess);
-        const debugLines = Array.isArray(data.debugLog?.lines) ? data.debugLog.lines : [];
-        modalBody.innerHTML = `
-            <div class="diagnostics-actions">
-                <button class="btn-secondary" id="btnCopyDiagnostics">${escapeHtml(t('diagnostics.copy'))}</button>
-            </div>
-            <div class="diagnostics-section">
-                <h4>${escapeHtml(t('diagnostics.app'))}</h4>
-                ${renderDiagnosticRows([
-                    [t('diagnostics.version'), data.app?.version || 'dev', 'ok'],
-                    [t('diagnostics.pid'), data.app?.pid || '', 'ok'],
-                    [t('diagnostics.node'), data.app?.node || '', 'ok'],
-                    [t('diagnostics.platform'), data.app?.platform || '', 'ok'],
-                    [t('diagnostics.executable'), data.app?.executable || '', 'ok'],
-                ])}
-            </div>
-            <div class="diagnostics-section">
-                <h4>${escapeHtml(t('diagnostics.ports'))}</h4>
-                ${renderDiagnosticRows([
-                    [t('diagnostics.httpPort'), data.ports?.http?.owner || (currentLocale === 'en-US' ? 'not listening' : '未監聽'), portOk ? 'ok' : 'warn'],
-                    [t('diagnostics.remotePort'), data.ports?.remote?.owner || (currentLocale === 'en-US' ? 'not listening' : '未監聽'), portOk ? 'ok' : 'warn'],
-                ])}
-            </div>
-            <div class="diagnostics-section">
-                <h4>${escapeHtml(t('diagnostics.llm'))}</h4>
-                ${renderDiagnosticRows([
-                    [t('diagnostics.provider'), data.llm?.provider || '', 'ok'],
-                    [t('diagnostics.baseUrl'), data.llm?.baseUrl || '', 'ok'],
-                    [t('diagnostics.model'), data.llm?.modelName || data.llm?.model || '', llmOk ? 'ok' : 'warn'],
-                    [t('diagnostics.available'), Boolean(data.llm?.available), llmOk ? 'ok' : 'warn'],
-                    [t('diagnostics.modelReady'), Boolean(data.llm?.modelReady), llmOk ? 'ok' : 'warn'],
-                    [t('diagnostics.error'), data.llm?.error || '', data.llm?.error ? 'warn' : 'ok'],
-                ])}
-            </div>
-            <div class="diagnostics-section">
-                <h4>${escapeHtml(t('diagnostics.browser'))}</h4>
-                ${renderDiagnosticRows([
-                    [t('diagnostics.playwrightModule'), Boolean(data.browser?.playwrightModuleAvailable), data.browser?.playwrightModuleAvailable ? 'ok' : 'warn'],
-                    [t('diagnostics.chromiumRuntime'), Boolean(data.browser?.browserAvailable), browserOk ? 'ok' : 'warn'],
-                    [t('diagnostics.executable'), data.browser?.browserExecutable || '', browserOk ? 'ok' : 'warn'],
-                    [t('diagnostics.searchPaths'), data.browser?.searchPaths || [], 'ok'],
-                    [t('diagnostics.installSop'), data.browser?.installSopId || '', 'ok'],
-                ])}
-            </div>
-            <div class="diagnostics-section">
-                <h4>${escapeHtml(t('diagnostics.data'))}</h4>
-                ${renderDiagnosticRows([
-                    [t('diagnostics.appData'), data.paths?.appData || '', 'ok'],
-                    [t('diagnostics.tasks'), `${data.data?.taskCount || 0} (${data.data?.pendingTaskCount || 0} pending, ${data.data?.runningTaskCount || 0} running)`, 'ok'],
-                    [t('diagnostics.sops'), data.data?.sopCount || 0, 'ok'],
-                    [t('diagnostics.skills'), data.data?.skillCount || 0, 'ok'],
-                    [t('diagnostics.debugLog'), data.paths?.debugLog || '', 'ok'],
-                ])}
-            </div>
-            <div class="diagnostics-section">
-                <h4>${escapeHtml(t('diagnostics.debugLog'))}</h4>
-                <pre class="diag-log">${escapeHtml(debugLines.join('\n') || '(empty)')}</pre>
-            </div>
-        `;
-        document.getElementById('btnCopyDiagnostics')?.addEventListener('click', () => copyDiagnosticsSummary(data));
+        request.data = data;
+        request.status = 'ready';
+        renderDiagnosticsModal(request);
     } catch (error) {
         if (activeDetailModal !== request) return;
-        modalBody.innerHTML = `<p class="diag-warn">${escapeHtml(t('diagnostics.failed', { error: error.message }))}</p>`;
+        request.error = error instanceof Error ? error.message : String(error);
+        request.status = 'failed';
+        renderDiagnosticsModal(request);
     }
 }
 
@@ -8067,6 +8093,8 @@ function refreshActiveDetailModal() {
         renderTaskModalBody(activeDetailModal.task);
     } else if (activeDetailModal.type === 'exp') {
         showExpDetail(activeDetailModal.entry);
+    } else if (activeDetailModal.type === 'diagnostics') {
+        renderDiagnosticsModal(activeDetailModal);
     }
 }
 

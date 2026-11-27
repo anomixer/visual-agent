@@ -5,6 +5,37 @@
 
 ---
 
+## 2026.11.28 — 第五十八階段：診斷視窗保留狀態並隨語系立即重繪
+
+> 接續同日第五十七階段；本輪修正已開啟診斷視窗切換語系仍停在舊語言的問題。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- 診斷內容原本只在 `openDiagnosticsModal()` 內組裝，`refreshActiveDetailModal()` 只處理任務與經驗詳情，因此已開啟的診斷標題、區段、布林／缺值與失敗文字都不會隨 `setLocale()` 更新。
+- 不能靠重新請求 `/api/diagnostics` 來翻譯：那會增加等待、產生不必要的網路副作用，也無法讓載入中或已失敗的視窗立即換語系。
+- 修正前以真實前端函式加入兩項回歸，focused run 為 21 項中 19 passed／2 failed；兩項都重現切到 `en-US` 後標題仍為「診斷資訊」。
+
+### 修正：保留 request 狀態與單一渲染出口
+- 診斷 request object 保留 `status`、成功 `data` 與失敗 `error`；新增 `renderDiagnosticsModal(request)`，統一渲染 loading／ready／failed 三種狀態。
+- 診斷標題、區段、布林、缺值、port 未監聽、待處理／執行中與空 debug log 都改走 `t()`，移除渲染與摘要組字中的硬編語系三元運算式。
+- `refreshActiveDetailModal()` 增加診斷分支，只重繪目前 active request，不重新請求；await 後的成功、API refusal 與網路錯誤仍以 object identity 守門，晚回不會覆蓋新視窗或重新開啟已關閉 overlay。
+- ready 狀態每次重繪都重新綁定複製摘要按鈕；摘要仍在點擊時由 retained data 與目前語系即時計算。
+
+### 測試與驗收
+- `test/app-task-detail-export.test.js` 由 19 項增為 21 項，新增成功狀態與 loading／failure 狀態的語系重繪回歸，涵蓋零重抓、英文缺值／空值、複製 listener 重連與 retained payload；相關 focused suite 連同 `app-i18n`、`i18n-keys` 共 28／28 全綠。
+- 5 個突變探針全數被攔下：移除診斷重繪分支（18 passed／3 failed）、渲染器 no-op（18／3）、丟棄成功 data（19／2）、丟棄失敗訊息（19／2）、破壞英文空 log 文案（20／1）。探針後 `public/app.js` 均還原為位元組相同；最終 SHA256 `11b1122f02fb1c0030ec7a5c1659674de771ea287d8e0de10ff1d2999d143659`。
+- 隔離瀏覽器搭配真實 backend 驗收：真實成功資料切換 zh-TW／en-US 時標題與內容立即更新、診斷請求增量為 0、複製按鈕取得原 retained payload；另以只攔截 `/api/diagnostics` 的 fake API 驗收載入中切換、晚到成功採用新語系、失敗狀態雙向切換，三種重抓增量皆為 0。
+- 瀏覽器共 174 個 fetch／XHR，全數低於 400；console 0 error／0 warn。驗收後已關閉測試分頁、停止 PID 39588 的隔離 server、確認 3210／19168 不再監聽並刪除本輪隔離 profile。
+- `spec.md` 將診斷 retained state、無重抓重繪與複製 listener 重連列為不變式，README 中英文新增診斷功能說明。
+- `npm test`：27 個 JS 語法、**70 支測試檔**與 server smoke 全綠。
+
+### 尚未完成
+- Browser 靜止畫面輪詢仍會實際截圖；peer 已接受工作的撤銷仍需要協定支援與雙機驗收。
+- 已開始的 Chalkboard draft 非異步渲染仍只部分可取消；本輪未改寫其 request lifecycle。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- 未做雙機、UAC、Vision 或乾淨 Windows EXE 實機驗收；未執行 PowerShell、外掛、安裝或提權，未讀寫使用者真實 APPDATA。
+
+---
+
 ## 2026.11.28 — 第五十七階段：遠端狀態輪詢以請求序號拒絕晚回覆寫
 
 > 接續同日第五十六階段；本輪處理 `/api/remote/state` 重疊輪詢時，舊回應覆寫新 session、倒退游標或觸發過期副作用的競態。版本維持 `2026.8.7`。
