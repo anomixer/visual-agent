@@ -38,7 +38,7 @@ const { createLocalApiSecurity } = require('./local-api-security');
 const { safeFetchText } = require('./safe-fetch');
 // 純函式集（自本檔抽出，見 src/pure.js）— 解構回本地綁定，原有呼叫點不需改動。
 const {
-    tokenizeForMatch, scoreByTokenSet, redactSensitiveText,
+    tokenizeForMatch, expandSearchAliases, scoreByTokenSet, redactSensitiveText,
     compactMarkdownSnippet, buildChatHistoryForRequest, normalizeChalkboardAttachment,
     getTaskDurationText, pickExperienceHighlights,
     buildExperienceMarkdown, detectAgentFinanceIntent,
@@ -475,7 +475,17 @@ function loadSkillDocuments(forceRefresh = false) {
 
 
 function buildOnDemandSkillAndSopContext(message = '', sops = [], locale = 'zh-TW') {
-    const queryTokens = tokenizeForMatch(message).slice(0, 16);
+    const allOriginalTokens = tokenizeForMatch(message);
+    const originalTokens = allOriginalTokens.slice(0, 16);
+    const originalTokenSet = new Set(allOriginalTokens);
+    const aliasTokens = [...new Set(tokenizeForMatch(expandSearchAliases(message)))]
+        .filter((token) => !originalTokenSet.has(token))
+        .slice(0, 4);
+    const queryTokens = [
+        ...originalTokens.slice(0, 12),
+        ...aliasTokens,
+        ...originalTokens.slice(12),
+    ].slice(0, 16);
     if (!queryTokens.length) return '';
 
     const skillDocs = loadSkillDocuments(false);

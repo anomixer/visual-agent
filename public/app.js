@@ -7715,12 +7715,14 @@ async function copyDiagnosticsSummary(data = {}) {
 
 async function openDiagnosticsModal() {
     if (!modalOverlay || !modalTitle || !modalBody) return;
-    activeDetailModal = null;
+    const request = { type: 'diagnostics' };
+    activeDetailModal = request;
     modalTitle.textContent = t('diagnostics.title');
     modalBody.innerHTML = `<p>${escapeHtml(t('diagnostics.loading'))}</p>`;
     modalOverlay.classList.add('visible');
     try {
         const data = await api('/api/diagnostics');
+        if (activeDetailModal !== request) return;
         if (!data.success) throw new Error(data.error || 'unknown error');
         const browserOk = Boolean(data.browser?.playwrightModuleAvailable && data.browser?.browserAvailable);
         const llmOk = Boolean(data.llm?.available && data.llm?.modelReady);
@@ -7785,6 +7787,7 @@ async function openDiagnosticsModal() {
         `;
         document.getElementById('btnCopyDiagnostics')?.addEventListener('click', () => copyDiagnosticsSummary(data));
     } catch (error) {
+        if (activeDetailModal !== request) return;
         modalBody.innerHTML = `<p class="diag-warn">${escapeHtml(t('diagnostics.failed', { error: error.message }))}</p>`;
     }
 }
@@ -8005,8 +8008,11 @@ function renderTaskModalBody(task) {
 }
 
 async function showTaskModal(task) {
+    const request = { type: 'task-pending', task };
+    activeDetailModal = request;
     // 清單輪詢已省略 logs，開啟詳情時再抓完整任務補上執行記錄。
     const detail = task.logs?.length ? null : await fetchTaskDetail(task.id);
+    if (activeDetailModal !== request) return;
     const fullTask = detail || task;
     activeDetailModal = { type: 'task', task: fullTask };
     renderTaskModalBody(fullTask);

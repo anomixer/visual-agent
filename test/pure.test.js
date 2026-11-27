@@ -22,6 +22,21 @@ eq('tokenizeForMatch 基本', pure.tokenizeForMatch('Hello, World! AI'), ['hello
 eq('tokenizeForMatch CJK', pure.tokenizeForMatch('移除 Copilot 幫我'), ['移除', 'copilot', '幫我']);
 check('tokenizeForMatch 丟短 token', !pure.tokenizeForMatch('a b cd').includes('a'));
 
+// expandSearchAliases — 只為檢索加入固定英文別名，原始文字與英文輸入不變。
+eq('search alias 英文不變', pure.expandSearchAliases('printer backup browser'), 'printer backup browser');
+eq('search alias 空值', pure.expandSearchAliases(null), '');
+eq('search alias 印表機', pure.tokenizeForMatch(pure.expandSearchAliases('印表機不能列印')), ['印表機', 'printer', 'print', '不能列印']);
+eq('search alias 備份還原', pure.tokenizeForMatch(pure.expandSearchAliases('備份還原檔案')), ['備份', 'backup', '還原', 'restore', 'recovery', '檔案']);
+eq('search alias 移除 Copilot', pure.tokenizeForMatch(pure.expandSearchAliases('移除Copilot')), ['移除', 'uninstall', 'remove', 'copilot']);
+eq('search alias 檔案救回', pure.tokenizeForMatch(pure.expandSearchAliases('檔案不見可以救回嗎')), ['檔案不見', 'file', 'missing', 'recovery', '可以救回', 'restore']);
+const repeatedAliases = pure.tokenizeForMatch(pure.expandSearchAliases('印表機列印印表機'));
+eq('search alias 重複意圖不重複別名', repeatedAliases.filter((token) => token === 'printer').length, 1);
+const allAliasTokens = pure.tokenizeForMatch(pure.expandSearchAliases(
+    '檔案不見 印表機 列印 備份 還原 畫圖 瀏覽器 上網 移除 刪除 試算表 辦公室 公式 磁碟 空間不足'
+)).filter((token) => /^[a-z]+$/.test(token));
+check('search alias 擴張有固定上限', allAliasTokens.length <= 27 && new Set(allAliasTokens).size === allAliasTokens.length,
+    JSON.stringify(allAliasTokens));
+
 // scoreByTokenSet — 精確 +3、部分 +1、空 query 0
 eq('score 精確', pure.scoreByTokenSet(new Set(['chrome', 'google']), ['chrome']), 3);
 eq('score 部分', pure.scoreByTokenSet(new Set(['goog']), ['google']), 1);

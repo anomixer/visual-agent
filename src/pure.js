@@ -13,6 +13,38 @@ function tokenizeForMatch(text = '') {
         .filter((token) => token.length >= 2);
 }
 
+const SEARCH_ALIAS_RULES = [
+    [/檔案不見|檔案遺失|檔案消失|資料不見/, 'file missing recovery'],
+    [/印表機|列印機/, 'printer print'],
+    [/列印|打印/, 'printer print'],
+    [/備份|備援/, 'backup'],
+    [/還原|復原|救回|恢復/, 'restore recovery'],
+    [/畫圖|繪圖|畫畫|插畫|繪畫/, 'drawing paint sketch'],
+    [/瀏覽器/, 'browser web'],
+    [/上網|網頁搜尋|搜尋資料/, 'web search research'],
+    [/卸載|解除安裝|移除/, 'uninstall remove'],
+    [/刪除/, 'delete remove'],
+    [/試算表/, 'spreadsheet excel'],
+    [/辦公室/, 'office'],
+    [/公式/, 'formula formulas'],
+    [/磁碟|硬碟/, 'disk drive storage'],
+    [/空間不足/, 'space cleanup'],
+];
+
+function expandSearchAliases(text = '') {
+    const usedAliases = new Set();
+    return SEARCH_ALIAS_RULES.reduce((value, [pattern, aliases]) => (
+        value.replace(pattern, (match) => {
+            const freshAliases = aliases.split(' ').filter((alias) => {
+                if (usedAliases.has(alias)) return false;
+                usedAliases.add(alias);
+                return true;
+            });
+            return freshAliases.length ? `${match} ${freshAliases.join(' ')} ` : match;
+        })
+    ), String(text || ''));
+}
+
 function scoreByTokenSet(tokenSet = new Set(), queryTokens = []) {
     if (!queryTokens.length) return 0;
     let score = 0;
@@ -491,6 +523,7 @@ function parseSkillFrontmatter(frontmatter = '', fallbackName = '') {
 
 module.exports = {
     tokenizeForMatch,
+    expandSearchAliases,
     scoreByTokenSet,
     escapeMarkdown,
     redactSensitiveText,

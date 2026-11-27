@@ -49,7 +49,7 @@ assert.ok(activeDetailModalMatch, 'Expected the active detail modal state declar
 const DECLARATIONS = [
     activeDetailModalMatch[0],
     'getLocalePack', 'formatI18n', 't', 'escapeHtml', 'localizeStatus', 'localizeCategory', 'getDisplayAction', 'getActionLabel',
-    'renderTaskModalBody', 'showExpDetail', 'showTaskModal', 'refreshActiveDetailModal', 'closeSharedModal',
+    'renderTaskModalBody', 'fetchTaskDetail', 'showExpDetail', 'showTaskModal', 'refreshActiveDetailModal', 'closeSharedModal',
     'openDiagnosticsModal', 'exportExps', 'exportTasks',
 ].map((name) => name.startsWith('let ') ? name : extractFunction(name)).join('\n');
 
@@ -97,6 +97,8 @@ function createContext({ locale = 'zh-TW', responses = {}, expsEntries = [] } = 
             },
         },
         renderMarkdown: (text) => `<p>${text}</p>`,
+        renderDiagnosticRows: (rows) => rows.map(([label, value]) => `<div>${label}: ${value}</div>`).join(''),
+        copyDiagnosticsSummary() {},
         addUILog(message, level) { logs.push({ message, level }); },
         appendChatBubble(role, message) { bubbles.push({ role, message }); },
         api: async (endpoint, options) => {
@@ -112,15 +114,29 @@ function createContext({ locale = 'zh-TW', responses = {}, expsEntries = [] } = 
             createObjectURL(blob) { downloads.push(blob); return 'blob:fake'; },
             revokeObjectURL() {},
         },
-        document: { createElement: () => ({ href: '', download: '', click() {} }) },
+        document: {
+            createElement: () => ({ href: '', download: '', click() {} }),
+            getElementById: () => null,
+        },
     };
     vm.createContext(context);
     vm.runInContext(DECLARATIONS, context, { filename: sourcePath });
+    context.getActiveDetailModal = () => vm.runInContext('activeDetailModal', context);
     return { context, calls, downloads, logs, bubbles };
 }
 
 function flush() {
     return new Promise((resolve) => setTimeout(resolve, 20));
+}
+
+function deferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
 }
 
 test('the browser export fallback keeps the full log history and export wrapper', async () => {
@@ -280,6 +296,133 @@ test('hidden or closed detail modals are not refreshed', async () => {
     context.refreshActiveDetailModal();
     assert.equal(context.modalBody.innerHTML, hiddenHtml, 'closing must clear the active detail state');
     context.modalOverlay.classList.remove('visible');
+});
+
+test('a late task detail response cannot replace a newer task request', async () => {
+    const first = deferred();
+    const second = deferred();
+    const firstTask = { ...LISTED_TASK, id: 'first-task', title: 'First task' };
+    const secondTask = { ...LISTED_TASK, id: 'second-task', title: 'Second task' };
+    const { context } = createContext({
+        responses: {
+            '/api/task/first-task/status': () => first.promise,
+            '/api/task/second-task/status': () => second.promise,
+        },
+    });
+
+    const firstOpen = context.showTaskModal(firstTask);
+    const secondOpen = context.showTaskModal(secondTask);
+    second.resolve({ success: false, error: 'not found' });
+    await secondOpen;
+    assert.equal(context.modalTitle.textContent, secondTask.title, 'the newest request must own the modal');
+
+    first.resolve({ success: true, task: { ...firstTask, logs: TASK_LOGS } });
+    await firstOpen;
+    assert.equal(context.modalTitle.textContent, secondTask.title, 'an older response must not overwrite the newest task');
+    assert.equal(context.getActiveDetailModal().task.id, secondTask.id);
+});
+
+test('closing the shared modal invalidates an in-flight task detail request', async () => {
+    const response = deferred();
+    const { context } = createContext({
+        responses: { '/api/task/detail-task/status': () => response.promise },
+    });
+
+    const opening = context.showTaskModal(LISTED_TASK);
+    context.closeSharedModal();
+    response.resolve({ success: true, task: FULL_TASK });
+    await opening;
+
+    assert.equal(context.getActiveDetailModal(), null);
+    assert.equal(context.modalOverlay.classList.contains('visible'), false, 'a late response must not reopen a closed modal');
+});
+
+test('opening diagnostics invalidates an in-flight task detail request', async () => {
+    const response = deferred();
+    const { context } = createContext({
+        responses: {
+            '/api/task/detail-task/status': () => response.promise,
+            '/api/diagnostics': { success: false, error: 'diagnostics offline' },
+        },
+    });
+
+    const opening = context.showTaskModal(LISTED_TASK);
+    await context.openDiagnosticsModal();
+    const diagnosticsHtml = context.modalBody.innerHTML;
+    response.resolve({ success: true, task: FULL_TASK });
+    await opening;
+
+    assert.equal(context.getActiveDetailModal().type, 'diagnostics');
+    assert.equal(context.modalBody.innerHTML, diagnosticsHtml, 'a late task response must not replace diagnostics');
+});
+
+test('opening an experience invalidates an in-flight task detail request', async () => {
+    const response = deferred();
+    const entry = {
+        title: 'Synthetic experience', fileName: 'exp-20261112.md', sopId: 'synthetic_sop',
+        updatedAt: CREATED_AT, content: 'body text',
+    };
+    const { context } = createContext({
+        responses: { '/api/task/detail-task/status': () => response.promise },
+    });
+
+    const opening = context.showTaskModal(LISTED_TASK);
+    context.showExpDetail(entry);
+    const experienceHtml = context.modalBody.innerHTML;
+    response.resolve({ success: true, task: FULL_TASK });
+    await opening;
+
+    assert.equal(context.getActiveDetailModal().type, 'exp');
+    assert.equal(context.modalBody.innerHTML, experienceHtml, 'a late task response must not replace an experience');
+});
+
+test('a late diagnostics response cannot replace a newer task detail', async () => {
+    const diagnostics = deferred();
+    const { context } = createContext({
+        responses: { '/api/diagnostics': () => diagnostics.promise },
+    });
+
+    const openingDiagnostics = context.openDiagnosticsModal();
+    await context.showTaskModal(FULL_TASK);
+    const taskHtml = context.modalBody.innerHTML;
+    diagnostics.resolve({ success: true, data: {}, paths: {}, llm: {}, browser: {}, ports: {}, debugLog: {} });
+    await openingDiagnostics;
+
+    assert.equal(context.getActiveDetailModal().type, 'task');
+    assert.equal(context.modalTitle.textContent, FULL_TASK.title);
+    assert.equal(context.modalBody.innerHTML, taskHtml, 'a late diagnostics response must not replace a task detail');
+});
+
+test('a late diagnostics failure cannot replace a newer task detail', async () => {
+    const diagnostics = deferred();
+    const { context } = createContext({
+        responses: { '/api/diagnostics': () => diagnostics.promise },
+    });
+
+    const openingDiagnostics = context.openDiagnosticsModal();
+    await context.showTaskModal(FULL_TASK);
+    const taskHtml = context.modalBody.innerHTML;
+    diagnostics.resolve({ success: false, error: 'late diagnostics failure' });
+    await openingDiagnostics;
+
+    assert.equal(context.getActiveDetailModal().type, 'task');
+    assert.equal(context.modalBody.innerHTML, taskHtml, 'a late diagnostics error must not replace a task detail');
+});
+
+test('a late diagnostics network error cannot replace a newer task detail', async () => {
+    const diagnostics = deferred();
+    const { context } = createContext({
+        responses: { '/api/diagnostics': () => diagnostics.promise },
+    });
+
+    const openingDiagnostics = context.openDiagnosticsModal();
+    await context.showTaskModal(FULL_TASK);
+    const taskHtml = context.modalBody.innerHTML;
+    diagnostics.reject(new Error('late network failure'));
+    await openingDiagnostics;
+
+    assert.equal(context.getActiveDetailModal().type, 'task');
+    assert.equal(context.modalBody.innerHTML, taskHtml, 'a late diagnostics exception must not replace a task detail');
 });
 
 test('opening diagnostics discards the active detail modal state', async () => {

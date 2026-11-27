@@ -142,6 +142,7 @@ browser ──── public/index.html
 - **匯出必須來自伺服器的完整任務**：清單類回應不含 `logs`，因此前端不得直接序列化 `todoList` 作為匯出內容。原生另存新檔失敗時的瀏覽器 fallback 必須改抓 `GET /api/todo/export`，以 `Array.isArray(payload.tasks)` 驗證後下載整份 `{ exportedAt, agentVersion, tasks }` wrapper（該端點不回 `success` 欄位）。驗證失敗或請求失敗必須在工作日志顯示錯誤，不得只寫 console；原生成功與使用者取消都不得再觸發 fallback。
 - **匯入必須先驗證再取代**：`POST /api/todo/import` 整批取代 `todoList` 並立即落地，因此必須在寫入前驗證每個元素（非 null 且非陣列的物件、`id` 為非空字串且不得重複、`title` 為非空字串、`description`／`skillId`／`category`／`dynamicCmd` 若存在則只能是字串或 null、`action` 若存在只能是 `install`／`uninstall`、`progress` 若存在必須是 0–100 的有限數值、`createdAt`／`completedAt` 若存在只能是可解析日期字串或 null、`logs` 若存在必須是陣列且每項只能是字串或非 null 物件、`status` 若存在必須是 `pending|running|success|failed|skipped`）。任一不合格必須整批拒絕並指出 `tasks[index]`（log 條目另指出 `logs[j]`）與原因，既有清單與 `tasks.json` 不得被改動——不良元素一旦落地，清單與詳情端點會在每次輪詢拋錯，且重啟也無法復原。驗證後必須套用與啟動相同的 `reconcileInterruptedTasks()`：本行程沒有任務在跑，匯入的 `running` 一律視為已中斷。
 - **任務詳情必須容忍既有壞資料**：`loadTasks()` 不會在啟動時重新驗證整個持久化結構，因此已存在的 `tasks.json` 仍可能含 `null` log 條目或非陣列 `logs`。`renderTaskModalBody()` 不得對此拋錯：非陣列視為無記錄，nullish 條目略過，舊版字串條目以 `info` 顯示，物件條目沿用 `level` / `message`。此為渲染層容錯，不得放寬匯入邊界驗證。
+- **共用詳情視窗必須隔離非同步回應**：`showTaskModal()` 在 await 前先登記唯一 request object；只有 `activeDetailModal === request` 時才可套用完整任務或顯示內容。開啟另一個任務、經驗或診斷視窗會替換該 object，關閉則設為 `null`。`openDiagnosticsModal()` 的成功與失敗分支也必須使用相同身分守門，晚到結果不得覆蓋較新的視窗或重新開啟已關閉的 overlay。
 - **建立任務只探測被選到的 SOP，失敗必須可見**：`POST /api/todo` 只需要 `matchedSOP` 的安裝態，呼叫端帶 `action` 時連這一次都不需要；不得為了建立一筆任務而 annotate 全部 SOP（每支 Check 都是一支子程序）。全量探測只屬於 `GET /api/sops`、`/api/recommend` 與 `/api/chat`。`api()` 把網路與非 JSON 錯誤包成 `{ success:false, error }` 回傳，因此加入／刪除任務的失敗必須寫進工作日誌並附上伺服器原因，不得只有 `if (data.success)` 而靜默返回。
 - **所有 API 錯誤必須是 JSON，且不得外送 stack**：`/api/*` 的任何失敗（路由 handler 拋錯、body-parser 解析失敗、router 解碼失敗、未匹配端點）都必須回 `{ success:false, error }`，不得落到 Express 預設的 HTML 錯誤頁或 HTML 404。前端 `api()` 的 `res.json()` 遇到 HTML 只會得到「Unexpected token '<'」，真正原因（ENOSPC / EPERM）完全看不到。全域 error middleware 必須掛在所有路由之後，保留 `err.status` / `err.statusCode` 的 4xx–5xx 原值（JSON 語法錯誤是 400，不得一律蓋成 500），`res.headersSent` 時交回 `next(err)`；完整 stack 只寫進本機 `debug.log`。未匹配的 `/api/*` 由專屬 JSON 404 出口處理，訊息需帶 method 與完整路徑；非 API 路徑與靜態檔案不受影響。
 - **持久化失敗必須回滾記憶體狀態**：`POST /api/todo` 與 `DELETE /api/todo/:id` 在 `saveTasks()` 拋錯時，必須把剛 push 的任務收回 / 把剛 filter 掉的任務還原，再回 500 JSON 並附最新 `publicTodoList()`。不得留下「畫面看得到、重啟後消失」的幽靈任務，也不得留下「畫面已刪除、重啟後又出現」的未落地移除。
@@ -588,6 +589,7 @@ $true
 ### 8.12 Skills / SOP Context 載入策略
 - 預設不得將全部 Skills/SOP 全量放入 system prompt。
 - Runtime 需依使用者當前請求進行相關性匹配，僅注入少量關鍵 Skill/SOP 摘要（on-demand context）。
+- 內建文件主要為英文，中文請求可在檢索 query 上套用固定、有界的意圖別名（例如「印表機」→ `printer print`、「備份還原」→ `backup restore recovery`）；不得改寫使用者原文或文件。`tokenizeForMatch()` 維持原本 token 規則，別名只供 `buildOnDemandSkillAndSopContext()` 檢索：完整原始 token 集合用於排除重複，最多新增 4 個別名 token，總 query 仍上限 16 token，且最多注入 4 支 Skill 與 5 支 SOP。英文或未命中別名規則的請求必須維持原行為。
 - 若無匹配 Skill/SOP：
   - 優先使用 Browser Use 進行可信來源查詢；
   - 或回傳可執行的手動指引與下一步建議。
@@ -822,6 +824,7 @@ $true
 - **零重載翻譯**：介面支援 `zh-TW` 與 `en-US` 雙語動態切換。
 - **UI 元素涵蓋範圍**：工作清單、推薦清單、SOP 清單、AI Provider 設定視窗、Chalkboard 工具、經驗知識庫、以及系統對話視窗，皆需根據 `currentLocale` 即時更新。
 - **詳情視窗與匯出文字不得寫死語系**：任務詳情（狀態 / 分類 / 動作 / SOP ID / 建立時間 / 執行記錄 / 無 SOP 替代字）與經驗詳情（來源 / 更新時間）的標籤必須走 `t()`；日期與經驗庫匯出時間戳須依 `currentLocale` 選擇 `zh-TW` / `en-US` 格式。切換語系時，已開啟的任務或經驗詳情必須立即以新語系重繪，不需關閉重開；關閉詳情或開啟診斷視窗時必須清除該詳情狀態，避免後續語系切換把舊內容蓋回共用 modal。
+- **共用 modal 的晚回不得覆蓋新內容**：任務完整資料與診斷資料都可能在開啟後才返回；兩者必須在 await 前建立唯一識別，並在成功、API refusal 與網路錯誤分支確認該識別仍是目前 active modal。較新的任務、經驗或診斷視窗以及使用者的關閉操作，都必須使先前請求失效。
 - **分類值只在渲染層本地化，儲存值不得改寫**：`task.category` 在 `tasks.json`、`/api/todo` 與匯出檔中一律保留建立當下的原值（可能是英文 SOP 分類、硬編「一般」或動態指令的 `SOP`）；任務卡片與詳情視窗顯示時必須經 `localizeCategory()` 翻譯，未知分類原樣顯示，空值在卡片退回 `task.general`、在詳情顯示 `—`。嚴禁為了畫面一致而改寫已儲存的分類或標題。
 - **`categories` 字典必須涵蓋所有實際出現的分類值**：包含 16 支內建 SOP 的 `Category` 欄位、伺服器 fallback（`Maintenance`、`一般`）、動態指令任務（`SOP`），以及 **37 支內建 skill 的 15 個分類**（`Skills` 預設值 ＋ 14 個 Hermes 小寫值：ai、communication、creative、data、development、devops、iot、knowledge、media、meta、platform、productivity、research、security），且大小寫變體都要有鍵；新增 SOP／skill 時需同步補字典，否則該分類在另一語系會原樣外露。列舉分類時必須用真實 `parseSkillFrontmatter()`，不得只 grep frontmatter 的 `^category:` —— 18 支原生 skill 沒有 category 欄位，其值來自 parser 的 `|| 'Skills'` 預設。
 - **Skills 面板的分組標題、來源標題與徽章 tooltip 都必須本地化**：`renderSkillList()` 的兩個 `createSidebarSectionHeader()` 都要吃 `localizeCategory(cat)`，不得直接印 `skill.category`；Hermes 來源標題走 `sidebar.skillSourceHermes`、徽章 tooltip 走 `sidebar.skillHermesBadgeTitle`，不得寫死英文。Skill 搜尋字串必須包含 `localizeCategory(skill.category)`，讓中文介面能直接搜分類名；`skillPlaceholder` 需如實列出可搜尋的欄位。skill 分類不進 `tasks.json`，因此不需 zh→en 反向映射。

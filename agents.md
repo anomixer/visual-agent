@@ -5,6 +5,39 @@
 
 ---
 
+## 2026.11.28 — 第五十四階段：共用詳情視窗拒絕晚回，中文意圖可檢索英文 Skill/SOP
+
+> 接續同日第五十三階段；本輪處理共用 modal 的非同步競態，以及中文請求難以命中英文 Skill/SOP 文件的檢索缺口。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `showTaskModal()` 先顯示基本資料，再 await `GET /api/task/:taskId/status` 補完整 logs；等待期間若開啟另一個任務、經驗或診斷視窗，先前的 detail 晚到會覆蓋新內容；若使用者已關閉 overlay，晚到回應還會重新彈出。
+- `openDiagnosticsModal()` 同樣在 await 後直接渲染，且失敗分支也沒有 modal 身分守門；較新的任務內容會被晚到的診斷成功、API refusal 或網路錯誤蓋掉。
+- 內建 Skill/SOP 文件主要為英文，`tokenizeForMatch()` 雖保留 CJK，卻沒有中英詞彙橋接；「印表機不能列印」「備份還原檔案」「辦公室 Excel 公式」「移除 Copilot」等查詢原本無法命中 `windows-printer-troubleshoot`、`backup-restore`、`office-excel-assistant` 或 `rec_remove_copilot`。
+
+### 修正：request identity 與有界檢索別名
+- `public/app.js` 以唯一的 `activeDetailModal` request object 隔離非同步結果：任務與診斷在 await 前先登記，只有仍是目前登記的 object 時才渲染；開啟其他 modal 會替換 object，關閉會設為 `null`。診斷成功、API refusal 與網路錯誤三條路徑都使用相同守門。
+- 經驗詳情會立即取代 pending 任務／診斷 request；語系切換仍只重繪目前可見的任務或經驗，不會讓舊請求復活。
+- `src/pure.js` 新增固定、有界的 `expandSearchAliases()`，只把已知中文意圖附加到檢索字串，不改寫原文；每條規則只替換首次命中，跨規則去重，避免重複 token 放大分數。刻意不加入泛用的「修復」別名，以免把瀏覽器問題誤排名到 Photoshop。
+- `src/server.js` 只在 `buildOnDemandSkillAndSopContext()` 的 query 上套用別名。排除重複時比對完整原始 token 集合，而非截斷後的前 16 個；最多保留 4 個新別名，總 query 仍為 16 token，注入上限仍為 4 支 Skill 與 5 支 SOP。文件 token、評分與英文查詢行為不變。
+
+### 測試與驗收
+- `test/app-task-detail-export.test.js` 由 12 項增為 19 項，新增七項競態回歸：晚到任務不覆蓋新任務、關閉後不重開、診斷／經驗取代 pending 任務，以及晚到診斷成功、API refusal、網路錯誤都不覆蓋新任務；focused suite 19／19 全綠。
+- `test/pure.test.js` 新增八項別名回歸，涵蓋英文不變、空值、中文意圖、重複別名與固定擴張上限；focused suite 126／126 全綠。
+- 新增 `test/cjk-search-alias.test.js`（5 項）：以真實 bundled Skill/SOP corpus、真實 parser 與隔離 harness 驗證印表機、備份還原、Office 公式、畫圖、磁碟空間、檔案救回、Copilot 移除與 Browser research 的排名，並覆蓋英文、無命中 fallback、26 個無關 token 後的長查詢與真實 `/api/chat` prompt 注入。
+- 9 個突變探針全數被攔下：四項 modal 身分守門探針，以及重複別名、缺少別名分隔、伺服器不展開、只比對截斷 token、不保留別名預算五項檢索探針。探針後 production 檔案均還原為位元組相同；`public/app.js` SHA256 `bb1ddfb201eb0f93a9e771b181500213bf092763a8b5892dcf0d3ba9cf541fed`、`src/pure.js` `f8114e6b37c77ffc3ce57f0d1b5bbcd23b7109baf4927ce0ec0c1a6bc9c00f33`、`src/server.js` `33eacc0b8e9309ae5800ba03de426a06d5bcc566af64b3bf1245767dc147d7f1`。
+- 隔離瀏覽器搭配真實 backend 驗收晚到任務、關閉、經驗視窗與診斷成功／拒絕／網路錯誤，較新或已關閉的 modal 均未被覆蓋；141 筆 fetch/XHR 全為 200，主控台 0 error／0 warn。驗收後已停止實例、關閉測試分頁並刪除本輪隔離 profile。
+- `npm test`：27 個 JS 語法、**69 支測試檔**與 server smoke 全綠。
+
+### 尚未完成
+- 中文別名只涵蓋固定的常見意圖，不是通用中文斷詞或翻譯；未收錄詞彙仍依原 token 規則檢索。
+- 診斷視窗本身的語系即時重繪仍未處理；本輪只防止它被晚回覆蓋。
+- Browser 輪詢即使畫面未變仍會實際截圖，只省下 base64 重送。
+- peer 已接受工作後的取消／撤銷仍需要協定支援與雙機驗收。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收；本輪未執行 PowerShell、外掛、安裝或提權。
+
+---
+
 ## 2026.11.28 — 第五十三階段：Double Agent 改為本地先回，遠端補充共用 Stop 訊號
 
 > 接續同日第五十二階段；本輪處理遠端聊天 Double Agent 流程過早啟動遠端 AI、未共享前端取消訊號與失敗被靜默吞掉的缺口。版本維持 `2026.8.7`。

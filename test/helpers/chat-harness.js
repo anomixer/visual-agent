@@ -339,6 +339,7 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
             source = source.slice(0, startup.index) + `
 module.exports = {
     app,
+    buildOnDemandSkillAndSopContext,
     setBrowserOperation(operation) { runBrowserUseOperation = operation; },
     setSopAction(id, action) {
         sopStateCache.set(id, { state: { installed: action === 'uninstall', supportsUninstall: true, recommendedAction: action } });
@@ -383,7 +384,8 @@ module.exports = {
         return listen(port, host, ...args);
     };
     return {
-        app: captured.app, sandboxRoot, sourceHashes,
+        app: captured.app, buildOnDemandSkillAndSopContext: captured.buildOnDemandSkillAndSopContext,
+        sandboxRoot, sourceHashes,
         fixtures: clone(fixtures), llmCalls, healthCalls, browserCalls, executorCalls, consoleEntries, modelSwitches,
         setReplies(next) {
             assert.ok(Array.isArray(next) && next.every((reply) => typeof reply === 'string'));
