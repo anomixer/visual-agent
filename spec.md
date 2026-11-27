@@ -49,6 +49,7 @@
 | **工作清單** | ✅ | 任務 CRUD，進度條，狀態標籤，具備 Tab 分頁與 Badge 提醒 |
 | **AI 對話** | ✅ | 本地 LLM，支援 Markdown 渲染、語音朗讀 (TTS) 與清除紀錄 |
 | **AI 整合** | ✅ | 支援多種 Provider，自動參數配對，支援 Ollama Native API |
+| **遠端 AI 回覆佇列** | ✅ | 逐 session 串行、跨 session 並行、190 秒逾時、LLM abort、斷線取消與晚回抑制 |
 | **多輪對話** | ✅ | 支援記憶 6 則對話，自動注入 SOP 目錄、任務進度與硬體簡報情境 |
 | **效能優化** | ✅ | 背景任務並行化與模型狀態快取，減少非必要的聊天前置等待 |
 | **硬體健康監控** | ✅ | 圓圈式監控，支援 CPU/GPU/RAM/Disk 偵測與顯卡溫度 |
@@ -106,6 +107,7 @@ browser ──── public/index.html
              src/agent/loop-budget.js  (turn / tool / deadline 預算)
              src/agent/sop-templates.js (winget / Store / GitHub SOP 模板)
              src/native-dialogs.js      (Windows 另存新檔對話框)
+             src/remote-ai-queue.js    (遠端回覆串行、逾時與取消)
              src/llm.js         (Ollama / Provider / streaming)
              src/llm/protocol.js (訊息正規化、回應抽取、URL 與錯誤)
              src/sop-parser.js
@@ -152,6 +154,7 @@ browser ──── public/index.html
 - **執行狀態不得跨重啟殘留**：`runningSOP` 只存在記憶體，因此載入 `tasks.json` 時任何 `status: 'running'` 都代表上一次執行被中斷，必須 reconciled 為 `failed`、保留原有 logs 與停止時的 progress、補一筆中斷記錄，且不得捏造 `completedAt`。復原結果必須寫回 `tasks.json`（run log 已被消費，不寫回則第二次重啟只剩通用中斷訊息）；健康的任務檔不得在啟動時被重寫。
 - **中斷執行必須留下診斷記錄**：`saveTasks()` 只在執行開始與結束時呼叫，因此執行期間的 `task.logs` / `progress` 必須另外以 append-only JSONL（`%APPDATA%\visual-agent\running-task.jsonl`，每筆 `{ taskId, progress, entry }`）落地，只追加新增的那一行，不得為了 checkpoint 整份重寫 `tasks.json`。`log` / `ui:message` 各追加一筆，`phase:start` 追加 progress-only 記錄。執行開始前與 `finally` 寫檔後都必須清除 sidecar；解析必須逐行寬容（半截的最後一行與不同 `taskId` 的記錄跳過，不丟棄整份）；append / 清除失敗只寫 `debug.log`，不得中斷執行。不得以截斷 `task.logs` 作為成長控制手段。
 - **Agent Loop 必須有總上限**：每個 `/api/chat` 請求在入口建立單一 `AgentLoopBudget`，首輪 ACTION、自動即時資訊搜尋 / 抽取、迴圈工具與每輪 LLM 呼叫共用最多 8 turns、12 次工具、180 秒 deadline，並抑制重複完整 ACTION；待確認的系統變更動作不得佔用工具額度。LLM 與頁面抓取 timeout 必須使用剩餘 deadline，外部 abort 必須傳到 streaming reader、搜尋、抽取、`fetch_title` 與瀏覽器 fallback。提前 return 的專用工作流（手動 Browser Use API、財報活頁簿、遊戲攻略）必須接收 abort，但仍使用各自 timeout，不得宣稱這些分支與一般 chat 共用同一預算；Playwright 已發出的導覽仍可能等到自身 timeout。
+- **Remote AI 回覆必須可取消且不得留下未處理拒絕**：`src/remote-ai-queue.js` 必須做到同 session 串行、不同 session 並行，每項正在執行的工作各有 `AbortController`；190 秒逾時先 abort 再拒絕呼叫端，並把 signal 傳給 `llm.chatWithLLM()`。session 變為非 active 時必須取消 active 工作，已排隊與取消世代尚未排空時新加入的工作不得啟動。工作開始、非同步步驟後與送出前都必須檢查 signal / session 狀態，晚回結果不得寄給已斷線 session 或覆蓋逾時結果。內部 queue tail 必須始終 fulfill，呼叫端 result 仍須拒絕可見錯誤；立即拒絕的 promise 也要有拒絕處理者。只有最新 tail 可清理 Map，較早工作完成不得刪掉仍有排隊工作的 session。仍 active 的失敗必須送出可見錯誤並恢復 idle；斷線取消應靜默忽略。逾時只放棄當前回覆，不取消後面合法的排隊工作；硬體探測本身沒有取消介面，不得宣稱所有非同步成本都會立刻停止。
 - **Remote Chalkboard 必須保序且分 session**：state 攜帶 per-session revision，前端只套 incoming，拒絕舊 revision；async image load 與忙碌佇列都必須防止舊 session / 舊圖覆蓋新狀態。
 - **Browser 分頁快照不得重疊、亂序或整份重送**：`ensureBrowserSession()` 必須共用同一個進行中的開啟 promise，不得讓並行呼叫各自 `newContext()` 而洩漏前一組 page。`GET /api/browser/session/snapshot` 一律回 `snapshotHash`；帶 `?since=<上次收到的雜湊>` 且截圖位元組相同時只回 `unchanged: true` 與雜湊，不重送 base64。前端輪詢必須有 in-flight 守衛，使用者導覽 / 上一頁 / 重新載入期間以計數器暫停輪詢，且只有使用者操作可推進序號，晚到的舊快照不得覆蓋較新的導覽結果。伺服器每次輪詢仍會實際截圖，不得宣稱省下截圖成本。
 - **OAuth cache 不得混用憑證**：token cache key 必須包含 token URL、client ID、client secret、scope、audience。
@@ -672,7 +675,8 @@ $true
 
 ### 13.2 AI Timeout 與 Queue
 - LLM chat request 必須有明確 timeout，目前規格為 3 分鐘。
-- Remote AI per-session queue 不得因單一回覆長時間卡住而永久阻塞；逾時後必須釋放 queue 並產生可見錯誤訊息。
+- Remote AI per-session queue 不得因單一回覆長時間卡住而永久阻塞；目前外層上限為 190 秒，逾時必須取消在途 LLM、釋放 queue 並產生可見錯誤訊息。
+- Remote queue 必須將 `AbortSignal` 轉發給 LLM；斷線或 session 變為非 active 時，active 與 queued 工作都不得繼續，晚回結果也不得送出。內部 tail 不得產生未處理拒絕；完整取消契約見 §2.5。
 
 ### 13.3 Remote Chat 視覺區分
 - Remote User、Remote AI、remote system message 的 bubble 底色必須與本機聊天不同。

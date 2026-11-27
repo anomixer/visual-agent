@@ -53,6 +53,8 @@ const {
 const { pickSaveFilePath } = require('./native-dialogs');
 // 執行中任務的 append-only 日誌（見 src/task-run-log.js）。
 const { RUN_LOG_FILE_NAME, serializeRunLogRecord, parseRunLog } = require('./task-run-log');
+// 遠端 AI 回覆的逐 session 佇列、逾時與斷線取消（見 src/remote-ai-queue.js）。
+const { createRemoteAiQueue } = require('./remote-ai-queue');
 // APPDATA debug.log 的輪替寫入與尾端讀取（見 src/debug-log.js）。
 const debugLogStore = require('./debug-log');
 // ACTION / SUGGEST 標籤解析（自 /api/chat handler 抽出，見 src/agent/actions.js）。
@@ -70,6 +72,10 @@ const app = express();
 const PORT = 3210;
 const APP_VERSION = pkg.version || 'dev';
 const REMOTE_AI_REPLY_TIMEOUT_MS = 190000;
+const remoteAiReplyQueue = createRemoteAiQueue({
+    timeoutMs: REMOTE_AI_REPLY_TIMEOUT_MS,
+    timeoutMessage: 'Remote AI reply timed out before completion.',
+});
 const localApiSecurity = createLocalApiSecurity();
 const agentConsentStore = new AgentConsentStore();
 app.use(localApiSecurity.middleware);
@@ -141,7 +147,6 @@ const SKILLS_DIR = path.join(visualAgentDir, 'skills');
 const PLUGINS_DIR = path.join(visualAgentDir, 'plugins');
 const EXPS_DIR = path.join(visualAgentDir, 'exps');
 let remoteStateTick = 1;
-const remoteAiReplyQueues = new Map();
 if (!fs.existsSync(SOPS_DIR)) fs.mkdirSync(SOPS_DIR, { recursive: true });
 if (!fs.existsSync(SKILLS_DIR)) fs.mkdirSync(SKILLS_DIR, { recursive: true });
 if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
@@ -194,28 +199,6 @@ function saveRemoteProfile(profile = {}) {
         throw error;
     }
     return merged;
-}
-
-function enqueueRemoteAiReply(sessionId, task) {
-    const previous = remoteAiReplyQueues.get(sessionId) || Promise.resolve();
-    const next = previous
-        .catch(() => {})
-        .then(() => runWithTimeout(task(), REMOTE_AI_REPLY_TIMEOUT_MS, 'Remote AI reply timed out before completion.'));
-    const queued = next.finally(() => {
-        if (remoteAiReplyQueues.get(sessionId) === queued) {
-            remoteAiReplyQueues.delete(sessionId);
-        }
-    });
-    remoteAiReplyQueues.set(sessionId, queued);
-    return next;
-}
-
-function runWithTimeout(promise, timeoutMs, message) {
-    let timer = null;
-    const timeoutPromise = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-    });
-    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 function getRemoteProfile() {
@@ -312,34 +295,60 @@ function syncBundledAssets() {
 
 
 syncBundledAssets();
+function handleRemoteAiReplyFailure(sessionId, error) {
+    if (remoteAgent.getSession(sessionId)?.status !== 'active') return;
+    fileLog(`Remote AI reply failed: ${error.message}`);
+    try {
+        remoteAgent.sendSystemMessage(
+            sessionId,
+            `Remote AI failed to reply: ${error.message}`,
+            { localText: `Local AI failed to reply: ${error.message}` }
+        );
+    } catch {}
+    try {
+        const profile = getRemoteProfile();
+        remoteAgent.sendAiStatus(sessionId, { status: 'idle', senderLabel: profile.agentName });
+    } catch {}
+}
+
 const remoteAgent = new RemoteAgentService({
     port: DEFAULT_REMOTE_PORT,
-    onStateChanged: () => touchRemoteState(),
+    onStateChanged: () => {
+        touchRemoteState();
+        remoteAiReplyQueue.cancelInactive((sessionId) => remoteAgent.getSession(sessionId)?.status === 'active');
+    },
     onError: (error) => fileLog(`Remote Agent Error: ${error.message}`),
     onMessage: (session, message, payload) => {
         if (message.type !== 'chat_message') return;
         if (message.target !== 'remote-ai') return;
-        enqueueRemoteAiReply(session.id, async () => {
-            try {
-                const profile = getRemoteProfile();
-                remoteAgent.sendAiStatus(session.id, {
-                    status: 'thinking',
-                    senderLabel: profile.agentName,
-                });
-                const history = session.messages
-                    .filter((item) => item.type === 'chat_message')
-                    .slice(-6)
-                    .map((item) => ({
-                        role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
-                        content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
-                    }));
-                const localHardwareContext = await getSystemHealth();
-                const aiReply = isLocalHardwareStatusQuestion(message.text || '')
-                    ? await buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW')
-                    : await llm.chatWithLLM(
+        return remoteAiReplyQueue.enqueue(session.id, async (signal) => {
+            const ensureActive = () => {
+                if (signal.aborted || remoteAgent.getSession(session.id)?.status !== 'active') {
+                    throw signal.reason || new Error('Remote session is no longer active.');
+                }
+            };
+            ensureActive();
+            const profile = getRemoteProfile();
+            remoteAgent.sendAiStatus(session.id, {
+                status: 'thinking',
+                senderLabel: profile.agentName,
+            });
+            const history = session.messages
+                .filter((item) => item.type === 'chat_message')
+                .slice(-6)
+                .map((item) => ({
+                    role: item.senderType === 'ai' && item.direction !== 'incoming' ? 'assistant' : 'user',
+                    content: `${item.senderLabel || item.senderType}: ${item.text || item.caption || ''}`.trim(),
+                }));
+            const localHardwareContext = await getSystemHealth();
+            ensureActive();
+            const aiReply = isLocalHardwareStatusQuestion(message.text || '')
+                ? await buildLocalHardwareStatusReply(payload?.locale || session.peer?.locale || 'zh-TW')
+                : await llm.chatWithLLM(
                     message.text || '',
                     history,
                     {
+                        signal,
                         systemContext: [
                             `Current AI agent name: ${profile.agentName}`,
                             `Current machine name: ${profile.machineName}`,
@@ -353,12 +362,12 @@ const remoteAgent = new RemoteAgentService({
                             `The current requester is: ${message.senderType === 'ai' ? 'the remote AI agent' : 'the remote human user'} (${message.senderLabel || 'Unknown'}).`,
                             `Address people by their explicit Windows user names. Do not say generic "使用者你好". Refer to yourself as ${profile.machineName}, and refer to the peer as ${session.peer?.machineName || 'remote PC'}.`,
                             `You are replying inside a remote support chat over TCP port ${DEFAULT_REMOTE_PORT}.`,
-                        'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
-                        'If asked what model you are using, answer with the exact current provider and model shown above.',
-                        'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
-                        'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
-                        buildLatestChalkboardContext(session, payload?.locale || session.peer?.locale || 'zh-TW'),
-                        'When using ##CHALKBOARD##, coordinate with Local AI. You are the Remote AI: use "position: right" and "clear: false"; never redraw or redefine a board/grid that already exists. For games such as tic-tac-toe, keep the existing numbering/coordinates and only update your move/status.',
+                            'If asked who is talking to you, answer whether it is the remote human or the remote AI.',
+                            'If asked what model you are using, answer with the exact current provider and model shown above.',
+                            'If the incoming message is from another AI, treat it as a teammate note and produce the final concise answer for the human user. Do not argue with the other AI.',
+                            'If the human asks for teamwork, split work clearly between local AI and remote AI instead of both doing the same task.',
+                            buildLatestChalkboardContext(session, payload?.locale || session.peer?.locale || 'zh-TW'),
+                            'When using ##CHALKBOARD##, coordinate with Local AI. You are the Remote AI: use "position: right" and "clear: false"; never redraw or redefine a board/grid that already exists. For games such as tic-tac-toe, keep the existing numbering/coordinates and only update your move/status.',
                             `IMPORTANT: All hardware info (CPU/RAM/disk/free space) belongs to THIS machine (${profile.machineName}). When answering questions about disk space or system resources, always specify which machine: "On ${profile.machineName}: ..."`,
                             (() => { const ramTotal = Math.round(os.totalmem()/1024/1024/1024); const ramFree = Math.round(os.freemem()/1024/1024/1024); const diskFreePart = formatDiskFreePart(localHardwareContext); return `Local machine (${profile.machineName}) RAM: ${ramTotal - ramFree}GB used / ${ramTotal}GB total, Free: ${ramFree}GB\nLocal machine Disk Free Space: ${diskFreePart}`; })(),
                             'Keep replies concise, practical, and safe. If any system change is needed, ask for confirmation first.',
@@ -366,36 +375,20 @@ const remoteAgent = new RemoteAgentService({
                     },
                     payload?.locale || session.peer?.locale || 'zh-TW'
                 );
-                remoteAgent.sendChatMessage(session.id, {
-                    senderType: 'ai',
-                    senderLabel: profile.agentName,
-                    text: aiReply,
-                    target: 'remote-user',
-                    locale: payload?.locale || session.peer?.locale || 'zh-TW',
-                });
-            } catch (error) {
-                fileLog(`Remote AI reply failed: ${error.message}`);
-                try {
-                    remoteAgent.sendSystemMessage(
-                        session.id,
-                        `Remote AI failed to reply: ${error.message}`,
-                        { localText: `Local AI failed to reply: ${error.message}` }
-                    );
-                } catch {
-                    // ignore
+            ensureActive();
+            remoteAgent.sendChatMessage(session.id, {
+                senderType: 'ai',
+                senderLabel: profile.agentName,
+                text: aiReply,
+                target: 'remote-user',
+                locale: payload?.locale || session.peer?.locale || 'zh-TW',
+            });
+            try {
+                if (!signal.aborted && remoteAgent.getSession(session.id)?.status === 'active') {
+                    remoteAgent.sendAiStatus(session.id, { status: 'idle', senderLabel: profile.agentName });
                 }
-            } finally {
-                try {
-                    const profile = getRemoteProfile();
-                    remoteAgent.sendAiStatus(session.id, {
-                        status: 'idle',
-                        senderLabel: profile.agentName,
-                    });
-                } catch {
-                    // ignore
-                }
-            }
-        });
+            } catch {}
+        }).catch((error) => handleRemoteAiReplyFailure(session.id, error));
     }
 });
 let remoteAgentStarted = false;

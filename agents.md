@@ -5,6 +5,54 @@
 
 ---
 
+## 📌 2026.11.27 — 第四十四階段：遠端 AI 逾時與斷線會取消在途 LLM，佇列不再留下未處理拒絕
+
+> 接續 2026.11.27 第四十三階段；本輪處理日誌保留的遠端 AI 回覆取消問題。版本維持 `2026.8.7`。
+
+### 症狀一：逾時只放棄等待，沒有取消 LLM，晚到的回覆仍會送出
+- 舊 `enqueueRemoteAiReply()` 以 `runWithTimeout(task(), …)` 包住整個工作，但 `task()` 沒有收到 `AbortSignal`，內部的 `llm.chatWithLLM()` 也沒有拿到取消訊號。
+- `Promise.race()` 逾時只讓外層 promise 拒絕；原本的 async 工作仍繼續執行，完成後會照樣 `sendChatMessage()`。因此畫面已經顯示逾時，對方仍可能晚幾分鐘收到一則過時回覆。
+- `src/llm.js` 本身已支援 `options.signal`，能中止 Ollama / OpenAI-compatible / Anthropic 請求與 streaming reader；缺口在遠端佇列沒有建立及轉發訊號。
+
+### 症狀二：斷線不會取消目前在跑或排隊的回覆
+- 舊佇列只看同 session 的 promise 串序，不知道 session 是否仍 active。對方斷線後，正在跑的 LLM 不會被取消，後面排隊的工作也會逐一啟動，直到送出時才因 session 不是 active 而失敗。
+- 這些工作沒有使用者可見結果，卻仍會消耗 LLM、硬體探測與本機資源。
+
+### 症狀三：儲存的 queue tail 會產生未處理拒絕
+- 舊實作把 `next.finally(...)` 存進 `remoteAiReplyQueues`，但回傳給呼叫端的是 `next`。`finally` 產生的 `queued` 繼承拒絕，卻沒有自己的拒絕處理者。
+- Remote 訊息入口沒有接住這條 tail，逾時或工作失敗時會觸發 `unhandledRejection`。重現探針把 timeout 縮短為 25 ms，實際得到 `argumentCount: 0`、`settled: false`，並觀察到一筆 `Remote AI reply timed out before completion.` 未處理拒絕。
+
+### 修正
+- 新增 `src/remote-ai-queue.js`：
+  - 每項正在執行的工作各有 `AbortController`；預設 190 秒逾時會先 abort，再讓呼叫端立即收到可見的 timeout 錯誤。
+  - 同 session 序列執行、不同 session 並行；逾時只放棄當前工作，後面排隊的訊息仍可依序處理。
+  - `cancel()` 同時 abort 正在執行的工作、拒絕當前等待，並讓已排隊與取消世代尚未排空時新加入的工作直接拒絕、不啟動 task。
+  - 內部儲存的 queue tail 無論成功或失敗都 fulfill；回傳給呼叫端的 result 仍保留原錯誤。取消世代內立即拒絕的 promise 也附上拒絕處理者，避免被忽略時形成未處理拒絕。
+  - 清理 Map 前同時比對 queue 與最新 tail，較早的工作完成時不會刪掉仍有工作在排隊的 session。
+- `src/server.js`：
+  - 移除舊的 Map、`enqueueRemoteAiReply()` 與 `runWithTimeout()`，改用單一 `remoteAiReplyQueue`。
+  - `onStateChanged` 對已不是 active 的 session 呼叫 `cancelInactive()`；disconnect、拒絕、刪除與遺忘 session 都會沿既有生命週期通知到這裡。
+  - 工作開始、硬體查詢後、LLM 完成後與送出前都檢查 signal / session 狀態；LLM options 明確帶 `signal`。取消或斷線後，晚到的結果不會送到對方。
+  - 失敗回報集中到 `handleRemoteAiReplyFailure()`：仍 active 時記錄 debug log、送出可見錯誤並恢復 idle；session 已離線時靜默忽略，不再嘗試寄錯訊息。
+- 規格與 README 同步定義：190 秒遠端回覆上限、訊號轉發、斷線取消、佇列抑制、晚回抑制與未處理拒絕邊界。
+
+### 測試與驗收
+- 新增 `test/remote-ai-queue.test.js`（8 項）：同 session 串行與跨 session 並行、timeout abort、timeout 後續工作與晚回忽略、取消 active / queued / 新加入工作、`cancelInactive()` 範圍、timeout 搭配晚失敗不產生未處理拒絕、失敗不毒化後續佇列。
+- 新增 `test/remote-ai-cancel.test.js`（4 項，真實 `server.js` + 隔離 harness）：訊號轉發與成功回覆順序、斷線 abort 且抑制排隊／晚回、LLM 失敗仍送出可見錯誤與 idle、非 `remote-ai` 訊息不啟動工作。取消測試另有 1 秒 guard，移除取消時會明確失敗而不是整支卡住。
+- `test/helpers/chat-harness.js` 將新佇列模組列入真實程式 allowlist，並補可 active / disconnect / forget 的 fake remote service 與可觀察的送出紀錄；fake LLM 會等待測試 hook 並暴露收到的 signal。
+- 7 個突變探針全部被攔下：移除 LLM `signal`、timeout 不 abort、cancel 不中斷 active result、移除 `onStateChanged` 取消、移除排隊取消守衛、較早完成提前刪除仍有工作的 session、把內部 tail 改回會拒絕的 `finally`。探針後檔案皆還原為突變前內容。
+- `npm test`：26 個 JS 語法、**61 支測試檔**與 server smoke 全綠。
+
+### 尚未完成
+- 未做雙機實機驗收；本輪以佇列行為測試、真實 server 邏輯與既有 LLM streaming abort 測試互補，尚未涵蓋防火牆、IPv6、真實斷線重連與雙機 Chalkboard revision。
+- 硬體探測本身沒有取消介面；逾時或斷線後會停止後續送出，但已在執行的硬體查詢仍可能等到自身結束。
+- `SIGKILL` 後留下的 `config.json.<pid>.tmp` / `remote-profile.json.<pid>.tmp` 沒有啟動時清理機制。
+- `task.logs` 保留政策未觸碰，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- UAC 提權 process tree、雙機 Chalkboard、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權，未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.27 — 第四十三階段：遠端訊框改成增量位元組掃描，16 MiB 上限改為逐訊框
 
 > 接續 2026.11.25 第四十二階段；本輪處理日誌保留的遠端訊框累積限制。版本維持 `2026.8.7`。

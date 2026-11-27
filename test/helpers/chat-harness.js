@@ -166,9 +166,55 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
         isCheckSatisfied() { return false; }
         async execute() { return deny('SOPExecutor.execute'); }
     }
-    class InertRemoteService {
-        getState() { return { sessions: [], localIps: ['127.0.0.1'], started: false }; }
-        getSession() { return null; }
+    let remoteService = null;
+    class FakeRemoteService {
+        constructor(options = {}) {
+            this.options = options;
+            this.sessions = new Map();
+            this.messages = [];
+            remoteService = this;
+        }
+        getState() {
+            return { sessions: clone([...this.sessions.values()]), localIps: ['127.0.0.1'], started: false };
+        }
+        getSession(sessionId) { return this.sessions.get(sessionId) || null; }
+        requireSession(sessionId) {
+            const session = this.getSession(sessionId);
+            if (!session) throw new Error('Session not found');
+            if (session.status !== 'active') throw new Error('Session is not active');
+            return session;
+        }
+        record(method, sessionId, payload) {
+            this.messages.push({ method, sessionId, payload: clone(payload) });
+            this.options.onStateChanged?.();
+        }
+        sendAiStatus(sessionId, payload) {
+            this.requireSession(sessionId);
+            this.record('sendAiStatus', sessionId, payload);
+            return payload;
+        }
+        sendChatMessage(sessionId, payload) {
+            this.requireSession(sessionId);
+            this.record('sendChatMessage', sessionId, payload);
+            return payload;
+        }
+        sendSystemMessage(sessionId, text, options) {
+            this.requireSession(sessionId);
+            this.record('sendSystemMessage', sessionId, { text, options });
+            return { text };
+        }
+        disconnectSession(sessionId, reason = 'Disconnected by local user.') {
+            const session = this.getSession(sessionId);
+            if (!session) return;
+            session.status = 'disconnected';
+            session.disconnectReason = reason;
+            this.options.onStateChanged?.();
+        }
+        forgetSession(sessionId) {
+            if (!this.sessions.delete(sessionId)) return { success: true };
+            this.options.onStateChanged?.();
+            return { success: true };
+        }
         start() { return deny('RemoteAgentService.start'); }
     }
     const fakeLlm = {
@@ -193,7 +239,7 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
         },
         async chatWithLLM(message, history, options, locale) {
             llmCalls.push({ message, history: clone(history), locale, aborted: !!options?.signal?.aborted });
-            if (onChat) onChat({ message, locale });
+            if (onChat) await onChat({ message, locale, signal: options?.signal });
             if (!replies.length) return deny('unscripted llm.chatWithLLM');
             const reply = replies.shift();
             options?.onDelta?.(reply);
@@ -235,7 +281,7 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
     });
     const realFiles = new Set([
         SERVER,
-        ...['pure.js', 'local-api-security.js', 'native-dialogs.js', 'task-run-log.js', 'agent/actions.js', 'agent/consent.js',
+        ...['pure.js', 'local-api-security.js', 'native-dialogs.js', 'task-run-log.js', 'remote-ai-queue.js', 'agent/actions.js', 'agent/consent.js',
             'agent/loop-budget.js', 'agent/prompts.js', 'agent/sop-templates.js'].map((file) => path.join(ROOT, 'src', file)),
     ]);
     const injected = new Map([
@@ -254,7 +300,7 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
             ram: { total: 16 * 1024 ** 3, usage: 50 }, disk: { drives: [], volumes: [] },
         }) }],
         [path.join(ROOT, 'src/remote-agent.js'), {
-            DEFAULT_REMOTE_PORT: 19168, RemoteAgentService: InertRemoteService,
+            DEFAULT_REMOTE_PORT: 19168, RemoteAgentService: FakeRemoteService,
             getLocalIPv4List: () => ['127.0.0.1'],
         }],
         [path.join(ROOT, 'src/safe-fetch.js'), { safeFetchText: () => deny('safeFetchText') }],
@@ -339,6 +385,17 @@ module.exports = {
         },
         getState: captured.getState,
         setSopAction: captured.setSopAction,
+        setRemoteSession(session) {
+            remoteService.sessions.set(session.id, clone(session));
+        },
+        emitRemoteMessage(sessionId, message, payload = {}) {
+            const session = remoteService.getSession(sessionId);
+            return remoteService.options.onMessage(clone(session), clone(message), clone(payload));
+        },
+        disconnectRemoteSession(sessionId, reason) {
+            return remoteService.disconnectSession(sessionId, reason);
+        },
+        getRemoteMessages: () => clone(remoteService.messages),
         getFiles: memory.snapshot,
         failWrites(predicate) {
             assert.ok(predicate === null || typeof predicate === 'function');
