@@ -351,8 +351,16 @@ function validateImportedTasks(tasks) {
             return { error: `Duplicate task id: ${task.id}` };
         }
         seen.add(task.id);
-        if (task.logs !== undefined && !Array.isArray(task.logs)) {
-            return { error: `Invalid task at ${label}: logs must be an array` };
+        if (task.logs !== undefined) {
+            if (!Array.isArray(task.logs)) {
+                return { error: `Invalid task at ${label}: logs must be an array` };
+            }
+            for (let logIndex = 0; logIndex < task.logs.length; logIndex += 1) {
+                const entry = task.logs[logIndex];
+                if (typeof entry !== 'string' && (!entry || typeof entry !== 'object' || Array.isArray(entry))) {
+                    return { error: `Invalid task at ${label}: logs[${logIndex}] must be an object or string` };
+                }
+            }
         }
         if (task.status !== undefined && !IMPORTABLE_TASK_STATUSES.includes(task.status)) {
             return { error: `Invalid task at ${label}: unknown status ${JSON.stringify(task.status)}` };

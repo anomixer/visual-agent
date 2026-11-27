@@ -7950,6 +7950,7 @@ async function fetchTaskDetail(taskId) {
 
 function renderTaskModalBody(task) {
     modalTitle.textContent = task.title;
+    const detailLogs = Array.isArray(task.logs) ? task.logs.filter(l => l !== null && l !== undefined) : [];
     modalBody.innerHTML = `
         <div class="task-detail-row">
           <span class="task-detail-label">${escapeHtml(t('task.detailStatus'))}</span>
@@ -7971,10 +7972,10 @@ function renderTaskModalBody(task) {
           <span class="task-detail-label">${escapeHtml(t('task.detailCreatedAt'))}</span>
           <span class="task-detail-value">${escapeHtml(task.createdAt ? new Date(task.createdAt).toLocaleString(currentLocale === 'en-US' ? 'en-US' : 'zh-TW') : '—')}</span>
         </div>
-        ${task.logs?.length ? `
+        ${detailLogs.length ? `
           <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;">${escapeHtml(t('task.detailLogs'))}</div>
           <div class="task-log-list">
-            ${task.logs.map(l => `<div class="task-log-item log-entry ${escapeHtml(l.level || 'info')}" style="font-family:var(--font-mono);font-size:10px;padding:2px 6px">${escapeHtml(l.message || l)}</div>`).join('')}
+            ${detailLogs.map(l => `<div class="task-log-item log-entry ${escapeHtml(typeof l === 'object' ? l.level || 'info' : 'info')}" style="font-family:var(--font-mono);font-size:10px;padding:2px 6px">${escapeHtml(typeof l === 'object' ? l.message || l : l)}</div>`).join('')}
           </div>` : ''}
     `;
 }

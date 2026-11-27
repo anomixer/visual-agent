@@ -168,6 +168,20 @@ test('a successful or cancelled native export never reaches the fallback', async
     assert.equal(cancelled.logs.at(-1).level, 'info');
 });
 
+test('task details tolerate corrupt persisted log data and render legacy string entries', () => {
+    const { context } = createContext();
+    const corruptLogs = [null, 'legacy <line>', { level: 'warn', message: 'still visible' }, undefined];
+    context.renderTaskModalBody({ ...FULL_TASK, logs: corruptLogs });
+    const html = context.modalBody.innerHTML;
+    assert.equal(html.split('task-log-item').length - 1, 2, 'nullish entries must not be rendered');
+    assert.match(html, /log-entry info[^]*?legacy &lt;line&gt;/);
+    assert.match(html, /log-entry warn[^]*?still visible/);
+
+    context.renderTaskModalBody({ ...FULL_TASK, logs: 'not-an-array' });
+    assert.ok(!context.modalBody.innerHTML.includes('task-log-item'));
+    assert.ok(!context.modalBody.innerHTML.includes(context.t('task.detailLogs')));
+});
+
 test('task detail log entries are coloured by level, not by a missing type field', () => {
     const { context } = createContext();
     context.renderTaskModalBody(FULL_TASK);

@@ -5,6 +5,35 @@
 
 ---
 
+## 📌 2026.11.27 — 第四十七階段：匯入任務逐筆驗證執行記錄，詳情不再被壞 log 條目擊潰
+
+> 接續同日第四十六階段；本輪處理 `logs: [null]` 可成功匯入並持久化，開啟任務詳情時於 `l.level` 拋出 `TypeError` 的缺陷。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `validateImportedTasks()` 只檢查 `logs` 外層是否為陣列，沒有驗證陣列內的項目；`null`、數字、布林值或巢狀陣列都會通過。
+- 真實 HTTP + 隔離 harness 重現：`POST /api/todo/import` 回 `success:true`，磁碟與記憶體均保存 `logs: [null]`；以真實 `renderTaskModalBody()` 開啟詳情時拋出 `TypeError: Cannot read properties of null (reading 'level')`。
+- `loadTasks()` 啟動時不會重新驗證整個持久化結構，因此只修匯入端點不足以保護已存在或手動編輯過的壞 `tasks.json`。
+
+### 修正
+- `src/pure.js`：`validateImportedTasks()` 逐項檢查 `logs[j]`，只接受舊版字串或非 null、非陣列物件；不合格時回 `Invalid task at tasks[i]: logs[j] must be an object or string`，整批拒絕且不寫檔。
+- `public/app.js`：`renderTaskModalBody()` 先將非陣列 `logs` 視為空陣列並略過 nullish 條目；舊版字串以 `info` 顯示，物件沿用 `level` / `message`，不再對壞資料拋錯。
+- 匯入邊界保持嚴格，渲染層容錯不放寬驗證；正常物件 log 的顏色、內容與既有格式不變。
+
+### 測試與驗收
+- `test/pure.test.js` 由 89 項增為 95 項：新增 null、undefined、數字、布林值、巢陣列五種壞條目與舊版字串相容案例。
+- `test/todo-import.test.js` 由 12 項增為 15 項：三種壞 log 條目都必須整批拒絕，`tasks.json` 逐位元組不變、既有清單保留，後續清單與詳情端點仍正常。
+- `test/app-task-detail-export.test.js` 由 8 項增為 9 項：真實前端函式在 nullish、非陣列與舊版字串混合資料下不拋錯，只渲染有效項目。
+- 2 個突變探針全數被攔下：移除逐筆驗證使 pure 5 項與 HTTP 3 項失敗；移除 nullish 過濾使前端回歸以原本的 `reading 'level'` 失敗。探針後 production 檔案均還原。
+- 瀏覽器驗收（隔離設定檔 `%TEMP%\va-ui-verify47`）：種入含 `null`、字串與物件的既有任務，開啟詳情只顯示 `legacy <line>`（info）與 `still visible`（warn），overlay 正常且無應用程式 error / warn；同一頁面送出 `logs: [null]` 匯入被拒，原任務仍保留。
+- `npm test`：27 個 JS 語法、**65 支測試檔**與 server smoke 全綠。
+
+### 尚未完成
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- 未做雙機實機驗收；UAC 提權 process tree、Vision、乾淨 Windows EXE 仍須實機驗收。
+- 未變更版本號、未執行安裝或提權、未觸碰使用者真實設定檔。
+
+---
+
 ## 📌 2026.11.27 — 第四十六階段：強制結束留下的原子暫存檔在下次啟動保守清理
 
 > 接續同日第四十五階段；本輪處理原子寫入在 `SIGKILL` 後留下的 `config.json.<pid>.tmp`、`tasks.json.<pid>.tmp` 與 `remote-profile.json.<pid>.tmp`。版本維持 `2026.8.7`。

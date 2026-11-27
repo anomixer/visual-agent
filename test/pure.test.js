@@ -182,6 +182,13 @@ check('validate 空白 id 被拒', /missing a task id/.test(pure.validateImporte
 check('validate 非字串 id 被拒', /missing a task id/.test(pure.validateImportedTasks([{ id: 7 }]).error));
 check('validate 重複 id 被拒', /Duplicate task id: a/.test(pure.validateImportedTasks([{ id: 'a' }, { id: 'a' }]).error));
 check('validate logs 非陣列被拒', /logs must be an array/.test(pure.validateImportedTasks([{ id: 'a', logs: 'broken' }]).error));
+for (const [label, entry] of [['null', null], ['undefined', undefined], ['number', 42], ['boolean', true], ['array', []]]) {
+    check(`validate logs 內的 ${label} 條目被拒並指出索引`,
+        new RegExp(`tasks\\[0\\]: logs\\[1\\] must be an object or string`).test(pure.validateImportedTasks([{ id: 'a', logs: [{ level: 'info' }, entry] }]).error));
+}
+eq('validate 舊版字串 log 與物件 log 都合法',
+    pure.validateImportedTasks([{ id: 'a', logs: ['legacy line', { level: 'warn', message: 'kept' }] }]).tasks[0].logs.length,
+    2);
 check('validate 未知 status 被拒', /unknown status/.test(pure.validateImportedTasks([{ id: 'a', status: 'paused' }]).error));
 eq('validate 缺 logs 與 status 仍合法', pure.validateImportedTasks([{ id: 'a' }]), { tasks: [{ id: 'a' }] });
 eq('validate 五種已知 status 都合法',

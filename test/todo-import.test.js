@@ -127,6 +127,9 @@ const MALFORMED_IMPORTS = [
     ['a task without an id', [{ title: 'no id' }], /missing a task id/],
     ['duplicate task ids', [IMPORTED_TASK, { ...IMPORTED_TASK }], /Duplicate task id/],
     ['logs that are not an array', [{ ...IMPORTED_TASK, logs: 'broken' }], /logs must be an array/],
+    ['a null log entry', [{ ...IMPORTED_TASK, logs: [null] }], /logs\[0\] must be an object or string/],
+    ['a numeric log entry', [{ ...IMPORTED_TASK, logs: [42] }], /logs\[0\] must be an object or string/],
+    ['an array log entry', [{ ...IMPORTED_TASK, logs: [[]] }], /logs\[0\] must be an object or string/],
     ['an unknown status', [{ ...IMPORTED_TASK, status: 'paused' }], /unknown status/],
 ];
 

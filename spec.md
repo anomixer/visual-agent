@@ -140,7 +140,8 @@ browser ──── public/index.html
 - **可重複資料操作不得被安裝態跳過**：備份 / 還原 SOP 的 Check 驗證來源後回 `$false`；不得使用 robocopy `/MIR` 或未確認範圍的遞迴刪除。Verify 必須逐檔確認相對路徑、存在性與大小；不支援安全復原時不得宣告 uninstall。
 - **任務與聊天資料不可靜默遺失**：`tasks.json` 必須 temp-write + rename；task ID 使用 UUID；running task 不可刪除或整批 import 覆寫。同 session 並行聊天完成時須附加到最新歷史，不得用舊快照覆寫。
 - **匯出必須來自伺服器的完整任務**：清單類回應不含 `logs`，因此前端不得直接序列化 `todoList` 作為匯出內容。原生另存新檔失敗時的瀏覽器 fallback 必須改抓 `GET /api/todo/export`，以 `Array.isArray(payload.tasks)` 驗證後下載整份 `{ exportedAt, agentVersion, tasks }` wrapper（該端點不回 `success` 欄位）。驗證失敗或請求失敗必須在工作日志顯示錯誤，不得只寫 console；原生成功與使用者取消都不得再觸發 fallback。
-- **匯入必須先驗證再取代**：`POST /api/todo/import` 整批取代 `todoList` 並立即落地，因此必須在寫入前驗證每個元素（非 null 物件、`id` 為非空字串且不得重複、`logs` 若存在必須是陣列、`status` 若存在必須是 `pending|running|success|failed|skipped`）。任一不合格必須整批拒絕並指出 `tasks[index]` 與原因，既有清單與 `tasks.json` 不得被改動——不良元素一旦落地，清單與詳情端點會在每次輪詢拋錯，且重啟也無法復原。驗證後必須套用與啟動相同的 `reconcileInterruptedTasks()`：本行程沒有任務在跑，匯入的 `running` 一律視為已中斷。
+- **匯入必須先驗證再取代**：`POST /api/todo/import` 整批取代 `todoList` 並立即落地，因此必須在寫入前驗證每個元素（非 null 物件、`id` 為非空字串且不得重複、`logs` 若存在必須是陣列且每項只能是字串或非 null 物件、`status` 若存在必須是 `pending|running|success|failed|skipped`）。任一不合格必須整批拒絕並指出 `tasks[index]`（log 條目另指出 `logs[j]`）與原因，既有清單與 `tasks.json` 不得被改動——不良元素一旦落地，清單與詳情端點會在每次輪詢拋錯，且重啟也無法復原。驗證後必須套用與啟動相同的 `reconcileInterruptedTasks()`：本行程沒有任務在跑，匯入的 `running` 一律視為已中斷。
+- **任務詳情必須容忍既有壞資料**：`loadTasks()` 不會在啟動時重新驗證整個持久化結構，因此已存在的 `tasks.json` 仍可能含 `null` log 條目或非陣列 `logs`。`renderTaskModalBody()` 不得對此拋錯：非陣列視為無記錄，nullish 條目略過，舊版字串條目以 `info` 顯示，物件條目沿用 `level` / `message`。此為渲染層容錯，不得放寬匯入邊界驗證。
 - **建立任務只探測被選到的 SOP，失敗必須可見**：`POST /api/todo` 只需要 `matchedSOP` 的安裝態，呼叫端帶 `action` 時連這一次都不需要；不得為了建立一筆任務而 annotate 全部 SOP（每支 Check 都是一支子程序）。全量探測只屬於 `GET /api/sops`、`/api/recommend` 與 `/api/chat`。`api()` 把網路與非 JSON 錯誤包成 `{ success:false, error }` 回傳，因此加入／刪除任務的失敗必須寫進工作日誌並附上伺服器原因，不得只有 `if (data.success)` 而靜默返回。
 - **所有 API 錯誤必須是 JSON，且不得外送 stack**：`/api/*` 的任何失敗（路由 handler 拋錯、body-parser 解析失敗、router 解碼失敗、未匹配端點）都必須回 `{ success:false, error }`，不得落到 Express 預設的 HTML 錯誤頁或 HTML 404。前端 `api()` 的 `res.json()` 遇到 HTML 只會得到「Unexpected token '<'」，真正原因（ENOSPC / EPERM）完全看不到。全域 error middleware 必須掛在所有路由之後，保留 `err.status` / `err.statusCode` 的 4xx–5xx 原值（JSON 語法錯誤是 400，不得一律蓋成 500），`res.headersSent` 時交回 `next(err)`；完整 stack 只寫進本機 `debug.log`。未匹配的 `/api/*` 由專屬 JSON 404 出口處理，訊息需帶 method 與完整路徑；非 API 路徑與靜態檔案不受影響。
 - **持久化失敗必須回滾記憶體狀態**：`POST /api/todo` 與 `DELETE /api/todo/:id` 在 `saveTasks()` 拋錯時，必須把剛 push 的任務收回 / 把剛 filter 掉的任務還原，再回 500 JSON 並附最新 `publicTodoList()`。不得留下「畫面看得到、重啟後消失」的幽靈任務，也不得留下「畫面已刪除、重啟後又出現」的未落地移除。
@@ -188,7 +189,7 @@ browser ──── public/index.html
 | POST | `/api/chat` | AI 對話（LLM 優先）|
 | GET | `/api/logs` | 全域執行日誌（`?since=` 為上一筆 `seq`，只回更新的項目；緩衝僅留最新 500 筆，游標超出範圍或落在已丟棄區段時回 `reset: true` 與全部日誌） |
 | GET | `/api/browser/session/snapshot` | Browser 分頁快照（`?since=` 為上次收到的 `snapshotHash`；畫面相同時只回 `unchanged: true` 與雜湊，不含 base64） |
-| POST | `/api/todo/import` | 匯入任務清單（回傳最新 `todoList`，同樣不含 `logs`）；有 running task 時拒絕整批取代；元素不良時整批拒絕且不寫檔；匯入的 `running` 任務會被 reconciled 為 `failed` |
+| POST | `/api/todo/import` | 匯入任務清單（回傳最新 `todoList`，同樣不含 `logs`）；有 running task 時拒絕整批取代；元素或 log 條目不良時整批拒絕且不寫檔；匯入的 `running` 任務會被 reconciled 為 `failed` |
 | GET | `/api/todo/export` | 完整匯出 payload `{ exportedAt, agentVersion, tasks }`（含各任務 `logs`，**無 `success` 欄位**）；瀏覽器 fallback 匯出必須使用此端點 |
 | POST | `/api/todo/export-file` | 以原生 Windows 另存新檔寫出完整匯出檔；使用者取消時回 `cancelled` |
 
@@ -343,6 +344,7 @@ $true
 - [x] 遠端 JSON Lines 收訊改為增量位元組掃描，限制改為逐訊框 16 MiB（2026.11.27 第四十三階段：保留 raw Buffer、只掃描新進位元組、每個訊框解碼一次、換行不計入上限、大訊框完成後釋放多餘容量；`test/remote-frame.test.js` 8 項回歸）。
 - [x] 硬體探測可取消且硬體狀態回覆不再重複探測（2026.11.27 第四十五階段：`getSystemHealth({ signal })` 訂閱者隔離、內建外掛將 signal 傳給 `execFile()`、remote queue 與 `/api/chat` 接上取消、`buildLocalHardwareStatusReply()` 沿用既有 context；新增 2 支測試檔並補 6 個突變探針）。
 - [x] 原子寫入殘留暫存檔在啟動時保守清理（2026.11.27 第四十六階段：新增 `src/atomic-temp.js`，只刪精確命名且 PID 已確認不存在的 `config.json` / `tasks.json` / `remote-profile.json` 暫存檔，保留 live/current PID、未知狀態、目錄與符號連結；`saveTasks()` 失敗也清掉自身暫存檔；新增 2 支測試檔並擴充任務失敗回歸，6 個突變探針全數被攔下）。
+- [x] 匯入任務會驗證每筆 log 條目，詳情渲染容忍既有壞資料（2026.11.27 第四十七階段：`validateImportedTasks()` 拒絕 null／非物件 log 條目並保留舊版字串；`renderTaskModalBody()` 略過 nullish、非陣列不渲染、字串以 info 顯示；新增 pure、HTTP 與前端回歸，2 個突變探針全數被攔下）。
 - [ ] 行為測試安全網補齊後，再拆 `server.js` Agent 執行主迴圈與 `app.js` 遠端互動流程。
 
 ### 短期
