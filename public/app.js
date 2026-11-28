@@ -88,6 +88,10 @@ let lastRemoteSessionListSignature = '';
 let lastRecommendSignature = '';
 let lastSopSignature = '';
 let lastSkillSignature = '';
+// 側邊欄載入可重疊；三份清單各自只接受最新啟動的回應。
+let recommendRequestSeq = 0;
+let sopRequestSeq = 0;
+let skillRequestSeq = 0;
 let lastLLMStatusSignature = '';
 let llmStatusRequestSeq = 0;
 
@@ -5296,8 +5300,10 @@ function syncBrowserInstallQueuedFromTasks(tasks = []) {
 }
 
 async function loadRecommend() {
+    const requestSeq = ++recommendRequestSeq;
     try {
         const data = await api('/api/recommend');
+        if (requestSeq !== recommendRequestSeq) return;
         if (data.success && data.recommendList?.length > 0) {
             recommendList = data.recommendList;
             // 啟動載入與 sopChanged 後的刷新都會呼叫；資料未變就不重建推薦 / SOP / Skill
@@ -5310,13 +5316,16 @@ async function loadRecommend() {
             hideSplash(); // 抓到資料後隱藏
         }
     } catch (e) {
+        if (requestSeq !== recommendRequestSeq) return;
         console.error("Load recommend failed", e);
     }
 }
 
 async function loadSops() {
+    const requestSeq = ++sopRequestSeq;
     try {
         const data = await api('/api/sops');
+        if (requestSeq !== sopRequestSeq) return;
         if (data.success && Array.isArray(data.sops)) {
             sopsList = data.sops;
             // 與推薦清單相同的守則：內容未變就不重建側邊欄。
@@ -5327,6 +5336,7 @@ async function loadSops() {
             }
         }
     } catch (e) {
+        if (requestSeq !== sopRequestSeq) return;
         console.error('Load sops failed', e);
     }
 }
@@ -5515,8 +5525,10 @@ function shouldSkipDuplicateRemoteDirective(sessionId = '', action = {}) {
 }
 
 async function loadSkills() {
+    const requestSeq = ++skillRequestSeq;
     try {
         const data = await api('/api/skills');
+        if (requestSeq !== skillRequestSeq) return;
         if (data.success && Array.isArray(data.skills)) {
             skillsList = data.skills;
             // 與推薦清單相同的守則：內容未變就不重建側邊欄。
@@ -5527,6 +5539,7 @@ async function loadSkills() {
             }
         }
     } catch (e) {
+        if (requestSeq !== skillRequestSeq) return;
         console.error('Load skills failed', e);
     }
 }

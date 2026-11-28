@@ -5,6 +5,39 @@
 
 ---
 
+## 2026.11.28 — 第六十三階段：側邊欄三份清單以獨立請求序號拒絕晚回
+
+> 接續同日第六十二階段；本輪修正啟動與 `sopChanged` 刷新可重疊時，較舊的推薦、SOP 或 Skill 回應依完成順序覆蓋較新快照。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `init()` 的 `Promise.all()` 會平行載入三份側邊欄清單；`refreshSidebarDataSoon()` 在前一次尚未結束時也會再次平行呼叫，Browser 安裝 fallback 另會等待 `loadSops()`。
+- 三個 loader 原本都直接以 response 完成順序賦值全域清單；舊 SOP／Skill 回應因此可移除較新載入的項目，舊推薦也可覆蓋新推薦，且較早 success 可在較新啟動的失敗之後仍被套用。
+- 舊 rejection 則可在較新 success 之後仍記錄離線錯誤；既有 signature 只避免相同 payload 重繪，不能辨識新舊回應。
+- 三份清單必須各自保序，不能共用單一序號，否則不同端點的合法並行回應會互相壓制。
+
+### 修正：每份清單 latest-started request wins
+- `public/app.js` 新增獨立遞增的 `recommendRequestSeq`、`sopRequestSeq`、`skillRequestSeq`；各 loader 在發出 API 請求前取得自己的序號。
+- success await 後、更新清單／簽章、呼叫 `renderSidebarTab()` 或 `hideSplash()` 之前先確認仍為該清單最新啟動者。
+- catch 分支使用同一守門；過期 rejection 不記錄錯誤、不干擾較新資料，最新啟動的失敗則會阻止較早 success 晚回。
+- 循序載入與相同 payload 不重建卡片的行為維持不變；本輪不增加 in-flight lock、不中止後端查詢，也不宣稱能撤回後端已接受的工作。
+
+### 測試與驗收
+- `test/app-sidebar-refresh.test.js` 由 4 項增為 10 項，以真實前端函式覆蓋三份清單各自的舊 success、最新 failure、stale rejection、跨清單獨立序號，以及原有不變 payload 去重。
+- 修正前聚焦測試為 **5 passed／5 failed**，分別重現舊推薦覆蓋、新 SOP／Skill 消失、最新失敗後舊 SOP state 套用，以及新 Skill 成功後仍出現過期錯誤；修正後 **10／10** 全綠。相關 `app-i18n`、`i18n-keys`、`skill-list-ui` 合計 **25／25**。
+- 10 個突變探針全數被攔下：移除三份 success 守門、移除三份 catch 守門、三份序號不遞增、三清單共用序號。探針後 `public/app.js` 還原為位元組相同。
+- 隔離瀏覽器搭配真實 backend，以頁面中的 production loader 與 deferred transport 驗收八個情境：舊推薦不覆蓋新 state 或重複 splash、舊 SOP／Skill 不移除新項目、最新 SOP failure 壓制舊 success、三份 stale rejection 均靜默、不同完成順序的跨清單並行回應仍全部套用。
+- 驗收後恢復正式 `api`、`renderSidebarTab()`、`hideSplash()` 與 `console.error`，重載並切回 `zh-TW`；推薦 8、SOP 16、Skill 37，無測試 marker，**27 個 fetch／XHR 均成功，console 0 error／0 warn**。已關閉測試分頁、停止隔離 server、確認 3210／19168 不再監聽並刪除隔離 profile。
+- `spec.md` 將三組獨立序號、success／catch 守門與副作用邊界列為不變式；README 中英文同步說明。
+- `npm test`：27 個 JS 語法、**73 支測試檔**與 server smoke 全綠。
+- `public/app.js` SHA256 `f2b61b0a40a18f97d64752b3a557a60c07a0fc2b6af0321d0c3bd20207043b69`；側邊欄順序測試 SHA256 `249fd0a29bab5f7e2b5fb9ac5aae48aa42203af3268d53a85ed45e35351bcd72`。
+
+### 尚未完成
+- 前端守門只能拒絕尚未套用的舊回應，不能撤回後端已接受的查詢；側邊欄端點尚無 revision／epoch。
+- `task.logs` 保留政策未觸及，仍待使用者決定；Browser 靜止畫面輪詢仍會實際截圖。
+- 未做雙機、UAC elevated process-tree、Vision 或乾淨 Windows EXE 實機驗收；未執行 PowerShell、外掛、安裝或提權，未讀寫使用者真實 APPDATA。
+
+---
+
 ## 2026.11.28 — 第六十二階段：LLM 狀態輪詢以請求序號拒絕晚回與過期 bootstrap 清理
 
 > 接續同日第六十一階段；本輪修正重疊的 `/api/llm/status` 回應可復活較新的失敗狀態、刪除仍需要的 bootstrap 任務，以及舊錯誤覆蓋新就緒狀態。版本維持 `2026.8.7`。

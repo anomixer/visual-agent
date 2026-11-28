@@ -22,6 +22,9 @@ const declarations = [
     extract(/^let lastRecommendSignature = '';\r?$/gm, 'lastRecommendSignature'),
     extract(/^let lastSopSignature = '';\r?$/gm, 'lastSopSignature'),
     extract(/^let lastSkillSignature = '';\r?$/gm, 'lastSkillSignature'),
+    extract(/^let recommendRequestSeq = 0;\r?$/gm, 'recommendRequestSeq'),
+    extract(/^let sopRequestSeq = 0;\r?$/gm, 'sopRequestSeq'),
+    extract(/^let skillRequestSeq = 0;\r?$/gm, 'skillRequestSeq'),
     extract(/^(?:async )?function loadRecommend\([^]*?^\}\r?$/gm, 'loadRecommend'),
     extract(/^(?:async )?function loadSops\([^]*?^\}\r?$/gm, 'loadSops'),
     extract(/^(?:async )?function loadSkills\([^]*?^\}\r?$/gm, 'loadSkills'),
@@ -34,7 +37,7 @@ function harness(responses) {
         console,
         recommendList: [], sopsList: [], skillsList: [],
         api: async (route) => {
-            const response = responses[route];
+            const response = typeof responses === 'function' ? responses(route) : responses[route];
             if (response instanceof Error) throw response;
             assert.ok(response !== undefined, `Unexpected API route ${route}`);
             return response;
@@ -77,6 +80,13 @@ const skill = (overrides = {}) => ({
     category: 'Skills',
     ...overrides,
 });
+
+function deferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+    return { promise, resolve, reject };
+}
 
 test('unchanged recommend payload renders the sidebar only once', async () => {
     const { context, renders, splashes } = harness({
@@ -138,6 +148,148 @@ test('SOP and skill lists follow the same unchanged-payload rule', async () => {
     assert.equal(renders.length, 3, 'A changed SOP list must re-render exactly once');
 
     assert.equal(context.sopsList[0].id, 'rec_install_ollama', 'Latest SOP list must still replace the cached list');
+});
+
+test('an older recommend response cannot overwrite a newer snapshot', async () => {
+    const older = deferred();
+    const newer = deferred();
+    let requests = 0;
+    const { context, renders, splashes } = harness(() => (++requests === 1 ? older.promise : newer.promise));
+
+    const olderLoad = context.loadRecommend();
+    const newerLoad = context.loadRecommend();
+    newer.resolve({ success: true, recommendList: [recommendItem({ id: 'new-recommendation' })] });
+    await newerLoad;
+    older.resolve({ success: true, recommendList: [recommendItem({ id: 'old-recommendation' })] });
+    await olderLoad;
+
+    assert.deepEqual(context.recommendList.map((item) => item.id), ['new-recommendation']);
+    assert.equal(renders.length, 1, 'The stale response must not trigger a second render');
+    assert.equal(splashes.length, 1, 'The stale response must not repeat successful-load side effects');
+});
+
+test('an older SOP response cannot remove a newly loaded SOP', async () => {
+    const older = deferred();
+    const newer = deferred();
+    let requests = 0;
+    const { context, renders } = harness(() => (++requests === 1 ? older.promise : newer.promise));
+
+    const olderLoad = context.loadSops();
+    const newerLoad = context.loadSops();
+    newer.resolve({ success: true, sops: [sop({ id: 'old-sop' }), sop({ id: 'new-sop', name: 'New SOP' })] });
+    await newerLoad;
+    older.resolve({ success: true, sops: [sop({ id: 'old-sop' })] });
+    await olderLoad;
+
+    assert.deepEqual(context.sopsList.map((item) => item.id), ['old-sop', 'new-sop']);
+    assert.equal(renders.length, 1);
+});
+
+test('an older skill response cannot remove a newly loaded skill', async () => {
+    const older = deferred();
+    const newer = deferred();
+    let requests = 0;
+    const { context, renders } = harness(() => (++requests === 1 ? older.promise : newer.promise));
+
+    const olderLoad = context.loadSkills();
+    const newerLoad = context.loadSkills();
+    newer.resolve({ success: true, skills: [skill(), skill({ slug: 'new-skill', name: 'New Skill' })] });
+    await newerLoad;
+    older.resolve({ success: true, skills: [skill()] });
+    await olderLoad;
+
+    assert.deepEqual(context.skillsList.map((item) => item.slug), ['browser-research', 'new-skill']);
+    assert.equal(renders.length, 1);
+});
+
+test('the latest sidebar failure suppresses an older successful response', async () => {
+    const older = deferred();
+    let requests = 0;
+    const { context, renders } = harness(() => (++requests === 1 ? older.promise : Promise.reject(new Error('offline'))));
+    const originalError = console.error;
+    const errors = [];
+    console.error = (...args) => errors.push(args);
+    try {
+        const olderLoad = context.loadSops();
+        await context.loadSops();
+        older.resolve({ success: true, sops: [sop()] });
+        await olderLoad;
+    } finally {
+        console.error = originalError;
+    }
+
+    assert.deepEqual(context.sopsList, []);
+    assert.equal(renders.length, 0);
+    assert.equal(errors.length, 1, 'Only the latest failure should be logged');
+});
+
+test('stale sidebar rejections cannot log errors or disturb newer successes', async () => {
+    const cases = [
+        {
+            load: 'loadRecommend',
+            response: { success: true, recommendList: [recommendItem()] },
+            list: 'recommendList',
+            id: 'id',
+            expected: 'rec_install_chrome',
+        },
+        {
+            load: 'loadSops',
+            response: { success: true, sops: [sop()] },
+            list: 'sopsList',
+            id: 'id',
+            expected: 'rec_install_chrome',
+        },
+        {
+            load: 'loadSkills',
+            response: { success: true, skills: [skill()] },
+            list: 'skillsList',
+            id: 'slug',
+            expected: 'browser-research',
+        },
+    ];
+
+    for (const fixture of cases) {
+        const older = deferred();
+        let requests = 0;
+        const { context, renders } = harness(() => (++requests === 1 ? older.promise : Promise.resolve(fixture.response)));
+        const originalError = console.error;
+        const errors = [];
+        console.error = (...args) => errors.push(args);
+        try {
+            const olderLoad = context[fixture.load]();
+            await context[fixture.load]();
+            older.reject(new Error('stale offline'));
+            await olderLoad;
+        } finally {
+            console.error = originalError;
+        }
+
+        assert.equal(context[fixture.list][0][fixture.id], fixture.expected);
+        assert.equal(renders.length, 1);
+        assert.deepEqual(errors, [], `${fixture.load} must suppress stale rejection logs`);
+    }
+});
+
+test('recommend, SOP, and skill request ordering is independent', async () => {
+    const recommend = deferred();
+    const sops = deferred();
+    const skills = deferred();
+    const { context, renders } = harness((route) => ({
+        '/api/recommend': recommend.promise,
+        '/api/sops': sops.promise,
+        '/api/skills': skills.promise,
+    })[route]);
+
+    const pending = [context.loadRecommend(), context.loadSops(), context.loadSkills()];
+    skills.resolve({ success: true, skills: [skill()] });
+    sops.resolve({ success: true, sops: [sop()] });
+    recommend.resolve({ success: true, recommendList: [recommendItem()] });
+    await Promise.all(pending);
+
+    assert.equal(context.recommendList.length, 1);
+    assert.equal(context.sopsList.length, 1);
+    assert.equal(context.skillsList.length, 1);
+    assert.equal(renders.length, 3);
 });
 
 test('failed or empty responses never render or throw', async () => {
