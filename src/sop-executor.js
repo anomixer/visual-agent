@@ -141,7 +141,11 @@ class SOPExecutor extends EventEmitter {
                     const cleanStr = stripAnsi(str);
                     const lines = cleanStr.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
                     if (lines.length > 0) {
-                        this.emit('log', { level: 'info', phase: 'running', message: `... ${lines[lines.length - 1]}` });
+                        try {
+                            this.emit('log', { level: 'info', phase: 'running', message: `... ${lines[lines.length - 1]}` });
+                        } catch {
+                            // A log observer must not escape the asynchronous stream callback.
+                        }
                         lastLogTime = now;
                     }
                 }

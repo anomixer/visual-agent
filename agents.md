@@ -5,6 +5,36 @@
 
 ---
 
+## 2026.11.28 — 第六十八階段：非同步 SOP 日誌 observer 例外不再逸出 stream callback
+
+> 接續同日第六十七階段；本輪以真實 `src/sop-executor.js` 搭配可控假子程序與記憶體檔案系統，修正一般 `runPowerShell()` 在 stdout／stderr 非同步回呼中被日誌 observer 拋錯擊潰的生命週期缺口。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- 一般路徑的 `processChunk()` 由 child stdout／stderr 的非同步 `data` callback 呼叫，內部直接 `this.emit('log', ...)`。`EventEmitter.emit()` 會同步執行 observer；真實 server listener 又會同步寫入 `task.logs`、run-log sidecar 與全域 log buffer，任一項拋錯就會沿著 `emit()` 逸出 stream callback。
+- 在真實 Node 程序中，這類例外可成為未捕捉的 process exception，干擾正常輸出處理與後續結算；observer 拋錯時原本也不會執行 `lastLogTime = now`，使後續輸出失去原本的 500 ms 節流邊界。
+- 將既有 lifecycle harness 加入可控 `Date.now()` 與 stdout／stderr 兩項 observer 拋錯回歸後，修正前聚焦結果為 **15 passed／2 failed**，兩項都在第一個 `data` callback 重現 `Got unwanted exception`。
+
+### 修正：只隔離非同步 observer 邊界
+- 一般 `processChunk()` 的 `this.emit('log', ...)` 包在同步 `try/catch`；observer 例外不再逸出非同步 callback，也不影響 stdout／stderr 字串累積。
+- `lastLogTime = now` 留在 catch 之外，因此即使 observer 失敗，500 ms throttle 仍會正常推進，下一個節流窗口仍可再次通知 observer。
+- 不改動 close／error／timeout 的單一 `finish()`、暫存目錄清理、dry-run logging、elevated 啟動 logging、`runPhaseCommands()` 事件或其他同步 `emit()` 語意。
+- 此邊界只保證失敗 observer 不中斷 runner 生命週期，不保證該 observer 已開始的副作用完整，也不改變 EventEmitter 遇到拋錯後停止呼叫其餘 listener 的既有行為。
+
+### 測試與驗收
+- `test/sop-executor-lifecycle.test.js` 由 15 項增為 17 項，以真實 production module 覆蓋 stdout／stderr observer 拋錯、例外後節流仍生效、完整輸出保留、Promise 正確結算、timer 清除與暫存目錄只清理一次；既有 15 項維持通過。
+- `node --check src/sop-executor.js` 與 `node --check test/sop-executor-lifecycle.test.js` 通過；lifecycle **17／17**、既有 `sop-executor-pure` **28／28**，合計 **45／45**。
+- 3 個突變探針全數被攔下：移除非同步 observer 的 `try/catch`（15／2）、完全省略 observer 呼叫（15／2）、observer 失敗後不更新 throttle 時間（16／1）。探針後 production 與測試位元組均還原。
+- `spec.md` 將非同步 observer 例外隔離與 throttle 不變式列入 SOP 執行底線；README 中英文同步說明 runner 保護與實機限制。
+- `src/sop-executor.js` SHA256 `8c498039a81d10af6342e1270a7abf51bfb34ad7a8de17cbc1035c53e354a4ed`；`test/sop-executor-lifecycle.test.js` SHA256 `67ee362425f9032900025a97edf583394ca748eac2fc6380cd53e62590eb0f66`。
+
+### 尚未完成
+- 未啟動真實 PowerShell、UAC、taskkill、外掛、安裝或提權，也未讀寫使用者真實 APPDATA；本輪不構成一般或 elevated process-tree 實機驗收。
+- `terminateProcessTree()` 的既有程序樹競態與取消能力未擴大修改；observer 自身副作用的一致性與多 observer 隔離亦未於本輪改寫。
+- `task.logs` 保留政策未觸及，仍待使用者決定；Browser 靜止畫面輪詢仍會實際截圖。
+- 未做雙機、Vision 或乾淨 Windows EXE 實機驗收。
+
+---
+
 ## 2026.11.28 — 第六十七階段：一般 PowerShell 執行單一結算並回收啟動暫存資源
 
 > 接續同日第六十六階段；本輪以真實 `src/sop-executor.js` 搭配可控假子程序與記憶體檔案系統，修正一般 `runPowerShell()` 可重現的啟動洩漏、重複結算與重複清理。版本維持 `2026.8.7`。

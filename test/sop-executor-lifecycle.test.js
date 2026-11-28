@@ -15,6 +15,7 @@ function createPowerShellHarness(options = {}) {
     let nextTimerId = 1;
     let tempDir = '';
     let child = null;
+    let nowMs = 1000;
 
     const fakeFs = {
         mkdtempSync(prefix) {
@@ -73,6 +74,9 @@ function createPowerShellHarness(options = {}) {
             throw new Error(`Unexpected require: ${id}`);
         },
         process,
+        Date: class extends Date {
+            static now() { return nowMs; }
+        },
         setTimeout(callback) {
             const id = nextTimerId++;
             timers.set(id, callback);
@@ -91,6 +95,7 @@ function createPowerShellHarness(options = {}) {
         get child() { return child; },
         get tempDir() { return tempDir; },
         get timerCount() { return timers.size; },
+        setNow(value) { nowMs = value; },
         fireTimeout() {
             const callbacks = [...timers.values()];
             timers.clear();
@@ -228,6 +233,59 @@ test('normal close reads streams, resolves, clears its timer and cleans once', a
         exitCode: 7,
         stdout: 'normal output',
         stderr: 'warning',
+    });
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal stdout log listener failures do not escape or break settlement', async () => {
+    const harness = createPowerShellHarness();
+    let logCalls = 0;
+    harness.executor.on('log', () => {
+        logCalls++;
+        throw new Error('stdout log listener failed');
+    });
+    const resultPromise = harness.executor.runPowerShell('Write-Output "ok"');
+
+    assert.doesNotThrow(() => harness.child.stdout.emit('data', ' first\r\n'));
+    harness.setNow(1100);
+    assert.doesNotThrow(() => harness.child.stdout.emit('data', ' throttled\r\n'));
+    assert.equal(logCalls, 1);
+    harness.setNow(1601);
+    assert.doesNotThrow(() => harness.child.stdout.emit('data', ' second\r\n'));
+    assert.equal(logCalls, 2);
+
+    harness.child.emit('close', 0);
+
+    assert.deepEqual(plain(await resultPromise), {
+        exitCode: 0,
+        stdout: 'first\r\n throttled\r\n second',
+        stderr: '',
+    });
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal stderr log listener failures do not escape or break settlement', async () => {
+    const harness = createPowerShellHarness();
+    let logCalls = 0;
+    harness.executor.on('log', () => {
+        logCalls++;
+        throw new Error('stderr log listener failed');
+    });
+    const resultPromise = harness.executor.runPowerShell('Write-Output "ok"');
+
+    assert.doesNotThrow(() => harness.child.stderr.emit('data', ' first warning\r\n'));
+    harness.setNow(1601);
+    assert.doesNotThrow(() => harness.child.stderr.emit('data', ' second warning\r\n'));
+    assert.equal(logCalls, 2);
+
+    harness.child.emit('close', 1);
+
+    assert.deepEqual(plain(await resultPromise), {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'first warning\r\n second warning',
     });
     assert.equal(harness.timerCount, 0);
     assert.deepEqual(harness.removedDirs, [harness.tempDir]);
