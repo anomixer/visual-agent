@@ -5,6 +5,41 @@
 
 ---
 
+## 2026.11.28 — 第六十階段：遠端 Chalkboard 追蹤依 session 隔離，刪除時回收圖片與計時器
+
+> 接續同日第五十九階段；本輪修正已刪除 remote session 仍保留 Chalkboard revision、圖片載入、訊息去重與忙碌佇列，以及相同 legacy message ID 跨 session 互相抑制的問題。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `appliedRemoteChalkboardRevisions`、`remoteChalkboardLoadTokens`、`remoteSessionsOpenedOnChalkboard` 與 `notifiedRemoteDisconnectSessionIds` 都以 session ID 為鍵，但 session 從遠端狀態刪除後沒有回收；重連或重用 ID 時，舊 revision 與 token 仍可干擾新工作。
+- `loadingRemoteChalkboardMessageIds` 與 `appliedRemoteChalkboardMessageIds` 原為全域 `Set`，同一個 legacy message ID 在另一個 session 會被誤判為重複，合法圖片因此不再套用。
+- 忙碌佇列保存完整 `message`（含 base64 `imageDataUrl`）與 1000ms retry timer；所屬 session 刪除後，兩者仍可能保留，晚到 callback 也缺少 session 刪除守門。
+- 斷線 session 仍保留在 `/api/remote/state` 是正常協定狀態，不能把 `disconnected` 當成已刪除而提前清除 replay 防線；清理必須以最新接受的完整狀態中「session 已消失」為準。
+
+### 修正：session-scoped 身分與刪除清理
+- `public/app.js` 將兩個 message-ID store 改為 `Map<sessionId, Set<messageId>>`，新增 `getRemoteChalkboardMessageIds()` 與 `deleteRemoteChalkboardMessageId()`；revision、load token 與訊息去重都以 session 為邊界。
+- `loadRemoteProfileAndState()` 在請求前保存前一份 sessions，通過既有 request-sequence 守門且成功套用完整狀態後，才呼叫 `pruneRemovedRemoteChalkboardSessions()`；`unchanged`、失敗與 stale 回應都不清理。
+- 清理只針對已從最新 sessions 消失的 ID，刪除 revision／load token／兩種 message-ID ownership、Chalkboard 開啟與斷線通知標記；仍保留但斷線的 session 繼續阻擋舊 revision／圖片重放。
+- 被刪除 session 的忙碌佇列會連同完整圖片與 retry timer 一起釋放；其他 session 的佇列與計時器不受影響。刪除 load token 會讓晚到的 `Image.onload` 在 renderer 前失效。
+- 既有第五十九階段 draft generation、最後實際畫布變更獲勝與 remote session 身分守門維持不變。
+
+### 測試與驗收
+- 新增 `test/app-remote-chalkboard-lifecycle.test.js`（10 項），擷取並執行真實前端函式，涵蓋刪除回收、忙碌佇列與 timer、斷線保留、`unchanged`、stale／失敗回應、in-flight／legacy ID、晚到 Image、跨 session 佇列隔離與相同 legacy ID。
+- 更新 `test/app-chalkboard-draft-race.test.js` 與 `test/app-remote-state-order.test.js` 的 VM harness，改為真實 Map store 與清理函式；三支相關 focused suite 合計 46／46 全綠。
+- 6 個突變探針全數被攔下：清理 no-op、誤清斷線保留 session、保留已刪除佇列／timer、不清 load token、legacy ID 退回全域 scope、把清理移到 request identity 守門前。
+- 隔離瀏覽器搭配真實 backend 與同一 process 的兩個真實 peer service 驗收：Peer A revision 4 套用、revision 5 延遲載入；斷線保留追蹤，經正式刪除端點後全部回收，晚到 callback 不產生 canvas draw。Peer B 的佇列／timer 在斷線保留期間存活，刪除後才釋放。
+- 瀏覽器共 145 個 fetch／XHR，全數 HTTP 200；console 0 error／0 warn。驗收後已關閉測試分頁、銷毀 peer sockets、停止隔離 server、確認 3210／19168 不再監聽並刪除隔離 profile。
+- `spec.md` 將 session-scoped 追蹤、完整狀態清理邊界、斷線保留 replay 防線與晚到 Image／佇列回收列為不變式；README 中英文同步說明。
+- `npm test`：27 個 JS 語法、**72 支測試檔**與 server smoke 全綠。
+- `public/app.js` SHA256 `6af8e5906226207ba19ffcd60a8145c8620a01866f5cba6eda13af117d53f7a7`；新 lifecycle 測試 `2aa86172336c6cdb441bab65df64aea3c754392edcaba530eb38d983622f5a8a`；draft race 測試 `2ede582faf4b5be951f8cf69e72ed50531339d45cdcfaa52cc34c9d2119c1daa`；remote-state-order 測試 `1056dca34a8a1d029d9e2fb08f940359f4744ac29e2798f068162b0485108604`。
+
+### 尚未完成
+- 未做雙機實機驗收；本輪為真實 peer service、真實 backend 與隔離瀏覽器，尚未覆蓋防火牆、IPv6 與真實兩台 Windows 的斷線重連。
+- 前端清理不能撤回 peer 已接受的工作；peer 已接受工作的撤銷仍需要協定支援。
+- Browser 靜止畫面輪詢仍會實際截圖；`task.logs` 保留政策未觸及，仍待使用者決定。
+- 未做 UAC elevated process-tree、Vision 或乾淨 Windows EXE 實機驗收；未執行 PowerShell、外掛、安裝或提權，未讀寫使用者真實 APPDATA。
+
+---
+
 ## 2026.11.28 — 第五十九階段：Chalkboard draft 以世代與 session 身分拒絕晚回覆寫
 
 > 接續同日第五十八階段；本輪修正已啟動的 Chalkboard draft 在 API 等待、RAF 排程與 canvas readiness retry 期間仍可能覆蓋較新畫布的問題。版本維持 `2026.8.7`。

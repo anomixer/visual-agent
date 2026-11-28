@@ -20,6 +20,7 @@ function extract(pattern, label) {
 
 const declarations = [
     extract(/^function getActiveRemoteSession\([^]*?^\}\r?$/gm, 'getActiveRemoteSession'),
+    extract(/^function pruneRemovedRemoteChalkboardSessions\([^]*?^\}\r?$/gm, 'pruneRemovedRemoteChalkboardSessions'),
     extract(/^async function loadRemoteProfileAndState\([^]*?^\}\r?$/gm, 'loadRemoteProfileAndState'),
 ];
 
@@ -48,6 +49,12 @@ function harness() {
         chatMessages: {},
         notifiedRemoteDisconnectSessionIds: new Set(),
         remoteSessionsOpenedOnChalkboard: new Set(),
+        appliedRemoteChalkboardRevisions: new Map(),
+        remoteChalkboardLoadTokens: new Map(),
+        loadingRemoteChalkboardMessageIds: new Map(),
+        appliedRemoteChalkboardMessageIds: new Map(),
+        queuedRemoteChalkboardMessage: null,
+        remoteChalkboardApplyTimer: null,
         chalkboardState: { hasUserContent: false },
         t: (key) => key,
         api: (route) => {

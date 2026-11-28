@@ -71,8 +71,8 @@ let remoteChalkboardSyncTimer = null;
 let remoteChalkboardApplyTimer = null;
 let queuedRemoteChalkboardMessage = null;
 let remoteChalkboardLoadToken = 0;
-const loadingRemoteChalkboardMessageIds = new Set();
-const appliedRemoteChalkboardMessageIds = new Set();
+const loadingRemoteChalkboardMessageIds = new Map();
+const appliedRemoteChalkboardMessageIds = new Map();
 const appliedRemoteChalkboardRevisions = new Map();
 const remoteChalkboardLoadTokens = new Map();
 const appliedRemoteDraftMessageIds = new Set();
@@ -2638,6 +2638,7 @@ async function loadRemoteProfileAndState() {
     if (data.unchanged) return;
     remoteState = data;
     remoteProfile = data.profile;
+    pruneRemovedRemoteChalkboardSessions(previousSessions, remoteState.sessions);
     (remoteState.sessions || []).forEach((session) => {
         const wasDisconnected = previousSessions.get(session.id)?.status === 'disconnected';
         if (session.status !== 'disconnected' || wasDisconnected || notifiedRemoteDisconnectSessionIds.has(session.id)) return;
@@ -2854,9 +2855,47 @@ async function sendRemoteChalkboardSnapshot(hasContent = true) {
     }
 }
 
+function pruneRemovedRemoteChalkboardSessions(previousSessions, sessions) {
+    const liveSessionIds = new Set((sessions || []).map((session) => session.id));
+    const removedSessionIds = new Set([...previousSessions.keys()].filter((sessionId) => !liveSessionIds.has(sessionId)));
+    removedSessionIds.forEach((sessionId) => {
+        appliedRemoteChalkboardRevisions.delete(sessionId);
+        remoteChalkboardLoadTokens.delete(sessionId);
+        loadingRemoteChalkboardMessageIds.delete(sessionId);
+        appliedRemoteChalkboardMessageIds.delete(sessionId);
+        remoteSessionsOpenedOnChalkboard.delete(sessionId);
+        notifiedRemoteDisconnectSessionIds.delete(sessionId);
+    });
+    if (!queuedRemoteChalkboardMessage || !removedSessionIds.has(queuedRemoteChalkboardMessage.sessionId)) return;
+    queuedRemoteChalkboardMessage = null;
+    if (remoteChalkboardApplyTimer) clearTimeout(remoteChalkboardApplyTimer);
+    remoteChalkboardApplyTimer = null;
+}
+
+function getRemoteChalkboardMessageIds(store, sessionKey) {
+    let ids = store.get(sessionKey);
+    if (!ids) {
+        ids = new Set();
+        store.set(sessionKey, ids);
+    }
+    return ids;
+}
+
+function deleteRemoteChalkboardMessageId(store, sessionKey, messageId) {
+    const ids = store.get(sessionKey);
+    if (!ids) return;
+    ids.delete(messageId);
+    if (ids.size === 0) store.delete(sessionKey);
+}
+
 function applyRemoteChalkboardState(message = {}, sessionId = selectedRemoteSessionId) {
     const sessionKey = String(sessionId || '');
-    if (!message?.id || !sessionKey || appliedRemoteChalkboardMessageIds.has(message.id) || loadingRemoteChalkboardMessageIds.has(message.id)) return;
+    if (
+        !message?.id ||
+        !sessionKey ||
+        appliedRemoteChalkboardMessageIds.get(sessionKey)?.has(message.id) ||
+        loadingRemoteChalkboardMessageIds.get(sessionKey)?.has(message.id)
+    ) return;
     const revision = Number(message.revision) || 0;
     if (revision > 0 && revision <= (appliedRemoteChalkboardRevisions.get(sessionKey) || 0)) return;
     const imageDataUrl = normalizeImageDataUrl(message.imageDataUrl);
@@ -2869,13 +2908,14 @@ function applyRemoteChalkboardState(message = {}, sessionId = selectedRemoteSess
         return;
     }
 
-    loadingRemoteChalkboardMessageIds.add(message.id);
+    getRemoteChalkboardMessageIds(loadingRemoteChalkboardMessageIds, sessionKey).add(message.id);
     const loadToken = ++remoteChalkboardLoadToken;
     remoteChalkboardLoadTokens.set(sessionKey, loadToken);
     const img = new Image();
-    img.onerror = () => loadingRemoteChalkboardMessageIds.delete(message.id);
+    const releaseLoadingId = () => deleteRemoteChalkboardMessageId(loadingRemoteChalkboardMessageIds, sessionKey, message.id);
+    img.onerror = releaseLoadingId;
     img.onload = () => {
-        loadingRemoteChalkboardMessageIds.delete(message.id);
+        releaseLoadingId();
         if (remoteChalkboardLoadTokens.get(sessionKey) !== loadToken || selectedRemoteSessionId !== sessionKey) return;
         if (isChalkboardInteractionBusy()) {
             queuedRemoteChalkboardMessage = { message, sessionId: sessionKey };
@@ -2910,7 +2950,7 @@ function applyRemoteChalkboardState(message = {}, sessionId = selectedRemoteSess
                 if (revision > 0) {
                     appliedRemoteChalkboardRevisions.set(sessionKey, Math.max(revision, appliedRemoteChalkboardRevisions.get(sessionKey) || 0));
                 } else {
-                    appliedRemoteChalkboardMessageIds.add(message.id);
+                    getRemoteChalkboardMessageIds(appliedRemoteChalkboardMessageIds, sessionKey).add(message.id);
                 }
                 showChalkboardFloatHint(currentLocale === 'en-US' ? 'Remote Chalkboard updated' : '遠端 Chalkboard 已同步');
             } finally {
