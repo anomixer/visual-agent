@@ -5,6 +5,41 @@
 
 ---
 
+## 2026.11.28 — 第六十二階段：LLM 狀態輪詢以請求序號拒絕晚回與過期 bootstrap 清理
+
+> 接續同日第六十一階段；本輪修正重疊的 `/api/llm/status` 回應可復活較新的失敗狀態、刪除仍需要的 bootstrap 任務，以及舊錯誤覆蓋新就緒狀態。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `startPolling()` 不等待前一次 `checkLLMStatus()`，`init()` 與模型切換成功後也會另行呼叫；冷啟動或慢回應時可同時存在多個狀態請求。
+- 舊 ready 回應若晚於較新的 unavailable／failure，會把狀態燈與模型徽章重新標成就緒、顯示歡迎與就緒日誌，並刪除 pending 的 `rec_install_ollama`／`rec_pull_llm_model`；但較新的失敗狀態可能正需要這些任務。
+- 舊 rejection 若晚於較新的 success，會清空 `lastLLMStatusSignature`、重新套用離線指示並記錄過期錯誤，使下一輪相同 success 又重寫一次 DOM。
+- 伺服器的 `checkOllamaStatus()` 雖有快取，仍不能保證慢冷啟動回應依啟動順序完成；問題必須在前端結果套用邊界處理。
+
+### 修正：latest-started request wins
+- `public/app.js` 新增單調遞增的 `llmStatusRequestSeq`；`checkLLMStatus()` 在發出請求前取得序號。
+- success await 後、更新 signature／指示器與任何 welcome、ready log、bootstrap task 刪除之前，先確認仍是最新啟動者。
+- catch 分支也使用同一序號守門；過期 rejection 不記錄錯誤、不清 signature、不把目前健康狀態改回離線。
+- 最新啟動的失敗會阻止較早 success 晚回；循序輪詢、相同 payload 不重寫 DOM 與既有 bootstrap 語意維持不變。
+- 本輪只修正前端，不增加 in-flight lock、不中止後端探測，也不宣稱能撤回伺服器已接受的工作。
+
+### 測試與驗收
+- `test/app-llm-status-refresh.test.js` 由 3 項增為 7 項，擷取並執行真實前端函式；新增舊 ready 不覆蓋新 unavailable、新 failure 後舊 ready 不刪任務或顯示歡迎、舊 rejection 不覆蓋新 success、新 failure 抑制舊 success 四項競態回歸。
+- 修正前聚焦測試為 **3 passed／4 failed**，修正後 **7／7** 全綠。
+- 5 個突變探針全數被攔下：移除 success 序號守門、把指示器套用移到守門前、移除 catch 守門、在 catch 守門前記錄過期錯誤、不推進請求序號。探針後 `public/app.js` 還原為位元組相同。
+- 隔離瀏覽器搭配真實 backend，以頁面中的真實 `checkLLMStatus()` 與 `updateLLMIndicator()` 驗收四種情境，僅替換 `api` 為 deferred transport 並以 spy 包裹／替換任務刪除、聊天與日誌副作用：新 offline／API refusal 先到而舊 ready 後到時，離線狀態與兩筆 pending bootstrap tasks 保留，刪除、歡迎與就緒日誌均為 0；新 ready 先到而舊 rejection 後到時，新結果與 signature 不變且無過期錯誤；新 rejection 先到而舊 ready 後到時只保留原本一筆失敗記錄。
+- 驗收後還原正式函式並重載，狀態為 `AI 就緒`、語系 `zh-TW`；**13 個 fetch／XHR 全為 HTTP 200，console 0 error／0 warn**。已關閉測試分頁、停止隔離 server、確認 3210／19168 不再監聽並刪除隔離 profile。
+- `spec.md` 將 LLM 狀態請求序號、success／catch 守門與 bootstrap 副作用抑制列為不變式；README 中英文同步說明。
+- `npm test`：27 個 JS 語法、**73 支測試檔**與 server smoke 全綠。
+- `public/app.js` SHA256 `89d6c9203ede9fd3a9a67a904b09c3548d33801b001f44c822f90daaa92be04f`；狀態順序測試 SHA256 `fdb7ed0bad1b167594a0b7777bc63d5c90518c02f384b04cf6ff9a47e7037ead`。
+
+### 尚未完成
+- 前端守門只能拒絕尚未套用的舊回應，不能撤回後端已接受的狀態探測或模型工作；伺服器尚無狀態 revision／epoch。
+- `bootstrapOllama()`／`bootstrapModel()` 目前呼叫已停用，其既有 lock-reset 弱點屬不可達路徑，本輪未改。
+- `task.logs` 保留政策未觸及，仍待使用者決定；Browser 靜止畫面輪詢仍會實際截圖。
+- 未做雙機、UAC elevated process-tree、Vision 或乾淨 Windows EXE 實機驗收；未執行 PowerShell、外掛、安裝或提權，未讀寫使用者真實 APPDATA。
+
+---
+
 ## 2026.11.28 — 第六十一階段：任務輪詢以請求序號與狀態世代拒絕晚回
 
 > 接續同日第六十階段；本輪修正重疊的 `/api/todo` 輪詢可撤回成功的加入／刪除、倒退任務狀態與重複完成通知，並統一所有任務快照的套用路徑。版本維持 `2026.8.7`。

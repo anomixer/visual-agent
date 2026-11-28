@@ -89,6 +89,7 @@ let lastRecommendSignature = '';
 let lastSopSignature = '';
 let lastSkillSignature = '';
 let lastLLMStatusSignature = '';
+let llmStatusRequestSeq = 0;
 
 // Tab State
 let activeTab = 'chalkboard';
@@ -5813,8 +5814,11 @@ async function bootstrapModel() {
 }
 
 async function checkLLMStatus() {
+    const requestSeq = ++llmStatusRequestSeq;
     try {
         const data = await api('/api/llm/status');
+        // 輪詢不等待前一輪；只有最新啟動者可套用狀態與副作用。
+        if (requestSeq !== llmStatusRequestSeq) return;
         // 每 2 秒輪詢；狀態未變就不重寫狀態列、徽章與側邊欄安裝徽章。
         const signature = JSON.stringify(data);
         if (signature !== lastLLMStatusSignature) {
@@ -5862,6 +5866,7 @@ async function checkLLMStatus() {
             }
         }
     } catch (e) {
+        if (requestSeq !== llmStatusRequestSeq) return;
         console.error('[LLM Check Fail]', e);
         // 失敗時狀態列已被改成未就緒，清掉簽章讓下一次成功回應重新套用。
         lastLLMStatusSignature = '';
