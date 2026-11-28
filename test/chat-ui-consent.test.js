@@ -21,7 +21,7 @@ const declarations = [
         'getActiveLocalChatSession', 'touchLocalChatSession',
         'getActiveAbortController', 'setActiveAbortController', 'isModePending',
         'getThinkingIdForMode', 'setThinkingIdForMode', 'updateSendButtonState',
-        'addLocalSessionMessage', 'renderLocalChatMessages',
+        'addLocalSessionMessage', 'renderLocalChatMessages', 'invalidateLocalChatRequest', 'removeLocalChatSession',
         'appendChatBubble', 'appendAgentActionConsent', 'sendChat', 'clearChatMessages',
     ].map((name) => {
         // These top-level declarations end at an unindented closing brace.
@@ -117,7 +117,7 @@ function harness(respond = () => { throw new Error('Unexpected API request'); })
         localStorage: { setItem: (key, value) => storage.set(key, value) },
         normalizeImageDataUrl: (value) => value || '',
         isContainerPinnedToBottom: () => true,
-        renderLocalSessionControls: noop, updateChatModeBadges: noop,
+        renderLocalSessionControls: noop, updateChatModeBadges: noop, switchChatMode: noop,
         renderMarkdown: (text) => String(text), linkifyPlainUrls: (text) => text,
         highlightMentionsInHtml: (html) => html, getMentionHighlightNames: () => [],
         bindExternalLinks: noop, t: (key) => key,
@@ -360,6 +360,288 @@ test('clearing another local tab does not cancel the originating tab request', a
     assert.deepEqual(plain(session(h).messages.map((m) => m.text)), ['origin request', 'Origin reply.']);
     assert.deepEqual(plain(session(h, 'other').messages), []);
     assert.equal(h.chatMessages.children.length, 0);
+    assertIdle(h);
+});
+
+test('local request invalidation requires the originating session identity', () => {
+    const h = harness();
+    const controller = new AbortController();
+    const context = { controller, sessionId: 'origin', invalidated: false };
+    h.localChatRequestContext = context;
+    h.setActiveAbortController(controller, 'local');
+
+    assert.equal(h.invalidateLocalChatRequest('other'), false);
+    assert.equal(context.invalidated, false);
+    assert.equal(controller.signal.aborted, false);
+    assert.equal(h.localChatRequestContext, context);
+    assert.equal(h.getActiveAbortController('local'), controller);
+});
+
+test('local request invalidation requires the active controller identity', () => {
+    const h = harness();
+    const staleController = new AbortController();
+    const activeController = new AbortController();
+    const context = { controller: staleController, sessionId: 'origin', invalidated: false };
+    h.localChatRequestContext = context;
+    h.setActiveAbortController(activeController, 'local');
+
+    assert.equal(h.invalidateLocalChatRequest('origin'), false);
+    assert.equal(context.invalidated, false);
+    assert.equal(staleController.signal.aborted, false);
+    assert.equal(activeController.signal.aborted, false);
+    assert.equal(h.localChatRequestContext, context);
+    assert.equal(h.getActiveAbortController('local'), activeController);
+});
+
+test('closing the last local chat does not invalidate an ongoing request', async () => {
+    const response = deferred();
+    const h = harness(() => response.promise);
+    h.removeLocalChatSession('other');
+    h.chatInput.value = 'only request';
+    const sending = h.sendChat();
+    const controller = h.getActiveAbortController('local');
+    const context = h.localChatRequestContext;
+
+    h.removeLocalChatSession('origin');
+
+    assert.equal(controller.signal.aborted, false);
+    assert.equal(context.invalidated, false);
+    assert.equal(h.isModePending('local'), true);
+    assert.deepEqual(h.localChatSessions.map((item) => item.id), ['origin']);
+    response.resolve({ success: true, reply: 'Still active.', history: [{ role: 'assistant', content: 'current' }] });
+    await sending;
+    assert.deepEqual(plain(session(h).messages.map((item) => item.text)), ['only request', 'Still active.']);
+    assertIdle(h);
+});
+
+test('closing the originating local chat aborts its request and immediately releases the busy state', async () => {
+    const response = deferred();
+    const h = harness(() => response.promise);
+    const removed = session(h);
+    h.chatInput.value = 'origin request';
+    const sending = h.sendChat();
+    const controller = h.getActiveAbortController('local');
+    const context = h.localChatRequestContext;
+
+    h.removeLocalChatSession('origin');
+
+    assert.equal(context.invalidated, true);
+    assert.equal(controller.signal.aborted, true);
+    assert.equal(h.localChatRequestContext, null);
+    assert.equal(h.localThinkingId, '');
+    assert.deepEqual(h.effects.removedThinking, ['thinking-fixture']);
+    assert.equal(h.effects.stoppedPolls, 1);
+    assert.equal(session(h, 'origin'), undefined);
+    assert.equal(h.selectedLocalChatSessionId, 'other');
+    assert.deepEqual(persisted(h, 'other').messages, []);
+    assertIdle(h);
+
+    response.resolve({ success: true, reply: 'Too late.', history: [{ role: 'assistant', content: 'stale' }] });
+    await sending;
+    assert.deepEqual(plain(removed.messages.map((m) => m.text)), ['origin request']);
+    assert.deepEqual(plain(removed.history), [{ role: 'user', content: 'origin history' }]);
+    assertIdle(h);
+});
+
+test('closing suppresses late chat successes, refusals, aborts, and network errors from the removed session', async () => {
+    for (const outcome of ['success', 'refusal', 'abort', 'error']) {
+        const response = deferred();
+        const h = harness(() => response.promise);
+        h.console = { error: noop };
+        const removed = session(h);
+        h.chatInput.value = `request-${outcome}`;
+        const sending = h.sendChat();
+        const messagesBefore = plain(removed.messages);
+        const historyBefore = plain(removed.history);
+        h.removeLocalChatSession('origin');
+        assertIdle(h);
+
+        if (outcome === 'success') response.resolve({ success: true, reply: 'Stale reply.', history: [{ role: 'assistant', content: 'stale' }] });
+        if (outcome === 'refusal') response.resolve({ success: false, error: 'late refusal' });
+        if (outcome === 'abort') response.reject(abortError());
+        if (outcome === 'error') response.reject(new Error('late network error'));
+        await sending;
+
+        assert.deepEqual(plain(removed.messages), messagesBefore, outcome);
+        assert.deepEqual(plain(removed.history), historyBefore, outcome);
+        assert.equal(h.chatMessages.children.length, 0, outcome);
+        assertIdle(h);
+    }
+});
+
+test('closing another local tab leaves the originating request active and able to finish', async () => {
+    const response = deferred();
+    const h = harness(() => response.promise);
+    h.chatInput.value = 'origin request';
+    const sending = h.sendChat();
+    const controller = h.getActiveAbortController('local');
+    select(h, 'other');
+
+    h.removeLocalChatSession('other');
+
+    assert.equal(controller.signal.aborted, false);
+    assert.equal(h.isModePending('local'), true);
+    assert.equal(h.localChatRequestContext.invalidated, false);
+    assert.equal(h.selectedLocalChatSessionId, 'origin');
+    response.resolve({ success: true, reply: 'Origin reply.', history: [{ role: 'assistant', content: 'origin' }] });
+    await sending;
+
+    assert.deepEqual(plain(session(h).messages.map((m) => m.text)), ['origin request', 'Origin reply.']);
+    assert.deepEqual(plain(session(h).history), [{ role: 'assistant', content: 'origin' }]);
+    assert.equal(h.chatMessages.querySelectorAll('.msg-bubble-wrapper').length, 2);
+    assertIdle(h);
+});
+
+test('closing allows an immediate replacement request and stale cleanup cannot clear it', async () => {
+    const oldResponse = deferred();
+    const replacementResponse = deferred();
+    const h = harness((_route, options) => options.body.message === 'old request'
+        ? oldResponse.promise
+        : replacementResponse.promise);
+    const removed = session(h);
+    h.chatInput.value = 'old request';
+    const oldSending = h.sendChat();
+    const oldController = h.getActiveAbortController('local');
+
+    h.removeLocalChatSession('origin');
+    assert.equal(oldController.signal.aborted, true);
+    assertIdle(h);
+    h.chatInput.value = 'replacement request';
+    const replacementSending = h.sendChat();
+    const replacementController = h.getActiveAbortController('local');
+    assert.notStrictEqual(replacementController, oldController);
+
+    oldResponse.resolve({ success: true, reply: 'Stale reply.', history: [{ role: 'assistant', content: 'stale' }] });
+    await oldSending;
+
+    assert.strictEqual(h.getActiveAbortController('local'), replacementController);
+    assert.equal(h.isModePending('local'), true);
+    assert.equal(h.localChatRequestContext.sessionId, 'other');
+    assert.deepEqual(plain(session(h, 'other').messages.map((m) => m.text)), ['replacement request']);
+    assert.deepEqual(plain(removed.messages.map((m) => m.text)), ['old request']);
+    replacementResponse.resolve({ success: true, reply: 'Fresh reply.', history: [{ role: 'assistant', content: 'fresh' }] });
+    await replacementSending;
+
+    assert.deepEqual(plain(session(h, 'other').messages.map((m) => m.text)), ['replacement request', 'Fresh reply.']);
+    assert.deepEqual(plain(session(h, 'other').history), [{ role: 'assistant', content: 'fresh' }]);
+    assertIdle(h);
+});
+
+test('closing before a late task and Chalkboard response suppresses all post-response side effects', async () => {
+    const response = deferred();
+    const h = harness(() => response.promise);
+    const removed = session(h);
+    Object.assign(h, {
+        todoList: [], todoLoads: 0, openedTabs: [], expansions: 0, executions: [],
+        sidebarRefreshes: 0, chalkboardDrafts: [],
+        loadTodo: async () => { h.todoLoads += 1; },
+        openTab: (tab) => h.openedTabs.push(tab),
+        expandLog: () => { h.expansions += 1; },
+        executeTask: (id) => h.executions.push(id),
+        refreshSidebarDataSoon: () => { h.sidebarRefreshes += 1; },
+        applyAgentChalkboardDraft: (draft) => h.chalkboardDrafts.push(draft),
+    });
+    h.chatInput.value = 'queue a task';
+    const sending = h.sendChat();
+    h.removeLocalChatSession('origin');
+    response.resolve({
+        success: true, reply: 'Task queued.', task: true, executeTaskId: 'fixture-task',
+        sopChanged: true, chalkboardDraft: { title: 'Stale draft' },
+        history: [{ role: 'assistant', content: 'stale' }],
+    });
+    await sending;
+
+    assert.equal(h.todoLoads, 0);
+    assert.deepEqual(h.openedTabs, []);
+    assert.equal(h.expansions, 0);
+    assert.deepEqual(h.executions, []);
+    assert.equal(h.sidebarRefreshes, 0);
+    assert.deepEqual(h.chalkboardDrafts, []);
+    assert.deepEqual(plain(removed.messages.map((m) => m.text)), ['queue a task']);
+    assert.deepEqual(plain(removed.history), [{ role: 'user', content: 'origin history' }]);
+    assertIdle(h);
+});
+
+test('closing during a chat task refresh prevents stale tab changes and execution', async () => {
+    const response = deferred();
+    const todoResponse = deferred();
+    const h = harness(() => response.promise);
+    Object.assign(h, {
+        todoList: [], todoLoads: 0, openedTabs: [], expansions: 0, executions: [],
+        loadTodo: async () => { h.todoLoads += 1; return todoResponse.promise; },
+        openTab: (tab) => h.openedTabs.push(tab),
+        expandLog: () => { h.expansions += 1; },
+        executeTask: (id) => h.executions.push(id),
+    });
+    h.chatInput.value = 'queue a task';
+    const sending = h.sendChat();
+    response.resolve({ success: true, reply: 'Task queued.', task: true, executeTaskId: 'fixture-task' });
+    await flushAsync();
+    assert.equal(h.todoLoads, 1);
+
+    h.removeLocalChatSession('origin');
+    todoResponse.resolve();
+    await sending;
+
+    assert.deepEqual(h.openedTabs, []);
+    assert.equal(h.expansions, 0);
+    assert.deepEqual(h.executions, []);
+    assertIdle(h);
+});
+
+test('closing suppresses late consent outcomes without mutating the removed session or approval', async () => {
+    for (const outcome of ['success', 'refusal', 'abort', 'error']) {
+        const response = deferred();
+        const h = harness(() => response.promise);
+        h.console = { error: noop };
+        const pending = approval();
+        const removed = session(h);
+        const confirming = propose(h, pending).click();
+        const messagesBefore = plain(removed.messages);
+        const historyBefore = plain(removed.history);
+        h.removeLocalChatSession('origin');
+        assertIdle(h);
+
+        if (outcome === 'success') response.resolve({ success: true, reply: 'Confirmed.', history: [{ role: 'assistant', content: 'late' }] });
+        if (outcome === 'refusal') response.resolve({ success: false, error: 'late refusal' });
+        if (outcome === 'abort') response.reject(abortError());
+        if (outcome === 'error') response.reject(new Error('late network error'));
+        await confirming;
+
+        assert.equal(pending.status, undefined, outcome);
+        assert.deepEqual(plain(removed.messages), messagesBefore, outcome);
+        assert.deepEqual(plain(removed.history), historyBefore, outcome);
+        assert.equal(h.chatMessages.children.length, 0, outcome);
+        assertIdle(h);
+    }
+});
+
+test('closing during a consent task refresh prevents stale tab changes, sidebar refresh, and execution', async () => {
+    const response = deferred();
+    const todoResponse = deferred();
+    const h = harness(() => response.promise);
+    Object.assign(h, {
+        todoList: [], todoLoads: 0, openedTabs: [], executions: [], sidebarRefreshes: 0,
+        loadTodo: async () => { h.todoLoads += 1; return todoResponse.promise; },
+        openTab: (tab) => h.openedTabs.push(tab),
+        executeTask: (id) => h.executions.push(id),
+        refreshSidebarDataSoon: () => { h.sidebarRefreshes += 1; },
+    });
+    const pending = approval();
+    const confirming = propose(h, pending).click();
+    response.resolve({ success: true, reply: 'Confirmed.', task: true, executeTaskId: 'fixture-task', sopChanged: true });
+    await flushAsync();
+    assert.equal(h.todoLoads, 1);
+    assert.equal(h.sidebarRefreshes, 0);
+
+    h.removeLocalChatSession('origin');
+    todoResponse.resolve();
+    await confirming;
+
+    assert.equal(pending.status, 'confirmed', 'The response was accepted before the tab closed');
+    assert.deepEqual(h.openedTabs, []);
+    assert.deepEqual(h.executions, []);
+    assert.equal(h.sidebarRefreshes, 0);
     assertIdle(h);
 });
 

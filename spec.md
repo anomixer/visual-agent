@@ -1098,7 +1098,8 @@ $true
 - `pendingActions` 必須保存在訊息的 `messages[]` 並隨 session 持久化；切換分頁、重繪後仍須還原按鈕與狀態（已確認 / 失敗 / 過期）。
 - 確認流程與一般送出共用 local pending 鎖；請求 settle 前重複或平行確認不得產生第二次請求。
 - Stop 只 abort 現有請求，pending 鎖保留至請求 settle；確認 API 成功後若在 `loadTodo()` 期間被 abort，不得呼叫 `executeTask`，並須明確告知任務仍保留在工作清單。
-- Clear Chat 不同於 Stop：它必須立即作廢並 abort **擁有者分頁**的一般聊天或 consent 請求、停止 polling／thinking 並釋放 local pending 鎖，讓同一分頁可立即開始 replacement request。晚到回應不得重新加入訊息、顯示取消／錯誤、改寫 approval 狀態，或在 `loadTodo()` 後切分頁、展開日誌或執行任務。清除其他分頁不得影響此請求；舊請求結束也不得清除 replacement 的 controller／context。後端已接受的工作不在可撤回範圍；Stop 或 Clear 會作廢尚未完成／尚未套用的 Chalkboard draft，已排程的 RAF 與 readiness retry 也不得再修改畫布。
+- Clear Chat 與關閉本機分頁必須共用同一個 request invalidation 路徑，且只在 request context 的發起 session ID 與目前 local active controller 同時匹配時作廢：設 `invalidated`、停止該請求 polling／thinking、abort transport、立即清空 context／controller 並更新送出按鈕。晚到回應不得重新加入訊息、改寫已移除 session 的 history、顯示取消／錯誤、改寫 approval 狀態、套用 Chalkboard draft、刷新側邊欄，或在 `loadTodo()` 後切分頁、展開日誌或執行任務。清除或關閉其他分頁不得影響發起請求；舊請求結束也不得清除 replacement 的 controller／context。後端已接受的工作不在可撤回範圍；Stop／Clear／Close 會作廢尚未完成或尚未套用的 Chalkboard draft，已排程的 RAF 與 readiness retry 也不得再修改畫布。
+- 關閉分頁前必須保留既有空 ID 與「至少一個本機分頁」守門；關閉最後一個分頁是 no-op，不得作廢其進行中的請求。只有通過守門且目標確實是擁有者時，才執行與 Clear Chat 相同的作廢流程。
 
 ### 27.4 Agent Loop 請求級預算
 - `/api/chat` 必須在處理 request 的入口建立唯一 `AgentLoopBudget`；首輪 ACTION、自動即時資訊搜尋 / 抽取、Agent Loop 工具與每輪 LLM 呼叫都共用同一 8 turns / 12 tools / 180 秒上限。

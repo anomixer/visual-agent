@@ -2053,9 +2053,28 @@ function touchLocalChatSession(sessionId = selectedLocalChatSessionId) {
     saveLocalChatSessions();
 }
 
+function invalidateLocalChatRequest(sessionId = '') {
+    const requestContext = localChatRequestContext;
+    if (requestContext?.sessionId !== sessionId || getActiveAbortController('local') !== requestContext.controller) return false;
+    requestContext.invalidated = true;
+    requestContext.stopPolling?.();
+    if (requestContext.thinkingId) {
+        removeThinking(requestContext.thinkingId);
+        if (getThinkingIdForMode('local') === requestContext.thinkingId) {
+            setThinkingIdForMode('local', '');
+        }
+    }
+    requestContext.controller.abort();
+    localChatRequestContext = null;
+    setActiveAbortController(null, 'local');
+    updateSendButtonState();
+    return true;
+}
+
 function removeLocalChatSession(sessionId = '') {
     const targetId = String(sessionId || '').trim();
     if (!targetId || localChatSessions.length <= 1) return;
+    invalidateLocalChatRequest(targetId);
     localChatSessions = localChatSessions.filter((item) => item.id !== targetId);
     if (!localChatSessions.length) {
         localChatSessions = [createLocalChatSession()];
@@ -7509,21 +7528,7 @@ function clearChatMessages() {
     if (confirm(confirmMsg)) {
         const session = getActiveLocalChatSession();
         if (session) {
-            const requestContext = localChatRequestContext;
-            if (requestContext?.sessionId === session.id && getActiveAbortController('local') === requestContext.controller) {
-                requestContext.invalidated = true;
-                requestContext.stopPolling?.();
-                if (requestContext.thinkingId) {
-                    removeThinking(requestContext.thinkingId);
-                    if (getThinkingIdForMode('local') === requestContext.thinkingId) {
-                        setThinkingIdForMode('local', '');
-                    }
-                }
-                requestContext.controller.abort();
-                localChatRequestContext = null;
-                setActiveAbortController(null, 'local');
-                updateSendButtonState();
-            }
+            invalidateLocalChatRequest(session.id);
             session.messages = [];
             session.history = [];
             touchLocalChatSession(session.id);

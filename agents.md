@@ -5,6 +5,43 @@
 
 ---
 
+## 2026.11.28 — 第六十五階段：關閉本機對話作廢擁有者在途請求
+
+> 接續同日第六十四階段；本輪修正關閉本機對話分頁時，擁有者的聊天／確認請求仍繼續執行、晚回仍修改已移除 session，並在關閉後觸發任務、Chalkboard 與側邊欄副作用的問題。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `removeLocalChatSession()` 原本只從 `localChatSessions` 過濾目標、切換選取並重繪，沒有作廢 `localChatRequestContext`，也沒有 abort 該分頁的 controller。
+- 因此關閉發起分頁後，local pending 鎖仍被占用；provider 即使忽略 abort，晚到的 success、API refusal、AbortError 或網路錯誤仍會依完成順序處理。
+- `appendChatBubble()` 在依目前選取分頁抑制 DOM 之前就會寫入 session history，所以僅靠「不再顯示該分頁」不足以保護已被移除的 session；舊 success 仍可改寫其 `history` 與訊息。
+- 含 `task` 的晚回還可繼續 `loadTodo()`、切到任務分頁、展開日誌或執行 `executeTaskId`；`sopChanged` 與 Chalkboard draft 也會在關閉後重新整理側邊欄或畫布。consent 晚回則可改寫 approval 狀態。
+- 修正必須只鎖定「擁有該請求的分頁」：關閉其他分頁不得取消發起請求，關閉最後一個本機分頁仍維持 no-op，也不得作廢其進行中的請求。
+
+### 修正：Clear 與 Close 共用 session／controller 身分作廢
+- `public/app.js` 新增 `invalidateLocalChatRequest(sessionId)`，只有在 request context 的 `sessionId` 與目前 local active controller 同時匹配時才生效。
+- 作廢時先設 `invalidated`，停止該請求自己的 agent-status polling、移除 thinking、abort transport，接著清空 request context 與 active controller 並立即更新送出按鈕，回報是否完成作廢。
+- `removeLocalChatSession()` 通過空 ID 與最後一個分頁守門後才呼叫此 helper；`clearChatMessages()` 改為重用同一實作，避免兩條取消路徑再各自漂移。
+- 一般聊天與 consent 既有的 `invalidated` 守門涵蓋 API await 後、`loadTodo()` 後與 catch 分支；因此晚回不會改寫已移除 session、approval、Chalkboard、側邊欄、任務分頁或執行狀態。`finally` 仍比對 controller／context identity，舊請求結束不會清掉立即啟動的 replacement request。
+
+### 測試與驗收
+- `test/chat-ui-consent.test.js` 由 24 項增為 35 項：新增八項關閉分頁回歸與三項邊界守門，涵蓋 success／refusal／abort／network error、跨分頁隔離、立即 replacement、晚到任務與 Chalkboard 副作用、一般與 consent 的 `loadTodo()` 競態、session／controller 身分，以及關閉最後分頁不取消。
+- 加入八項關閉回歸而尚未修正時，聚焦測試為 **25 passed／7 failed**，24 項既有測試全數通過；七項失敗明確重現未 abort、未釋放 busy、晚回仍呼叫 `loadTodo()`、關閉後仍切分頁與 consent 結果污染。修正後 **35／35** 全綠。
+- 相關前端批次 `node --test test/app-*.test.js test/chat-ui-consent.test.js test/i18n-keys.test.js` 合計 **156／156** 全綠。
+- 7 個突變探針全數被攔下：關閉不作廢（7 項失敗）、移除 session 身分守門（4）、移除 controller 身分守門（1）、移除晚回 `invalidated` 守門（12）、不作廢 busy controller（7）、Clear 繞過共用 helper（6）、把最後分頁守門移到作廢之後（1）。探針後 production 位元組還原。
+- 隔離瀏覽器以 static-only 頁面、fake API 與真實 `sendChat()`／consent／關閉按鈕驗收八個情境：擁有者關閉後立即 abort／解鎖、四種晚回結果靜默、關閉其他分頁不影響、立即 replacement 不被舊 cleanup 清除、任務 refresh 期間關閉不切頁／執行、consent 晚回不改 approval、consent refresh 期間關閉無任務副作用、關閉最後分頁保留請求。fake transport 刻意忽略 abort，因此驗證的是 production 作廢守門而非只靠 HTTP 取消；**8／8 通過，情境期 console 0 error／0 warn**。
+- static-only 頁面在安裝 fake transport 前共記錄 457 筆缺少 backend 的 `Failed to fetch`／`ERR_CONNECTION_REFUSED`，不屬於八個情境；fake transport 不產生原生 network history，故 `networkTotal: 0` 不當作後端連線成功證據。
+- 驗收後已關閉測試分頁、確認 3210／19168 不再監聽並移除本輪暫存目錄；未啟動真實 backend、PowerShell、外掛、安裝或提權，也未讀寫使用者真實 APPDATA。
+- `npm test`：27 個 JS 語法、**73 支測試檔**與 server smoke 全綠；`git diff --check` 無 whitespace error。Git 僅回報既有 LF→CRLF filter warning。
+- `spec.md` 將 Clear／Close 共用身分作廢、最後分頁 no-op、晚回副作用抑制與 replacement 清理列為不變式；README 中英文同步說明。
+- `public/app.js` SHA256 `decfb46dd3fc383bb9e8307bd20c637a1114a73b9cf3cda6b7ce2e52f0325dca`；`test/chat-ui-consent.test.js` SHA256 `9d07390ae1129e8e4a2ac9fa526f08b07f8291848d61e700649b67790d2aa23a`。
+
+### 尚未完成
+- 前端作廢只能阻止尚未套用的晚回與副作用，不能撤回 backend 已接受的聊天或任務工作。
+- 關閉最後一個本機分頁刻意維持 no-op；若未來改成可關閉至零，必須另行定義空狀態與進行中請求的生命週期。
+- `task.logs` 保留政策未觸及，仍待使用者決定；Browser 靜止畫面輪詢仍會實際截圖。
+- 未做雙機、UAC elevated process-tree、Vision 或乾淨 Windows EXE 實機驗收。
+
+---
+
 ## 2026.11.28 — 第六十四階段：遠端 AI 佇列過期結算不再重入並啟動兩項後繼工作
 
 > 接續同日第六十三階段；本輪修正過期 queued item 被結算時，遞迴的 `startNext()` 與外層尚未結束的 drain 同時推進，造成同 session 併發、取消遺漏與 `isBusy()` 假 idle。版本維持 `2026.8.7`。
