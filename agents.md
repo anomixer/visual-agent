@@ -5,6 +5,41 @@
 
 ---
 
+## 2026.11.28 — 第六十一階段：任務輪詢以請求序號與狀態世代拒絕晚回
+
+> 接續同日第六十階段；本輪修正重疊的 `/api/todo` 輪詢可撤回成功的加入／刪除、倒退任務狀態與重複完成通知，並統一所有任務快照的套用路徑。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `startPolling()` 使用 async `setInterval`，前一輪尚未結束時仍可啟動下一輪；`loadTodo()` 原本只依完成順序寫入 `todoList`，較早請求的舊快照因此可覆蓋較新回應。
+- 成功刪除後，舊輪詢可把任務重新顯示；成功加入後，舊輪詢可讓新任務消失。介面上的操作結果與伺服器已接受的狀態不一致。
+- 舊快照還可把 `success` 倒退成 `running`，使 `knownTaskStatuses` 倒退並在下一輪重複完成通知，或讓已消失的 `install_playwright_chromium` 任務重新把 `browserInstallQueued` 設回 true。
+- `waitForTaskCompletion()` 也可能讀到 stale running 快照而重新輪詢。另有十個 runtime 路徑直接賦值 `todoList`，跳過狀態通知、Browser 安裝佇列與已知狀態同步。
+
+### 修正：latest-started poll 與單一快照出口
+- `public/app.js` 新增單調遞增的 `todoRequestSeq`；`loadTodo()` 在發出請求前取得序號，await 後先確認仍為最新啟動者，再檢查 `data.success`。最新啟動的失敗也會阻止較早成功晚回，循序輪詢維持原行為。
+- 新增 `todoStateGeneration`；每次接受有效任務快照都遞增世代，使在快照套用前就已經啟動的較舊輪詢失效。輪詢在請求前保存世代，await 後同時檢查序號與世代。
+- 新增唯一 runtime 替換出口 `applyTodoListSnapshot()`：只接受陣列，透過 `announceTaskStatusChanges()` 比對狀態，更新 `todoList`，同步 `browserInstallQueued` 與 `knownTaskStatuses`，最後重繪；無效 payload 不推進世代、不重繪。
+- `loadTodo()`、`queueSopTaskById()`、兩個 bootstrap、推薦／SOP 的加入與加入後執行、刪除及匯入共十條路徑全部改走此出口。建立任務的 fallback 改讀自身 response 的 `todoList`，不再依賴可能已被其他快照替換的全域狀態。
+- 直接 mutation 不取得輪詢序號；成功回應仍依完成順序套用，並使較舊輪詢失效。伺服器目前沒有任務 revision／epoch，因此本輪不宣稱可為同時發生的多個 mutation 建立全域總序。
+
+### 測試與驗收
+- 新增 `test/app-task-state-order.test.js`（11 項），擷取並執行真實前端函式，涵蓋新舊輪詢、成功刪除／加入、狀態倒退與重複通知、Browser 安裝佇列、最新失敗、循序輪詢、completion waiter、無效快照、response-local task fallback，以及 runtime 只能由中央 helper 替換 `todoList`。
+- 五支既有前端 VM harness 補上最小 snapshot helper stub；相關十支 focused suite 合計 **90／90** 全綠。
+- 7 個突變探針全數被攔下：移除輪詢序號守門、移除快照世代守門、helper no-op、刪除繞過 helper、SOP 建立繞過 helper、不同步已知狀態、不同步 Browser 安裝佇列。探針後 `public/app.js` 還原為位元組相同。
+- 隔離瀏覽器搭配真實 backend 驗收三個情境：較新 terminal 快照先到、較舊 running 快照後到，狀態維持 success 且完成通知只出現一次；真實刪除與真實推薦加入後，再解開刪除／加入前的延遲舊輪詢，已刪任務不復活、已建立任務與卡片保留。只延遲 `/api/todo` GET，mutation 仍走真實隔離 API。
+- 驗收後恢復正式 `api` 與聊天渲染函式，刪除全部驗收任務；穩定重載後 **18 個 fetch／XHR 全數成功，console 0 error／0 warn**。已關閉測試分頁、停止隔離 server、確認 3210／19168 不再監聽並刪除隔離 profile。
+- `spec.md` 將任務輪詢序號、接受快照世代與單一套用出口列為不變式；README 中英文同步說明。
+- `npm test`：27 個 JS 語法、**73 支測試檔**與 server smoke 全綠。
+- `public/app.js` SHA256 `25b079bcdc7e916f74b85537371785d025cdfe71fc674fb1365957df13f05d9f`；新任務狀態順序測試 `f24ce7b32be2cb77b62ac105af68ad9a49a9a23f0cc3da9526bcd273e86d21c7`。
+
+### 尚未完成
+- 前端守門只能拒絕尚未套用的舊快照，不能撤回伺服器已接受的工作。
+- 同時發生的直接 mutation 仍依回應完成順序套用；更強的全媒序號需要伺服器 revision／epoch 協定，並須妥善處理後端重啟。
+- `task.logs` 保留政策未觸及，仍待使用者決定；Browser 靜止畫面輪詢仍會實際截圖。
+- 未做雙機、UAC elevated process-tree、Vision 或乾淨 Windows EXE 實機驗收；未執行 PowerShell、外掛、安裝或提權，未讀寫使用者真實 APPDATA。
+
+---
+
 ## 2026.11.28 — 第六十階段：遠端 Chalkboard 追蹤依 session 隔離，刪除時回收圖片與計時器
 
 > 接續同日第五十九階段；本輪修正已刪除 remote session 仍保留 Chalkboard revision、圖片載入、訊息去重與忙碌佇列，以及相同 legacy message ID 跨 session 互相抑制的問題。版本維持 `2026.8.7`。

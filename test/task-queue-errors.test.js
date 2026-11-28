@@ -75,6 +75,12 @@ function createContext(response, locale = 'zh-TW') {
             return response;
         },
         renderTodoList() { rendered.push(context.todoList.map((task) => task.id)); },
+        applyTodoListSnapshot(tasks) {
+            if (!Array.isArray(tasks)) return false;
+            context.todoList = tasks;
+            context.renderTodoList();
+            return true;
+        },
         addUILog(message, level) { logs.push({ message, level }); },
         openTab(name) { tabs.push(name); },
         appendChatBubble(role, message) { bubbles.push({ role, message }); },

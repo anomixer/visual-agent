@@ -94,6 +94,12 @@ function createContext({ locale = 'zh-TW', sops = SOP_ITEMS, tasks = [], respons
             return response || { success: true, task: CREATED_TASK, todoList: [CREATED_TASK] };
         },
         renderTodoList() { rendered.push(context.todoList.map((task) => task.id)); },
+        applyTodoListSnapshot(tasks) {
+            if (!Array.isArray(tasks)) return false;
+            context.todoList = tasks;
+            context.renderTodoList();
+            return true;
+        },
         async executeTask(id) { executed.push(id); },
     };
     vm.createContext(context);

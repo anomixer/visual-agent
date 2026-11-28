@@ -86,6 +86,12 @@ function createContext({ locale = 'zh-TW', response } = {}) {
             return response || { success: true, todoList: [IMPORTED_TASK] };
         },
         renderTodoList() { rendered.push(context.todoList.map((task) => task.id)); },
+        applyTodoListSnapshot(tasks) {
+            if (!Array.isArray(tasks)) return false;
+            context.todoList = tasks;
+            context.renderTodoList();
+            return true;
+        },
         addUILog(message, level) { logs.push({ message, level }); },
         cancelPendingChalkPreview() { chalkCalls.push('cancel'); },
         syncChalkboardUI() { chalkCalls.push('sync'); },

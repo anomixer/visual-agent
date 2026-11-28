@@ -18,6 +18,8 @@ const { normalizeImageDataUrl, sanitizeMarkdownHtml: sanitizeHtml } = window.Vis
 
 // ── State ─────────────────────────────────────────────────────────
 let todoList = [];
+let todoRequestSeq = 0;
+let todoStateGeneration = 0;
 let recommendList = [];
 let sopsList = [];
 let skillsList = [];
@@ -5266,14 +5268,22 @@ function hideSplash() {
 //  DATA LOADING
 // ════════════════════════════════════════════════════════
 async function loadTodo() {
+    const requestSeq = ++todoRequestSeq;
+    const stateGeneration = todoStateGeneration;
     const data = await api('/api/todo');
-    if (data.success) {
-        announceTaskStatusChanges(todoList, data.todoList);
-        todoList = data.todoList;
-        syncBrowserInstallQueuedFromTasks(todoList);
-        syncKnownTaskStatuses(todoList);
-        renderTodoList();
-    }
+    if (requestSeq !== todoRequestSeq || stateGeneration !== todoStateGeneration) return;
+    if (data.success) applyTodoListSnapshot(data.todoList);
+}
+
+function applyTodoListSnapshot(tasks) {
+    if (!Array.isArray(tasks)) return false;
+    todoStateGeneration++;
+    announceTaskStatusChanges(todoList, tasks);
+    todoList = tasks;
+    syncBrowserInstallQueuedFromTasks(todoList);
+    syncKnownTaskStatuses(todoList);
+    renderTodoList();
+    return true;
 }
 
 function syncBrowserInstallQueuedFromTasks(tasks = []) {
@@ -5543,9 +5553,8 @@ async function queueSopTaskById(sopId = '', executeNow = false) {
         }
     });
     if (!data.success) throw new Error(data.error || 'Failed to create task');
-    todoList = data.todoList || todoList;
-    renderTodoList();
-    const task = data.task || todoList[todoList.length - 1];
+    applyTodoListSnapshot(data.todoList);
+    const task = data.task || data.todoList?.[data.todoList.length - 1];
     if (executeNow && task?.id) {
         await executeTask(task.id);
     }
@@ -5756,9 +5765,8 @@ async function bootstrapOllama() {
             body: { title: recOllama.title, description: recOllama.description, category: recOllama.category, skillId: recOllama.id }
         });
         if (res.success) {
-            todoList = res.todoList;
-            renderTodoList();
-            task = res.task || todoList.find(t => t.skillId === 'rec_install_ollama');
+            applyTodoListSnapshot(res.todoList);
+            task = res.task || res.todoList?.find(t => t.skillId === 'rec_install_ollama');
         }
     }
 
@@ -5788,9 +5796,8 @@ async function bootstrapModel() {
             body: { title: recModel.title, description: recModel.description, category: recModel.category, skillId: recModel.id }
         });
         if (res.success) {
-            todoList = res.todoList;
-            renderTodoList();
-            task = res.task || todoList.find(t => t.skillId === 'rec_pull_llm_model');
+            applyTodoListSnapshot(res.todoList);
+            task = res.task || res.todoList?.find(t => t.skillId === 'rec_pull_llm_model');
         }
     }
 
@@ -6795,8 +6802,7 @@ async function addRecommendToTodo(item) {
         body: { title: localized.title, description: localized.description, category: localized.category, skillId: localized.id, action },
     });
     if (data.success) {
-        todoList = data.todoList;
-        renderTodoList();
+        applyTodoListSnapshot(data.todoList);
         addUILog(`＋ ${t('task.addedToList', { action: getActionLabel(getDisplayAction(localized.title, action)), title: getActionTitle(localized.title, action) })}`, 'info');
         openTab('todolist');
     } else {
@@ -6812,10 +6818,9 @@ async function addAndExecuteRecommend(item) {
         body: { title: localized.title, description: localized.description, category: localized.category, skillId: localized.id, action },
     });
     if (data.success) {
-        todoList = data.todoList;
-        renderTodoList();
+        applyTodoListSnapshot(data.todoList);
         openTab('todolist');
-        const newTask = data.task || data.todoList[data.todoList.length - 1];
+        const newTask = data.task || data.todoList?.[data.todoList.length - 1];
         if (newTask?.id) {
             addUILog(`▶ ${t('task.startingAction', { action: getActionLabel(getDisplayAction(localized.title, action)), title: getActionTitle(localized.title, action) })}`, 'info');
             appendChatBubble('ai', `🚀 ${t('task.startingProcess', { title: getActionTitle(localized.title, action) })}`);
@@ -6866,7 +6871,7 @@ async function executeTask(taskId) {
 
 async function deleteTask(taskId) {
     const data = await api(`/api/todo/${taskId}`, { method: 'DELETE' });
-    if (data.success) { todoList = data.todoList; renderTodoList(); }
+    if (data.success) applyTodoListSnapshot(data.todoList);
     else { logTaskFailure('task.deleteFailed', data); }
 }
 
@@ -7766,8 +7771,7 @@ async function queueSopTodo(sop) {
 async function addSopToTodo(sop) {
     const { localized, action, data } = await queueSopTodo(sop);
     if (data.success) {
-        todoList = data.todoList;
-        renderTodoList();
+        applyTodoListSnapshot(data.todoList);
         addUILog(`＋ ${t('task.addedSOPToList', { action: getActionLabel(getDisplayAction(localized.name || localized.id, action)), name: localized.name || localized.id })}`, 'info');
         openTab('todolist');
     } else {
@@ -7778,10 +7782,9 @@ async function addSopToTodo(sop) {
 async function addAndExecuteSop(sop) {
     const { localized, action, data } = await queueSopTodo(sop);
     if (data.success) {
-        todoList = data.todoList;
-        renderTodoList();
+        applyTodoListSnapshot(data.todoList);
         openTab('todolist');
-        const newTask = data.task || data.todoList[data.todoList.length - 1];
+        const newTask = data.task || data.todoList?.[data.todoList.length - 1];
         if (newTask?.id) {
             addUILog(`▶ ${t('task.startingSOPAction', { action: getActionLabel(getDisplayAction(localized.name || localized.id, action)), name: localized.name || localized.id })}`, 'info');
             appendChatBubble('ai', `🚀 ${t('task.startingSOPProcess', { name: localized.name || localized.id, action: getActionLabel(getDisplayAction(localized.name || localized.id, action)) })}`);
@@ -8266,8 +8269,7 @@ function importTasks(file) {
             const tasks = Array.isArray(parsed) ? parsed : parsed?.tasks;
             const data = await api('/api/todo/import', { method: 'POST', body: { tasks } });
             if (data.success) {
-                todoList = Array.isArray(data.todoList) ? data.todoList : todoList;
-                renderTodoList();
+                applyTodoListSnapshot(data.todoList);
                 addUILog('✅ ' + t('tasks.importSuccess'), 'success');
                 return;
             }

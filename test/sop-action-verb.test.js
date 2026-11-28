@@ -111,6 +111,11 @@ function createContext(locale = 'zh-TW', response = { success: true, task: { id:
         modalBody: { innerHTML: '' },
         api: async (endpoint, options) => { calls.push({ endpoint, options }); return response; },
         renderTodoList() {},
+        applyTodoListSnapshot(tasks) {
+            if (!Array.isArray(tasks)) return false;
+            context.todoList = tasks;
+            return true;
+        },
         openTab() {},
         expandLog() {},
         addUILog(message, level) { logs.push({ message, level }); },

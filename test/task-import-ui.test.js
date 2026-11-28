@@ -22,6 +22,12 @@ function createContext(response) {
         todoList: [{ id: 'previous-task', title: 'Previous', status: 'pending' }],
         rendered: 0,
         renderTodoList() { context.rendered += 1; },
+        applyTodoListSnapshot(tasks) {
+            if (!Array.isArray(tasks)) return false;
+            context.todoList = tasks;
+            context.renderTodoList();
+            return true;
+        },
         logs: [],
         addUILog(message, level) { context.logs.push({ message, level }); },
     };
