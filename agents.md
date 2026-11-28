@@ -5,6 +5,44 @@
 
 ---
 
+## 2026.11.28 — 第五十九階段：Chalkboard draft 以世代與 session 身分拒絕晚回覆寫
+
+> 接續同日第五十八階段；本輪修正已啟動的 Chalkboard draft 在 API 等待、RAF 排程與 canvas readiness retry 期間仍可能覆蓋較新畫布的問題。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `applyAgentChalkboardDraft()` 原本沒有請求身分：新 draft 發出後，較早的 `/api/chalkboard/draft` 回應仍可晚到並渲染；已排入 RAF 或 120ms readiness retry 的舊 draft 也不會因 Clear、Stop、換頁或直接編輯而停止。
+- 本機自動 draft 為 fire-and-forget，沒有共用聊天請求的 `AbortSignal`；遠端自動 draft 沒有綁定 session，因此切到其他 remote session 或原 session 斷線後，舊回應仍可能打開 Chalkboard 並寫入目前畫布。
+- 遠端 Chalkboard 圖片與 agent draft 的先後只取決於非同步完成順序，沒有「最後實際發生的畫布變更獲勝」規則。
+- RAF 與 readiness retry 直接呼叫 renderer，canvas 例外可逸出非同步 callback；outer catch 也無法攔住已經排程的 frame。
+
+### 修正：generation、abort 與 remote identity
+- `public/app.js` 新增單調遞增的 `agentChalkboardDraftGeneration`。每個 draft 在開始 API 等待前取得自己的 generation，`isCurrent()` 同時檢查 generation、`options.signal` 與 remote session 身分。
+- Clear／刪除目前頁、實際換頁、使用者 Add Page、有效 Undo／Redo、使用者筆畫、selection cut、pending text box 操作與 commit 都會作廢 pending draft；普通 selection copy 不改變畫布，刻意不作廢。
+- renderer 自己的清板分頁與續頁使用 `createChalkboardPage({ preserveAgentDraft: true })`，避免自我作廢；一般使用者換頁仍立即作廢。
+- 本機自動 draft 共用聊天 Stop signal；遠端自動 draft 帶入 `remoteSessionId`，在請求前、API await 後、RAF 與 retry 前都確認仍為同一個 active session。
+- API refusal 時 current draft 仍使用既有 local fallback；stale rejection、AbortError 與作廢後的 render failure 不再記錄成目前 draft 的錯誤。
+- RAF 與 readiness retry 統一經 `runRenderDraft()` 捕捉例外；current failure 只記錄一次。resize 後再次檢查身分，避免 resize 期間發生的 Clear 或新編輯被略過。
+- 遠端圖片實際套用前作廢較早排程的 draft；若 draft 已先渲染，之後到達的遠端圖片仍可覆蓋它，兩者都遵循最後實際畫布變更獲勝。
+- `/api/chalkboard/draft` 只做同步正規化，不需要 server 修改；本輪只修正前端 API await、RAF 與 retry 的生命週期。
+
+### 測試與驗收
+- 新增 `test/app-chalkboard-draft-race.test.js`（30 項），擷取並執行真實前端函式，涵蓋新舊回應、Clear、readiness retry、換頁、Add Page、Undo／Redo、Stop、remote session 切換／斷線、筆畫、renderer 自身分頁、resize 競態、stale failure、current render exception、API fallback、遠端圖片順序、selection cut／copy 與 pending text 操作；focused suite 30／30 全綠。
+- 7 個補充突變探針全數被攔下：pre-aborted draft 仍啟動、stale render error 仍記錄、RAF exception escape、retry exception escape、cut 不作廢、text manipulation 不作廢、text commit 不作廢。
+- 隔離瀏覽器搭配真實 backend、真實 production functions、DOM 與 canvas 完成 14 個情境，涵蓋遠端圖片／draft 雙向順序、Clear 抑制 retry、較早 API 回應不覆蓋新 draft，以及 Stop、換頁、cut、text commit 等路徑。deferred transport 刻意忽略 abort，仍由 generation 與 signal 守門抑制晚回。
+- 瀏覽器共 133 個 fetch／XHR，全數 HTTP 200；console 0 error／1 warn，唯一 warn 是驗收腳本反覆 `getImageData()` 的 Canvas `willReadFrequently` 效能提示。驗收後已關閉測試分頁、停止隔離 server、確認 3210／19168 不再監聽並刪除隔離 profile。
+- 由於 in-app Browser 無法取得可見 viewport，且 hidden-tab RAF 不可靠，瀏覽器驗收使用真實載入頁面中的確定性 queued-RAF shim；不得宣稱為可見分頁的真實 RAF、真實 peer 或雙機驗收。
+- `public/app.js` SHA256 `f9c72186964b62a9c6912f557ea581666633109a95aeb1d56e2f714ce6fc3538`；新測試 SHA256 `3c48991d99974dbb5d3ed293953d62baf3bed4f2c8021fcae9a3cab3a7199acb`。
+- `spec.md` 將 draft generation、失效點、remote identity、RAF／retry 守門與最後實際變更順序列為不變式；README 中英文同步更新取消範圍。
+- `npm test`：27 個 JS 語法、**71 支測試檔**與 server smoke 全綠。
+
+### 尚未完成
+- 前端作廢只能阻止尚未完成或尚未套用的 draft，不能撤回後端或 peer 已接受的工作。
+- Browser 靜止畫面輪詢仍會實際截圖；peer 已接受工作的撤銷仍需要協定支援與雙機驗收。
+- `task.logs` 保留政策未觸及，仍待使用者決定；不得以截斷執行記錄作為成長控制。
+- 未做可見分頁 RAF、雙機、UAC、Vision 或乾淨 Windows EXE 實機驗收；未執行 PowerShell、外掛、安裝或提權，未讀寫使用者真實 APPDATA。
+
+---
+
 ## 2026.11.28 — 第五十八階段：診斷視窗保留狀態並隨語系立即重繪
 
 > 接續同日第五十七階段；本輪修正已開啟診斷視窗切換語系仍停在舊語言的問題。版本維持 `2026.8.7`。

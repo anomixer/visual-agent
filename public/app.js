@@ -2418,6 +2418,7 @@ function renderRemoteMessages() {
             appliedRemoteDraftMessageIds.add(message.id);
             applyAgentChalkboardDraft(remoteAutoDraft, {
                 actorScope: message.direction === 'incoming' ? 'remote' : 'local',
+                remoteSessionId: session.id,
             });
         }
         appendChatBubble(
@@ -2893,6 +2894,7 @@ function applyRemoteChalkboardState(message = {}, sessionId = selectedRemoteSess
                 if (attempt < 8) setTimeout(() => applyImage(attempt + 1), 120);
                 return;
             }
+            invalidateAgentChalkboardDrafts();
             suppressRemoteChalkboardSync = true;
             try {
                 cancelPendingChalkPreview(false);
@@ -3024,6 +3026,7 @@ async function writeCanvasToClipboard(canvas) {
 async function copySelectionToClipboard(cut = false) {
     const canvas = getSelectionCanvas();
     if (!canvas || !chalkboardState.selectionRect) return;
+    if (cut) invalidateAgentChalkboardDrafts();
 
     chalkboardState.clipboardImage = canvas;
     await writeCanvasToClipboard(canvas);
@@ -3371,6 +3374,7 @@ function getChalkPoint(event) {
 }
 
 function startChalkStroke(event) {
+    invalidateAgentChalkboardDrafts();
     const activated = activateChalkboard();
     if (activated) return;
 
@@ -3603,6 +3607,7 @@ function handleChalkPointerLeave(event) {
 
 function startTextBoxManipulation(event) {
     if (chalkboardState.tool !== 'text' || !chalkboardState.pendingTextRect) return;
+    invalidateAgentChalkboardDrafts();
 
     const handle = event.target instanceof HTMLElement && event.target.dataset.handle
         ? event.target.dataset.handle
@@ -3715,11 +3720,18 @@ function resetPendingChalkState() {
     chalkboardState.textManipulation = null;
 }
 
+let agentChalkboardDraftGeneration = 0;
+
+function invalidateAgentChalkboardDrafts() {
+    agentChalkboardDraftGeneration += 1;
+}
+
 function undoChalkAction() {
     resetPendingChalkState();
 
     const snapshot = chalkboardState.history.pop();
     if (!snapshot) return;
+    invalidateAgentChalkboardDrafts();
     pushChalkFuture();
 
     clearChalkboardSurface();
@@ -3733,6 +3745,7 @@ function redoChalkAction() {
 
     const snapshot = chalkboardState.future.pop();
     if (!snapshot) return;
+    invalidateAgentChalkboardDrafts();
 
     const currentSnapshot = createCanvasSnapshot();
     if (currentSnapshot) {
@@ -3778,12 +3791,14 @@ function restoreChalkboardPage(page) {
 
 function switchChalkboardPage(index) {
     if (index < 0 || index >= chalkboardState.pages.length || index === chalkboardState.activePageIndex) return;
+    invalidateAgentChalkboardDrafts();
     persistActiveChalkboardPage();
     chalkboardState.activePageIndex = index;
     restoreChalkboardPage(chalkboardState.pages[index]);
 }
 
-function createChalkboardPage() {
+function createChalkboardPage(options = {}) {
+    if (!options.preserveAgentDraft) invalidateAgentChalkboardDrafts();
     if (!chalkboardState.ctx) return;
     persistActiveChalkboardPage();
     chalkboardState.pages.push({ snapshot: null, hasInteracted: true, hasUserContent: false, history: [], future: [] });
@@ -3793,6 +3808,7 @@ function createChalkboardPage() {
 }
 
 function clearChalkboard() {
+    invalidateAgentChalkboardDrafts();
     if (!chalkboardState.pages.length) return;
     const removedPage = chalkboardState.activePageIndex;
     if (chalkboardState.pages.length === 1) {
@@ -4355,7 +4371,12 @@ function normalizeChalkboardBulletsForCanvas(lines = [], limit = 4, maxChars = 6
 }
 
 async function applyAgentChalkboardDraft(draft, options = {}) {
-    if (!draft) return;
+    if (!draft || options.signal?.aborted) return;
+    const remoteSessionId = String(options.remoteSessionId || '');
+    if (remoteSessionId) {
+        const remoteSession = getActiveRemoteSession();
+        if (selectedRemoteSessionId !== remoteSessionId || remoteSession?.id !== remoteSessionId || remoteSession.status !== 'active') return;
+    }
     const collaborativeDraft = normalizeCollaborativeChalkboardDraft(draft, options);
     const title = normalizeChalkboardTextForCanvas(collaborativeDraft.title || '').slice(0, 52);
     const { maxBullets, maxChars } = getChalkboardLayoutLimits(collaborativeDraft.layout, title);
@@ -4363,6 +4384,16 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
         ? normalizeChalkboardBulletsForCanvas(collaborativeDraft.bullets, maxBullets, maxChars)
         : [];
     if (!title && bullets.length === 0) return;
+
+    const generation = ++agentChalkboardDraftGeneration;
+    const isCurrent = () => {
+        if (generation !== agentChalkboardDraftGeneration || options.signal?.aborted) return false;
+        if (!remoteSessionId) return true;
+        const remoteSession = getActiveRemoteSession();
+        return selectedRemoteSessionId === remoteSessionId
+            && remoteSession?.id === remoteSessionId
+            && remoteSession.status === 'active';
+    };
 
     try {
         let normalizedDraft = {
@@ -4377,29 +4408,34 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
             const normalized = await api('/api/chalkboard/draft', {
                 method: 'POST',
                 body: normalizedDraft,
+                signal: options.signal,
             });
+            if (!isCurrent()) return;
             if (normalized.success && normalized.draft) {
                 normalizedDraft = normalizeCollaborativeChalkboardDraft(normalized.draft, options);
             }
-        } catch {
+        } catch (err) {
+            if (!isCurrent() || err?.name === 'AbortError') return;
             // fallback: still render locally even if draft API is unavailable
         }
 
+        if (!isCurrent()) return;
         openTab('chalkboard');
         const renderDraft = (attempt = 0) => {
+            if (!isCurrent()) return;
             if (!chalkboardState.ctx || chalkboardState.cssWidth <= 0 || chalkboardState.cssHeight <= 0) {
                 if (attempt < 8) {
-                    setTimeout(() => renderDraft(attempt + 1), 120);
+                    setTimeout(() => runRenderDraft(attempt + 1), 120);
                 }
                 return;
             }
             resizeChalkboardCanvas();
-            if (!chalkboardState.ctx) return;
+            if (!isCurrent() || !chalkboardState.ctx) return;
             if (!chalkboardState.hasInteracted) {
                 activateChalkboard();
             }
             if (normalizedDraft.clear !== false && chalkboardState.hasUserContent) {
-                createChalkboardPage();
+                createChalkboardPage({ preserveAgentDraft: true });
             }
             resetPendingChalkState();
             pushChalkHistory();
@@ -4463,7 +4499,7 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
                 if (cursorY + estimatedHeight > pageBottom && lineIndex > 0) {
                     markChalkboardUserContent(true);
                     persistActiveChalkboardPage();
-                    createChalkboardPage();
+                    createChalkboardPage({ preserveAgentDraft: true });
                     pageIndex += 1;
                     cursorY = drawTitleBlock(
                         finalTitle,
@@ -4492,9 +4528,16 @@ async function applyAgentChalkboardDraft(draft, options = {}) {
                 'success'
             );
         };
-        requestAnimationFrame(() => renderDraft(0));
+        const runRenderDraft = (attempt = 0) => {
+            try {
+                renderDraft(attempt);
+            } catch (err) {
+                if (isCurrent()) console.error('[Chalkboard Draft] failed:', err);
+            }
+        };
+        requestAnimationFrame(() => runRenderDraft(0));
     } catch (err) {
-        console.error('[Chalkboard Draft] failed:', err);
+        if (isCurrent()) console.error('[Chalkboard Draft] failed:', err);
     }
 }
 
@@ -5016,6 +5059,7 @@ function hidePendingTextBox() {
 
 function commitPendingTextPlacement() {
     if (!chalkboardState.pendingText || !chalkboardState.pendingTextRect) return;
+    invalidateAgentChalkboardDrafts();
     const snapshot = chalkboardState.pendingTextSnapshot || createCanvasSnapshot();
     pushChalkHistory(snapshot);
     restoreCanvasSnapshot(snapshot);
@@ -7003,7 +7047,10 @@ async function sendChat() {
                 }
                 const autoDraft = data.chalkboardDraft || chalkControl.draft || buildAutoChalkboardDraft(msg, chalkControl.displayText || data.reply || '');
                 if (autoDraft) {
-                    applyAgentChalkboardDraft(autoDraft, { actorScope: 'local' });
+                    applyAgentChalkboardDraft(autoDraft, {
+                        actorScope: 'local',
+                        signal: requestAbortController.signal,
+                    });
                 }
                 if (data.sopChanged) {
                     refreshSidebarDataSoon();
