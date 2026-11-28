@@ -5,6 +5,37 @@
 
 ---
 
+## 2026.11.28 — 第六十七階段：一般 PowerShell 執行單一結算並回收啟動暫存資源
+
+> 接續同日第六十六階段；本輪以真實 `src/sop-executor.js` 搭配可控假子程序與記憶體檔案系統，修正一般 `runPowerShell()` 可重現的啟動洩漏、重複結算與重複清理。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- 一般路徑原本先 `mkdtempSync()`，再寫入 runner 並同步 `spawn()`；兩者任一同步拋錯時只拒絕 Promise，已建立的暫存目錄不會刪除。
+- child 的 `error` 與後到的 `close` 沒有共用 settled 守門，會重複 resolve／reject、清除 timer 與刪除同一個暫存目錄；重複 `close` 也能再次清理。
+- 將原八項 elevated lifecycle 測試擴充為共用 normal／elevated harness，並加入七項一般路徑回歸後，修正前聚焦結果為 **11 passed／4 failed**：error 後 close 清理兩次、重複 close 清理兩次、spawn 同步失敗洩漏、runner 寫入失敗洩漏。一般成功、僅 error 與 timeout 路徑修正前已通過。
+
+### 修正：啟動保護與單一 finish 出口
+- 暫存目錄建立後立即定義 `cleanup()`；runner 寫入與 `spawn()` 包在同步 `try/catch`，失敗時清理、拒絕並立即返回，不安裝後續事件與 timeout。
+- 新增 `settled` 與 `finish(settle, value)`，由共用出口清除 timer、回收暫存目錄並結算；`error`、`close` 與 timeout close 都只能成功結算一次。
+- timeout 仍先沿用既有 `terminateProcessTree(child)`，待 close 到達後經同一 `finish()` 拒絕並清理；一般輸出、exit code fallback、runner script、程序樹終止函式與 elevated 路徑均未改動。
+- `test/sop-executor-elevated-lifecycle.test.js` 更名為 `test/sop-executor-lifecycle.test.js`，以同一真實 production module harness 覆蓋兩條路徑，共 15 項。
+
+### 測試與驗收
+- 七項一般回歸涵蓋成功讀取 stdout／stderr 並清理、error 後 close、只有 error、timeout terminate／拒絕／清理、重複 close、spawn 同步失敗與 runner 寫入同步失敗；既有八項 elevated 回歸全部維持通過。
+- `node --check src/sop-executor.js` 通過；lifecycle **15／15** 與既有 `sop-executor-pure` **28／28** 全綠，合計 **43／43**。
+- 5 個突變探針全數被攔下：啟動失敗不清理（2 項失敗）、移除 normal close／finish settled 守門（2）、finish 不清 timer（4）、finish 不清理暫存目錄（5）、timeout 不 terminate child（1）。探針後 production 位元組還原。
+- `npm test`：27 個 JS 語法、**74 支測試檔**與 server smoke 全綠；`git diff --check` 無 whitespace error。Git 僅回報既有 LF→CRLF filter warning。
+- `spec.md` 將一般 runner 啟動清理與單一結算列為不變式；README 中英文同步說明兩條路徑的暫存資源保證與實機限制。
+- `src/sop-executor.js` SHA256 `0816391f14a62c36accd1b79a05ef3db98133ddd0fc82b76a8b67a5ed82a6f1c`；`test/sop-executor-lifecycle.test.js` SHA256 `814103bbb4f4786845cfe6d0ae508ffd426adb0ba5234a8d6d04dcf788cffb9f`。
+
+### 尚未完成
+- 未啟動真實 PowerShell、UAC、taskkill、外掛、安裝或提權，也未讀寫使用者真實 APPDATA；本輪不構成一般或 elevated process-tree 實機驗收。
+- `terminateProcessTree()` 的既有程序樹競態與取消能力未擴大修改；log listener 在非同步 data callback 拋錯的生命週期亦未於本輪擴大稽核。
+- `task.logs` 保留政策未觸及，仍待使用者決定；Browser 靜止畫面輪詢仍會實際截圖。
+- 未做雙機、Vision 或乾淨 Windows EXE 實機驗收。
+
+---
+
 ## 2026.11.28 — 第六十六階段：SOP 提權流程單一結算並回收暫存資源
 
 > 接續同日第六十五階段；本輪以真實 `src/sop-executor.js` 搭配可控假子程序與記憶體檔案系統，重現 elevated PowerShell launcher 的非同步例外、重複結算與暫存目錄洩漏。版本維持 `2026.8.7`。

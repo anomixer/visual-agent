@@ -7,7 +7,7 @@ const EventEmitter = require('node:events');
 const { test } = require('node:test');
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-function createElevatedHarness(options = {}) {
+function createPowerShellHarness(options = {}) {
     const files = new Map();
     const removedDirs = [];
     const reads = [];
@@ -50,6 +50,8 @@ function createElevatedHarness(options = {}) {
         if (options.spawnError) throw options.spawnError;
         child = new EventEmitter();
         child.pid = 0;
+        child.stdout = new EventEmitter();
+        child.stdout.setEncoding = () => {};
         child.stderr = new EventEmitter();
         child.stderr.setEncoding = () => {};
         child.kill = () => { child.killed = true; return true; };
@@ -102,7 +104,7 @@ function createElevatedHarness(options = {}) {
 }
 
 test('elevated close reads results, resolves, clears its timer and cleans once', async () => {
-    const harness = createElevatedHarness();
+    const harness = createPowerShellHarness();
     const resultPromise = harness.executor.runPowerShellElevated('Write-Output "ok"');
     harness.seedResult('  elevated output\r\n', '7');
     harness.child.stderr.emit('data', ' warning\r\n');
@@ -120,7 +122,7 @@ test('elevated close reads results, resolves, clears its timer and cleans once',
 
 test('elevated close rejects and cleans when the output file cannot be read', async () => {
     const readError = Object.assign(new Error('EACCES: output locked'), { code: 'EACCES' });
-    const harness = createElevatedHarness({
+    const harness = createPowerShellHarness({
         readError: (filePath) => filePath.endsWith('combined.log'),
         readErrorReason: readError,
     });
@@ -136,7 +138,7 @@ test('elevated close rejects and cleans when the output file cannot be read', as
 
 test('elevated close rejects and cleans when the exit-code file cannot be read', async () => {
     const readError = Object.assign(new Error('EACCES: exit code locked'), { code: 'EACCES' });
-    const harness = createElevatedHarness({
+    const harness = createPowerShellHarness({
         readError: (filePath) => filePath.endsWith('exitcode.txt'),
         readErrorReason: readError,
     });
@@ -153,7 +155,7 @@ test('elevated close rejects and cleans when the exit-code file cannot be read',
 test('elevated child error settles once and a later close cannot throw or clean again', async () => {
     const spawnError = Object.assign(new Error('spawn failed'), { code: 'ENOENT' });
     const readError = new Error('late close must not read results');
-    const harness = createElevatedHarness({
+    const harness = createPowerShellHarness({
         readError: () => true,
         readErrorReason: readError,
     });
@@ -171,7 +173,7 @@ test('elevated child error settles once and a later close cannot throw or clean 
 });
 
 test('elevated timeout terminates the child, rejects on close and cleans once', async () => {
-    const harness = createElevatedHarness();
+    const harness = createPowerShellHarness();
     const resultPromise = harness.executor.runPowerShellElevated('Start-Sleep 30');
 
     harness.fireTimeout();
@@ -184,7 +186,7 @@ test('elevated timeout terminates the child, rejects on close and cleans once', 
 });
 
 test('elevated missing result files fall back to the launcher exit code', async () => {
-    const harness = createElevatedHarness();
+    const harness = createPowerShellHarness();
     const resultPromise = harness.executor.runPowerShellElevated('Write-Output "ok"');
 
     harness.child.emit('close', 1223);
@@ -196,7 +198,7 @@ test('elevated missing result files fall back to the launcher exit code', async 
 
 test('elevated synchronous spawn failure rejects and removes the runner directory', async () => {
     const spawnError = Object.assign(new Error('spawn EACCES'), { code: 'EACCES' });
-    const harness = createElevatedHarness({ spawnError });
+    const harness = createPowerShellHarness({ spawnError });
 
     await assert.rejects(harness.executor.runPowerShellElevated('Write-Output "ok"'), (error) => error === spawnError);
 
@@ -206,9 +208,96 @@ test('elevated synchronous spawn failure rejects and removes the runner director
 
 test('elevated runner write failure rejects and removes the partial directory', async () => {
     const writeError = Object.assign(new Error('write ENOSPC'), { code: 'ENOSPC' });
-    const harness = createElevatedHarness({ writeError });
+    const harness = createPowerShellHarness({ writeError });
 
     await assert.rejects(harness.executor.runPowerShellElevated('Write-Output "ok"'), (error) => error === writeError);
+
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal close reads streams, resolves, clears its timer and cleans once', async () => {
+    const harness = createPowerShellHarness();
+    const resultPromise = harness.executor.runPowerShell('Write-Output "ok"');
+    harness.child.stdout.emit('data', ' normal output\r\n');
+    harness.child.stderr.emit('data', ' warning\r\n');
+
+    harness.child.emit('close', 7);
+
+    assert.deepEqual(plain(await resultPromise), {
+        exitCode: 7,
+        stdout: 'normal output',
+        stderr: 'warning',
+    });
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal child error settles once and a later close cannot clean again', async () => {
+    const spawnError = Object.assign(new Error('spawn failed'), { code: 'ENOENT' });
+    const harness = createPowerShellHarness();
+    const resultPromise = harness.executor.runPowerShell('Write-Output "ok"');
+
+    harness.child.emit('error', spawnError);
+    await assert.rejects(resultPromise, (error) => error === spawnError);
+    harness.child.emit('close', 1);
+
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal error without close still clears the timer and removes the runner directory', async () => {
+    const spawnError = Object.assign(new Error('spawn failed'), { code: 'ENOENT' });
+    const harness = createPowerShellHarness();
+    const resultPromise = harness.executor.runPowerShell('Write-Output "ok"');
+
+    harness.child.emit('error', spawnError);
+
+    await assert.rejects(resultPromise, (error) => error === spawnError);
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal timeout terminates the child, rejects on close and cleans once', async () => {
+    const harness = createPowerShellHarness();
+    const resultPromise = harness.executor.runPowerShell('Start-Sleep 30');
+
+    harness.fireTimeout();
+    assert.equal(harness.child.killed, true);
+    harness.child.emit('close', 1);
+
+    await assert.rejects(resultPromise, /Command timed out after 1800000ms/);
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal repeated close cannot settle or clean a completed command again', async () => {
+    const harness = createPowerShellHarness();
+    const resultPromise = harness.executor.runPowerShell('Write-Output "ok"');
+
+    harness.child.emit('close', 0);
+    await resultPromise;
+    harness.child.emit('close', 1);
+
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal synchronous spawn failure rejects and removes the runner directory', async () => {
+    const spawnError = Object.assign(new Error('spawn EACCES'), { code: 'EACCES' });
+    const harness = createPowerShellHarness({ spawnError });
+
+    await assert.rejects(harness.executor.runPowerShell('Write-Output "ok"'), (error) => error === spawnError);
+
+    assert.equal(harness.timerCount, 0);
+    assert.deepEqual(harness.removedDirs, [harness.tempDir]);
+});
+
+test('normal runner write failure rejects and removes the partial directory', async () => {
+    const writeError = Object.assign(new Error('write ENOSPC'), { code: 'ENOSPC' });
+    const harness = createPowerShellHarness({ writeError });
+
+    await assert.rejects(harness.executor.runPowerShell('Write-Output "ok"'), (error) => error === writeError);
 
     assert.equal(harness.timerCount, 0);
     assert.deepEqual(harness.removedDirs, [harness.tempDir]);

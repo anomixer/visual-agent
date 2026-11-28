@@ -90,26 +90,43 @@ class SOPExecutor extends EventEmitter {
             }
 
             const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'visual-agent-'));
-            const runnerPath = this.writePowerShellRunner(tempDir, command);
             const cleanup = () => {
                 try {
                     fs.rmSync(tempDir, { recursive: true, force: true });
                 } catch {}
             };
 
-            const child = spawn('powershell.exe', [
-                '-NoProfile',
-                '-NonInteractive',
-                '-ExecutionPolicy', 'Bypass',
-                '-File', runnerPath,
-            ], {
-                windowsHide: true,
-            });
+            let child;
+            try {
+                const runnerPath = this.writePowerShellRunner(tempDir, command);
+                child = spawn('powershell.exe', [
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-ExecutionPolicy', 'Bypass',
+                    '-File', runnerPath,
+                ], {
+                    windowsHide: true,
+                });
+            } catch (err) {
+                cleanup();
+                reject(err);
+                return;
+            }
 
             let stdout = '';
             let stderr = '';
             let timedOut = false;
+            let settled = false;
             let lastLogTime = 0;
+            let timer;
+
+            const finish = (settle, value) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                cleanup();
+                settle(value);
+            };
 
             const stripAnsi = (str) => {
                 if (!str) return '';
@@ -130,7 +147,8 @@ class SOPExecutor extends EventEmitter {
                 }
             };
 
-            const timer = setTimeout(() => {
+            timer = setTimeout(() => {
+                if (settled) return;
                 timedOut = true;
                 this.terminateProcessTree(child);
             }, this.timeoutMs);
@@ -149,20 +167,17 @@ class SOPExecutor extends EventEmitter {
             });
 
             child.on('close', (code) => {
-                clearTimeout(timer);
-                cleanup();
+                if (settled) return;
                 if (timedOut) {
-                    reject(new Error(`Command timed out after ${this.timeoutMs}ms: ${command}`));
+                    finish(reject, new Error(`Command timed out after ${this.timeoutMs}ms: ${command}`));
                 } else {
                     // 即使 exitCode 非 0，也要回傳結果讓上層判斷
-                    resolve({ exitCode: code, stdout: stdout.trim(), stderr: stderr.trim() });
+                    finish(resolve, { exitCode: code, stdout: stdout.trim(), stderr: stderr.trim() });
                 }
             });
 
             child.on('error', (err) => {
-                clearTimeout(timer);
-                cleanup();
-                reject(err);
+                finish(reject, err);
             });
         });
     }
