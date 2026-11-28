@@ -1,5 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
 const { createRemoteAiQueue } = require('../src/remote-ai-queue');
 
 function deferred() {
@@ -7,6 +9,33 @@ function deferred() {
     let reject;
     const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
     return { promise, resolve, reject };
+}
+
+function createControlledQueue(options) {
+    let now = 1000;
+    let nextTimerId = 1;
+    const timers = new Map();
+    const module = { exports: {} };
+    vm.runInNewContext(fs.readFileSync(require.resolve('../src/remote-ai-queue'), 'utf8'), {
+        module,
+        Promise,
+        AbortController,
+        Date: { now: () => now },
+        setTimeout(callback, delay) {
+            const id = nextTimerId++;
+            timers.set(id, { callback, dueAt: now + delay });
+            return id;
+        },
+        clearTimeout(id) {
+            timers.delete(id);
+        },
+    }, { filename: 'remote-ai-queue.js' });
+    return {
+        queue: module.exports.createRemoteAiQueue(options),
+        advance(ms) {
+            now += ms;
+        },
+    };
 }
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -261,6 +290,129 @@ test('includes queue waiting time in the reply deadline', async () => {
     } finally {
         gate.resolve('late first reply');
         await Promise.allSettled([first, second]);
+    }
+});
+
+async function createOverdueSuccessorScenario() {
+    const controlled = createControlledQueue({
+        timeoutMs: 100,
+        maxPending: 4,
+        timeoutMessage: 'controlled timeout',
+    });
+    const { queue } = controlled;
+    const firstGate = deferred();
+    const first = queue.enqueue('session-a', () => firstGate.promise);
+    await tick();
+
+    controlled.advance(50);
+    let expiredRan = false;
+    const expired = queue.enqueue('session-a', () => {
+        expiredRan = true;
+        return 'expired';
+    });
+    controlled.advance(101);
+
+    const started = [];
+    const signals = new Map();
+    const gates = new Map();
+    const results = new Map();
+    let running = 0;
+    let maxRunning = 0;
+    for (const name of ['B', 'C']) {
+        const gate = deferred();
+        gates.set(name, gate);
+        results.set(name, queue.enqueue('session-a', async (signal) => {
+            started.push(name);
+            signals.set(name, signal);
+            running += 1;
+            maxRunning = Math.max(maxRunning, running);
+            try {
+                return await gate.promise;
+            } finally {
+                running -= 1;
+            }
+        }));
+    }
+
+    firstGate.resolve('first');
+    assert.equal(await first, 'first');
+    await tick();
+    return {
+        queue,
+        expired,
+        started,
+        signals,
+        gates,
+        results,
+        expiredRan: () => expiredRan,
+        running: () => running,
+        maxRunning: () => maxRunning,
+    };
+}
+
+async function disposeOverdueSuccessorScenario(scenario) {
+    scenario.queue.cancel('session-a', new Error('test cleanup'));
+    for (const gate of scenario.gates.values()) gate.resolve('late reply');
+    await Promise.allSettled([scenario.expired, ...scenario.results.values()]);
+    await tick();
+}
+
+test('settling an overdue entry cannot start two live successors', async () => {
+    const scenario = await createOverdueSuccessorScenario();
+    try {
+        assert.equal(scenario.expiredRan(), false);
+        await assert.rejects(scenario.expired, /controlled timeout/);
+        assert.deepEqual(scenario.started, ['B']);
+        assert.equal(scenario.maxRunning(), 1);
+        assert.equal(scenario.running(), 1);
+        assert.equal(scenario.queue.isBusy('session-a'), true);
+    } finally {
+        await disposeOverdueSuccessorScenario(scenario);
+    }
+});
+
+test('cancel reaches every successor started by an overdue settlement', async () => {
+    const scenario = await createOverdueSuccessorScenario();
+    const reason = new Error('peer disconnected');
+    try {
+        scenario.queue.cancel('session-a', reason);
+        for (const name of scenario.started) {
+            assert.equal(scenario.signals.get(name)?.aborted, true, `${name} must be aborted`);
+            assert.equal(scenario.signals.get(name)?.reason, reason);
+        }
+        for (const gate of scenario.gates.values()) gate.resolve('late reply');
+        await Promise.allSettled([scenario.expired, ...scenario.results.values()]);
+        await tick();
+        assert.equal(scenario.running(), 0);
+        assert.equal(scenario.queue.isBusy('session-a'), false);
+    } finally {
+        await disposeOverdueSuccessorScenario(scenario);
+    }
+});
+
+test('an untracked successor cannot make the queue report idle', async () => {
+    const scenario = await createOverdueSuccessorScenario();
+    const completed = new Set();
+    try {
+        while (completed.size < 2) {
+            const name = scenario.started.slice().reverse().find((entry) => !completed.has(entry));
+            assert.ok(name, 'a live accepted successor must be available to run');
+            scenario.gates.get(name).resolve(name);
+            await scenario.results.get(name);
+            completed.add(name);
+            await tick();
+            if (completed.size < 2) {
+                assert.equal(
+                    scenario.queue.isBusy('session-a'),
+                    true,
+                    'the queue must stay busy while another accepted successor is still running',
+                );
+            }
+        }
+        assert.equal(scenario.running(), 0);
+        assert.equal(scenario.queue.isBusy('session-a'), false);
+    } finally {
+        await disposeOverdueSuccessorScenario(scenario);
     }
 });
 

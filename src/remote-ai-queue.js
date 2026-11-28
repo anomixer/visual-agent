@@ -39,7 +39,8 @@ function createRemoteAiQueue(options = {}) {
             if (entry.settled) continue;
             if (entry.deadline <= Date.now()) {
                 settle(sessionId, queue, entry, 'reject', entry.timeoutError);
-                continue;
+                // settle() 可能已遞迴啟動下一項；外層不得再使用舊的迴圈狀態。
+                return;
             }
 
             queue.active = entry;

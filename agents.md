@@ -5,6 +5,39 @@
 
 ---
 
+## 2026.11.28 — 第六十四階段：遠端 AI 佇列過期結算不再重入並啟動兩項後繼工作
+
+> 接續同日第六十三階段；本輪修正過期 queued item 被結算時，遞迴的 `startNext()` 與外層尚未結束的 drain 同時推進，造成同 session 併發、取消遺漏與 `isBusy()` 假 idle。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `settle()` 在清除 active 後會遞迴呼叫 `startNext()`；`startNext()` 遇到已過期項目時也會呼叫 `settle()`。原本過期分支結算後使用 `continue`，讓外層 while 在遞迴呼叫已改變 queue state 後繼續執行。
+- 以真實 `src/remote-ai-queue.js` 原始碼搭配可控時鐘重現：A 正在執行，E 在 A 之後入列後過期，B／C 在 E 過期後才入列且仍合法；A 在 E 的 timeout callback 被派發前 resolve。
+- `settle(A)` 啟動外層 drain，外層移除 E 並以 timeout 結算；`settle(E)` 遞迴啟動 B 後，外層又啟動 C。實測 `started` 為 `['B', 'C']`，破壞同 session 串行。
+- 此時 `queue.active` 只追蹤 C，cancel 只 abort C，B 成為遺漏工作；若 C 先完成，queue 可能在 B 仍執行時被 cleanup／刪除，`isBusy()` 回 false，新 enqueue 可建立 replacement queue 並與 B 併發。
+
+### 修正：過期結算後立即退出外層 drain
+- `startNext()` 發現 `entry.deadline <= Date.now()` 時，先以既有 `settle()` 拒絕過期項目，隨即 `return`；後續排程只由 `settle()` 的遞迴呼叫負責。
+- 不增加 in-flight lock、不改變容量與 deadline 語意、不中止後端已接受的工作，也不改動 timeout callback 與 cancel 的既有契約。
+- 修正後同一情境只啟動 B，`maxRunning` 維持 1；cancel 會涵蓋所有已啟動後繼工作，queue 在仍有 accepted 工作時保持 busy。
+
+### 測試與驗收
+- `test/remote-ai-queue.test.js` 由 11 項增為 14 項，新增可控 `Date.now()`／timer harness，並以 VM 載入真實 production module；注入原生 `Promise` 與 `AbortController`，精確控制 deadline 已過但 timeout callback 尚未派發的窗口。
+- 三項新回歸分別驗證過期結算不啟動兩項後繼、cancel 涵蓋遞迴啟動的工作，以及未追蹤後繼完成前不得回報 idle。修正前三項分別重現 `['B', 'C']`、B 未被 abort、`isBusy() === false`；修正後 **14／14** 全綠。
+- `test/remote-ai-cancel.test.js` 的 7 項真實 server harness 回歸維持全綠，涵蓋 signal 轉發、斷線、硬體取消、flood 容量與 idle 時機。
+- 3 個突變探針全數被攔下：把 `return` 改回 `continue` 使三項新回歸失敗；讓 `isBusy()` 忽略 active-only queue 使未追蹤後繼案例失敗；移除 cancel 的 active abort signal 使三項取消案例失敗。探針後 production 位元組還原。
+- 10 個 `remote-*.test.js` 依序通過，合計 **74 項**：remote-agent 21、remote-ai-cancel 7、remote-ai-queue 14、remote-frame 8、remote-local-ai-cancel 3、remote-message-budget 3、remote-message-types 4、remote-profile-atomic 4、remote-profile-ui-errors 6、remote-state-tick 4。
+- `npm test`：27 個 JS 語法、**73 支測試檔**與 server smoke 全綠；`git diff --check` 無 whitespace error。Git 僅回報既有 LF→CRLF filter warning。
+- 本輪為 backend queue 行為、可控時鐘與真實 HTTP harness 驗證，未執行瀏覽器、PowerShell、外掛、安裝或提權，也未讀寫使用者真實 APPDATA。
+- `spec.md` 將過期結算後外層 drain 必須立即退出列為不變式；README 中英文同步說明併發、取消遺漏與假 idle 防線。
+- `src/remote-ai-queue.js` SHA256 `35e5337db37a01cf4a025495883c45d3fdbac385a488b6de03e60d78d0080486`；`test/remote-ai-queue.test.js` SHA256 `59ab067c2f349a72543b3486a57b00f41fd8491d6303fc75770706ff3f31e41f`。
+
+### 尚未完成
+- 前端與 queue 守門只能拒絕尚未套用或尚未送出的結果，不能撤回 peer／LLM 已接受的工作。
+- Browser 靜止畫面輪詢仍會實際截圖；`task.logs` 保留政策未觸及，仍待使用者決定。
+- 未做雙機、UAC elevated process-tree、Vision 或乾淨 Windows EXE 實機驗收。
+
+---
+
 ## 2026.11.28 — 第六十三階段：側邊欄三份清單以獨立請求序號拒絕晚回
 
 > 接續同日第六十二階段；本輪修正啟動與 `sopChanged` 刷新可重疊時，較舊的推薦、SOP 或 Skill 回應依完成順序覆蓋較新快照。版本維持 `2026.8.7`。
