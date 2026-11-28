@@ -428,7 +428,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 ```
 
 **Q: Why do some SOPs trigger a UAC window?**
-Because those SOPs require administrator privileges. The install stage now uses a shared elevation flow automatically; if the user cancels UAC, the task fails immediately.
+Because those SOPs require administrator privileges. The install stage now uses a shared elevation flow automatically; if the user cancels UAC, the task fails immediately. Startup failures, timeouts, and result-file read failures all settle the task and remove its temporary runner files. Termination of the entire elevated process tree still requires real-machine validation.
 
 **Q: Why didn’t the new SOP appear after I added it?**
 Make sure the file is placed at `sops/<slug>/SOP.md` or `%APPDATA%\visual-agent\sops\<slug>\SOP.md`, then refresh the page.

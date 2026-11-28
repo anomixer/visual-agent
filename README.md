@@ -429,7 +429,7 @@ powershell -ExecutionPolicy Bypass -Command "npm run start"
 ```
 
 **Q: 為什麼有些 SOP 會跳出 UAC 視窗？**
-因為這些 SOP 需要系統管理員權限。現在 install 階段會自動走共用提權流程，若使用者取消 UAC，任務會直接失敗。
+因為這些 SOP 需要系統管理員權限。現在 install 階段會自動走共用提權流程，若使用者取消 UAC，任務會直接失敗。提權流程的啟動失敗、逾時與結果檔讀取失敗都會結束任務並清理暫存的 runner；UAC 後整棵 process tree 的終止仍須在實機驗收。
 
 **Q: 新增 SOP 後沒有出現？**
 確認檔案放在 `sops/<slug>/SOP.md` 或 `%APPDATA%\visual-agent\sops\<slug>\SOP.md`，再重新整理頁面。

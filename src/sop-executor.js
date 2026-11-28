@@ -209,8 +209,6 @@ class SOPExecutor extends EventEmitter {
                 'exit $exitCode',
             ].join('\r\n');
 
-            fs.writeFileSync(runnerPath, `\uFEFF${runnerScript}`, 'utf8');
-
             const launchCommand = [
                 '$ErrorActionPreference = "Stop"',
                 'try {',
@@ -227,31 +225,51 @@ class SOPExecutor extends EventEmitter {
                 '}',
             ].join('; ');
 
-            this.emit('log', {
-                level: 'info',
-                phase: 'install',
-                message: 'This task requires administrator privileges, triggering UAC window...',
-            });
-
-            const child = spawn('powershell.exe', [
-                '-NoProfile',
-                '-NonInteractive',
-                '-ExecutionPolicy', 'Bypass',
-                '-Command', launchCommand,
-            ], {
-                windowsHide: true,
-            });
-
-            let stderr = '';
-            let timedOut = false;
-
             const cleanup = () => {
                 try {
                     fs.rmSync(tempDir, { recursive: true, force: true });
                 } catch {}
             };
 
-            const timer = setTimeout(() => {
+            let child;
+            try {
+                fs.writeFileSync(runnerPath, `\uFEFF${runnerScript}`, 'utf8');
+
+                this.emit('log', {
+                    level: 'info',
+                    phase: 'install',
+                    message: 'This task requires administrator privileges, triggering UAC window...',
+                });
+
+                child = spawn('powershell.exe', [
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-ExecutionPolicy', 'Bypass',
+                    '-Command', launchCommand,
+                ], {
+                    windowsHide: true,
+                });
+            } catch (err) {
+                cleanup();
+                reject(err);
+                return;
+            }
+
+            let stderr = '';
+            let timedOut = false;
+            let settled = false;
+            let timer;
+
+            const finish = (settle, value) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                cleanup();
+                settle(value);
+            };
+
+            timer = setTimeout(() => {
+                if (settled) return;
                 timedOut = true;
                 this.terminateProcessTree(child);
             }, this.timeoutMs);
@@ -262,27 +280,27 @@ class SOPExecutor extends EventEmitter {
             });
 
             child.on('close', (code) => {
-                clearTimeout(timer);
+                if (settled) return;
                 if (timedOut) {
-                    cleanup();
-                    reject(new Error(`Elevated command timed out after ${this.timeoutMs}ms: ${command}`));
+                    finish(reject, new Error(`Elevated command timed out after ${this.timeoutMs}ms: ${command}`));
                     return;
                 }
 
-                const stdout = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8').trim() : '';
-                const fileExitCode = fs.existsSync(exitPath)
-                    ? Number.parseInt(fs.readFileSync(exitPath, 'utf8').trim(), 10)
-                    : Number.NaN;
-                const exitCode = Number.isNaN(fileExitCode) ? (code ?? 1) : fileExitCode;
+                try {
+                    const stdout = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8').trim() : '';
+                    const fileExitCode = fs.existsSync(exitPath)
+                        ? Number.parseInt(fs.readFileSync(exitPath, 'utf8').trim(), 10)
+                        : Number.NaN;
+                    const exitCode = Number.isNaN(fileExitCode) ? (code ?? 1) : fileExitCode;
 
-                cleanup();
-                resolve({ exitCode, stdout, stderr: stderr.trim() });
+                    finish(resolve, { exitCode, stdout, stderr: stderr.trim() });
+                } catch (err) {
+                    finish(reject, err);
+                }
             });
 
             child.on('error', (err) => {
-                clearTimeout(timer);
-                cleanup();
-                reject(err);
+                finish(reject, err);
             });
         });
     }

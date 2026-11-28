@@ -5,6 +5,38 @@
 
 ---
 
+## 2026.11.28 — 第六十六階段：SOP 提權流程單一結算並回收暫存資源
+
+> 接續同日第六十五階段；本輪以真實 `src/sop-executor.js` 搭配可控假子程序與記憶體檔案系統，重現 elevated PowerShell launcher 的非同步例外、重複結算與暫存目錄洩漏。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- `runPowerShellElevated()` 在 child 的 `close` callback 內同步讀取 `combined.log`／`exitcode.txt`；檔案被鎖住或讀取拋錯時，例外逸出 async Promise executor，Promise 不會拒絕，timeout 與暫存目錄會一直留著。
+- runner 寫入或 `spawn()` 在暫存目錄建立後同步失敗時，只拒絕 Promise，沒有清理已建立的目錄。
+- child 的 `error` 與後到的 `close` 沒有共用 settled 守門，會重複 resolve／reject、清除 timer 與刪除暫存目錄。
+- 加入八項生命週期回歸而尚未修正時為 **3 passed／5 failed**，分別重現兩種結果檔讀取失敗、spawn 失敗洩漏、runner 寫入失敗洩漏，以及 error 後 close 重複清理。
+
+### 修正：啟動保護與單一 finish 出口
+- runner 寫入、log 事件與 `spawn()` 包在同步 `try/catch`；失敗時清理暫存目錄、拒絕並立即返回，不安裝後續事件與 timeout。
+- 新增 `settled` 守門與 `finish(settle, value)`，由它統一清除 timer、清理暫存目錄並結算；`error`、`close` 與 timeout close 都只能成功結算一次。
+- `close` 內結果檔讀取加 `try/catch`，讀取失敗改為拒絕 Promise；缺少結果檔仍沿用 launcher exit code fallback。
+- timeout 仍先呼叫既有 `terminateProcessTree(child)`，待 close 到達後經同一 `finish()` 拒絕並清理。runner script、UAC 取消訊息、結果格式與一般 `runPowerShell()` 路徑均未改動。
+
+### 測試與驗收
+- 新增 `test/sop-executor-elevated-lifecycle.test.js`（8 項）：以 VM 載入真實 production module，注入假 fs／child process／可控 timer；fake child `pid = 0`，timeout 只呼叫 fake `kill()`，不執行 PowerShell、UAC 或 `taskkill`。
+- 八項涵蓋成功讀檔與清理、兩種結果檔讀取失敗、error 後 close、timeout terminate／拒絕／清理、缺少結果檔 fallback、spawn 同步失敗與 runner 寫入同步失敗；修正後 **8／8** 全綠。既有 `sop-executor-pure` 28 項與本輪合計 **36／36** 通過。
+- 5 個突變探針全數被攔下：同時移除 close／finish settled 守門（7／1）、close 重新拋出讀取例外（6／2）、啟動失敗不清理（6／2）、timeout 繞過共用清理（7／1）、finish 不清 timer（3／5）。探針後 production 位元組還原。
+- `npm test`：27 個 JS 語法、**74 支測試檔**與 server smoke 全綠；`git diff --check` 無 whitespace error。Git 僅回報既有 LF→CRLF filter warning。
+- `spec.md` 將 elevated 單一結算、啟動清理、結果讀取失敗拒絕與 fallback 列為不變式；README 中英文同步說明生命週期保證與實機限制。
+- `src/sop-executor.js` SHA256 `db1ece3bbdfa870d3f5e2a0268f5914ff0faf48fc72bed334e315e9b094032c3`；`test/sop-executor-elevated-lifecycle.test.js` SHA256 `6ab64203a00c57a757ad9582bc0fbbe647c227f05d926727e6f4fa6eab793e60`。
+
+### 尚未完成
+- 未啟動真實 PowerShell、UAC、taskkill、外掛、安裝或提權，也未讀寫使用者真實 APPDATA；本輪不構成 UAC elevated process-tree 實機驗收。
+- 一般 `runPowerShell()` 仍有可比較的啟動清理生命週期，將於後續獨立稽核；本輪未擴大修改範圍。
+- `task.logs` 保留政策未觸及，仍待使用者決定；Browser 靜止畫面輪詢仍會實際截圖。
+- 未做雙機、Vision 或乾淨 Windows EXE 實機驗收。
+
+---
+
 ## 2026.11.28 — 第六十五階段：關閉本機對話作廢擁有者在途請求
 
 > 接續同日第六十四階段；本輪修正關閉本機對話分頁時，擁有者的聊天／確認請求仍繼續執行、晚回仍修改已移除 session，並在關閉後觸發任務、Chalkboard 與側邊欄副作用的問題。版本維持 `2026.8.7`。
