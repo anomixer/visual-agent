@@ -431,6 +431,92 @@ test('startup recovers the interrupted run log, progress and phase', async (t) =
     assert.equal(harness.getFiles()[runLogPath(harness)], undefined, 'the run log is consumed once');
 });
 
+test('startup sidecar read failure preserves unread recovery data for a later restart', async (t) => {
+    const original = JSON.stringify({ todoList: [pendingTask({ status: 'running', progress: 10 })] });
+    const runLog = serializeRunLogRecord(TASK_ID, 40, {
+        level: 'info', message: 'unread recovery detail', timestamp: '2026-11-12T02:00:02.000Z',
+    });
+    const { harness } = await startHarness(t, {
+        seedFiles: {
+            'appdata/visual-agent/tasks.json': original,
+            [`appdata/visual-agent/${RUN_LOG_FILE_NAME}`]: runLog,
+        },
+        initialReadFailure: (file) => (file.endsWith(runLogPathForSeed())
+            ? Object.assign(new Error('EACCES: synthetic sidecar read failure'), { code: 'EACCES' }) : null),
+    });
+
+    const files = harness.getFiles();
+    assert.equal(files[tasksPath(harness)], original, 'an unread sidecar must not be replaced by a less detailed snapshot');
+    assert.equal(files[runLogPath(harness)], runLog, 'the unread sidecar must remain available for retry');
+    assert.equal(harness.getState().todoList[0].status, 'running', 'do not reconcile away the task before its sidecar can be read');
+    assert.ok(harness.getState().logs.some((entry) => entry.message.includes('EACCES: synthetic sidecar read failure')));
+
+    const second = await startHarness(t, {
+        seedFiles: {
+            'appdata/visual-agent/tasks.json': original,
+            [`appdata/visual-agent/${RUN_LOG_FILE_NAME}`]: runLog,
+        },
+    });
+    const [task] = second.harness.getState().todoList;
+    assert.equal(task.status, 'failed');
+    assert.equal(task.progress, 40);
+    assert.deepEqual(Array.from(task.logs.map((entry) => entry.message)), [
+        'unread recovery detail',
+        'Task execution interrupted: the server stopped before it finished.',
+    ]);
+    assert.equal(second.harness.getFiles()[runLogPath(second.harness)], undefined);
+});
+
+function runLogPathForSeed() {
+    return path.join('appdata', 'visual-agent', RUN_LOG_FILE_NAME);
+}
+
+test('a new task retries an unread sidecar before flushing and clearing it', async (t) => {
+    const NEXT_TASK_ID = 'run-log-next-task';
+    const original = JSON.stringify({
+        todoList: [
+            pendingTask({ status: 'running', progress: 10 }),
+            pendingTask({ id: NEXT_TASK_ID, title: 'Next synthetic task' }),
+        ],
+    });
+    const runLog = serializeRunLogRecord(TASK_ID, 55, {
+        level: 'info', message: 'recovered before next task', timestamp: '2026-11-12T02:00:02.000Z',
+    });
+    const { ScriptedExecutor, instances } = createScriptedExecutor();
+    const { harness, port, token } = await startHarness(t, {
+        executor: ScriptedExecutor,
+        seedFiles: {
+            'appdata/visual-agent/tasks.json': original,
+            [`appdata/visual-agent/${RUN_LOG_FILE_NAME}`]: runLog,
+        },
+        initialReadFailure: (file) => (file.endsWith(runLogPathForSeed())
+            ? Object.assign(new Error('EACCES: synthetic sidecar read failure'), { code: 'EACCES' }) : null),
+    });
+    assert.equal(harness.getFiles()[runLogPath(harness)], runLog, 'startup must retain the unread sidecar');
+    assert.equal(instances.length, 0);
+
+    harness.failReads(null);
+    harness.setReplies(['synthetic veteran note']);
+    const started = await request(port, 'POST', `/api/execute/${NEXT_TASK_ID}`, { token, body: {} });
+    assert.equal(started.body.success, true, started.body.error);
+    assert.equal(instances.length, 1, 'the retry should recover the old run before starting the new executor');
+
+    instances[0].finish({ status: 'success' });
+    await tick();
+    await tick();
+
+    const diskTasks = readJson(harness.getFiles(), tasksPath(harness)).todoList;
+    const [previous, next] = diskTasks;
+    assert.equal(previous.status, 'failed');
+    assert.equal(previous.progress, 55);
+    assert.deepEqual(previous.logs.map((entry) => entry.message), [
+        'recovered before next task',
+        'Task execution interrupted: the server stopped before it finished.',
+    ]);
+    assert.equal(next.status, 'success');
+    assert.equal(harness.getFiles()[runLogPath(harness)], undefined);
+});
+
 test('a run log left by a different task is ignored and cleared', async (t) => {
     const { harness } = await startHarness(t, {
         seedFiles: {

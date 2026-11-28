@@ -22,6 +22,7 @@ function createMemoryFs(root, deny) {
     const dirs = new Set([root]);
     const key = (file) => path.resolve(String(file));
     let writeFailure = null;
+    let readFailure = null;
     const checkWrite = (file) => {
         const resolved = key(file);
         const relative = path.relative(root, resolved);
@@ -41,6 +42,8 @@ function createMemoryFs(root, deny) {
         existsSync: (file) => files.has(key(file)) || dirs.has(key(file)),
         mkdirSync(file) { dirs.add(checkWrite(file)); },
         readFileSync(file, options) {
+            const failed = typeof readFailure === 'function' ? readFailure(file) : null;
+            if (failed) throw failed;
             const data = files.get(key(file));
             if (!data) throw missing(file);
             const encoding = typeof options === 'string' ? options : options?.encoding;
@@ -89,6 +92,7 @@ function createMemoryFs(root, deny) {
         }),
         snapshot: () => Object.fromEntries([...files].map(([file, data]) => [file, data.toString('utf8')])),
         setWriteFailure(predicate) { writeFailure = predicate; },
+        setReadFailure(predicate) { readFailure = predicate; },
         throwIfWriteFails(file) {
             const failure = writeFailure && writeFailure(key(file));
             if (failure) throw failure;
@@ -96,8 +100,9 @@ function createMemoryFs(root, deny) {
     };
 }
 
-function createChatHarness({ seedFiles = {}, playwright, executor, sops, initialWriteFailure = null } = {}) {
+function createChatHarness({ seedFiles = {}, playwright, executor, sops, initialWriteFailure = null, initialReadFailure = null } = {}) {
     assert.ok(initialWriteFailure === null || typeof initialWriteFailure === 'function');
+    assert.ok(initialReadFailure === null || typeof initialReadFailure === 'function');
     const sandboxRoot = path.join(ROOT, 'test', `.chat-harness-${crypto.randomUUID()}`);
     const violations = [];
     const consoleEntries = [];
@@ -130,6 +135,7 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops, initial
         memory.api.writeFileSync(target, content, 'utf8');
     }
     memory.setWriteFailure(initialWriteFailure);
+    memory.setReadFailure(initialReadFailure);
     const fixtures = sops ? clone(sops) : [FIXTURE_SOP_ID, OTHER_SOP_ID].map((id, index) => ({
         id,
         name: `Consent fixture ${index + 1}`,
@@ -421,6 +427,10 @@ module.exports = {
         failWrites(predicate) {
             assert.ok(predicate === null || typeof predicate === 'function');
             memory.setWriteFailure(predicate);
+        },
+        failReads(predicate) {
+            assert.ok(predicate === null || typeof predicate === 'function');
+            memory.setReadFailure(predicate);
         },
         failSettings(error) {
             assert.ok(error === null || error instanceof Error);

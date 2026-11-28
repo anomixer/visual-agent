@@ -5,6 +5,36 @@
 
 ---
 
+## 2026.11.28 — 第七十階段：不可讀的復原 sidecar 不再被保存與清除
+
+> 接續同日第六十九階段；本輪以真實 `src/server.js`、真實 Express HTTP harness 與記憶體檔案系統，修正 `running-task.jsonl` 讀取失敗時仍 reconcile、保存較不完整的狀態並刪除尚未復原資料的缺陷。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- 磁碟保留 `running` 任務，sidecar 有較詳細的 logs／progress；若 sidecar 讀取因權限或鎖定失敗，`recoverInterruptedRunLog()` 原本只記錄錯誤並回 `false`。
+- `loadTasks()` 原本不理會這個失敗，仍將任務 reconcile 為 `failed`、存檔並清除 sidecar；磁碟因此被只有通用中斷記錄的快照覆蓋，詳細復原資料永久消失。
+- 只保留 sidecar 而不阻止 reconcile 仍不足：下一次啟動已找不到 `running` 任務，可能永遠不會套用該 sidecar 的詳細記錄。
+
+### 修正：讀取成功後才 reconcile、persist 與 clear
+- 新增共用 `recoverTaskStateFromRunLog()`：只有 sidecar 不存在或成功讀取時才 reconcile 並回傳 `ready: true`；讀取失敗時回 `ready: false`，不修改任務、不存檔、不清檔。
+- 啟動讀取失敗時保留原磁碟位元組、記憶體中的 `running` 狀態與 sidecar，並透過 `reportTaskPersistenceFailure()` 同時記錄全域可見 error 和 debug log；server 仍可建立。
+- 新任務 pre-flush 重用同一 guard；sidecar 讀取恢復後才套用詳細 logs／progress、reconcile、保存並清除，之後才建立 executor。仍不可讀時明確拒絕啟動，不修改任務、不建立 executor。
+- 後續重啟或新任務啟動可重試，不會把暫時讀取失敗誤判為可安全刪除的殘留資料。
+
+### 測試與驗收
+- `test/task-run-log.test.js` 由 20 項增為 22 項，新增啟動讀取失敗保全並由第二次啟動成功復原，以及新任務重試不可讀 sidecar 後才啟動兩項回歸。
+- 加入回歸而尚未修正時為 **20 passed／2 failed**；修正後 **22／22**。相關 `task-restart`、`task-dynamic-cmd`、`todo-save-failure` 合計 **38／38**，SOP pure **28／28**。
+- 3 個突變探針全數被攔下：啟動在讀取失敗後仍 reconcile／保存／清除（20／2）、新任務跳過 sidecar recovery（21／1）、讀取錯誤不進入全域可見 log（21／1）。探針後 production 與測試位元組均還原。
+- `test/helpers/chat-harness.js` 新增僅由測試使用的 `initialReadFailure`／`failReads()` 記憶體讀取注入；不執行 PowerShell、外掛或真實 APPDATA 操作。
+- `npm test`：27 個 JS 語法、**74 支測試檔**與 server smoke 全綠。
+- `src/server.js` SHA256 `3b04e1f21bda6a8b0872cf3a081a28b892959c35dd08ec7ec0ee5b0ba4654ebb`；`test/helpers/chat-harness.js` `9bde0319abe0f0a04f421031bef1476ab9a61004a7b53107a1f49d05ea3b3d90`；`test/task-run-log.test.js` `c6c02b4ce1c019ca31c7be7d49ffa907f185f8baf8e46218173a8644e330c74d`。
+
+### 尚未完成
+- sidecar 持續不可讀時，任務會保守維持 `running`，等待後續重試；本輪不提供手動忽略或刪除不可讀復原資料的入口。
+- 本輪為 backend lifecycle 與記憶體檔案系統驗證，未執行瀏覽器、PowerShell、外掛、安裝或提權，也未讀寫使用者真實 APPDATA。
+- `task.logs` 保留政策未觸及；UAC elevated process-tree、雙機 Chalkboard、Vision 與乾淨 Windows EXE 仍須實機驗收。
+
+---
+
 ## 2026.11.28 — 第六十九階段：任務終端狀態先落地復原記錄，存檔成功後才清除
 
 > 接續同日第六十八階段；本輪以真實 `src/server.js`、真實 `src/task-run-log.js` 與可控 executor／記憶體檔案系統，修正任務完成或崩潰後的最終存檔失敗、恢復 sidecar 提前清除與新任務覆寫未保存結果。版本維持 `2026.8.7`。

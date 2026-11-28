@@ -3531,11 +3531,9 @@ function loadTasks() {
         todoList = [];
     }
 
-    const hadRunLog = fs.existsSync(RUN_LOG_FILE);
-    const recoveredRunLog = recoverInterruptedRunLog();
-    const { tasks, interrupted } = reconcileInterruptedTasks(todoList);
-    todoList = tasks;
-    if (interrupted || (hadRunLog && recoveredRunLog)) {
+    const recovery = recoverTaskStateFromRunLog();
+    if (!recovery.ready) return;
+    if (recovery.interrupted || (recovery.hadRunLog && recovery.recoveredRunLog)) {
         try {
             saveTasks();
             clearRunLog();
@@ -3543,9 +3541,9 @@ function loadTasks() {
             reportTaskPersistenceFailure('Failed to persist recovered task state', err);
         }
     }
-    if (interrupted) {
-        console.warn(`[Tasks] ${interrupted} task(s) interrupted by the previous shutdown; marked as failed.`);
-        fileLog(`Reconciled ${interrupted} interrupted task(s) to failed on startup.`);
+    if (recovery.interrupted) {
+        console.warn(`[Tasks] ${recovery.interrupted} task(s) interrupted by the previous shutdown; marked as failed.`);
+        fileLog(`Reconciled ${recovery.interrupted} interrupted task(s) to failed on startup.`);
     }
 }
 
@@ -3558,7 +3556,7 @@ function recoverInterruptedRunLog() {
     try {
         raw = fs.readFileSync(RUN_LOG_FILE, 'utf-8');
     } catch (err) {
-        fileLog(`Failed to read the running task log: ${err.message}`);
+        reportTaskPersistenceFailure('Failed to read the running task log', err);
         return false;
     }
     const interruptedTask = todoList.find((task) => task?.status === 'running');
@@ -3572,6 +3570,16 @@ function recoverInterruptedRunLog() {
         }
     }
     return true;
+}
+
+
+function recoverTaskStateFromRunLog() {
+    const hadRunLog = fs.existsSync(RUN_LOG_FILE);
+    const recoveredRunLog = recoverInterruptedRunLog();
+    if (hadRunLog && !recoveredRunLog) return { ready: false };
+    const { tasks, interrupted } = reconcileInterruptedTasks(todoList);
+    todoList = tasks;
+    return { ready: true, hadRunLog, recoveredRunLog, interrupted };
 }
 
 
@@ -3934,6 +3942,10 @@ app.post('/api/execute/:taskId', async (req, res) => {
 
 
     if (fs.existsSync(RUN_LOG_FILE)) {
+        const recovery = recoverTaskStateFromRunLog();
+        if (!recovery.ready) {
+            return res.json({ success: false, error: 'Cannot start a new task until the previous execution recovery log can be read' });
+        }
         try {
             saveTasks();
         } catch (err) {
