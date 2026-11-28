@@ -5,6 +5,38 @@
 
 ---
 
+## 2026.11.28 — 第六十九階段：任務終端狀態先落地復原記錄，存檔成功後才清除
+
+> 接續同日第六十八階段；本輪以真實 `src/server.js`、真實 `src/task-run-log.js` 與可控 executor／記憶體檔案系統，修正任務完成或崩潰後的最終存檔失敗、恢復 sidecar 提前清除與新任務覆寫未保存結果。版本維持 `2026.8.7`。
+
+### 症狀與重現
+- 執行成功或崩潰後，記憶體任務先進入 `success`／`failed`，最後才呼叫 `saveTasks()`；若最終寫入失敗，例外原本會逸出背景 Promise finalization，而磁碟仍保留先前的 `running` 快照。
+- 最後一筆完成／崩潰 log 沒有寫入 `running-task.jsonl`，sidecar 只含執行中的 logs 與 progress；即使保留 sidecar，重啟後也缺少終端狀態與 `completedAt`，已完成的任務會被誤判為中斷失敗。
+- `loadTasks()` 原本先清除 sidecar，才在 `reconcileInterruptedTasks()` 後存檔；恢復狀態寫入失敗時，詳細 logs、進度與唯一可用的終端線索都會遺失，磁碟仍可能回到舊的 `running` 狀態。
+- 新任務啟動前原本直接清除殘留 sidecar；若上一任務已完成但最終存檔失敗，下一任務可在尚未保存上一結果時覆寫磁碟快照並刪掉復原資料。
+
+### 修正：終端 checkpoint、persist-before-clear 與啟動前 pre-flush
+- sidecar 記錄新增選用 `outcome: { status, completedAt }`，只接受 `success`／`failed`／`skipped` 與可解析完成時間；舊的三引數序列化與無 outcome 的解析結果維持不變。
+- 成功與崩潰路徑在最終 `saveTasks()` 前追加最後一筆 log 及終端 outcome；最終存檔與 sidecar 清除包在同步 `try/catch`，失敗寫入可見全域 error log，不再逸出非同步 finalization。
+- 執行結束只在 `saveTasks()` 成功後清除 sidecar；失敗時保留完整終端 checkpoint 與舊磁碟快照，讓下次啟動可恢復真正的完成狀態。
+- 啟動時先套用有效終端 outcome，再 reconcile 殘留的 `running` 任務；恢復狀態必須成功存檔後才清除 sidecar。存檔失敗不阻止 server 建立，也不刪除原磁碟內容或 sidecar，並保留可見錯誤。
+- 新任務開始前若仍有 sidecar，必須先保存目前記憶體任務並成功清除 sidecar，否則拒絕啟動且不修改任務、不建立 executor。
+- sidecar append 仍為 best-effort；若終端 append 與最終存檔同時失敗，仍可能只剩舊 `running` 快照。本輪不改變 `task.logs` 保留或成長政策。
+
+### 測試與驗收
+- `test/task-run-log.test.js` 由 11 項增為 20 項：新增終端 outcome 序列化／解析驗證、成功與崩潰的最終存檔失敗、終端狀態重啟復原、啟動恢復存檔失敗不破壞 sidecar、第二次啟動恢復，以及新任務不得丟棄未保存結果六類回歸。
+- 加入回歸而尚未修正時聚焦結果為 **12 passed／8 failed**，並重現最終 `ENOSPC` 逸出背景 finalization；修正後 **20／20** 全綠。相關 `task-restart`、`task-dynamic-cmd`、`todo-save-failure` 合計 **34／34**，SOP pure **28／28**。
+- 8 個突變探針全數被攔下：移除完成 outcome、移除崩潰 outcome、存檔失敗仍清 sidecar、啟動先清再存、啟動存檔例外逸出、省略新任務 pre-flush、不序列化 outcome、不解析 outcome。探針後 production 位元組均還原。
+- `test/helpers/chat-harness.js` 新增 `initialWriteFailure` 注入，在種子檔案寫入後、server 載入前封鎖寫入，完整重現啟動恢復存檔失敗；全程使用記憶體 fs 與 fake executor，不執行 PowerShell、外掛或真實 APPDATA 操作。
+- `src/server.js` SHA256 `1799e93174a25487ea11ee160533901a4fd4a9abbbb0df004edc137c6b367d57`；`src/task-run-log.js` `80a50b425c294ba3c4c36cc72f0924c1ff0de5ca322440255a724680e91e3aaa`；`test/task-run-log.test.js` `ada66bd23f9869e9a023694a5de62e4ebb153e4b13ac3358b59da0e50f1d3337`。
+
+### 尚未完成
+- sidecar append 仍為 best-effort；終端 checkpoint 與最終存檔同時失敗時，無法保證重啟後還原精確終端狀態。
+- `task.logs` 保留政策未觸及，仍待使用者決定；Browser 靜止畫面輪詢仍會實際截圖。
+- 未做雙機、UAC elevated process-tree、Vision 或乾淨 Windows EXE 實機驗收；本輪不執行 PowerShell、外掛、安裝或提權，也未讀寫使用者真實 APPDATA。
+
+---
+
 ## 2026.11.28 — 第六十八階段：非同步 SOP 日誌 observer 例外不再逸出 stream callback
 
 > 接續同日第六十七階段；本輪以真實 `src/sop-executor.js` 搭配可控假子程序與記憶體檔案系統，修正一般 `runPowerShell()` 在 stdout／stderr 非同步回呼中被日誌 observer 拋錯擊潰的生命週期缺口。版本維持 `2026.8.7`。

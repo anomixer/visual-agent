@@ -47,7 +47,10 @@ function createScriptedExecutor() {
         }
         async execute(sop, options) {
             this.executeArgs = { sopId: sop.id, options };
-            return new Promise((resolve) => { this.finish = resolve; });
+            return new Promise((resolve, reject) => {
+                this.finish = resolve;
+                this.fail = reject;
+            });
         }
     }
     return { ScriptedExecutor, instances };
@@ -96,6 +99,18 @@ function tasksPath(harness) {
     return path.join(harness.sandboxRoot, 'appdata', 'visual-agent', 'tasks.json');
 }
 
+function failTaskWrites(harness) {
+    const target = tasksPath(harness);
+    const enospc = () => Object.assign(new Error('ENOSPC: synthetic task persistence failure'), { code: 'ENOSPC' });
+    harness.failWrites((file) => (file.startsWith(target) ? enospc() : null));
+}
+
+function readRunRecords(harness) {
+    const raw = harness.getFiles()[runLogPath(harness)];
+    assert.ok(raw, 'Expected the run log sidecar to exist');
+    return raw.trim().split('\n').map((line) => JSON.parse(line));
+}
+
 function readJson(files, file) {
     assert.ok(files[file], `Expected ${file} to exist`);
     return JSON.parse(files[file]);
@@ -110,6 +125,49 @@ test('run log records are single JSON lines carrying task id and progress', () =
     assert.equal(line.trimEnd().includes('\n'), false);
     assert.deepEqual(JSON.parse(line), { taskId: TASK_ID, progress: 40, entry });
     assert.deepEqual(JSON.parse(serializeRunLogRecord(TASK_ID, 80, null)), { taskId: TASK_ID, progress: 80, entry: null });
+});
+
+test('terminal outcomes are serialized without changing legacy records', () => {
+    const entry = { level: 'success', message: 'finished', timestamp: '2026-11-12T02:00:03.000Z' };
+    const legacy = serializeRunLogRecord(TASK_ID, 100, entry);
+    assert.equal(legacy, `${JSON.stringify({ taskId: TASK_ID, progress: 100, entry })}\n`);
+    const outcome = { status: 'success', completedAt: '2026-11-12T02:00:03.000Z' };
+    assert.deepEqual(JSON.parse(serializeRunLogRecord(TASK_ID, 100, entry, outcome)), {
+        taskId: TASK_ID, progress: 100, entry, outcome,
+    });
+});
+
+test('invalid terminal outcomes are not written to the run log', () => {
+    const invalid = [
+        null,
+        {},
+        { status: 'running', completedAt: '2026-11-12T02:00:03.000Z' },
+        { status: 'pending', completedAt: '2026-11-12T02:00:03.000Z' },
+        { status: 'unknown', completedAt: '2026-11-12T02:00:03.000Z' },
+        { status: 'failed', completedAt: 'not-a-date' },
+        { status: 'failed' },
+    ];
+    for (const outcome of invalid) {
+        assert.deepEqual(JSON.parse(serializeRunLogRecord(TASK_ID, 100, null, outcome)), {
+            taskId: TASK_ID, progress: 100, entry: null,
+        });
+    }
+});
+
+test('parseRunLog accepts only valid terminal metadata and keeps the latest valid outcome', () => {
+    const outcome = { status: 'failed', completedAt: '2026-11-12T02:00:04.000Z' };
+    const text = [
+        serializeRunLogRecord(TASK_ID, 40, { level: 'info', message: 'working' }),
+        serializeRunLogRecord(TASK_ID, 100, { level: 'error', message: 'crashed' }, outcome),
+        serializeRunLogRecord(TASK_ID, 100, null),
+        serializeRunLogRecord(TASK_ID, 100, null, { status: 'running', completedAt: outcome.completedAt }),
+    ].join('');
+    assert.deepEqual(parseRunLog(text, TASK_ID), {
+        logs: [{ level: 'info', message: 'working' }, { level: 'error', message: 'crashed' }],
+        progress: 100,
+        outcome,
+    });
+    assert.deepEqual(parseRunLog(serializeRunLogRecord(TASK_ID, 40, null), TASK_ID), { logs: [], progress: 40 });
 });
 
 test('parseRunLog keeps entry order and the newest progress', () => {
@@ -172,6 +230,178 @@ test('each log lands in the run log while tasks.json is left untouched mid-run',
     // 執行期間不得為了 checkpoint 整份重寫 tasks.json（歷史任務的 logs 會被一起重送）。
     assert.equal(files[tasksPath(harness)], tasksAtStart, 'tasks.json must not be rewritten per log line');
     assert.equal(harness.getState().todoList[0].logs.length, 3, 'in-memory logs still accumulate');
+});
+
+test('a failed final save retains the terminal outcome and does not escape background finalization', async (t) => {
+    const { ScriptedExecutor, instances } = createScriptedExecutor();
+    const { harness, port, token } = await startHarness(t, { executor: ScriptedExecutor });
+    harness.setReplies(['synthetic veteran note']);
+    harness.setTasks([pendingTask()]);
+
+    const started = await request(port, 'POST', `/api/execute/${TASK_ID}`, { token, body: {} });
+    assert.equal(started.body.success, true);
+    const executor = instances[0];
+    executor.emit('log', { level: 'info', phase: 'running', message: 'mid-run before final save' });
+    failTaskWrites(harness);
+    executor.finish({ status: 'success' });
+    await tick();
+    await tick();
+
+    const state = harness.getState();
+    assert.equal(state.todoList[0].status, 'success');
+    assert.equal(state.todoList[0].progress, 100);
+    assert.equal(state.runningSOP, null);
+    const disk = readJson(harness.getFiles(), tasksPath(harness)).todoList[0];
+    assert.equal(disk.status, 'running', 'the failed atomic save must leave the previous disk snapshot intact');
+    assert.equal(disk.progress, 10);
+
+    const records = readRunRecords(harness);
+    const terminal = records.at(-1);
+    assert.equal(terminal.entry.message, `Task '${state.todoList[0].title}' completed (status: success)`);
+    assert.deepEqual(terminal.outcome, { status: 'success', completedAt: state.todoList[0].completedAt });
+    assert.ok(state.logs.some((entry) => entry.level === 'error' && /ENOSPC/.test(entry.message)), 'the save failure should be visible in the server log');
+    assert.equal(harness.consoleEntries.some((entry) => entry.level === 'error' && /at .*server\.js/.test(entry.message)), false,
+        'the background finalizer must not leak an uncaught save exception to the default error handler');
+});
+
+test('a failed final save after an executor crash preserves the failed outcome and final error log', async (t) => {
+    const { ScriptedExecutor, instances } = createScriptedExecutor();
+    const { harness, port, token } = await startHarness(t, { executor: ScriptedExecutor });
+    harness.setReplies(['synthetic veteran note']);
+    harness.setTasks([pendingTask()]);
+
+    await request(port, 'POST', `/api/execute/${TASK_ID}`, { token, body: {} });
+    const executor = instances[0];
+    executor.emit('phase:start', { phase: 'install' });
+    executor.emit('log', { level: 'info', phase: 'running', message: 'before synthetic crash' });
+    failTaskWrites(harness);
+    executor.fail(new Error('synthetic executor crash'));
+    await tick();
+    await tick();
+
+    const state = harness.getState();
+    assert.equal(state.todoList[0].status, 'failed');
+    assert.equal(state.todoList[0].progress, 40);
+    assert.equal(readJson(harness.getFiles(), tasksPath(harness)).todoList[0].status, 'running');
+    const terminal = readRunRecords(harness).at(-1);
+    assert.equal(terminal.entry.message, 'Task execution crashed: synthetic executor crash');
+    assert.deepEqual(terminal.outcome, { status: 'failed', completedAt: state.todoList[0].completedAt });
+});
+
+test('startup restores a terminal sidecar outcome instead of marking the task interrupted', async (t) => {
+    const completedAt = '2026-11-12T02:00:05.000Z';
+    const finalEntry = { level: 'success', message: 'terminal completion', timestamp: completedAt };
+    const runLog = serializeRunLogRecord(TASK_ID, 40, { level: 'info', message: 'mid-run' })
+        + serializeRunLogRecord(TASK_ID, 100, finalEntry, { status: 'success', completedAt });
+    const { harness } = await startHarness(t, {
+        seedFiles: {
+            'appdata/visual-agent/tasks.json': JSON.stringify({ todoList: [pendingTask({ status: 'running', progress: 10 })] }),
+            [`appdata/visual-agent/${RUN_LOG_FILE_NAME}`]: runLog,
+        },
+    });
+
+    const [task] = harness.getState().todoList;
+    assert.equal(task.status, 'success');
+    assert.equal(task.progress, 100);
+    assert.equal(task.completedAt, completedAt);
+    assert.deepEqual(Array.from(task.logs.map((entry) => entry.message)), ['mid-run', 'terminal completion']);
+    assert.equal(harness.getFiles()[runLogPath(harness)], undefined);
+    assert.equal(readJson(harness.getFiles(), tasksPath(harness)).todoList[0].status, 'success');
+});
+
+test('startup recovery save failure retains both the disk snapshot and sidecar for a later restart', async (t) => {
+    const original = JSON.stringify({ todoList: [pendingTask({ status: 'running', progress: 10 })] });
+    const runLog = serializeRunLogRecord(TASK_ID, 40, null)
+        + serializeRunLogRecord(TASK_ID, 40, { level: 'info', message: 'recover me', timestamp: '2026-11-12T02:00:02.000Z' });
+    const { harness } = await startHarness(t, {
+        seedFiles: {
+            'appdata/visual-agent/tasks.json': original,
+            [`appdata/visual-agent/${RUN_LOG_FILE_NAME}`]: runLog,
+        },
+        initialWriteFailure: (file) => (file.includes(`${path.sep}tasks.json`)
+            ? Object.assign(new Error('ENOSPC: synthetic startup save'), { code: 'ENOSPC' }) : null),
+    });
+
+    const [task] = harness.getState().todoList;
+    assert.equal(task.status, 'failed');
+    assert.equal(task.progress, 40);
+    assert.deepEqual(Array.from(task.logs.map((entry) => entry.message)), [
+        'recover me', 'Task execution interrupted: the server stopped before it finished.',
+    ]);
+    assert.equal(harness.getFiles()[tasksPath(harness)], original);
+    assert.equal(harness.getFiles()[runLogPath(harness)], runLog);
+    assert.ok(harness.getState().logs.some((entry) => entry.level === 'error' && /ENOSPC/.test(entry.message)));
+
+    const second = await startHarness(t, {
+        seedFiles: {
+            'appdata/visual-agent/tasks.json': original,
+            [`appdata/visual-agent/${RUN_LOG_FILE_NAME}`]: runLog,
+        },
+    });
+    const [recovered] = second.harness.getState().todoList;
+    assert.equal(recovered.status, 'failed');
+    assert.equal(recovered.progress, 40);
+    assert.equal(second.harness.getFiles()[runLogPath(second.harness)], undefined);
+    assert.equal(readJson(second.harness.getFiles(), tasksPath(second.harness)).todoList[0].logs.length, 2);
+});
+
+test('startup keeps a terminal sidecar when its recovery snapshot cannot be saved', async (t) => {
+    const original = JSON.stringify({ todoList: [pendingTask({ status: 'running', progress: 10 })] });
+    const completedAt = '2026-11-12T02:00:06.000Z';
+    const runLog = serializeRunLogRecord(TASK_ID, 100, { level: 'success', message: 'finished', timestamp: completedAt }, {
+        status: 'success', completedAt,
+    });
+    const { harness } = await startHarness(t, {
+        seedFiles: {
+            'appdata/visual-agent/tasks.json': original,
+            [`appdata/visual-agent/${RUN_LOG_FILE_NAME}`]: runLog,
+        },
+        initialWriteFailure: (file) => (file.includes(`${path.sep}tasks.json`)
+            ? Object.assign(new Error('ENOSPC: synthetic terminal recovery save'), { code: 'ENOSPC' }) : null),
+    });
+
+    const [task] = harness.getState().todoList;
+    assert.equal(task.status, 'success');
+    assert.equal(task.completedAt, completedAt);
+    assert.equal(harness.getFiles()[tasksPath(harness)], original);
+    assert.equal(harness.getFiles()[runLogPath(harness)], runLog);
+});
+
+test('a new task cannot clear an unpersisted terminal sidecar before flushing the previous task', async (t) => {
+    const { ScriptedExecutor, instances } = createScriptedExecutor();
+    const { harness, port, token } = await startHarness(t, { executor: ScriptedExecutor });
+    harness.setReplies(['first veteran note', 'second veteran note']);
+    const secondId = 'second-run-log-task';
+    harness.setTasks([pendingTask(), pendingTask({ id: secondId, title: 'Second synthetic task' })]);
+
+    await request(port, 'POST', `/api/execute/${TASK_ID}`, { token, body: {} });
+    instances[0].emit('log', { level: 'info', phase: 'running', message: 'first task mid-run' });
+    failTaskWrites(harness);
+    instances[0].finish({ status: 'success' });
+    await tick();
+    await tick();
+    const previousSidecar = harness.getFiles()[runLogPath(harness)];
+    assert.ok(previousSidecar);
+
+    const blocked = await request(port, 'POST', `/api/execute/${secondId}`, { token, body: {} });
+    assert.equal(blocked.body.success, false);
+    assert.equal(instances.length, 1, 'the second executor must not be constructed when the pre-flush fails');
+    assert.equal(harness.getState().todoList.find((task) => task.id === secondId).status, 'pending');
+    assert.equal(harness.getFiles()[runLogPath(harness)], previousSidecar);
+
+    harness.failWrites(null);
+    const started = await request(port, 'POST', `/api/execute/${secondId}`, { token, body: {} });
+    assert.equal(started.body.success, true);
+    assert.equal(readJson(harness.getFiles(), tasksPath(harness)).todoList.find((task) => task.id === TASK_ID).status, 'success');
+    assert.equal(harness.getFiles()[runLogPath(harness)], undefined, 'the old terminal sidecar is cleared only after its snapshot is persisted');
+    instances[1].emit('log', { level: 'info', phase: 'running', message: 'second task mid-run' });
+    instances[1].finish({ status: 'success' });
+    await tick();
+    await tick();
+
+    const diskTasks = readJson(harness.getFiles(), tasksPath(harness)).todoList;
+    assert.deepEqual(diskTasks.map((task) => task.status), ['success', 'success']);
+    assert.equal(harness.getFiles()[runLogPath(harness)], undefined);
 });
 
 test('startup recovers the interrupted run log, progress and phase', async (t) => {

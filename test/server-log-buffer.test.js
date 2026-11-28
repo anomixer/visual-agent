@@ -13,7 +13,8 @@ test('the global log buffer is only written through appendLogWithSeq', () => {
     const rawPushes = [...source.matchAll(/(?<!task\.)\blogs\.push\(/g)];
     assert.equal(rawPushes.length, 0, 'Raw logs.push bypasses the sequence number and cap');
     const guarded = [...source.matchAll(/appendLogWithSeq\(logs, /g)];
-    assert.equal(guarded.length, 4, 'Executor log, ui:message, completion and failure all need a sequence');
+    assert.equal(guarded.length, 5, 'Executor log, ui:message, completion, failure and persistence errors all need a sequence');
+    assert.match(source, /function reportTaskPersistenceFailure\([\s\S]*?appendLogWithSeq\(logs, /);
 });
 
 test('the route still hands the trimmed buffer to the shared selector', () => {

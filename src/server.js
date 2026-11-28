@@ -3531,12 +3531,19 @@ function loadTasks() {
         todoList = [];
     }
 
-    recoverInterruptedRunLog();
+    const hadRunLog = fs.existsSync(RUN_LOG_FILE);
+    const recoveredRunLog = recoverInterruptedRunLog();
     const { tasks, interrupted } = reconcileInterruptedTasks(todoList);
     todoList = tasks;
+    if (interrupted || (hadRunLog && recoveredRunLog)) {
+        try {
+            saveTasks();
+            clearRunLog();
+        } catch (err) {
+            reportTaskPersistenceFailure('Failed to persist recovered task state', err);
+        }
+    }
     if (interrupted) {
-        // 復原結果必須落地：run log 已被消費，沒寫回的話下一次重啟就只剩通用中斷訊息。
-        saveTasks();
         console.warn(`[Tasks] ${interrupted} task(s) interrupted by the previous shutdown; marked as failed.`);
         fileLog(`Reconciled ${interrupted} interrupted task(s) to failed on startup.`);
     }
@@ -3546,26 +3553,31 @@ function loadTasks() {
 // 執行期間 task.logs 只存在記憶體，tasks.json 停留在啟動執行時的空 logs 與 progress 10。
 // 沒有這份 append-only 記錄，被中斷的任務就只剩一句通用訊息，看不出停在哪個階段。
 function recoverInterruptedRunLog() {
+    if (!fs.existsSync(RUN_LOG_FILE)) return false;
     let raw;
     try {
-        if (!fs.existsSync(RUN_LOG_FILE)) return;
         raw = fs.readFileSync(RUN_LOG_FILE, 'utf-8');
-    } catch {
-        return;
+    } catch (err) {
+        fileLog(`Failed to read the running task log: ${err.message}`);
+        return false;
     }
     const interruptedTask = todoList.find((task) => task?.status === 'running');
     if (interruptedTask) {
-        const { logs, progress } = parseRunLog(raw, interruptedTask.id);
+        const { logs, progress, outcome } = parseRunLog(raw, interruptedTask.id);
         if (logs.length) interruptedTask.logs = logs;
         if (progress !== null) interruptedTask.progress = progress;
+        if (outcome) {
+            interruptedTask.status = outcome.status;
+            interruptedTask.completedAt = outcome.completedAt;
+        }
     }
-    clearRunLog();
+    return true;
 }
 
 
-function appendRunLogRecord(task, entry) {
+function appendRunLogRecord(task, entry, outcome) {
     try {
-        fs.appendFileSync(RUN_LOG_FILE, serializeRunLogRecord(task.id, task.progress, entry), 'utf-8');
+        fs.appendFileSync(RUN_LOG_FILE, serializeRunLogRecord(task.id, task.progress, entry, outcome), 'utf-8');
     } catch (err) {
         // checkpoint 失敗不可中斷執行；最終的 saveTasks() 仍會寫入完整 logs。
         fileLog(`Failed to append the running task log: ${err.message}`);
@@ -3576,9 +3588,18 @@ function appendRunLogRecord(task, entry) {
 function clearRunLog() {
     try {
         if (fs.existsSync(RUN_LOG_FILE)) fs.unlinkSync(RUN_LOG_FILE);
+        return true;
     } catch (err) {
         fileLog(`Failed to clear the running task log: ${err.message}`);
+        return false;
     }
+}
+
+
+function reportTaskPersistenceFailure(message, error) {
+    const text = `${message}: ${error.message}`;
+    fileLog(text);
+    appendLogWithSeq(logs, { level: 'error', message: text, timestamp: new Date().toISOString() });
 }
 
 
@@ -3912,6 +3933,19 @@ app.post('/api/execute/:taskId', async (req, res) => {
     }
 
 
+    if (fs.existsSync(RUN_LOG_FILE)) {
+        try {
+            saveTasks();
+        } catch (err) {
+            reportTaskPersistenceFailure('Failed to save the previous task before starting a new execution', err);
+            return res.json({ success: false, error: `Cannot start a new task until the previous execution result is saved: ${err.message}` });
+        }
+        if (!clearRunLog()) {
+            return res.json({ success: false, error: 'Cannot start a new task until the previous execution recovery log is cleared' });
+        }
+    }
+
+
     // Start execution
     const previousTaskState = {
         status: task.status,
@@ -3965,6 +3999,7 @@ app.post('/api/execute/:taskId', async (req, res) => {
         if (task.skillId) sopStateCache.delete(task.skillId);
         const finishLog = { level: 'success', message: `Task '${task.title}' completed (status: ${result.status})`, timestamp: new Date().toISOString() };
         task.logs.push(finishLog);
+        appendRunLogRecord(task, finishLog, { status: task.status, completedAt: task.completedAt });
         appendLogWithSeq(logs, finishLog);
         // 針對 AI 引擎相關任務，強制清除快取並重新偵測
         if (sop.id === 'rec_install_ollama' || sop.id === 'rec_pull_llm_model' || task.skillId === 'rec_pull_llm_model' || task.dynamicCmd?.includes('ollama')) {
@@ -3981,12 +4016,17 @@ app.post('/api/execute/:taskId', async (req, res) => {
         if (task.skillId) sopStateCache.delete(task.skillId);
         const errLog = { level: 'error', message: `Task execution crashed: ${err.message}`, timestamp: new Date().toISOString() };
         task.logs.push(errLog);
+        appendRunLogRecord(task, errLog, { status: task.status, completedAt: task.completedAt });
         appendLogWithSeq(logs, errLog);
         appendTaskExperience(task, sop);
     } finally {
         runningSOP = null;
-        saveTasks();
-        clearRunLog();
+        try {
+            saveTasks();
+            clearRunLog();
+        } catch (err) {
+            reportTaskPersistenceFailure('Failed to save task execution result', err);
+        }
     }
 
 

@@ -96,7 +96,8 @@ function createMemoryFs(root, deny) {
     };
 }
 
-function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) {
+function createChatHarness({ seedFiles = {}, playwright, executor, sops, initialWriteFailure = null } = {}) {
+    assert.ok(initialWriteFailure === null || typeof initialWriteFailure === 'function');
     const sandboxRoot = path.join(ROOT, 'test', `.chat-harness-${crypto.randomUUID()}`);
     const violations = [];
     const consoleEntries = [];
@@ -128,6 +129,7 @@ function createChatHarness({ seedFiles = {}, playwright, executor, sops } = {}) 
         }
         memory.api.writeFileSync(target, content, 'utf8');
     }
+    memory.setWriteFailure(initialWriteFailure);
     const fixtures = sops ? clone(sops) : [FIXTURE_SOP_ID, OTHER_SOP_ID].map((id, index) => ({
         id,
         name: `Consent fixture ${index + 1}`,
